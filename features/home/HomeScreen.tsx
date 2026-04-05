@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import JobCard from "../../components/JobCard";
-import { useJobs } from "../../data/JobContext";
+import { useJobs } from "../../context/JobContext";
 import { useTranslation } from "../../i18n/useTranslation";
 
 export default function HomeScreen() {
