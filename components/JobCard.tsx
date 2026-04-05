@@ -12,9 +12,9 @@ type Props = {
 export default function JobCard({ job, onStart, onComplete }: Props) {
   const { t } = useTranslation();
   const badgeStyle =
-    job.status === "Open"
+    job.status === "open"
       ? styles.badgeOpen
-      : job.status === "In Progress"
+      : job.status === "in_progress"
         ? styles.badgeProgress
         : styles.badgeCompleted;
 
@@ -36,7 +36,7 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
         <TouchableOpacity
           style={[styles.button, styles.startButton]}
           onPress={onStart}
-          disabled={job.status !== "Open"}
+          disabled={job.status !== "open"}
         >
           <Text style={styles.buttonText}>{t("startJob")}</Text>
         </TouchableOpacity>
@@ -44,7 +44,7 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
         <TouchableOpacity
           style={[styles.button, styles.completeButton]}
           onPress={onComplete}
-          disabled={job.status !== "In Progress"}
+          disabled={job.status !== "in_progress"}
         >
           <Text style={styles.buttonText}>{t("complete")}</Text>
         </TouchableOpacity>

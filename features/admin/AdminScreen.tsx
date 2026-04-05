@@ -30,7 +30,7 @@ export default function AdminScreen() {
       time,
       service,
       employee,
-      status: "Open",
+      status: "open",
     });
 
     setCustomer("");

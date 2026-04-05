@@ -1,6 +1,6 @@
-export type JobStatus = "Open" | "In Progress" | "Completed";
+export type JobStatus = "open" | "in_progress" | "completed";
 
-export type Job = {
+export interface Job {
   id: string;
   customer: string;
   location: string;
@@ -8,4 +8,4 @@ export type Job = {
   service: string;
   employee: string;
   status: JobStatus;
-};
+}

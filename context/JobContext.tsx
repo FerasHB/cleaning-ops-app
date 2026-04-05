@@ -20,7 +20,7 @@ export const JobProvider = ({ children }: { children: React.ReactNode }) => {
   const startJob = (id: string) => {
     setJobs((prev) =>
       prev.map((job) =>
-        job.id === id ? { ...job, status: "In Progress" } : job,
+        job.id === id ? { ...job, status: "in_progress" } : job,
       ),
     );
   };
@@ -28,7 +28,7 @@ export const JobProvider = ({ children }: { children: React.ReactNode }) => {
   const completeJob = (id: string) => {
     setJobs((prev) =>
       prev.map((job) =>
-        job.id === id ? { ...job, status: "Completed" } : job,
+        job.id === id ? { ...job, status: "completed" } : job,
       ),
     );
   };
