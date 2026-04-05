@@ -11,6 +11,7 @@ type Props = {
 
 export default function JobCard({ job, onStart, onComplete }: Props) {
   const { t } = useTranslation();
+
   const badgeStyle =
     job.status === "open"
       ? styles.badgeOpen
@@ -18,12 +19,20 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
         ? styles.badgeProgress
         : styles.badgeCompleted;
 
+  const statusLabel =
+    job.status === "open"
+      ? t("open")
+      : job.status === "in_progress"
+        ? t("inProgress")
+        : t("completed");
+
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <Text style={styles.customer}>{job.customer}</Text>
+
         <View style={[styles.badge, badgeStyle]}>
-          <Text style={styles.badgeText}>{job.status}</Text>
+          <Text style={styles.badgeText}>{statusLabel}</Text>
         </View>
       </View>
 
@@ -34,7 +43,11 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
 
       <View style={styles.buttonRow}>
         <TouchableOpacity
-          style={[styles.button, styles.startButton]}
+          style={[
+            styles.button,
+            styles.startButton,
+            job.status !== "open" && { opacity: 0.5 },
+          ]}
           onPress={onStart}
           disabled={job.status !== "open"}
         >
@@ -42,7 +55,11 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.button, styles.completeButton]}
+          style={[
+            styles.button,
+            styles.completeButton,
+            job.status !== "in_progress" && { opacity: 0.5 },
+          ]}
           onPress={onComplete}
           disabled={job.status !== "in_progress"}
         >
@@ -52,7 +69,6 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#1E1E1E",

@@ -8,7 +8,7 @@ export const initialJobs: Job[] = [
     time: "08:00",
     service: "Office Cleaning",
     employee: "Ali",
-    status: "Open",
+    status: "open",
   },
   {
     id: "2",
@@ -17,7 +17,7 @@ export const initialJobs: Job[] = [
     time: "10:30",
     service: "Window Cleaning",
     employee: "Sara",
-    status: "In Progress",
+    status: "in_progress",
   },
   {
     id: "3",
@@ -26,7 +26,7 @@ export const initialJobs: Job[] = [
     time: "13:00",
     service: "Deep Cleaning",
     employee: "Feras",
-    status: "Completed",
+    status: "completed",
   },
   {
     id: "4",
@@ -35,6 +35,6 @@ export const initialJobs: Job[] = [
     time: "15:00",
     service: "Floor Cleaning",
     employee: "Maya",
-    status: "Open",
+    status: "open",
   },
 ];
