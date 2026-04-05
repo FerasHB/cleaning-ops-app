@@ -8,7 +8,7 @@ import {
   View, // ✅ WICHTIG (hat gefehlt)
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useJobs } from "../../data/JobContext";
+import { useJobs } from "../../context/JobContext";
 import { employees } from "../../data/employees";
 
 export default function AdminScreen() {

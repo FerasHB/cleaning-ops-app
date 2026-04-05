@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState } from "react";
+import { initialJobs } from "../data/jobs";
 import { Job } from "../types/job";
-import { initialJobs } from "./jobs";
 
 type JobContextType = {
   jobs: Job[];

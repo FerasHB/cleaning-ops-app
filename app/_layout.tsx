@@ -1,5 +1,5 @@
 import { Stack } from "expo-router";
-import { JobProvider } from "../data/JobContext";
+import { JobProvider } from "../context/JobContext";
 
 export default function RootLayout() {
   return (
