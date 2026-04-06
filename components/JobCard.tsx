@@ -29,7 +29,7 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
-        <Text style={styles.customer}>{job.customer}</Text>
+        <Text style={styles.customer}>{job.customerName}</Text>
 
         <View style={[styles.badge, badgeStyle]}>
           <Text style={styles.badgeText}>{statusLabel}</Text>
@@ -39,7 +39,7 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
       <Text style={styles.detail}>📍 {job.location}</Text>
       <Text style={styles.detail}>🕒 {job.time}</Text>
       <Text style={styles.detail}>🧽 {job.service}</Text>
-      <Text style={styles.detail}>👤 {job.employee}</Text>
+      <Text style={styles.detail}>👤 {job.employeeName ?? "-"}</Text>
 
       <View style={styles.buttonRow}>
         <TouchableOpacity
@@ -69,6 +69,7 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#1E1E1E",
