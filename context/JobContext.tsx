@@ -36,8 +36,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const data = await getJobs();
       setJobs(data);
     } catch (err: any) {
-      console.error("Failed to load jobs:", JSON.stringify(err, null, 2));
-      console.error("Failed to load jobs raw:", err);
+      console.error("Failed to load jobs:", err);
       setError(err?.message ?? "Jobs konnten nicht geladen werden.");
     } finally {
       setLoading(false);

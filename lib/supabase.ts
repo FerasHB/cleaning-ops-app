@@ -15,5 +15,3 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
-console.log("SUPABASE URL:", supabaseUrl);
-console.log("SUPABASE KEY:", supabaseAnonKey?.slice(0, 20));
