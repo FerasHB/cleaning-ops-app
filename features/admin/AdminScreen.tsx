@@ -1,45 +1,61 @@
+import { useJobs } from "@/context/JobContext";
 import { useState } from "react";
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View, // ✅ WICHTIG (hat gefehlt)
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useJobs } from "../../context/JobContext";
-import { employees } from "../../data/employees";
-
 export default function AdminScreen() {
-  const { addJob } = useJobs();
+  const { createJob, employees, loading } = useJobs();
 
-  const [customer, setCustomer] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [location, setLocation] = useState("");
-  const [time, setTime] = useState("");
   const [service, setService] = useState("");
-  const [employee, setEmployee] = useState("");
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleAddJob = () => {
-    if (!customer || !location || !employee) return; // ✅ verbessert
+  const handleCreateJob = async () => {
+    if (!customerName.trim() || !location.trim() || !service.trim()) {
+      Alert.alert("Fehler", "Bitte Kunde, Ort und Service ausfüllen.");
+      return;
+    }
 
-    addJob({
-      id: Date.now().toString(),
-      customer,
-      location,
-      time,
-      service,
-      employee,
-      status: "open",
-    });
+    try {
+      setSubmitting(true);
 
-    setCustomer("");
-    setLocation("");
-    setTime("");
-    setService("");
-    setEmployee("");
+      await createJob({
+        customerName: customerName.trim(),
+        location: location.trim(),
+        service: service.trim(),
+        employeeId,
+        notes: notes.trim() || null,
+      });
+
+      setCustomerName("");
+      setLocation("");
+      setService("");
+      setEmployeeId(null);
+      setNotes("");
+
+      Alert.alert("Erfolg", "Job wurde erstellt.");
+    } catch (err: any) {
+      Alert.alert(
+        "Fehler",
+        err?.message ?? "Job konnte nicht erstellt werden.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
-
+  // useEffect(() => {
+  // debugCurrentUserAccess();
+  //}, []);
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -49,8 +65,8 @@ export default function AdminScreen() {
           placeholder="Kunde"
           placeholderTextColor="#888"
           style={styles.input}
-          value={customer}
-          onChangeText={setCustomer}
+          value={customerName}
+          onChangeText={setCustomerName}
         />
 
         <TextInput
@@ -62,14 +78,6 @@ export default function AdminScreen() {
         />
 
         <TextInput
-          placeholder="Zeit"
-          placeholderTextColor="#888"
-          style={styles.input}
-          value={time}
-          onChangeText={setTime}
-        />
-
-        <TextInput
           placeholder="Service"
           placeholderTextColor="#888"
           style={styles.input}
@@ -77,12 +85,37 @@ export default function AdminScreen() {
           onChangeText={setService}
         />
 
-        {/* Dropdown */}
+        <TextInput
+          placeholder="Notizen (optional)"
+          placeholderTextColor="#888"
+          style={[styles.input, styles.notesInput]}
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+        />
+
         <Text style={styles.label}>Mitarbeiter auswählen</Text>
 
         <View style={styles.dropdown}>
+          <TouchableOpacity
+            style={[
+              styles.employeeItem,
+              employeeId === null && styles.selectedEmployee,
+            ]}
+            onPress={() => setEmployeeId(null)}
+          >
+            <Text
+              style={[
+                styles.employeeText,
+                employeeId === null && styles.selectedEmployeeText,
+              ]}
+            >
+              Nicht zuweisen
+            </Text>
+          </TouchableOpacity>
+
           {employees.map((emp) => {
-            const isSelected = employee === emp.name;
+            const isSelected = employeeId === emp.id;
 
             return (
               <TouchableOpacity
@@ -91,7 +124,7 @@ export default function AdminScreen() {
                   styles.employeeItem,
                   isSelected && styles.selectedEmployee,
                 ]}
-                onPress={() => setEmployee(emp.name)}
+                onPress={() => setEmployeeId(emp.id)}
               >
                 <Text
                   style={[
@@ -99,15 +132,24 @@ export default function AdminScreen() {
                     isSelected && styles.selectedEmployeeText,
                   ]}
                 >
-                  {emp.name}
+                  {emp.fullName}
                 </Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleAddJob}>
-          <Text style={styles.buttonText}>Job erstellen</Text>
+        <TouchableOpacity
+          style={[
+            styles.button,
+            (submitting || loading) && styles.buttonDisabled,
+          ]}
+          onPress={handleCreateJob}
+          disabled={submitting || loading}
+        >
+          <Text style={styles.buttonText}>
+            {submitting ? "Wird erstellt..." : "Job erstellen"}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -136,6 +178,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 12,
   },
+  notesInput: {
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
   label: {
     color: "#A1A1AA",
     marginBottom: 8,
@@ -150,6 +196,7 @@ const styles = StyleSheet.create({
   employeeItem: {
     padding: 10,
     borderRadius: 8,
+    marginBottom: 6,
   },
   selectedEmployee: {
     backgroundColor: "#2563EB",
@@ -167,6 +214,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     marginTop: 10,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     color: "#fff",

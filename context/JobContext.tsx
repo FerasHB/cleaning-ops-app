@@ -1,10 +1,12 @@
 import { useAuth } from "@/context/AuthContext";
 import {
   completeJob as completeJobService,
+  createJob as createJobService,
+  getEmployees as getEmployeesService,
   getJobs,
   startJob as startJobService,
 } from "@/services/jobs/jobs.service";
-import { Job } from "@/types/job";
+import { CreateJobInput, EmployeeOption, Job } from "@/types/job";
 import React, {
   createContext,
   useCallback,
@@ -13,11 +15,15 @@ import React, {
   useMemo,
   useState,
 } from "react";
+
 type JobContextType = {
   jobs: Job[];
+  employees: EmployeeOption[];
   loading: boolean;
   error: string | null;
   refreshJobs: () => Promise<void>;
+  refreshEmployees: () => Promise<void>;
+  createJob: (input: CreateJobInput) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
   completeJob: (jobId: string) => Promise<void>;
 };
@@ -27,6 +33,7 @@ const JobContext = createContext<JobContextType | undefined>(undefined);
 export function JobProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,25 +45,53 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       console.error("Failed to load jobs:", err);
       setError(err?.message ?? "Jobs konnten nicht geladen werden.");
-    } finally {
-      setLoading(false);
+    }
+  }, []);
+
+  const refreshEmployees = useCallback(async () => {
+    try {
+      const data = await getEmployeesService();
+      setEmployees(data);
+    } catch (err: any) {
+      console.error("Failed to load employees:", err);
+      setError(err?.message ?? "Mitarbeiter konnten nicht geladen werden.");
     }
   }, []);
 
   useEffect(() => {
     if (!session) {
       setJobs([]);
+      setEmployees([]);
       setLoading(false);
       return;
     }
 
-    setLoading(true);
-    refreshJobs();
-  }, [session, refreshJobs]);
+    const loadAll = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        await Promise.all([refreshJobs(), refreshEmployees()]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAll();
+  }, [session, refreshJobs, refreshEmployees]);
+
+  const createJob = useCallback(async (input: CreateJobInput) => {
+    try {
+      const createdJob = await createJobService(input);
+      setJobs((prevJobs) => [createdJob, ...prevJobs]);
+    } catch (err) {
+      console.error("Failed to create job:", err);
+      throw err;
+    }
+  }, []);
 
   const startJob = useCallback(async (jobId: string) => {
     try {
-      await startJobService(jobId);
+      const startedAt = await startJobService(jobId);
 
       setJobs((prevJobs) =>
         prevJobs.map((job) =>
@@ -64,7 +99,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
             ? {
                 ...job,
                 status: "in_progress",
-                startedAt: new Date().toISOString(),
+                startedAt,
               }
             : job,
         ),
@@ -77,7 +112,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
   const completeJob = useCallback(async (jobId: string) => {
     try {
-      await completeJobService(jobId);
+      const completedAt = await completeJobService(jobId);
 
       setJobs((prevJobs) =>
         prevJobs.map((job) =>
@@ -85,7 +120,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
             ? {
                 ...job,
                 status: "completed",
-                completedAt: new Date().toISOString(),
+                completedAt,
               }
             : job,
         ),
@@ -99,13 +134,26 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       jobs,
+      employees,
       loading,
       error,
       refreshJobs,
+      refreshEmployees,
+      createJob,
       startJob,
       completeJob,
     }),
-    [jobs, loading, error, refreshJobs, startJob, completeJob],
+    [
+      jobs,
+      employees,
+      loading,
+      error,
+      refreshJobs,
+      refreshEmployees,
+      createJob,
+      startJob,
+      completeJob,
+    ],
   );
 
   return <JobContext.Provider value={value}>{children}</JobContext.Provider>;
