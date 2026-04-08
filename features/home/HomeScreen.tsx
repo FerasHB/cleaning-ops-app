@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/AuthContext";
 import { router } from "expo-router";
 import React from "react";
 import {
@@ -16,7 +17,16 @@ import { useTranslation } from "../../i18n/useTranslation";
 
 export default function HomeScreen() {
   const { jobs, startJob, completeJob } = useJobs();
+  const { signOut, role } = useAuth();
   const { t } = useTranslation();
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -26,9 +36,17 @@ export default function HomeScreen() {
         <View style={styles.headerRow}>
           <Text style={styles.title}>{t("title")}</Text>
 
-          <TouchableOpacity onPress={() => router.push("/admin")}>
-            <Text style={styles.adminButton}>Admin</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {role === "admin" && (
+              <TouchableOpacity onPress={() => router.push("/admin")}>
+                <Text style={styles.adminButton}>Admin</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity onPress={handleLogout}>
+              <Text style={styles.logoutButton}>Abmelden</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <Text style={styles.subtitle}>{t("subtitle")}</Text>
@@ -66,6 +84,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
   title: {
     color: "#FFFFFF",
     fontSize: 28,
@@ -79,6 +102,10 @@ const styles = StyleSheet.create({
   },
   adminButton: {
     color: "#2563EB",
+    fontWeight: "700",
+  },
+  logoutButton: {
+    color: "#F87171",
     fontWeight: "700",
   },
   listContent: {
