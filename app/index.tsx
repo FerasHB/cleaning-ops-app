@@ -1,11 +1,9 @@
 import { useAuth } from "@/context/AuthContext";
-import LoginScreen from "@/features/auth/LoginScreen";
 import HomeScreen from "@/features/home/HomeScreen";
-import React from "react";
 import { ActivityIndicator, View } from "react-native";
 
-export default function Index() {
-  const { session, loading } = useAuth();
+export default function IndexScreen() {
+  const { loading, session, profile } = useAuth();
 
   if (loading) {
     return (
@@ -17,14 +15,15 @@ export default function Index() {
           backgroundColor: "#121212",
         }}
       >
-        <ActivityIndicator />
+        <ActivityIndicator size="large" color="#2563EB" />
       </View>
     );
   }
 
-  if (!session) {
-    return <LoginScreen />;
+  if (!session || !profile) {
+    return null;
   }
 
+  // 👉 ALLE User landen zuerst im HomeScreen
   return <HomeScreen />;
 }
