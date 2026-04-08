@@ -31,6 +31,16 @@ type EmployeeRow = {
   id: string;
   full_name: string;
 };
+type UpdateJobInput = {
+  jobId: string;
+  customerName: string;
+  location: string;
+  service: string;
+  employeeId?: string | null;
+  notes?: string | null;
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
+};
 
 // Formatiert ein Datum / eine Uhrzeit schön auf Deutsch
 function formatDateTime(value: string): string {
@@ -237,6 +247,76 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
   }
 
   // Rückgabe im App-Format
+  return mapJob(data as JobRow);
+}
+
+// Aktualisiert einen bestehenden Job
+export async function updateJob(input: UpdateJobInput): Promise<Job> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw authError;
+  }
+
+  const userId = authData.user?.id;
+
+  if (!userId) {
+    throw new Error("Kein eingeloggter Benutzer gefunden.");
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .single();
+
+  if (profileError) {
+    throw new Error("Profil konnte nicht geladen werden.");
+  }
+
+  if (!profile || profile.role !== "admin") {
+    throw new Error("Nur Admins dürfen Jobs bearbeiten.");
+  }
+
+  const payload = {
+    assigned_to: input.employeeId ?? null,
+    customer_name: input.customerName.trim(),
+    service_name: input.service.trim(),
+    location_address: input.location.trim(),
+    scheduled_start: input.scheduledStart ?? null,
+    scheduled_end: input.scheduledEnd ?? null,
+    notes: input.notes?.trim() ? input.notes.trim() : null,
+  };
+
+  const { data, error } = await supabase
+    .from("jobs")
+    .update(payload)
+    .eq("id", input.jobId)
+    .select(
+      `
+      id,
+      customer_name,
+      service_name,
+      location_address,
+      scheduled_start,
+      scheduled_end,
+      status,
+      started_at,
+      completed_at,
+      notes,
+      assigned_to,
+      profiles:assigned_to (
+        id,
+        full_name
+      )
+      `
+    )
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
   return mapJob(data as JobRow);
 }
 

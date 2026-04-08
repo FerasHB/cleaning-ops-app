@@ -6,6 +6,7 @@ import {
   getEmployees as getEmployeesService,
   getJobs,
   startJob as startJobService,
+  updateJob as updateJobService,
 } from "@/services/jobs/jobs.service";
 import { CreateJobInput, EmployeeOption, Job } from "@/types/job";
 import React, {
@@ -26,6 +27,16 @@ type JobContextType = {
   refreshJobs: () => Promise<void>;
   refreshEmployees: () => Promise<void>;
   createJob: (input: CreateJobInput) => Promise<void>;
+  updateJob: (input: {
+    jobId: string;
+    customerName: string;
+    location: string;
+    service: string;
+    employeeId?: string | null;
+    notes?: string | null;
+    scheduledStart?: string | null;
+    scheduledEnd?: string | null;
+  }) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
   completeJob: (jobId: string) => Promise<void>;
 };
@@ -150,6 +161,32 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Bestehenden Job bearbeiten
+  const updateJob = useCallback(
+    async (input: {
+      jobId: string;
+      customerName: string;
+      location: string;
+      service: string;
+      employeeId?: string | null;
+      notes?: string | null;
+      scheduledStart?: string | null;
+      scheduledEnd?: string | null;
+    }) => {
+      try {
+        const updatedJob = await updateJobService(input);
+
+        setJobs((prevJobs) =>
+          prevJobs.map((job) => (job.id === updatedJob.id ? updatedJob : job)),
+        );
+      } catch (err) {
+        console.error("Failed to update job:", err);
+        throw err;
+      }
+    },
+    [],
+  );
+
   // Job starten
   const startJob = useCallback(async (jobId: string) => {
     try {
@@ -218,6 +255,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       refreshJobs,
       refreshEmployees,
       createJob,
+      updateJob,
       startJob,
       completeJob,
     }),
@@ -229,6 +267,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       refreshJobs,
       refreshEmployees,
       createJob,
+      updateJob,
       startJob,
       completeJob,
     ],

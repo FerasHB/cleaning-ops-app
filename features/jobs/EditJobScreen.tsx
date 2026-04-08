@@ -1,10 +1,9 @@
-// screens/AdminScreen.tsx
 import { Button, Card, Divider, Input, LoadingScreen } from "@/components/ui";
 import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -35,11 +34,34 @@ function normalizeScheduledStart(value: string): string | null {
   return date.toISOString();
 }
 
-export default function AdminScreen() {
-  const { createJob, employees, loading } = useJobs();
+function formatForInput(value?: string | null): string {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+export default function EditJobScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { jobs, employees, loading, refreshJobs, refreshEmployees, updateJob } =
+    useJobs();
   const { signOut, role, loading: authLoading } = useAuth();
 
-  // Formular-State
+  const job = useMemo(() => jobs.find((item) => item.id === id), [jobs, id]);
+
   const [customerName, setCustomerName] = useState("");
   const [location, setLocation] = useState("");
   const [service, setService] = useState("");
@@ -47,9 +69,47 @@ export default function AdminScreen() {
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  // Inline-Fehler pro Feld
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const isAdmin = role === "admin";
+
+  useEffect(() => {
+    if (!jobs.length) {
+      refreshJobs();
+    }
+
+    if (!employees.length) {
+      refreshEmployees();
+    }
+  }, [jobs.length, employees.length, refreshJobs, refreshEmployees]);
+
+  useEffect(() => {
+    if (!job) {
+      return;
+    }
+
+    setCustomerName(job.customerName);
+    setLocation(job.location);
+    setService(job.service);
+    setScheduledStart(formatForInput(job.scheduledStart));
+    setEmployeeId(job.employeeId ?? null);
+    setNotes(job.notes ?? "");
+  }, [job]);
+
+  const hasChanges = useMemo(() => {
+    if (!job) {
+      return false;
+    }
+
+    return (
+      customerName !== job.customerName ||
+      location !== job.location ||
+      service !== job.service ||
+      scheduledStart !== formatForInput(job.scheduledStart) ||
+      employeeId !== (job.employeeId ?? null) ||
+      notes !== (job.notes ?? "")
+    );
+  }, [customerName, employeeId, job, location, notes, scheduledStart, service]);
 
   const handleLogout = async () => {
     Alert.alert("Abmelden", "Möchtest du dich wirklich abmelden?", [
@@ -68,29 +128,47 @@ export default function AdminScreen() {
     ]);
   };
 
-  // Formular validieren – inline Fehler setzen
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    if (!customerName.trim())
+
+    if (!customerName.trim()) {
       newErrors.customerName = "Bitte Kundennamen eingeben.";
-    if (!location.trim()) newErrors.location = "Bitte Ort eingeben.";
-    if (!service.trim()) newErrors.service = "Bitte Service eingeben.";
+    }
+
+    if (!location.trim()) {
+      newErrors.location = "Bitte Ort eingeben.";
+    }
+
+    if (!service.trim()) {
+      newErrors.service = "Bitte Service eingeben.";
+    }
+
     if (scheduledStart.trim() && !normalizeScheduledStart(scheduledStart)) {
       newErrors.scheduledStart =
         "Bitte Datum und Uhrzeit korrekt eingeben, z.B. 2026-04-10 07:30.";
     }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleCreateJob = async () => {
-    if (!validate()) return;
+  const handleSave = async () => {
+    if (!job) {
+      Alert.alert("Fehler", "Job wurde nicht gefunden.");
+      return;
+    }
+
+    if (!validate()) {
+      return;
+    }
 
     const normalizedScheduledStart = normalizeScheduledStart(scheduledStart);
 
     try {
       setSubmitting(true);
-      await createJob({
+
+      await updateJob({
+        jobId: job.id,
         customerName: customerName.trim(),
         location: location.trim(),
         service: service.trim(),
@@ -99,28 +177,51 @@ export default function AdminScreen() {
         notes: notes.trim() || null,
       });
 
-      // Formular zurücksetzen
-      setCustomerName("");
-      setLocation("");
-      setService("");
-      setScheduledStart("");
-      setEmployeeId(null);
-      setNotes("");
-      setErrors({});
-
-      // Kurzes Erfolgsfeedback ohne blockierenden Alert
-      Alert.alert("✓ Erfolgreich", "Job wurde erstellt.");
+      Alert.alert("Erfolgreich", "Job wurde aktualisiert.");
+      router.back();
     } catch (err: any) {
       Alert.alert(
         "Fehler",
-        err?.message ?? "Job konnte nicht erstellt werden.",
+        err?.message ?? "Job konnte nicht gespeichert werden.",
       );
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (authLoading) return <LoadingScreen />;
+  if (authLoading || loading) {
+    return <LoadingScreen />;
+  }
+
+  if (!isAdmin) {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <StatusBar barStyle="light-content" />
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>Kein Zugriff</Text>
+          <Text style={styles.emptyText}>
+            Nur Admins dürfen Jobs bearbeiten.
+          </Text>
+          <Button label="Zurück" onPress={() => router.back()} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!job) {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <StatusBar barStyle="light-content" />
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>Job nicht gefunden</Text>
+          <Text style={styles.emptyText}>
+            Der gewünschte Job konnte nicht geladen werden.
+          </Text>
+          <Button label="Zurück" onPress={() => router.back()} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -130,21 +231,18 @@ export default function AdminScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* ── Sticky Header ── */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
             style={styles.backButton}
             activeOpacity={0.7}
           >
-            {/* Pfeil-Icon ohne externe Bibliothek */}
             <Text style={styles.backIcon}>‹</Text>
             <Text style={styles.backLabel}>Zurück</Text>
           </TouchableOpacity>
 
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Job erstellen</Text>
-            {/* Zeigt zur Orientierung die aktuelle Rolle */}
+            <Text style={styles.headerTitle}>Job bearbeiten</Text>
             {role && (
               <View style={styles.roleBadge}>
                 <Text style={styles.roleBadgeText}>{role}</Text>
@@ -166,9 +264,8 @@ export default function AdminScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ── Abschnitt: Job-Details ── */}
           <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Job-Details</Text>
+            <Text style={styles.sectionTitle}>Job-Details bearbeiten</Text>
             <Text style={styles.sectionSubtitle}>
               Pflichtfelder sind mit * markiert
             </Text>
@@ -181,8 +278,9 @@ export default function AdminScreen() {
               value={customerName}
               onChangeText={(t) => {
                 setCustomerName(t);
-                if (errors.customerName)
+                if (errors.customerName) {
                   setErrors((e) => ({ ...e, customerName: "" }));
+                }
               }}
               error={errors.customerName}
             />
@@ -193,7 +291,9 @@ export default function AdminScreen() {
               value={location}
               onChangeText={(t) => {
                 setLocation(t);
-                if (errors.location) setErrors((e) => ({ ...e, location: "" }));
+                if (errors.location) {
+                  setErrors((e) => ({ ...e, location: "" }));
+                }
               }}
               error={errors.location}
             />
@@ -204,7 +304,9 @@ export default function AdminScreen() {
               value={service}
               onChangeText={(t) => {
                 setService(t);
-                if (errors.service) setErrors((e) => ({ ...e, service: "" }));
+                if (errors.service) {
+                  setErrors((e) => ({ ...e, service: "" }));
+                }
               }}
               error={errors.service}
             />
@@ -228,21 +330,18 @@ export default function AdminScreen() {
               value={notes}
               onChangeText={setNotes}
               multiline
-              // Multiline-Inputs brauchen eine Mindesthöhe
               style={styles.notesInput}
             />
           </Card>
 
-          {/* ── Abschnitt: Mitarbeiter zuweisen ── */}
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>Mitarbeiter</Text>
             <Text style={styles.sectionSubtitle}>
-              Optional – kann später geändert werden
+              Zuweisung kann jederzeit geändert werden
             </Text>
 
             <Divider style={styles.sectionDivider} />
 
-            {/* "Nicht zuweisen" als erste Option */}
             <EmployeeOption
               label="Nicht zuweisen"
               sublabel="Job bleibt offen"
@@ -267,12 +366,11 @@ export default function AdminScreen() {
             )}
           </Card>
 
-          {/* ── Aktion ── */}
           <Button
-            label="Job erstellen"
+            label={hasChanges ? "Änderungen speichern" : "Keine Änderungen"}
             loading={submitting}
-            disabled={loading}
-            onPress={handleCreateJob}
+            disabled={loading || !hasChanges}
+            onPress={handleSave}
           />
 
           <View style={styles.bottomSpacer} />
@@ -282,7 +380,6 @@ export default function AdminScreen() {
   );
 }
 
-// ── Lokale Komponente: Mitarbeiter-Auswahl-Zeile ──
 interface EmployeeOptionProps {
   label: string;
   sublabel?: string;
@@ -302,7 +399,6 @@ function EmployeeOption({
       style={[styles.employeeRow, isSelected && styles.employeeRowSelected]}
       activeOpacity={0.7}
     >
-      {/* Auswahl-Indikator (Kreis wie ein Radio-Button) */}
       <View
         style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}
       >
@@ -330,8 +426,23 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg.base,
   },
   flex: { flex: 1 },
-
-  // Header
+  emptyWrap: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
+  },
+  emptyTitle: {
+    fontSize: Typography.size.lg,
+    fontWeight: Typography.weight.bold,
+    color: Colors.text.primary,
+    textAlign: "center",
+  },
+  emptyText: {
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    textAlign: "center",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -392,18 +503,12 @@ const styles = StyleSheet.create({
     color: Colors.status.danger,
     fontWeight: Typography.weight.medium,
   },
-
-  // Scroll
   scroll: {
     padding: Spacing.lg,
     gap: Spacing.md,
     paddingBottom: 40,
   },
-
-  // Sections
-  section: {
-    // Card bringt schon Padding und Background mit
-  },
+  section: {},
   sectionTitle: {
     fontSize: Typography.size.md,
     fontWeight: Typography.weight.semibold,
@@ -418,21 +523,17 @@ const styles = StyleSheet.create({
   sectionDivider: {
     marginVertical: Spacing.md,
   },
-
   notesInput: {
     minHeight: 90,
     textAlignVertical: "top",
     paddingTop: 14,
   },
-
   noEmployees: {
     fontSize: Typography.size.sm,
     color: Colors.text.muted,
     textAlign: "center",
     paddingVertical: Spacing.lg,
   },
-
-  // Mitarbeiter-Zeile
   employeeRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -445,8 +546,6 @@ const styles = StyleSheet.create({
   employeeRowSelected: {
     backgroundColor: Colors.accent.subtle,
   },
-
-  // Radio-Button
   radioOuter: {
     width: 20,
     height: 20,
@@ -465,8 +564,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
     backgroundColor: Colors.accent.default,
   },
-
-  // Mitarbeiter-Info
   employeeInfo: { flex: 1, gap: 1 },
   employeeName: {
     fontSize: Typography.size.base,
@@ -480,6 +577,5 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.xs,
     color: Colors.text.muted,
   },
-
   bottomSpacer: { height: Spacing.xl },
 });

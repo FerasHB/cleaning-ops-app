@@ -1,7 +1,7 @@
 // screens/HomeScreen.tsx
 import { useAuth } from "@/context/AuthContext";
 import { router } from "expo-router";
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   FlatList,
   StatusBar,
@@ -22,6 +22,10 @@ export default function HomeScreen() {
   const { jobs, startJob, completeJob, loading } = useJobs();
   const { signOut, role, user } = useAuth();
   const { t } = useTranslation();
+
+  const [selectedFilter, setSelectedFilter] = useState<
+    "all" | "open" | "in_progress" | "completed"
+  >("all");
 
   const handleLogout = async () => {
     try {
@@ -44,20 +48,41 @@ export default function HomeScreen() {
   const inProgressJobs = jobs.filter((j) => j.status === "in_progress");
   const doneJobs = jobs.filter((j) => j.status === "completed");
 
+  const filteredJobs = useMemo(() => {
+    switch (selectedFilter) {
+      case "open":
+        return openJobs;
+      case "in_progress":
+        return inProgressJobs;
+      case "completed":
+        return doneJobs;
+      default:
+        return jobs;
+    }
+  }, [selectedFilter, jobs, openJobs, inProgressJobs, doneJobs]);
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <StatusBar barStyle="light-content" />
 
       <FlatList
-        data={jobs}
+        data={filteredJobs}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         // Leerliste abfangen – nur wenn auch wirklich keine Jobs da sind
         ListEmptyComponent={
           <EmptyState
-            title="Keine Jobs vorhanden"
-            message="Sobald ein Admin einen Job erstellt, erscheint er hier."
+            title={
+              selectedFilter === "all"
+                ? "Keine Jobs vorhanden"
+                : "Keine Jobs in diesem Filter"
+            }
+            message={
+              selectedFilter === "all"
+                ? "Sobald ein Admin einen Job erstellt, erscheint er hier."
+                : "Wähle einen anderen Filter oder erstelle neue Jobs."
+            }
           />
         }
         // Header: Begrüßung + Stats + Admin-Button
@@ -97,24 +122,45 @@ export default function HomeScreen() {
             {/* ── Stat-Chips: schneller Status-Überblick ── */}
             <View style={styles.statRow}>
               <StatChip
+                label="Alle"
+                count={jobs.length}
+                variant="neutral"
+                active={selectedFilter === "all"}
+                onPress={() => setSelectedFilter("all")}
+              />
+              <StatChip
                 label="Offen"
                 count={openJobs.length}
                 variant="warning"
+                active={selectedFilter === "open"}
+                onPress={() => setSelectedFilter("open")}
               />
               <StatChip
                 label="In Arbeit"
                 count={inProgressJobs.length}
                 variant="info"
+                active={selectedFilter === "in_progress"}
+                onPress={() => setSelectedFilter("in_progress")}
               />
               <StatChip
                 label="Erledigt"
                 count={doneJobs.length}
                 variant="success"
+                active={selectedFilter === "completed"}
+                onPress={() => setSelectedFilter("completed")}
               />
             </View>
 
             {/* ── Sektion-Titel ── */}
-            <Text style={styles.sectionTitle}>Alle Jobs</Text>
+            <Text style={styles.sectionTitle}>
+              {selectedFilter === "all"
+                ? "Alle Jobs"
+                : selectedFilter === "open"
+                  ? "Offene Jobs"
+                  : selectedFilter === "in_progress"
+                    ? "Jobs in Arbeit"
+                    : "Erledigte Jobs"}
+            </Text>
           </>
         }
         renderItem={({ item }) => (
@@ -122,6 +168,11 @@ export default function HomeScreen() {
             job={item}
             onStart={() => startJob(item.id)}
             onComplete={() => completeJob(item.id)}
+            onEdit={
+              role === "admin"
+                ? () => router.push(`/jobs/${item.id}/edit`)
+                : undefined
+            }
           />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -135,11 +186,14 @@ export default function HomeScreen() {
 interface StatChipProps {
   label: string;
   count: number;
-  variant: "warning" | "info" | "success";
+  variant: "neutral" | "warning" | "info" | "success";
+  active: boolean;
+  onPress: () => void;
 }
 
-function StatChip({ label, count, variant }: StatChipProps) {
+function StatChip({ label, count, variant, active, onPress }: StatChipProps) {
   const variantStyles = {
+    neutral: { bg: Colors.bg.elevated, text: Colors.text.primary },
     warning: { bg: Colors.status.warningBg, text: Colors.status.warning },
     info: { bg: Colors.accent.subtle, text: Colors.accent.text },
     success: { bg: Colors.status.successBg, text: Colors.status.success },
@@ -148,10 +202,18 @@ function StatChip({ label, count, variant }: StatChipProps) {
   const { bg, text } = variantStyles[variant];
 
   return (
-    <View style={[styles.statChip, { backgroundColor: bg }]}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={[
+        styles.statChip,
+        { backgroundColor: bg },
+        active && styles.statChipActive,
+      ]}
+    >
       <Text style={[styles.statCount, { color: text }]}>{count}</Text>
       <Text style={[styles.statLabel, { color: text }]}>{label}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -224,15 +286,21 @@ const styles = StyleSheet.create({
   // Stats
   statRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: Spacing.sm,
     marginBottom: Spacing.xl,
   },
   statChip: {
     flex: 1,
+    minWidth: "48%",
     borderRadius: Radius.md,
     paddingVertical: Spacing.md,
     alignItems: "center",
     gap: 2,
+  },
+  statChipActive: {
+    borderWidth: 1,
+    borderColor: Colors.border.focus,
   },
   statCount: {
     fontSize: Typography.size.xl,
