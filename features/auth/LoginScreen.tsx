@@ -9,12 +9,16 @@ import {
   View,
 } from "react-native";
 
+// Einfacher Login-Screen für die App
 export default function LoginScreen() {
+  // States für Eingaben und Ladezustand
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Login-Funktion
   const handleLogin = async () => {
+    // Kleine Prüfung: beide Felder müssen ausgefüllt sein
     if (!email || !password) {
       Alert.alert("Fehler", "Bitte E-Mail und Passwort eingeben.");
       return;
@@ -23,45 +27,53 @@ export default function LoginScreen() {
     try {
       setLoading(true);
 
+      // Login mit Supabase
       const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: email.trim(), // Leerzeichen am Anfang/Ende entfernen
         password,
       });
 
+      // Falls Supabase einen Fehler zurückgibt
       if (error) {
         Alert.alert("Login fehlgeschlagen", error.message);
       }
     } catch (error) {
+      // Falls allgemein etwas schiefgeht
       Alert.alert("Fehler", "Login konnte nicht durchgeführt werden.");
       console.error("Login error:", error);
     } finally {
+      // Egal ob Erfolg oder Fehler → Loading wieder aus
       setLoading(false);
     }
   };
 
   return (
     <View style={styles.container}>
+      {/* Überschrift */}
       <Text style={styles.title}>Login</Text>
 
+      {/* Eingabe für E-Mail */}
       <TextInput
         style={styles.input}
         placeholder="E-Mail"
         placeholderTextColor="#888"
-        autoCapitalize="none"
+        autoCapitalize="none" // damit nichts automatisch groß geschrieben wird
         keyboardType="email-address"
         value={email}
         onChangeText={setEmail}
       />
 
+      {/* Eingabe für Passwort */}
       <TextInput
         style={styles.input}
         placeholder="Passwort"
         placeholderTextColor="#888"
-        secureTextEntry
+        secureTextEntry // Passwort wird versteckt angezeigt
         value={password}
         onChangeText={setPassword}
       />
 
+      {/* Login-Button */}
       <Pressable style={styles.button} onPress={handleLogin} disabled={loading}>
         <Text style={styles.buttonText}>
           {loading ? "Lade..." : "Einloggen"}
@@ -71,6 +83,7 @@ export default function LoginScreen() {
   );
 }
 
+// Styles für den Login-Screen
 const styles = StyleSheet.create({
   container: {
     flex: 1,

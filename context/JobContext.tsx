@@ -17,6 +17,7 @@ import React, {
   useState,
 } from "react";
 
+// Was der JobContext später für die App bereitstellt
 type JobContextType = {
   jobs: Job[];
   employees: EmployeeOption[];
@@ -29,15 +30,26 @@ type JobContextType = {
   completeJob: (jobId: string) => Promise<void>;
 };
 
+// Context erstellen
 const JobContext = createContext<JobContextType | undefined>(undefined);
 
 export function JobProvider({ children }: { children: React.ReactNode }) {
+  // Prüfen, ob ein User eingeloggt ist
   const { session } = useAuth();
+
+  // Liste aller Jobs
   const [jobs, setJobs] = useState<Job[]>([]);
+
+  // Liste aller Mitarbeiter für Dropdown / Zuweisung
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+
+  // Globaler Loading-State für Jobs + Mitarbeiter
   const [loading, setLoading] = useState(true);
+
+  // Fehlertext, falls etwas schiefgeht
   const [error, setError] = useState<string | null>(null);
 
+  // Jobs neu aus der DB laden
   const refreshJobs = useCallback(async () => {
     try {
       setError(null);
@@ -49,6 +61,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Mitarbeiter neu aus der DB laden
   const refreshEmployees = useCallback(async () => {
     try {
       const data = await getEmployeesService();
@@ -60,6 +73,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Wenn kein User eingeloggt ist → alles zurücksetzen
     if (!session) {
       setJobs([]);
       setEmployees([]);
@@ -67,6 +81,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Lädt beim Start Jobs und Mitarbeiter gleichzeitig
     const loadAll = async () => {
       try {
         setLoading(true);
@@ -81,21 +96,24 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   }, [session, refreshJobs, refreshEmployees]);
 
   useEffect(() => {
+    // Ohne Session kein Realtime nötig
     if (!session) {
       return;
     }
 
+    // Realtime-Channel für Änderungen an der jobs-Tabelle
     const channel = supabase
       .channel("jobs-realtime")
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "*", // reagiert auf INSERT, UPDATE, DELETE
           schema: "public",
           table: "jobs",
         },
         async (payload) => {
           console.log("Realtime jobs change:", payload.eventType);
+          // Bei jeder Änderung Jobs neu laden
           await refreshJobs();
         },
       )
@@ -103,15 +121,20 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         console.log("Jobs realtime status:", status);
       });
 
+    // Channel beim Unmount wieder sauber entfernen
     return () => {
       supabase.removeChannel(channel);
     };
   }, [session, refreshJobs]);
 
+  // Neuen Job erstellen
   const createJob = useCallback(async (input: CreateJobInput) => {
     try {
       const createdJob = await createJobService(input);
+
+      // Den neu erstellten Job direkt vorne in die Liste setzen
       setJobs((prevJobs) => [createdJob, ...prevJobs]);
+
       console.log("Creating job with employeeId:", input.employeeId);
     } catch (err) {
       console.error("Failed to create job:", err);
@@ -119,10 +142,12 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Job starten
   const startJob = useCallback(async (jobId: string) => {
     try {
       const startedAt = await startJobService(jobId);
 
+      // Status und Startzeit lokal direkt updaten
       setJobs((prevJobs) =>
         prevJobs.map((job) =>
           job.id === jobId
@@ -140,10 +165,12 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Job abschließen
   const completeJob = useCallback(async (jobId: string) => {
     try {
       const completedAt = await completeJobService(jobId);
 
+      // Status und Endzeit lokal direkt updaten
       setJobs((prevJobs) =>
         prevJobs.map((job) =>
           job.id === jobId
@@ -161,6 +188,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Alles, was im Context verfügbar sein soll
   const value = useMemo(
     () => ({
       jobs,
@@ -189,9 +217,11 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   return <JobContext.Provider value={value}>{children}</JobContext.Provider>;
 }
 
+// Eigener Hook für einfacheren Zugriff auf den JobContext
 export function useJobs() {
   const context = useContext(JobContext);
 
+  // Schutz, falls der Hook außerhalb vom Provider benutzt wird
   if (!context) {
     throw new Error("useJobs must be used within a JobProvider");
   }

@@ -14,17 +14,26 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Admin-Bereich zum Erstellen neuer Jobs
 export default function AdminScreen() {
+  // Aus dem JobContext holen wir die Funktion zum Erstellen,
+  // die Mitarbeiterliste und den Ladezustand
   const { createJob, employees, loading } = useJobs();
+
+  // Aus dem AuthContext holen wir Logout, Rolle und Auth-Loading
   const { signOut, role, loading: authLoading } = useAuth();
 
+  // Formular-State für die Eingabefelder
   const [customerName, setCustomerName] = useState("");
   const [location, setLocation] = useState("");
   const [service, setService] = useState("");
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+
+  // Extra State, damit man während dem Absenden nicht doppelt klickt
   const [submitting, setSubmitting] = useState(false);
 
+  // Logout-Funktion
   const handleLogout = async () => {
     try {
       await signOut();
@@ -33,7 +42,9 @@ export default function AdminScreen() {
     }
   };
 
+  // Job erstellen
   const handleCreateJob = async () => {
+    // Kleine Validierung: die wichtigsten Felder müssen ausgefüllt sein
     if (!customerName.trim() || !location.trim() || !service.trim()) {
       Alert.alert("Fehler", "Bitte Kunde, Ort und Service ausfüllen.");
       return;
@@ -42,14 +53,16 @@ export default function AdminScreen() {
     try {
       setSubmitting(true);
 
+      // Job an den Context / Service schicken
       await createJob({
         customerName: customerName.trim(),
         location: location.trim(),
         service: service.trim(),
         employeeId,
-        notes: notes.trim() || null,
+        notes: notes.trim() || null, // leere Notizen als null speichern
       });
 
+      // Nach Erfolg Formular zurücksetzen
       setCustomerName("");
       setLocation("");
       setService("");
@@ -67,6 +80,7 @@ export default function AdminScreen() {
     }
   };
 
+  // Wenn Auth noch lädt → Spinner anzeigen
   if (authLoading) {
     return (
       <SafeAreaView edges={["top"]} style={styles.safeAreaCentered}>
@@ -78,17 +92,23 @@ export default function AdminScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
+        {/* Zurück zur vorherigen Seite */}
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backButton}>← Zurück</Text>
         </TouchableOpacity>
 
+        {/* Logout Button */}
         <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
           <Text style={styles.logoutButtonText}>Abmelden</Text>
         </TouchableOpacity>
 
+        {/* Zeigt zur Kontrolle die aktuelle Rolle */}
         <Text style={styles.roleText}>Rolle: {role ?? "unbekannt"}</Text>
+
+        {/* Titel vom Screen */}
         <Text style={styles.title}>Admin – Job erstellen</Text>
 
+        {/* Kunde eingeben */}
         <TextInput
           placeholder="Kunde"
           placeholderTextColor="#888"
@@ -97,6 +117,7 @@ export default function AdminScreen() {
           onChangeText={setCustomerName}
         />
 
+        {/* Ort eingeben */}
         <TextInput
           placeholder="Ort"
           placeholderTextColor="#888"
@@ -105,6 +126,7 @@ export default function AdminScreen() {
           onChangeText={setLocation}
         />
 
+        {/* Service eingeben */}
         <TextInput
           placeholder="Service"
           placeholderTextColor="#888"
@@ -113,6 +135,7 @@ export default function AdminScreen() {
           onChangeText={setService}
         />
 
+        {/* Notizen sind optional */}
         <TextInput
           placeholder="Notizen (optional)"
           placeholderTextColor="#888"
@@ -122,9 +145,11 @@ export default function AdminScreen() {
           multiline
         />
 
+        {/* Bereich zur Mitarbeiterauswahl */}
         <Text style={styles.label}>Mitarbeiter auswählen</Text>
 
         <View style={styles.dropdown}>
+          {/* Option: Job erstmal niemandem zuweisen */}
           <TouchableOpacity
             style={[
               styles.employeeItem,
@@ -142,6 +167,7 @@ export default function AdminScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Liste aller verfügbaren Mitarbeiter */}
           {employees.map((emp) => {
             const isSelected = employeeId === emp.id;
 
@@ -167,6 +193,7 @@ export default function AdminScreen() {
           })}
         </View>
 
+        {/* Button zum Erstellen des Jobs */}
         <TouchableOpacity
           style={[
             styles.button,
@@ -184,6 +211,7 @@ export default function AdminScreen() {
   );
 }
 
+// Styles für den AdminScreen
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -234,7 +262,7 @@ const styles = StyleSheet.create({
   },
   notesInput: {
     minHeight: 100,
-    textAlignVertical: "top",
+    textAlignVertical: "top", // Text startet oben links bei multiline
   },
   label: {
     color: "#A1A1AA",
@@ -270,7 +298,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.6, // zeigt optisch, dass der Button gerade deaktiviert ist
   },
   buttonText: {
     color: "#fff",

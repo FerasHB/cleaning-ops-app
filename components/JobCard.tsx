@@ -3,6 +3,10 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "../i18n/useTranslation";
 import { Job } from "../types/job";
 
+// Props für die Komponente:
+// job → die Daten vom Auftrag
+// onStart → Funktion wenn "Start" gedrückt wird
+// onComplete → Funktion wenn "Complete" gedrückt wird
 type Props = {
   job: Job;
   onStart: () => void;
@@ -10,15 +14,18 @@ type Props = {
 };
 
 export default function JobCard({ job, onStart, onComplete }: Props) {
+  // Übersetzungs-Funktion (z.B. für Buttons & Status)
   const { t } = useTranslation();
 
+  // Badge Farbe je nach Status bestimmen
   const badgeStyle =
     job.status === "open"
-      ? styles.badgeOpen
+      ? styles.badgeOpen // grau
       : job.status === "in_progress"
-        ? styles.badgeProgress
-        : styles.badgeCompleted;
+        ? styles.badgeProgress // orange
+        : styles.badgeCompleted; // grün
 
+  // Text für Status (übersetzt)
   const statusLabel =
     job.status === "open"
       ? t("open")
@@ -28,40 +35,50 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
 
   return (
     <View style={styles.card}>
+      {/* Kopfbereich: Kundenname + Status Badge */}
       <View style={styles.headerRow}>
         <Text style={styles.customer}>{job.customerName}</Text>
 
+        {/* Status Badge */}
         <View style={[styles.badge, badgeStyle]}>
           <Text style={styles.badgeText}>{statusLabel}</Text>
         </View>
       </View>
 
+      {/* Job Details */}
       <Text style={styles.detail}>📍 {job.location}</Text>
       <Text style={styles.detail}>🕒 {job.time}</Text>
       <Text style={styles.detail}>🧽 {job.service}</Text>
+
+      {/* Wenn kein Mitarbeiter → "-" anzeigen */}
       <Text style={styles.detail}>👤 {job.employeeName ?? "-"}</Text>
 
+      {/* Buttons für Aktionen */}
       <View style={styles.buttonRow}>
+        {/* Start Button */}
         <TouchableOpacity
           style={[
             styles.button,
             styles.startButton,
+            // Wenn Job nicht "open" ist → Button deaktiviert (halb transparent)
             job.status !== "open" && { opacity: 0.5 },
           ]}
           onPress={onStart}
-          disabled={job.status !== "open"}
+          disabled={job.status !== "open"} // nur klickbar wenn Status "open"
         >
           <Text style={styles.buttonText}>{t("startJob")}</Text>
         </TouchableOpacity>
 
+        {/* Complete Button */}
         <TouchableOpacity
           style={[
             styles.button,
             styles.completeButton,
+            // Nur aktiv wenn Job läuft
             job.status !== "in_progress" && { opacity: 0.5 },
           ]}
           onPress={onComplete}
-          disabled={job.status !== "in_progress"}
+          disabled={job.status !== "in_progress"} // nur klickbar wenn Status "in_progress"
         >
           <Text style={styles.buttonText}>{t("complete")}</Text>
         </TouchableOpacity>
@@ -70,9 +87,10 @@ export default function JobCard({ job, onStart, onComplete }: Props) {
   );
 }
 
+// Styles für die UI (Dark Theme)
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#1E1E1E",
+    backgroundColor: "#1E1E1E", // dunkle Karte
     borderRadius: 18,
     padding: 16,
     marginBottom: 14,
@@ -80,7 +98,7 @@ const styles = StyleSheet.create({
     borderColor: "#2A2A2A",
   },
   headerRow: {
-    flexDirection: "row",
+    flexDirection: "row", // nebeneinander
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
@@ -100,16 +118,16 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: 999, // rund
   },
   badgeOpen: {
-    backgroundColor: "#3A3A3A",
+    backgroundColor: "#3A3A3A", // grau
   },
   badgeProgress: {
-    backgroundColor: "#8A5A00",
+    backgroundColor: "#8A5A00", // orange
   },
   badgeCompleted: {
-    backgroundColor: "#1F6F43",
+    backgroundColor: "#1F6F43", // grün
   },
   badgeText: {
     color: "#FFFFFF",
@@ -128,10 +146,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   startButton: {
-    backgroundColor: "#2563EB",
+    backgroundColor: "#2563EB", // blau
   },
   completeButton: {
-    backgroundColor: "#16A34A",
+    backgroundColor: "#16A34A", // grün
   },
   buttonText: {
     color: "#FFFFFF",
