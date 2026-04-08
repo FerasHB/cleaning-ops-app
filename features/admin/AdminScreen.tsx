@@ -1,75 +1,89 @@
+// screens/AdminScreen.tsx
+import { Button, Card, Divider, Input, LoadingScreen } from "@/components/ui";
+import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Admin-Bereich zum Erstellen neuer Jobs
 export default function AdminScreen() {
-  // Aus dem JobContext holen wir die Funktion zum Erstellen,
-  // die Mitarbeiterliste und den Ladezustand
   const { createJob, employees, loading } = useJobs();
-
-  // Aus dem AuthContext holen wir Logout, Rolle und Auth-Loading
   const { signOut, role, loading: authLoading } = useAuth();
 
-  // Formular-State für die Eingabefelder
+  // Formular-State
   const [customerName, setCustomerName] = useState("");
   const [location, setLocation] = useState("");
   const [service, setService] = useState("");
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
-
-  // Extra State, damit man während dem Absenden nicht doppelt klickt
   const [submitting, setSubmitting] = useState(false);
 
-  // Logout-Funktion
+  // Inline-Fehler pro Feld
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
   const handleLogout = async () => {
-    try {
-      await signOut();
-    } catch (err: any) {
-      Alert.alert("Fehler", err?.message ?? "Abmeldung fehlgeschlagen.");
-    }
+    Alert.alert("Abmelden", "Möchtest du dich wirklich abmelden?", [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Abmelden",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await signOut();
+          } catch (err: any) {
+            Alert.alert("Fehler", err?.message ?? "Abmeldung fehlgeschlagen.");
+          }
+        },
+      },
+    ]);
   };
 
-  // Job erstellen
+  // Formular validieren – inline Fehler setzen
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    if (!customerName.trim())
+      newErrors.customerName = "Bitte Kundennamen eingeben.";
+    if (!location.trim()) newErrors.location = "Bitte Ort eingeben.";
+    if (!service.trim()) newErrors.service = "Bitte Service eingeben.";
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleCreateJob = async () => {
-    // Kleine Validierung: die wichtigsten Felder müssen ausgefüllt sein
-    if (!customerName.trim() || !location.trim() || !service.trim()) {
-      Alert.alert("Fehler", "Bitte Kunde, Ort und Service ausfüllen.");
-      return;
-    }
+    if (!validate()) return;
 
     try {
       setSubmitting(true);
-
-      // Job an den Context / Service schicken
       await createJob({
         customerName: customerName.trim(),
         location: location.trim(),
         service: service.trim(),
         employeeId,
-        notes: notes.trim() || null, // leere Notizen als null speichern
+        notes: notes.trim() || null,
       });
 
-      // Nach Erfolg Formular zurücksetzen
+      // Formular zurücksetzen
       setCustomerName("");
       setLocation("");
       setService("");
       setEmployeeId(null);
       setNotes("");
+      setErrors({});
 
-      Alert.alert("Erfolg", "Job wurde erstellt.");
+      // Kurzes Erfolgsfeedback ohne blockierenden Alert
+      Alert.alert("✓ Erfolgreich", "Job wurde erstellt.");
     } catch (err: any) {
       Alert.alert(
         "Fehler",
@@ -80,228 +94,353 @@ export default function AdminScreen() {
     }
   };
 
-  // Wenn Auth noch lädt → Spinner anzeigen
-  if (authLoading) {
-    return (
-      <SafeAreaView edges={["top"]} style={styles.safeAreaCentered}>
-        <ActivityIndicator size="large" color="#2563EB" />
-      </SafeAreaView>
-    );
-  }
+  if (authLoading) return <LoadingScreen />;
 
   return (
-    <SafeAreaView edges={["top"]} style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Zurück zur vorherigen Seite */}
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backButton}>← Zurück</Text>
-        </TouchableOpacity>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <StatusBar barStyle="light-content" />
 
-        {/* Logout Button */}
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <Text style={styles.logoutButtonText}>Abmelden</Text>
-        </TouchableOpacity>
-
-        {/* Zeigt zur Kontrolle die aktuelle Rolle */}
-        <Text style={styles.roleText}>Rolle: {role ?? "unbekannt"}</Text>
-
-        {/* Titel vom Screen */}
-        <Text style={styles.title}>Admin – Job erstellen</Text>
-
-        {/* Kunde eingeben */}
-        <TextInput
-          placeholder="Kunde"
-          placeholderTextColor="#888"
-          style={styles.input}
-          value={customerName}
-          onChangeText={setCustomerName}
-        />
-
-        {/* Ort eingeben */}
-        <TextInput
-          placeholder="Ort"
-          placeholderTextColor="#888"
-          style={styles.input}
-          value={location}
-          onChangeText={setLocation}
-        />
-
-        {/* Service eingeben */}
-        <TextInput
-          placeholder="Service"
-          placeholderTextColor="#888"
-          style={styles.input}
-          value={service}
-          onChangeText={setService}
-        />
-
-        {/* Notizen sind optional */}
-        <TextInput
-          placeholder="Notizen (optional)"
-          placeholderTextColor="#888"
-          style={[styles.input, styles.notesInput]}
-          value={notes}
-          onChangeText={setNotes}
-          multiline
-        />
-
-        {/* Bereich zur Mitarbeiterauswahl */}
-        <Text style={styles.label}>Mitarbeiter auswählen</Text>
-
-        <View style={styles.dropdown}>
-          {/* Option: Job erstmal niemandem zuweisen */}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        {/* ── Sticky Header ── */}
+        <View style={styles.header}>
           <TouchableOpacity
-            style={[
-              styles.employeeItem,
-              employeeId === null && styles.selectedEmployee,
-            ]}
-            onPress={() => setEmployeeId(null)}
+            onPress={() => router.back()}
+            style={styles.backButton}
+            activeOpacity={0.7}
           >
-            <Text
-              style={[
-                styles.employeeText,
-                employeeId === null && styles.selectedEmployeeText,
-              ]}
-            >
-              Nicht zuweisen
-            </Text>
+            {/* Pfeil-Icon ohne externe Bibliothek */}
+            <Text style={styles.backIcon}>‹</Text>
+            <Text style={styles.backLabel}>Zurück</Text>
           </TouchableOpacity>
 
-          {/* Liste aller verfügbaren Mitarbeiter */}
-          {employees.map((emp) => {
-            const isSelected = employeeId === emp.id;
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Job erstellen</Text>
+            {/* Zeigt zur Orientierung die aktuelle Rolle */}
+            {role && (
+              <View style={styles.roleBadge}>
+                <Text style={styles.roleBadgeText}>{role}</Text>
+              </View>
+            )}
+          </View>
 
-            return (
-              <TouchableOpacity
-                key={emp.id}
-                style={[
-                  styles.employeeItem,
-                  isSelected && styles.selectedEmployee,
-                ]}
-                onPress={() => setEmployeeId(emp.id)}
-              >
-                <Text
-                  style={[
-                    styles.employeeText,
-                    isSelected && styles.selectedEmployeeText,
-                  ]}
-                >
-                  {emp.fullName}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          <TouchableOpacity
+            onPress={handleLogout}
+            style={styles.logoutButton}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.logoutText}>Abmelden</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Button zum Erstellen des Jobs */}
-        <TouchableOpacity
-          style={[
-            styles.button,
-            (submitting || loading) && styles.buttonDisabled,
-          ]}
-          onPress={handleCreateJob}
-          disabled={submitting || loading}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.buttonText}>
-            {submitting ? "Wird erstellt..." : "Job erstellen"}
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
+          {/* ── Abschnitt: Job-Details ── */}
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>Job-Details</Text>
+            <Text style={styles.sectionSubtitle}>
+              Pflichtfelder sind mit * markiert
+            </Text>
+
+            <Divider style={styles.sectionDivider} />
+
+            <Input
+              label="Kunde *"
+              placeholder="z.B. Müller GmbH"
+              value={customerName}
+              onChangeText={(t) => {
+                setCustomerName(t);
+                if (errors.customerName)
+                  setErrors((e) => ({ ...e, customerName: "" }));
+              }}
+              error={errors.customerName}
+            />
+
+            <Input
+              label="Ort *"
+              placeholder="z.B. Dortmund"
+              value={location}
+              onChangeText={(t) => {
+                setLocation(t);
+                if (errors.location) setErrors((e) => ({ ...e, location: "" }));
+              }}
+              error={errors.location}
+            />
+
+            <Input
+              label="Service *"
+              placeholder="z.B. Wartung, Installation"
+              value={service}
+              onChangeText={(t) => {
+                setService(t);
+                if (errors.service) setErrors((e) => ({ ...e, service: "" }));
+              }}
+              error={errors.service}
+            />
+
+            <Input
+              label="Notizen"
+              placeholder="Optional – interne Hinweise zum Job"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              // Multiline-Inputs brauchen eine Mindesthöhe
+              style={styles.notesInput}
+            />
+          </Card>
+
+          {/* ── Abschnitt: Mitarbeiter zuweisen ── */}
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>Mitarbeiter</Text>
+            <Text style={styles.sectionSubtitle}>
+              Optional – kann später geändert werden
+            </Text>
+
+            <Divider style={styles.sectionDivider} />
+
+            {/* "Nicht zuweisen" als erste Option */}
+            <EmployeeOption
+              label="Nicht zuweisen"
+              sublabel="Job bleibt offen"
+              isSelected={employeeId === null}
+              onPress={() => setEmployeeId(null)}
+            />
+
+            {employees.length === 0 ? (
+              <Text style={styles.noEmployees}>
+                Keine Mitarbeiter verfügbar.
+              </Text>
+            ) : (
+              employees.map((emp) => (
+                <EmployeeOption
+                  key={emp.id}
+                  label={emp.fullName}
+                  sublabel="Mitarbeiter"
+                  isSelected={employeeId === emp.id}
+                  onPress={() => setEmployeeId(emp.id)}
+                />
+              ))
+            )}
+          </Card>
+
+          {/* ── Aktion ── */}
+          <Button
+            label="Job erstellen"
+            loading={submitting}
+            disabled={loading}
+            onPress={handleCreateJob}
+          />
+
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-// Styles für den AdminScreen
+// ── Lokale Komponente: Mitarbeiter-Auswahl-Zeile ──
+interface EmployeeOptionProps {
+  label: string;
+  sublabel?: string;
+  isSelected: boolean;
+  onPress: () => void;
+}
+
+function EmployeeOption({
+  label,
+  sublabel,
+  isSelected,
+  onPress,
+}: EmployeeOptionProps) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.employeeRow, isSelected && styles.employeeRowSelected]}
+      activeOpacity={0.7}
+    >
+      {/* Auswahl-Indikator (Kreis wie ein Radio-Button) */}
+      <View
+        style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}
+      >
+        {isSelected && <View style={styles.radioInner} />}
+      </View>
+
+      <View style={styles.employeeInfo}>
+        <Text
+          style={[
+            styles.employeeName,
+            isSelected && styles.employeeNameSelected,
+          ]}
+        >
+          {label}
+        </Text>
+        {sublabel && <Text style={styles.employeeSublabel}>{sublabel}</Text>}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  safeArea: {
+  safe: {
     flex: 1,
-    backgroundColor: "#121212",
+    backgroundColor: Colors.bg.base,
   },
-  safeAreaCentered: {
-    flex: 1,
-    backgroundColor: "#121212",
-    justifyContent: "center",
+  flex: { flex: 1 },
+
+  // Header
+  header: {
+    flexDirection: "row",
     alignItems: "center",
-    padding: 24,
-  },
-  container: {
-    padding: 16,
-    paddingBottom: 40,
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.subtle,
   },
   backButton: {
-    color: "#A1A1AA",
-    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingVertical: Spacing.xs,
+    minWidth: 70,
+  },
+  backIcon: {
+    fontSize: 22,
+    color: Colors.accent.default,
+    lineHeight: 26,
+    fontWeight: "300",
+  },
+  backLabel: {
+    fontSize: Typography.size.base,
+    color: Colors.accent.default,
+    fontWeight: Typography.weight.medium,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.sm,
+  },
+  headerTitle: {
+    fontSize: Typography.size.base,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.text.primary,
+  },
+  roleBadge: {
+    backgroundColor: Colors.accent.subtle,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.full,
+  },
+  roleBadgeText: {
+    fontSize: Typography.size.xs,
+    color: Colors.accent.text,
+    fontWeight: Typography.weight.medium,
   },
   logoutButton: {
-    backgroundColor: "#27272A",
-    padding: 12,
-    borderRadius: 10,
-    alignItems: "center",
-    marginBottom: 16,
+    paddingVertical: Spacing.xs,
+    minWidth: 70,
+    alignItems: "flex-end",
   },
-  logoutButtonText: {
-    color: "#fff",
-    fontWeight: "700",
+  logoutText: {
+    fontSize: Typography.size.sm,
+    color: Colors.status.danger,
+    fontWeight: Typography.weight.medium,
   },
-  roleText: {
-    color: "#A1A1AA",
-    marginBottom: 8,
+
+  // Scroll
+  scroll: {
+    padding: Spacing.lg,
+    gap: Spacing.md,
+    paddingBottom: 40,
   },
-  title: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 20,
+
+  // Sections
+  section: {
+    // Card bringt schon Padding und Background mit
   },
-  input: {
-    backgroundColor: "#1E1E1E",
-    color: "#fff",
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 12,
+  sectionTitle: {
+    fontSize: Typography.size.md,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.text.primary,
+    letterSpacing: -0.2,
   },
+  sectionSubtitle: {
+    fontSize: Typography.size.xs,
+    color: Colors.text.muted,
+    marginTop: 2,
+  },
+  sectionDivider: {
+    marginVertical: Spacing.md,
+  },
+
   notesInput: {
-    minHeight: 100,
-    textAlignVertical: "top", // Text startet oben links bei multiline
+    minHeight: 90,
+    textAlignVertical: "top",
+    paddingTop: 14,
   },
-  label: {
-    color: "#A1A1AA",
-    marginBottom: 8,
-    marginTop: 10,
+
+  noEmployees: {
+    fontSize: Typography.size.sm,
+    color: Colors.text.muted,
+    textAlign: "center",
+    paddingVertical: Spacing.lg,
   },
-  dropdown: {
-    backgroundColor: "#1E1E1E",
-    borderRadius: 10,
-    padding: 8,
-    marginBottom: 12,
-  },
-  employeeItem: {
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 6,
-  },
-  selectedEmployee: {
-    backgroundColor: "#2563EB",
-  },
-  employeeText: {
-    color: "#fff",
-  },
-  selectedEmployeeText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-  button: {
-    backgroundColor: "#2563EB",
-    padding: 14,
-    borderRadius: 12,
+
+  // Mitarbeiter-Zeile
+  employeeRow: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 10,
+    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: Radius.sm,
+    marginBottom: 2,
   },
-  buttonDisabled: {
-    opacity: 0.6, // zeigt optisch, dass der Button gerade deaktiviert ist
+  employeeRowSelected: {
+    backgroundColor: Colors.accent.subtle,
   },
-  buttonText: {
-    color: "#fff",
-    fontWeight: "700",
+
+  // Radio-Button
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: Radius.full,
+    borderWidth: 2,
+    borderColor: Colors.border.default,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  radioOuterSelected: {
+    borderColor: Colors.accent.default,
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.accent.default,
+  },
+
+  // Mitarbeiter-Info
+  employeeInfo: { flex: 1, gap: 1 },
+  employeeName: {
+    fontSize: Typography.size.base,
+    color: Colors.text.secondary,
+    fontWeight: Typography.weight.medium,
+  },
+  employeeNameSelected: {
+    color: Colors.accent.text,
+  },
+  employeeSublabel: {
+    fontSize: Typography.size.xs,
+    color: Colors.text.muted,
+  },
+
+  bottomSpacer: { height: Spacing.xl },
 });

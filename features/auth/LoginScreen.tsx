@@ -1,119 +1,226 @@
+// screens/LoginScreen.tsx
+import { Button, Input } from "@/components/ui";
+import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import React, { useState } from "react";
 import {
-  Alert,
-  Pressable,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-// Einfacher Login-Screen für die App
 export default function LoginScreen() {
-  // States für Eingaben und Ladezustand
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Login-Funktion
-  const handleLogin = async () => {
-    // Kleine Prüfung: beide Felder müssen ausgefüllt sein
-    if (!email || !password) {
-      Alert.alert("Fehler", "Bitte E-Mail und Passwort eingeben.");
-      return;
+  // Inline-Fehlermeldungen statt Alert → bessere UX
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [formError, setFormError] = useState("");
+
+  // Validierung vor dem Login
+  const validate = () => {
+    let valid = true;
+    setEmailError("");
+    setPasswordError("");
+    setFormError("");
+
+    if (!email.trim()) {
+      setEmailError("E-Mail ist erforderlich.");
+      valid = false;
     }
+    if (!password) {
+      setPasswordError("Passwort ist erforderlich.");
+      valid = false;
+    }
+    return valid;
+  };
+
+  const handleLogin = async () => {
+    if (!validate()) return;
 
     try {
       setLoading(true);
-
-      // Login mit Supabase
       const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(), // Leerzeichen am Anfang/Ende entfernen
+        email: email.trim(),
         password,
       });
 
-      // Falls Supabase einen Fehler zurückgibt
       if (error) {
-        Alert.alert("Login fehlgeschlagen", error.message);
+        // Supabase gibt englische Fehler zurück – wir zeigen eine deutsche Meldung
+        setFormError("E-Mail oder Passwort ist falsch.");
       }
-    } catch (error) {
-      // Falls allgemein etwas schiefgeht
-      Alert.alert("Fehler", "Login konnte nicht durchgeführt werden.");
-      console.error("Login error:", error);
+    } catch {
+      setFormError(
+        "Login konnte nicht durchgeführt werden. Bitte versuche es erneut.",
+      );
     } finally {
-      // Egal ob Erfolg oder Fehler → Loading wieder aus
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      {/* Überschrift */}
-      <Text style={styles.title}>Login</Text>
+    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+      <StatusBar barStyle="light-content" />
 
-      {/* Eingabe für E-Mail */}
-      <TextInput
-        style={styles.input}
-        placeholder="E-Mail"
-        placeholderTextColor="#888"
-        autoCapitalize="none" // damit nichts automatisch groß geschrieben wird
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
+      {/*
+        KeyboardAvoidingView: verhindert, dass die Tastatur
+        die Eingabefelder verdeckt
+      */}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Logo / App-Branding-Bereich */}
+          <View style={styles.brandArea}>
+            <View style={styles.logoMark}>
+              {/* Buchstaben-Logo – einfach austauschbar gegen ein echtes Icon */}
+              <Text style={styles.logoText}>J</Text>
+            </View>
+            <Text style={styles.brandName}>JobManager</Text>
+            <Text style={styles.brandTagline}>Anmelden um fortzufahren</Text>
+          </View>
 
-      {/* Eingabe für Passwort */}
-      <TextInput
-        style={styles.input}
-        placeholder="Passwort"
-        placeholderTextColor="#888"
-        secureTextEntry // Passwort wird versteckt angezeigt
-        value={password}
-        onChangeText={setPassword}
-      />
+          {/* Formular-Bereich */}
+          <View style={styles.form}>
+            {/* Allgemeiner Fehler (z.B. falsche Credentials) */}
+            {formError ? (
+              <View style={styles.formErrorBox}>
+                <Text style={styles.formErrorText}>{formError}</Text>
+              </View>
+            ) : null}
 
-      {/* Login-Button */}
-      <Pressable style={styles.button} onPress={handleLogin} disabled={loading}>
-        <Text style={styles.buttonText}>
-          {loading ? "Lade..." : "Einloggen"}
-        </Text>
-      </Pressable>
-    </View>
+            <Input
+              label="E-Mail"
+              placeholder="name@firma.de"
+              value={email}
+              onChangeText={(t: string) => {
+                setEmail(t);
+                setEmailError(""); // Fehler beim Tippen zurücksetzen
+                setFormError("");
+              }}
+              error={emailError}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              returnKeyType="next"
+            />
+
+            <Input
+              label="Passwort"
+              placeholder="••••••••"
+              value={password}
+              onChangeText={(t: string) => {
+                setPassword(t);
+                setPasswordError(""); // Fehler beim Tippen zurücksetzen
+                setFormError("");
+              }}
+              error={passwordError}
+              secureTextEntry
+              autoComplete="password"
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+            />
+
+            <Button
+              label="Einloggen"
+              loading={loading}
+              onPress={handleLogin}
+              style={styles.submitButton}
+            />
+          </View>
+
+          {/* Footer-Hinweis */}
+          <Text style={styles.footer}>Nur für autorisierte Mitarbeiter</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-// Styles für den Login-Screen
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: "#121212",
+    backgroundColor: Colors.bg.base,
+  },
+  flex: { flex: 1 },
+  scroll: {
+    flexGrow: 1,
     justifyContent: "center",
-    padding: 24,
+    paddingHorizontal: Spacing.xxl,
+    paddingVertical: Spacing.xxxl,
   },
-  title: {
-    color: "#fff",
-    fontSize: 28,
-    fontWeight: "700",
-    marginBottom: 24,
-  },
-  input: {
-    backgroundColor: "#1e1e1e",
-    color: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 16,
-  },
-  button: {
-    backgroundColor: "#3b82f6",
-    paddingVertical: 14,
-    borderRadius: 12,
+
+  // Branding
+  brandArea: {
     alignItems: "center",
+    marginBottom: 48,
+    gap: Spacing.sm,
   },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+  logoMark: {
+    width: 64,
+    height: 64,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.accent.default,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.sm,
+  },
+  logoText: {
+    fontSize: 28,
+    fontWeight: Typography.weight.bold,
+    color: Colors.white,
+    letterSpacing: -0.5,
+  },
+  brandName: {
+    fontSize: Typography.size.xl,
+    fontWeight: Typography.weight.bold,
+    color: Colors.text.primary,
+    letterSpacing: -0.3,
+  },
+  brandTagline: {
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+  },
+
+  // Formular
+  form: {
+    gap: 4, // Inputs haben intern marginBottom, daher kleiner gap
+    marginBottom: Spacing.xl,
+  },
+  formErrorBox: {
+    backgroundColor: Colors.status.dangerBg,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    marginBottom: Spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.status.danger,
+  },
+  formErrorText: {
+    fontSize: Typography.size.sm,
+    color: Colors.status.danger,
+    fontWeight: Typography.weight.medium,
+  },
+  submitButton: {
+    marginTop: Spacing.sm,
+  },
+
+  // Footer
+  footer: {
+    textAlign: "center",
+    fontSize: Typography.size.xs,
+    color: Colors.text.muted,
   },
 });

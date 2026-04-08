@@ -132,8 +132,16 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     try {
       const createdJob = await createJobService(input);
 
-      // Den neu erstellten Job direkt vorne in die Liste setzen
-      setJobs((prevJobs) => [createdJob, ...prevJobs]);
+      // Job nur hinzufügen, wenn er noch nicht durch Realtime in der Liste ist
+      setJobs((prevJobs) => {
+        const exists = prevJobs.some((job) => job.id === createdJob.id);
+
+        if (exists) {
+          return prevJobs;
+        }
+
+        return [createdJob, ...prevJobs];
+      });
 
       console.log("Creating job with employeeId:", input.employeeId);
     } catch (err) {
@@ -148,8 +156,14 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const startedAt = await startJobService(jobId);
 
       // Status und Startzeit lokal direkt updaten
-      setJobs((prevJobs) =>
-        prevJobs.map((job) =>
+      setJobs((prevJobs) => {
+        const exists = prevJobs.some((job) => job.id === jobId);
+
+        if (!exists) {
+          return prevJobs;
+        }
+
+        return prevJobs.map((job) =>
           job.id === jobId
             ? {
                 ...job,
@@ -157,8 +171,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
                 startedAt,
               }
             : job,
-        ),
-      );
+        );
+      });
     } catch (err) {
       console.error("Failed to start job:", err);
       throw err;
@@ -171,8 +185,14 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const completedAt = await completeJobService(jobId);
 
       // Status und Endzeit lokal direkt updaten
-      setJobs((prevJobs) =>
-        prevJobs.map((job) =>
+      setJobs((prevJobs) => {
+        const exists = prevJobs.some((job) => job.id === jobId);
+
+        if (!exists) {
+          return prevJobs;
+        }
+
+        return prevJobs.map((job) =>
           job.id === jobId
             ? {
                 ...job,
@@ -180,8 +200,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
                 completedAt,
               }
             : job,
-        ),
-      );
+        );
+      });
     } catch (err) {
       console.error("Failed to complete job:", err);
       throw err;
