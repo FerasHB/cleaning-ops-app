@@ -1,6 +1,9 @@
+import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
+import { router } from "expo-router";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
@@ -10,8 +13,10 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
 export default function AdminScreen() {
   const { createJob, employees, loading } = useJobs();
+  const { signOut, role, loading: authLoading } = useAuth();
 
   const [customerName, setCustomerName] = useState("");
   const [location, setLocation] = useState("");
@@ -19,6 +24,14 @@ export default function AdminScreen() {
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (err: any) {
+      Alert.alert("Fehler", err?.message ?? "Abmeldung fehlgeschlagen.");
+    }
+  };
 
   const handleCreateJob = async () => {
     if (!customerName.trim() || !location.trim() || !service.trim()) {
@@ -53,12 +66,27 @@ export default function AdminScreen() {
       setSubmitting(false);
     }
   };
-  // useEffect(() => {
-  // debugCurrentUserAccess();
-  //}, []);
+
+  if (authLoading) {
+    return (
+      <SafeAreaView edges={["top"]} style={styles.safeAreaCentered}>
+        <ActivityIndicator size="large" color="#2563EB" />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={styles.backButton}>← Zurück</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+          <Text style={styles.logoutButtonText}>Abmelden</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.roleText}>Rolle: {role ?? "unbekannt"}</Text>
         <Text style={styles.title}>Admin – Job erstellen</Text>
 
         <TextInput
@@ -161,9 +189,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#121212",
   },
+  safeAreaCentered: {
+    flex: 1,
+    backgroundColor: "#121212",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
   container: {
     padding: 16,
     paddingBottom: 40,
+  },
+  backButton: {
+    color: "#A1A1AA",
+    marginBottom: 10,
+  },
+  logoutButton: {
+    backgroundColor: "#27272A",
+    padding: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  logoutButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  roleText: {
+    color: "#A1A1AA",
+    marginBottom: 8,
   },
   title: {
     color: "#fff",
