@@ -187,7 +187,21 @@ console.log("Created job raw data:", data);
   if (error) {
     throw error;
   }
+if (payload.assigned_to) {
+  const { data: employee } = await supabase
+    .from("profiles")
+    .select("expo_push_token, full_name")
+    .eq("id", payload.assigned_to)
+    .single();
 
+  if (employee?.expo_push_token) {
+    await sendPushNotification(
+      employee.expo_push_token,
+      "Neuer Auftrag",
+      `Du hast einen neuen Job: ${payload.service_name}`
+    );
+  }
+}
   return mapJob(data as JobRow);
 }
 
@@ -225,4 +239,19 @@ export async function completeJob(jobId: string): Promise<string> {
   }
 
   return timestamp;
+}
+
+async function sendPushNotification(token: string, title: string, body: string) {
+  await fetch("https://exp.host/--/api/v2/push/send", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: token,
+      sound: "default",
+      title,
+      body,
+    }),
+  });
 }
