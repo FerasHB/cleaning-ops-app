@@ -375,3 +375,38 @@ async function sendPushNotification(token: string, title: string, body: string) 
     }),
   });
 }
+
+// Löscht einen bestehenden Job
+export async function deleteJob(jobId: string): Promise<void> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw authError;
+  }
+
+  const userId = authData.user?.id;
+
+  if (!userId) {
+    throw new Error("Kein eingeloggter Benutzer gefunden.");
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .single();
+
+  if (profileError) {
+    throw new Error("Profil konnte nicht geladen werden.");
+  }
+
+  if (!profile || profile.role !== "admin") {
+    throw new Error("Nur Admins dürfen Jobs löschen.");
+  }
+
+  const { error } = await supabase.from("jobs").delete().eq("id", jobId);
+
+  if (error) {
+    throw error;
+  }
+}

@@ -56,8 +56,15 @@ function formatForInput(value?: string | null): string {
 
 export default function EditJobScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { jobs, employees, loading, refreshJobs, refreshEmployees, updateJob } =
-    useJobs();
+  const {
+    jobs,
+    employees,
+    loading,
+    refreshJobs,
+    refreshEmployees,
+    updateJob,
+    deleteJob,
+  } = useJobs();
   const { signOut, role, loading: authLoading } = useAuth();
 
   const job = useMemo(() => jobs.find((item) => item.id === id), [jobs, id]);
@@ -187,6 +194,36 @@ export default function EditJobScreen() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!job) {
+      Alert.alert("Fehler", "Job wurde nicht gefunden.");
+      return;
+    }
+
+    Alert.alert("Job löschen", "Möchtest du diesen Job wirklich löschen?", [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Löschen",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setSubmitting(true);
+            await deleteJob(job.id);
+            Alert.alert("Erfolgreich", "Job wurde gelöscht.");
+            router.back();
+          } catch (err: any) {
+            Alert.alert(
+              "Fehler",
+              err?.message ?? "Job konnte nicht gelöscht werden.",
+            );
+          } finally {
+            setSubmitting(false);
+          }
+        },
+      },
+    ]);
   };
 
   if (authLoading || loading) {
@@ -372,6 +409,15 @@ export default function EditJobScreen() {
             disabled={loading || !hasChanges}
             onPress={handleSave}
           />
+
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={handleDelete}
+            activeOpacity={0.7}
+            disabled={submitting}
+          >
+            <Text style={styles.deleteButtonText}>Job löschen</Text>
+          </TouchableOpacity>
 
           <View style={styles.bottomSpacer} />
         </ScrollView>
@@ -576,6 +622,21 @@ const styles = StyleSheet.create({
   employeeSublabel: {
     fontSize: Typography.size.xs,
     color: Colors.text.muted,
+  },
+  deleteButton: {
+    marginTop: Spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.status.danger,
+    backgroundColor: Colors.status.dangerBg,
+  },
+  deleteButtonText: {
+    fontSize: Typography.size.sm,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.status.danger,
   },
   bottomSpacer: { height: Spacing.xl },
 });

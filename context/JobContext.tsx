@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import {
   completeJob as completeJobService,
   createJob as createJobService,
+  deleteJob as deleteJobService,
   getEmployees as getEmployeesService,
   getJobs,
   startJob as startJobService,
@@ -37,6 +38,7 @@ type JobContextType = {
     scheduledStart?: string | null;
     scheduledEnd?: string | null;
   }) => Promise<void>;
+  deleteJob: (jobId: string) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
   completeJob: (jobId: string) => Promise<void>;
 };
@@ -187,6 +189,18 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  // Bestehenden Job löschen
+  const deleteJob = useCallback(async (jobId: string) => {
+    try {
+      await deleteJobService(jobId);
+
+      setJobs((prevJobs) => prevJobs.filter((job) => job.id !== jobId));
+    } catch (err) {
+      console.error("Failed to delete job:", err);
+      throw err;
+    }
+  }, []);
+
   // Job starten
   const startJob = useCallback(async (jobId: string) => {
     try {
@@ -256,6 +270,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       refreshEmployees,
       createJob,
       updateJob,
+      deleteJob,
       startJob,
       completeJob,
     }),
@@ -268,6 +283,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       refreshEmployees,
       createJob,
       updateJob,
+      deleteJob,
       startJob,
       completeJob,
     ],
