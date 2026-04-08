@@ -17,6 +17,10 @@ type JobRow = {
     | {
         id: string;
         full_name: string;
+      }
+    | {
+        id: string;
+        full_name: string;
       }[]
     | null;
 };
@@ -39,6 +43,7 @@ function formatTimeRange(start: string | null, end: string | null): string {
 }
 
 function mapJob(row: JobRow): Job {
+  
   return {
     id: row.id,
     customerName: row.customer_name,
@@ -46,7 +51,9 @@ function mapJob(row: JobRow): Job {
     time: formatTimeRange(row.scheduled_start, row.scheduled_end),
     service: row.service_name,
     employeeId: row.assigned_to,
-    employeeName: row.profiles?.[0]?.full_name ?? null,
+    employeeName: Array.isArray(row.profiles)
+      ? row.profiles[0]?.full_name ?? null
+      : row.profiles?.full_name ?? null,
     status: row.status,
     notes: row.notes,
     scheduledStart: row.scheduled_start,
@@ -176,7 +183,7 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
       `
     )
     .single();
-
+console.log("Created job raw data:", data);
   if (error) {
     throw error;
   }

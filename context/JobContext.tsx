@@ -1,4 +1,5 @@
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
 import {
   completeJob as completeJobService,
   createJob as createJobService,
@@ -79,10 +80,39 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     loadAll();
   }, [session, refreshJobs, refreshEmployees]);
 
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    const channel = supabase
+      .channel("jobs-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "jobs",
+        },
+        async (payload) => {
+          console.log("Realtime jobs change:", payload.eventType);
+          await refreshJobs();
+        },
+      )
+      .subscribe((status) => {
+        console.log("Jobs realtime status:", status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session, refreshJobs]);
+
   const createJob = useCallback(async (input: CreateJobInput) => {
     try {
       const createdJob = await createJobService(input);
       setJobs((prevJobs) => [createdJob, ...prevJobs]);
+      console.log("Creating job with employeeId:", input.employeeId);
     } catch (err) {
       console.error("Failed to create job:", err);
       throw err;
