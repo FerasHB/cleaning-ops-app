@@ -98,8 +98,8 @@ Each folder has a single clear responsibility. This makes it easy to find things
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/FerasHB/cleanops.git
-cd cleanops
+git clone https://github.com/FerasHB/cleaning-ops-app.git
+cd cleaning-ops-app
 
 # 2. Install dependencies
 npm install
