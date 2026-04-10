@@ -12,7 +12,10 @@ A mobile-first operations app for cleaning companies.
 
 ### Employee Home
 ![Home Screen](./screenshots/home.png)
-
+<p align="center">
+  <sub>Employee Home</sub> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <sub>Create Job (Admin)</sub>
+</p>
 ### Create Job (Admin)
 ![Create Job](./screenshots/create-job.png)
 
