@@ -9,15 +9,10 @@ A mobile-first operations app for cleaning companies.
 - Clean architecture (Expo Router + Context)
 ## 📸 App Screenshots
 
-
-### Employee Home
-![Home Screen](./screenshots/home.png)
 <p align="center">
-  <sub>Employee Home</sub> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <sub>Create Job (Admin)</sub>
+  <img src="./screenshots/home.png" alt="Employee Home" width="280" />
+  <img src="./screenshots/create-job.png" alt="Create Job Admin" width="280" />
 </p>
-### Create Job (Admin)
-![Create Job](./screenshots/create-job.png)
 
 ## Tech Stack
 - React Native (Expo)
