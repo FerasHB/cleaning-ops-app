@@ -7,18 +7,22 @@ import {
   Typography,
 } from "@/constants/theme";
 import { Job } from "@/types/job";
-import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useRef } from "react";
+import {
+  Animated,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-// ── Props ──
 type Props = {
   job: Job;
   onStart: () => void;
   onComplete: () => void;
-  onEdit?: () => void; // optional → nur für Admin sichtbar
+  onEdit?: () => void;
 };
 
-// ── Helpers ──
 function formatTime(iso?: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
@@ -46,31 +50,78 @@ const STATUS_CONFIG = {
     fg: Colors.status.warning,
     bg: Colors.status.warningBg,
     border: Colors.status.warningBg,
-    dot: Colors.status.warning,
+    accent: Colors.status.warning,
   },
   in_progress: {
     label: "In Arbeit",
     fg: Colors.accent.text,
     bg: Colors.accent.subtle,
     border: Colors.accent.subtle,
-    dot: Colors.accent.default,
+    accent: Colors.accent.default,
   },
   completed: {
     label: "Erledigt",
     fg: Colors.status.success,
     bg: Colors.status.successBg,
     border: Colors.status.successBg,
-    dot: Colors.status.success,
+    accent: Colors.status.success,
   },
 } as const;
 
-export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
-  const statusConfig = STATUS_CONFIG[job.status];
+function PressableButton({
+  onPress,
+  disabled,
+  style,
+  children,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+  style?: object;
+  children: React.ReactNode;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
 
+  const onPressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 4,
+    }).start();
+  };
+
+  const onPressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 30,
+      bounciness: 6,
+    }).start();
+  };
+
+  return (
+    <Animated.View
+      style={[{ transform: [{ scale }] }, disabled && { opacity: 0.45 }]}
+    >
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        disabled={disabled}
+        activeOpacity={1}
+        style={style}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
+  const cfg = STATUS_CONFIG[job.status];
   const startTime = formatTime(job.scheduledStart);
   const endTime = formatTime(job.scheduledEnd);
   const scheduleDate = formatDate(job.scheduledStart);
-
   const timeDisplay =
     startTime && endTime ? `${startTime} – ${endTime}` : startTime;
 
@@ -79,115 +130,122 @@ export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
 
   return (
     <View style={styles.card}>
-      <View style={[styles.accentBar, { backgroundColor: statusConfig.fg }]} />
+      <View style={[styles.topAccent, { backgroundColor: cfg.accent }]} />
 
-      <View style={styles.content}>
-        {/* Header */}
+      <View style={styles.body}>
         <View style={styles.headerRow}>
-          <Text style={styles.customerName} numberOfLines={1}>
-            {job.customerName}
-          </Text>
+          <View style={styles.headerLeft}>
+            <Text style={styles.customerName} numberOfLines={1}>
+              {job.customerName}
+            </Text>
+            <Text style={styles.serviceLabel} numberOfLines={1}>
+              {job.service}
+            </Text>
+          </View>
 
           <View
             style={[
               styles.badge,
-              {
-                backgroundColor: statusConfig.bg,
-                borderColor: statusConfig.border,
-              },
+              { backgroundColor: cfg.bg, borderColor: cfg.border },
             ]}
           >
-            <View
-              style={[styles.badgeDot, { backgroundColor: statusConfig.dot }]}
-            />
-            <Text style={[styles.badgeText, { color: statusConfig.fg }]}>
-              {statusConfig.label}
+            <View style={[styles.badgeDot, { backgroundColor: cfg.accent }]} />
+            <Text style={[styles.badgeText, { color: cfg.fg }]}>
+              {cfg.label}
             </Text>
           </View>
         </View>
 
-        {/* Service */}
-        <Text style={styles.serviceText}>{job.service}</Text>
-
-        {/* Divider */}
-        <View style={styles.divider} />
-
-        {/* Info */}
-        <View style={styles.infoGrid}>
-          <InfoRow icon="📍" value={job.location} />
+        <View style={styles.metaGrid}>
+          <MetaChip icon="📍" value={job.location} />
 
           {(timeDisplay || scheduleDate) && (
-            <InfoRow
+            <MetaChip
               icon="🕐"
               value={[scheduleDate, timeDisplay].filter(Boolean).join(" · ")}
             />
           )}
 
-          {job.employeeName && <InfoRow icon="👤" value={job.employeeName} />}
+          {job.employeeName && <MetaChip icon="👤" value={job.employeeName} />}
         </View>
 
-        {/* Notes */}
         {job.notes ? (
           <View style={styles.notesBox}>
-            <Text style={styles.notesLabel}>Notiz</Text>
+            <Text style={styles.notesLabel}>NOTIZ</Text>
             <Text style={styles.notesText} numberOfLines={2}>
               {job.notes}
             </Text>
           </View>
         ) : null}
 
-        {/* Buttons */}
-        <View style={styles.buttonRow}>
-          <TouchableOpacity
-            style={[
-              styles.btn,
-              styles.btnStart,
-              !canStart && styles.btnDisabled,
-            ]}
+        <View style={styles.divider} />
+
+        <View style={styles.actions}>
+          <PressableButton
             onPress={onStart}
             disabled={!canStart}
-          >
-            <Text style={[styles.btnText, !canStart && styles.btnTextDisabled]}>
-              Start
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={[
-              styles.btn,
-              styles.btnComplete,
-              !canComplete && styles.btnDisabled,
+              styles.actionBtn,
+              canStart ? styles.actionBtnPrimary : styles.actionBtnGhost,
             ]}
-            onPress={onComplete}
-            disabled={!canComplete}
           >
             <Text
-              style={[styles.btnText, !canComplete && styles.btnTextDisabled]}
+              style={[
+                styles.actionBtnText,
+                canStart
+                  ? styles.actionBtnTextPrimary
+                  : styles.actionBtnTextMuted,
+              ]}
+            >
+              Start
+            </Text>
+          </PressableButton>
+
+          <PressableButton
+            onPress={onComplete}
+            disabled={!canComplete}
+            style={[
+              styles.actionBtn,
+              canComplete ? styles.actionBtnSuccess : styles.actionBtnGhost,
+            ]}
+          >
+            <Text
+              style={[
+                styles.actionBtnText,
+                canComplete
+                  ? styles.actionBtnTextSuccess
+                  : styles.actionBtnTextMuted,
+              ]}
             >
               Fertig
             </Text>
-          </TouchableOpacity>
-
-          {/* Admin Button */}
-          {onEdit && (
-            <TouchableOpacity
-              style={[styles.btn, styles.btnEdit]}
-              onPress={onEdit}
-            >
-              <Text style={styles.btnTextEdit}>Bearbeiten</Text>
-            </TouchableOpacity>
-          )}
+          </PressableButton>
         </View>
+
+        {onEdit && (
+          <PressableButton
+            onPress={onEdit}
+            style={[
+              styles.actionBtn,
+              styles.actionBtnEdit,
+              styles.actionBtnFull,
+            ]}
+          >
+            <Text style={[styles.actionBtnText, styles.actionBtnTextEdit]}>
+              Bearbeiten
+            </Text>
+          </PressableButton>
+        )}
       </View>
     </View>
   );
 }
 
-function InfoRow({ icon, value }: { icon: string; value: string }) {
+function MetaChip({ icon, value }: { icon: string; value: string }) {
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoIcon}>{icon}</Text>
-      <Text style={styles.infoText} numberOfLines={1}>
+    <View style={styles.metaChip}>
+      <Text style={styles.metaIcon}>{icon}</Text>
+      <Text style={styles.metaText} numberOfLines={1}>
         {value}
       </Text>
     </View>
@@ -200,116 +258,177 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.border.default,
-    flexDirection: "row",
     overflow: "hidden",
     ...Shadows.md,
   },
-  accentBar: {
-    width: 3,
+
+  topAccent: {
+    height: 3,
+    width: "100%",
   },
-  content: {
-    flex: 1,
+
+  body: {
     padding: Spacing.lg,
-    gap: Spacing.sm,
+    gap: Spacing.md,
   },
+
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
   },
-  customerName: {
+
+  headerLeft: {
     flex: 1,
+    gap: 4,
+  },
+
+  customerName: {
     fontSize: Typography.size.md,
     fontWeight: Typography.weight.bold,
     color: Colors.text.primary,
+    lineHeight: Typography.size.md * Typography.leading.tight,
   },
-  serviceText: {
+
+  serviceLabel: {
     fontSize: Typography.size.sm,
     color: Colors.text.secondary,
+    fontWeight: Typography.weight.medium,
   },
+
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: Radius.full,
     borderWidth: 1,
   },
+
   badgeDot: {
     width: 6,
     height: 6,
     borderRadius: Radius.full,
   },
+
   badgeText: {
     fontSize: Typography.size.xs,
     fontWeight: Typography.weight.semibold,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
   },
+
+  metaGrid: {
+    gap: 6,
+  },
+
+  metaChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  metaIcon: {
+    fontSize: 13,
+    width: 18,
+    textAlign: "center",
+  },
+
+  metaText: {
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    flex: 1,
+  },
+
+  notesBox: {
+    backgroundColor: Colors.bg.elevated,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border.subtle,
+    gap: 4,
+  },
+
+  notesLabel: {
+    fontSize: Typography.size.xs,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.text.muted,
+    letterSpacing: 0.5,
+  },
+
+  notesText: {
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    lineHeight: Typography.size.sm * Typography.leading.normal,
+  },
+
   divider: {
     height: 1,
     backgroundColor: Colors.border.subtle,
   },
-  infoGrid: {
-    gap: 4,
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  infoIcon: {
-    width: 16,
-  },
-  infoText: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-  },
-  notesBox: {
-    backgroundColor: Colors.bg.elevated,
-    padding: Spacing.sm,
-    borderRadius: Radius.sm,
-  },
-  notesLabel: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-  },
-  notesText: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-  },
-  buttonRow: {
+
+  actions: {
     flexDirection: "row",
     gap: Spacing.sm,
   },
-  btn: {
+
+  actionBtn: {
     flex: 1,
-    paddingVertical: 10,
+    minHeight: 46,
+    paddingVertical: 12,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.md,
     alignItems: "center",
-  },
-  btnStart: {
-    backgroundColor: Colors.accent.default,
-  },
-  btnComplete: {
-    backgroundColor: Colors.status.successBg,
-  },
-  btnEdit: {
-    backgroundColor: Colors.bg.elevated,
+    justifyContent: "center",
     borderWidth: 1,
+  },
+
+  actionBtnFull: {
+    width: "100%",
+    marginTop: Spacing.xs,
+  },
+
+  actionBtnPrimary: {
+    backgroundColor: Colors.accent.default,
+    borderColor: Colors.accent.default,
+  },
+
+  actionBtnSuccess: {
+    backgroundColor: Colors.status.successBg,
+    borderColor: Colors.status.success,
+  },
+
+  actionBtnEdit: {
+    backgroundColor: Colors.bg.elevated,
     borderColor: Colors.border.default,
   },
-  btnDisabled: {
-    opacity: 0.5,
+
+  actionBtnGhost: {
+    backgroundColor: Colors.bg.overlay,
+    borderColor: Colors.border.subtle,
   },
-  btnText: {
-    color: "white",
+
+  actionBtnText: {
+    fontSize: Typography.size.sm,
     fontWeight: Typography.weight.semibold,
   },
-  btnTextDisabled: {
+
+  actionBtnTextMuted: {
     color: Colors.text.muted,
   },
-  btnTextEdit: {
+
+  actionBtnTextPrimary: {
+    color: Colors.white,
+  },
+
+  actionBtnTextSuccess: {
+    color: Colors.status.success,
+  },
+
+  actionBtnTextEdit: {
     color: Colors.text.primary,
-    fontWeight: Typography.weight.semibold,
   },
 });

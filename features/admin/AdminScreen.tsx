@@ -1,15 +1,21 @@
 // screens/AdminScreen.tsx
-import { Button, Card, Divider, Input, LoadingScreen } from "@/components/ui";
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import { Input, LoadingScreen } from "@/components/ui";
+import {
+  Colors,
+  Radius,
+  Shadows,
+  Spacing,
+  Typography,
+} from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -20,26 +26,71 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 function normalizeScheduledStart(value: string): string | null {
   const trimmed = value.trim();
-
-  if (!trimmed) {
-    return null;
-  }
-
+  if (!trimmed) return null;
   const normalized = trimmed.replace(" ", "T");
   const date = new Date(normalized);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
+  if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
 }
+
+// ── Abschnitts-Wrapper ──
+function SectionBlock({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={sectionStyles.block}>
+      <View style={sectionStyles.header}>
+        <Text style={sectionStyles.title}>{title}</Text>
+        {subtitle && <Text style={sectionStyles.subtitle}>{subtitle}</Text>}
+      </View>
+      <View style={sectionStyles.body}>{children}</View>
+    </View>
+  );
+}
+
+const sectionStyles = StyleSheet.create({
+  block: {
+    backgroundColor: Colors.bg.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+    overflow: "hidden",
+    ...Shadows.sm,
+  },
+  header: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.subtle,
+    gap: 3,
+  },
+  title: {
+    fontSize: Typography.size.base,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.text.primary,
+    letterSpacing: Typography.tracking.tight,
+  },
+  subtitle: {
+    fontSize: Typography.size.xs,
+    color: Colors.text.muted,
+  },
+  body: {
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+  },
+});
 
 export default function AdminScreen() {
   const { createJob, employees, loading } = useJobs();
   const { signOut, role, loading: authLoading } = useAuth();
 
-  // Formular-State
   const [customerName, setCustomerName] = useState("");
   const [location, setLocation] = useState("");
   const [service, setService] = useState("");
@@ -47,9 +98,25 @@ export default function AdminScreen() {
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  // Inline-Fehler pro Feld
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const handleLogout = async () => {
     Alert.alert("Abmelden", "Möchtest du dich wirklich abmelden?", [
@@ -68,7 +135,6 @@ export default function AdminScreen() {
     ]);
   };
 
-  // Formular validieren – inline Fehler setzen
   const validate = () => {
     const newErrors: Record<string, string> = {};
     if (!customerName.trim())
@@ -76,8 +142,7 @@ export default function AdminScreen() {
     if (!location.trim()) newErrors.location = "Bitte Ort eingeben.";
     if (!service.trim()) newErrors.service = "Bitte Service eingeben.";
     if (scheduledStart.trim() && !normalizeScheduledStart(scheduledStart)) {
-      newErrors.scheduledStart =
-        "Bitte Datum und Uhrzeit korrekt eingeben, z.B. 2026-04-10 07:30.";
+      newErrors.scheduledStart = "Format: 2026-04-10 07:30";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -85,9 +150,7 @@ export default function AdminScreen() {
 
   const handleCreateJob = async () => {
     if (!validate()) return;
-
     const normalizedScheduledStart = normalizeScheduledStart(scheduledStart);
-
     try {
       setSubmitting(true);
       await createJob({
@@ -98,8 +161,6 @@ export default function AdminScreen() {
         employeeId,
         notes: notes.trim() || null,
       });
-
-      // Formular zurücksetzen
       setCustomerName("");
       setLocation("");
       setService("");
@@ -107,9 +168,7 @@ export default function AdminScreen() {
       setEmployeeId(null);
       setNotes("");
       setErrors({});
-
-      // Kurzes Erfolgsfeedback ohne blockierenden Alert
-      Alert.alert("✓ Erfolgreich", "Job wurde erstellt.");
+      Alert.alert("✓ Erstellt", "Der Job wurde erfolgreich angelegt.");
     } catch (err: any) {
       Alert.alert(
         "Fehler",
@@ -125,7 +184,6 @@ export default function AdminScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <StatusBar barStyle="light-content" />
-
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -134,47 +192,44 @@ export default function AdminScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
-            style={styles.backButton}
+            style={styles.backBtn}
             activeOpacity={0.7}
           >
-            {/* Pfeil-Icon ohne externe Bibliothek */}
             <Text style={styles.backIcon}>‹</Text>
             <Text style={styles.backLabel}>Zurück</Text>
           </TouchableOpacity>
 
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Job erstellen</Text>
-            {/* Zeigt zur Orientierung die aktuelle Rolle */}
+            <Text style={styles.headerTitle}>Neuer Job</Text>
             {role && (
-              <View style={styles.roleBadge}>
-                <Text style={styles.roleBadgeText}>{role}</Text>
+              <View style={styles.rolePill}>
+                <View style={styles.roleDot} />
+                <Text style={styles.rolePillText}>{role}</Text>
               </View>
             )}
           </View>
 
           <TouchableOpacity
             onPress={handleLogout}
-            style={styles.logoutButton}
+            style={styles.logoutBtn}
             activeOpacity={0.7}
           >
             <Text style={styles.logoutText}>Abmelden</Text>
           </TouchableOpacity>
         </View>
 
-        <ScrollView
+        {/* ── Scroll-Content ── */}
+        <Animated.ScrollView
+          style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ── Abschnitt: Job-Details ── */}
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Job-Details</Text>
-            <Text style={styles.sectionSubtitle}>
-              Pflichtfelder sind mit * markiert
-            </Text>
-
-            <Divider style={styles.sectionDivider} />
-
+          {/* Sektion: Job-Details */}
+          <SectionBlock
+            title="Job-Details"
+            subtitle="Mit * markierte Felder sind Pflicht"
+          >
             <Input
               label="Kunde *"
               placeholder="z.B. Müller GmbH"
@@ -186,7 +241,6 @@ export default function AdminScreen() {
               }}
               error={errors.customerName}
             />
-
             <Input
               label="Ort *"
               placeholder="z.B. Dortmund"
@@ -197,7 +251,6 @@ export default function AdminScreen() {
               }}
               error={errors.location}
             />
-
             <Input
               label="Service *"
               placeholder="z.B. Wartung, Installation"
@@ -208,52 +261,45 @@ export default function AdminScreen() {
               }}
               error={errors.service}
             />
-
             <Input
               label="Geplanter Start"
-              placeholder="z.B. 2026-04-10 07:30"
+              placeholder="2026-04-10 07:30"
               value={scheduledStart}
               onChangeText={(t) => {
                 setScheduledStart(t);
-                if (errors.scheduledStart) {
+                if (errors.scheduledStart)
                   setErrors((e) => ({ ...e, scheduledStart: "" }));
-                }
               }}
               error={errors.scheduledStart}
             />
-
             <Input
               label="Notizen"
-              placeholder="Optional – interne Hinweise zum Job"
+              placeholder="Interne Hinweise (optional)"
               value={notes}
               onChangeText={setNotes}
               multiline
-              // Multiline-Inputs brauchen eine Mindesthöhe
               style={styles.notesInput}
             />
-          </Card>
+          </SectionBlock>
 
-          {/* ── Abschnitt: Mitarbeiter zuweisen ── */}
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Mitarbeiter</Text>
-            <Text style={styles.sectionSubtitle}>
-              Optional – kann später geändert werden
-            </Text>
-
-            <Divider style={styles.sectionDivider} />
-
-            {/* "Nicht zuweisen" als erste Option */}
+          {/* Sektion: Mitarbeiter */}
+          <SectionBlock
+            title="Mitarbeiter zuweisen"
+            subtitle="Optional – kann später geändert werden"
+          >
             <EmployeeOption
               label="Nicht zuweisen"
-              sublabel="Job bleibt offen"
+              sublabel="Job bleibt allen sichtbar"
               isSelected={employeeId === null}
               onPress={() => setEmployeeId(null)}
             />
 
             {employees.length === 0 ? (
-              <Text style={styles.noEmployees}>
-                Keine Mitarbeiter verfügbar.
-              </Text>
+              <View style={styles.emptyEmployees}>
+                <Text style={styles.emptyEmployeesText}>
+                  Keine Mitarbeiter verfügbar.
+                </Text>
+              </View>
             ) : (
               employees.map((emp) => (
                 <EmployeeOption
@@ -265,62 +311,83 @@ export default function AdminScreen() {
                 />
               ))
             )}
-          </Card>
+          </SectionBlock>
 
-          {/* ── Aktion ── */}
-          <Button
-            label="Job erstellen"
-            loading={submitting}
-            disabled={loading}
+          {/* CTA */}
+          <TouchableOpacity
             onPress={handleCreateJob}
-          />
+            disabled={loading || submitting}
+            activeOpacity={0.85}
+            style={[
+              styles.createBtn,
+              (loading || submitting) && styles.createBtnDisabled,
+            ]}
+          >
+            <Text style={styles.createBtnText}>
+              {submitting ? "Wird erstellt…" : "Job erstellen"}
+            </Text>
+          </TouchableOpacity>
 
-          <View style={styles.bottomSpacer} />
-        </ScrollView>
+          <View style={{ height: 40 }} />
+        </Animated.ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-// ── Lokale Komponente: Mitarbeiter-Auswahl-Zeile ──
-interface EmployeeOptionProps {
-  label: string;
-  sublabel?: string;
-  isSelected: boolean;
-  onPress: () => void;
-}
-
+// ── Mitarbeiter Option ──
 function EmployeeOption({
   label,
   sublabel,
   isSelected,
   onPress,
-}: EmployeeOptionProps) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={[styles.employeeRow, isSelected && styles.employeeRowSelected]}
-      activeOpacity={0.7}
-    >
-      {/* Auswahl-Indikator (Kreis wie ein Radio-Button) */}
-      <View
-        style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}
-      >
-        {isSelected && <View style={styles.radioInner} />}
-      </View>
+}: {
+  label: string;
+  sublabel?: string;
+  isSelected: boolean;
+  onPress: () => void;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const onPressIn = () =>
+    Animated.spring(scale, {
+      toValue: 0.98,
+      useNativeDriver: true,
+      speed: 60,
+      bounciness: 2,
+    }).start();
+  const onPressOut = () =>
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 4,
+    }).start();
 
-      <View style={styles.employeeInfo}>
-        <Text
-          style={[
-            styles.employeeName,
-            isSelected && styles.employeeNameSelected,
-          ]}
-        >
-          {label}
-        </Text>
-        {sublabel && <Text style={styles.employeeSublabel}>{sublabel}</Text>}
-      </View>
-    </TouchableOpacity>
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        activeOpacity={1}
+        style={[styles.employeeRow, isSelected && styles.employeeRowSelected]}
+      >
+        <View style={[styles.radioOuter, isSelected && styles.radioSelected]}>
+          {isSelected && <View style={styles.radioInner} />}
+        </View>
+        <View style={styles.employeeInfo}>
+          <Text style={[styles.empName, isSelected && styles.empNameActive]}>
+            {label}
+          </Text>
+          {sublabel && <Text style={styles.empSub}>{sublabel}</Text>}
+        </View>
+        {isSelected && (
+          <View style={styles.selectedCheck}>
+            <Text style={styles.selectedCheckText}>✓</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
@@ -340,18 +407,18 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.subtle,
+    backgroundColor: Colors.bg.base,
   },
-  backButton: {
+  backBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
-    paddingVertical: Spacing.xs,
-    minWidth: 70,
+    minWidth: 72,
   },
   backIcon: {
-    fontSize: 22,
+    fontSize: 24,
     color: Colors.accent.default,
-    lineHeight: 26,
+    lineHeight: 28,
     fontWeight: "300",
   },
   backLabel: {
@@ -361,8 +428,8 @@ const styles = StyleSheet.create({
   },
   headerCenter: {
     flex: 1,
-    alignItems: "center",
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "center",
     gap: Spacing.sm,
   },
@@ -371,20 +438,30 @@ const styles = StyleSheet.create({
     fontWeight: Typography.weight.semibold,
     color: Colors.text.primary,
   },
-  roleBadge: {
-    backgroundColor: Colors.accent.subtle,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  rolePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.accent.muted,
+    borderWidth: 1,
+    borderColor: Colors.accent.border,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: Radius.full,
   },
-  roleBadgeText: {
+  roleDot: {
+    width: 5,
+    height: 5,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.accent.default,
+  },
+  rolePillText: {
     fontSize: Typography.size.xs,
     color: Colors.accent.text,
     fontWeight: Typography.weight.medium,
   },
-  logoutButton: {
-    paddingVertical: Spacing.xs,
-    minWidth: 70,
+  logoutBtn: {
+    minWidth: 72,
     alignItems: "flex-end",
   },
   logoutText: {
@@ -397,39 +474,22 @@ const styles = StyleSheet.create({
   scroll: {
     padding: Spacing.lg,
     gap: Spacing.md,
-    paddingBottom: 40,
-  },
-
-  // Sections
-  section: {
-    // Card bringt schon Padding und Background mit
-  },
-  sectionTitle: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.primary,
-    letterSpacing: -0.2,
-  },
-  sectionSubtitle: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-    marginTop: 2,
-  },
-  sectionDivider: {
-    marginVertical: Spacing.md,
   },
 
   notesInput: {
     minHeight: 90,
     textAlignVertical: "top",
-    paddingTop: 14,
+    paddingTop: 12,
   },
 
-  noEmployees: {
+  // Leere Mitarbeiterliste
+  emptyEmployees: {
+    paddingVertical: Spacing.lg,
+    alignItems: "center",
+  },
+  emptyEmployeesText: {
     fontSize: Typography.size.sm,
     color: Colors.text.muted,
-    textAlign: "center",
-    paddingVertical: Spacing.lg,
   },
 
   // Mitarbeiter-Zeile
@@ -440,46 +500,76 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.sm,
     borderRadius: Radius.sm,
-    marginBottom: 2,
+    borderWidth: 1,
+    borderColor: Colors.transparent,
   },
   employeeRowSelected: {
-    backgroundColor: Colors.accent.subtle,
+    backgroundColor: Colors.accent.muted,
+    borderColor: Colors.accent.border,
   },
-
-  // Radio-Button
   radioOuter: {
     width: 20,
     height: 20,
     borderRadius: Radius.full,
     borderWidth: 2,
-    borderColor: Colors.border.default,
+    borderColor: Colors.border.strong,
     alignItems: "center",
     justifyContent: "center",
   },
-  radioOuterSelected: {
+  radioSelected: {
     borderColor: Colors.accent.default,
   },
   radioInner: {
-    width: 10,
-    height: 10,
+    width: 9,
+    height: 9,
     borderRadius: Radius.full,
     backgroundColor: Colors.accent.default,
   },
-
-  // Mitarbeiter-Info
-  employeeInfo: { flex: 1, gap: 1 },
-  employeeName: {
+  employeeInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  empName: {
     fontSize: Typography.size.base,
     color: Colors.text.secondary,
     fontWeight: Typography.weight.medium,
   },
-  employeeNameSelected: {
+  empNameActive: {
     color: Colors.accent.text,
   },
-  employeeSublabel: {
+  empSub: {
     fontSize: Typography.size.xs,
     color: Colors.text.muted,
   },
+  selectedCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.accent.default,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectedCheckText: {
+    fontSize: 11,
+    color: Colors.white,
+    fontWeight: Typography.weight.bold,
+  },
 
-  bottomSpacer: { height: Spacing.xl },
+  // Haupt-CTA
+  createBtn: {
+    backgroundColor: Colors.accent.default,
+    paddingVertical: 15,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    ...Shadows.accent,
+  },
+  createBtnDisabled: {
+    opacity: 0.5,
+  },
+  createBtnText: {
+    fontSize: Typography.size.base,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.white,
+    letterSpacing: Typography.tracking.wide,
+  },
 });
