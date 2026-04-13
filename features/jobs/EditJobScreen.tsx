@@ -1,7 +1,11 @@
-import { Button, Card, Divider, Input, LoadingScreen } from "@/components/ui";
+import { Button, Card, Divider, LoadingScreen } from "@/components/ui";
 import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
+import { EmployeeSelector } from "@/features/jobs/components/EmployeeSelector";
+import { JobFormFields } from "@/features/jobs/components/JobFormFields";
+import { useJobForm } from "@/features/jobs/hooks/useJobForm";
+import { formatToISO } from "@/utils/date";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -17,43 +21,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-function normalizeScheduledStart(value: string): string | null {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return null;
-  }
-
-  const normalized = trimmed.replace(" ", "T");
-  const date = new Date(normalized);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date.toISOString();
-}
-
-function formatForInput(value?: string | null): string {
-  if (!value) {
-    return "";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-
-  return `${year}-${month}-${day} ${hours}:${minutes}`;
-}
-
 export default function EditJobScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const {
@@ -68,15 +35,9 @@ export default function EditJobScreen() {
   const { signOut, role, loading: authLoading } = useAuth();
 
   const job = useMemo(() => jobs.find((item) => item.id === id), [jobs, id]);
-
-  const [customerName, setCustomerName] = useState("");
-  const [location, setLocation] = useState("");
-  const [service, setService] = useState("");
-  const [scheduledStart, setScheduledStart] = useState("");
-  const [employeeId, setEmployeeId] = useState<string | null>(null);
-  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const { values, errors, setField, validate, setValues, setErrors } = useJobForm();
 
   const isAdmin = role === "admin";
 
@@ -91,32 +52,43 @@ export default function EditJobScreen() {
   }, [jobs.length, employees.length, refreshJobs, refreshEmployees]);
 
   useEffect(() => {
-    if (!job) {
-      return;
-    }
+    if (!job) return;
 
-    setCustomerName(job.customerName);
-    setLocation(job.location);
-    setService(job.service);
-    setScheduledStart(formatForInput(job.scheduledStart));
-    setEmployeeId(job.employeeId ?? null);
-    setNotes(job.notes ?? "");
-  }, [job]);
+    const parsedStart = job.scheduledStart ? new Date(job.scheduledStart) : null;
+
+    setValues({
+      customerName: job.customerName,
+      location: job.location,
+      service: job.service,
+      scheduledStart:
+        parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null,
+      employeeId: job.employeeId ?? null,
+      notes: job.notes ?? "",
+    });
+
+    setErrors({});
+  }, [job, setValues, setErrors]);
 
   const hasChanges = useMemo(() => {
-    if (!job) {
-      return false;
-    }
+    if (!job) return false;
+
+    const originalStartMs = job.scheduledStart
+      ? new Date(job.scheduledStart).getTime()
+      : null;
+
+    const currentStartMs = values.scheduledStart
+      ? values.scheduledStart.getTime()
+      : null;
 
     return (
-      customerName !== job.customerName ||
-      location !== job.location ||
-      service !== job.service ||
-      scheduledStart !== formatForInput(job.scheduledStart) ||
-      employeeId !== (job.employeeId ?? null) ||
-      notes !== (job.notes ?? "")
+      values.customerName !== job.customerName ||
+      values.location !== job.location ||
+      values.service !== job.service ||
+      currentStartMs !== originalStartMs ||
+      values.employeeId !== (job.employeeId ?? null) ||
+      values.notes !== (job.notes ?? "")
     );
-  }, [customerName, employeeId, job, location, notes, scheduledStart, service]);
+  }, [job, values]);
 
   const handleLogout = async () => {
     Alert.alert("Abmelden", "Möchtest du dich wirklich abmelden?", [
@@ -127,36 +99,14 @@ export default function EditJobScreen() {
         onPress: async () => {
           try {
             await signOut();
-          } catch (err: any) {
-            Alert.alert("Fehler", err?.message ?? "Abmeldung fehlgeschlagen.");
+          } catch (err: unknown) {
+            const msg =
+              err instanceof Error ? err.message : "Abmeldung fehlgeschlagen.";
+            Alert.alert("Fehler", msg);
           }
         },
       },
     ]);
-  };
-
-  const validate = () => {
-    const newErrors: Record<string, string> = {};
-
-    if (!customerName.trim()) {
-      newErrors.customerName = "Bitte Kundennamen eingeben.";
-    }
-
-    if (!location.trim()) {
-      newErrors.location = "Bitte Ort eingeben.";
-    }
-
-    if (!service.trim()) {
-      newErrors.service = "Bitte Service eingeben.";
-    }
-
-    if (scheduledStart.trim() && !normalizeScheduledStart(scheduledStart)) {
-      newErrors.scheduledStart =
-        "Bitte Datum und Uhrzeit korrekt eingeben, z.B. 2026-04-10 07:30.";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
   const handleSave = async () => {
@@ -169,28 +119,25 @@ export default function EditJobScreen() {
       return;
     }
 
-    const normalizedScheduledStart = normalizeScheduledStart(scheduledStart);
-
     try {
       setSubmitting(true);
 
       await updateJob({
         jobId: job.id,
-        customerName: customerName.trim(),
-        location: location.trim(),
-        service: service.trim(),
-        scheduledStart: normalizedScheduledStart,
-        employeeId,
-        notes: notes.trim() || null,
+        customerName: values.customerName.trim(),
+        location: values.location.trim(),
+        service: values.service.trim(),
+        scheduledStart: formatToISO(values.scheduledStart),
+        employeeId: values.employeeId,
+        notes: values.notes.trim() || null,
       });
 
       Alert.alert("Erfolgreich", "Job wurde aktualisiert.");
       router.back();
-    } catch (err: any) {
-      Alert.alert(
-        "Fehler",
-        err?.message ?? "Job konnte nicht gespeichert werden.",
-      );
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Job konnte nicht gespeichert werden.";
+      Alert.alert("Fehler", msg);
     } finally {
       setSubmitting(false);
     }
@@ -213,11 +160,10 @@ export default function EditJobScreen() {
             await deleteJob(job.id);
             Alert.alert("Erfolgreich", "Job wurde gelöscht.");
             router.back();
-          } catch (err: any) {
-            Alert.alert(
-              "Fehler",
-              err?.message ?? "Job konnte nicht gelöscht werden.",
-            );
+          } catch (err: unknown) {
+            const msg =
+              err instanceof Error ? err.message : "Job konnte nicht gelöscht werden.";
+            Alert.alert("Fehler", msg);
           } finally {
             setSubmitting(false);
           }
@@ -309,65 +255,10 @@ export default function EditJobScreen() {
 
             <Divider style={styles.sectionDivider} />
 
-            <Input
-              label="Kunde *"
-              placeholder="z.B. Müller GmbH"
-              value={customerName}
-              onChangeText={(t) => {
-                setCustomerName(t);
-                if (errors.customerName) {
-                  setErrors((e) => ({ ...e, customerName: "" }));
-                }
-              }}
-              error={errors.customerName}
-            />
-
-            <Input
-              label="Ort *"
-              placeholder="z.B. Dortmund"
-              value={location}
-              onChangeText={(t) => {
-                setLocation(t);
-                if (errors.location) {
-                  setErrors((e) => ({ ...e, location: "" }));
-                }
-              }}
-              error={errors.location}
-            />
-
-            <Input
-              label="Service *"
-              placeholder="z.B. Wartung, Installation"
-              value={service}
-              onChangeText={(t) => {
-                setService(t);
-                if (errors.service) {
-                  setErrors((e) => ({ ...e, service: "" }));
-                }
-              }}
-              error={errors.service}
-            />
-
-            <Input
-              label="Geplanter Start"
-              placeholder="z.B. 2026-04-10 07:30"
-              value={scheduledStart}
-              onChangeText={(t) => {
-                setScheduledStart(t);
-                if (errors.scheduledStart) {
-                  setErrors((e) => ({ ...e, scheduledStart: "" }));
-                }
-              }}
-              error={errors.scheduledStart}
-            />
-
-            <Input
-              label="Notizen"
-              placeholder="Optional – interne Hinweise zum Job"
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              style={styles.notesInput}
+            <JobFormFields
+              values={values}
+              errors={errors}
+              onChangeField={setField}
             />
           </Card>
 
@@ -379,34 +270,18 @@ export default function EditJobScreen() {
 
             <Divider style={styles.sectionDivider} />
 
-            <EmployeeOption
-              label="Nicht zuweisen"
-              sublabel="Job bleibt offen"
-              isSelected={employeeId === null}
-              onPress={() => setEmployeeId(null)}
+            <EmployeeSelector
+              employees={employees}
+              selectedEmployeeId={values.employeeId}
+              onSelect={(employeeId) => setField("employeeId", employeeId)}
+              emptyLabel="Keine Mitarbeiter verfügbar."
             />
-
-            {employees.length === 0 ? (
-              <Text style={styles.noEmployees}>
-                Keine Mitarbeiter verfügbar.
-              </Text>
-            ) : (
-              employees.map((emp) => (
-                <EmployeeOption
-                  key={emp.id}
-                  label={emp.fullName}
-                  sublabel="Mitarbeiter"
-                  isSelected={employeeId === emp.id}
-                  onPress={() => setEmployeeId(emp.id)}
-                />
-              ))
-            )}
           </Card>
 
           <Button
             label={hasChanges ? "Änderungen speichern" : "Keine Änderungen"}
             loading={submitting}
-            disabled={loading || !hasChanges}
+            disabled={loading || submitting || !hasChanges}
             onPress={handleSave}
           />
 
@@ -426,52 +301,14 @@ export default function EditJobScreen() {
   );
 }
 
-interface EmployeeOptionProps {
-  label: string;
-  sublabel?: string;
-  isSelected: boolean;
-  onPress: () => void;
-}
-
-function EmployeeOption({
-  label,
-  sublabel,
-  isSelected,
-  onPress,
-}: EmployeeOptionProps) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={[styles.employeeRow, isSelected && styles.employeeRowSelected]}
-      activeOpacity={0.7}
-    >
-      <View
-        style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}
-      >
-        {isSelected && <View style={styles.radioInner} />}
-      </View>
-
-      <View style={styles.employeeInfo}>
-        <Text
-          style={[
-            styles.employeeName,
-            isSelected && styles.employeeNameSelected,
-          ]}
-        >
-          {label}
-        </Text>
-        {sublabel && <Text style={styles.employeeSublabel}>{sublabel}</Text>}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: Colors.bg.base,
   },
-  flex: { flex: 1 },
+  flex: {
+    flex: 1,
+  },
   emptyWrap: {
     flex: 1,
     justifyContent: "center",
@@ -569,60 +406,6 @@ const styles = StyleSheet.create({
   sectionDivider: {
     marginVertical: Spacing.md,
   },
-  notesInput: {
-    minHeight: 90,
-    textAlignVertical: "top",
-    paddingTop: 14,
-  },
-  noEmployees: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.muted,
-    textAlign: "center",
-    paddingVertical: Spacing.lg,
-  },
-  employeeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: Radius.sm,
-    marginBottom: 2,
-  },
-  employeeRowSelected: {
-    backgroundColor: Colors.accent.subtle,
-  },
-  radioOuter: {
-    width: 20,
-    height: 20,
-    borderRadius: Radius.full,
-    borderWidth: 2,
-    borderColor: Colors.border.default,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioOuterSelected: {
-    borderColor: Colors.accent.default,
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.accent.default,
-  },
-  employeeInfo: { flex: 1, gap: 1 },
-  employeeName: {
-    fontSize: Typography.size.base,
-    color: Colors.text.secondary,
-    fontWeight: Typography.weight.medium,
-  },
-  employeeNameSelected: {
-    color: Colors.accent.text,
-  },
-  employeeSublabel: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-  },
   deleteButton: {
     marginTop: Spacing.sm,
     alignItems: "center",
@@ -638,5 +421,7 @@ const styles = StyleSheet.create({
     fontWeight: Typography.weight.semibold,
     color: Colors.status.danger,
   },
-  bottomSpacer: { height: Spacing.xl },
+  bottomSpacer: {
+    height: Spacing.xl,
+  },
 });
