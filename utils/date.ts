@@ -18,3 +18,8 @@ export function formatForDisplay(date: Date | string | null | undefined): string
 
   return `${day}.${month}.${year} ${hours}:${minutes}`;
 }
+export function parseToDate(date: Date | string | null | undefined): Date | null {
+  if (!date) return null;
+  const d = new Date(date);
+  return isNaN(d.getTime()) ? null : d;
+}

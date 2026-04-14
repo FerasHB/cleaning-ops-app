@@ -23,6 +23,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 console.log("useJobForm check:", useJobForm);
+console.log("JobFormFields check:", JobFormFields);
 function SectionBlock({
   title,
   subtitle,
