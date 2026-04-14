@@ -44,7 +44,13 @@ type UpdateJobInput = {
 
 // Formatiert ein Datum / eine Uhrzeit schön auf Deutsch
 function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString("de-DE");
+  const date = new Date(value);
+
+  if (isNaN(date.getTime())) {
+    return "Ungültiges Datum";
+  }
+
+  return date.toLocaleString("de-DE");
 }
 
 // Baut aus Start- und Endzeit einen lesbaren Zeittext

@@ -1,8 +1,11 @@
-
-
-
 import { LoadingScreen } from "@/components/ui";
-import { Colors, Radius, Shadows, Spacing, Typography } from "@/constants/theme";
+import {
+  Colors,
+  Radius,
+  Shadows,
+  Spacing,
+  Typography,
+} from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobFormFields } from "@/features/jobs/components/JobFormFields";
@@ -22,8 +25,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-console.log("useJobForm check:", useJobForm);
-console.log("JobFormFields check:", JobFormFields);
+
 function SectionBlock({
   title,
   subtitle,
@@ -37,7 +39,9 @@ function SectionBlock({
     <View style={sectionStyles.block}>
       <View style={sectionStyles.header}>
         <Text style={sectionStyles.title}>{title}</Text>
-        {subtitle ? <Text style={sectionStyles.subtitle}>{subtitle}</Text> : null}
+        {subtitle ? (
+          <Text style={sectionStyles.subtitle}>{subtitle}</Text>
+        ) : null}
       </View>
       <View style={sectionStyles.body}>{children}</View>
     </View>
@@ -140,7 +144,9 @@ export default function AdminScreen() {
       Alert.alert("✓ Erstellt", "Der Job wurde erfolgreich angelegt.");
     } catch (err: unknown) {
       const msg =
-        err instanceof Error ? err.message : "Job konnte nicht erstellt werden.";
+        err instanceof Error
+          ? err.message
+          : "Job konnte nicht erstellt werden.";
       Alert.alert("Fehler", msg);
     } finally {
       setSubmitting(false);
@@ -153,7 +159,7 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -201,6 +207,7 @@ export default function AdminScreen() {
               values={values}
               errors={errors}
               onChangeField={setField}
+              employees={employees}
             />
           </SectionBlock>
 
@@ -300,7 +307,7 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     fontSize: Typography.size.sm,
-    color: Colors.status.danger,
+    color: "#DC2626",
     fontWeight: Typography.weight.medium,
   },
   scroll: {
@@ -312,7 +319,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: Radius.md,
     alignItems: "center",
-    ...Shadows.accent,
+    ...Shadows.md,
   },
   createBtnDisabled: {
     opacity: 0.5,

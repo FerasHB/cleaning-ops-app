@@ -7,14 +7,8 @@ import {
   Typography,
 } from "@/constants/theme";
 import { Job } from "@/types/job";
-import React, { useRef } from "react";
-import {
-  Animated,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Props = {
   job: Job;
@@ -25,8 +19,10 @@ type Props = {
 
 function formatTime(iso?: string | null): string | null {
   if (!iso) return null;
+
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
+
   return date.toLocaleTimeString("de-DE", {
     hour: "2-digit",
     minute: "2-digit",
@@ -35,219 +31,142 @@ function formatTime(iso?: string | null): string | null {
 
 function formatDate(iso?: string | null): string | null {
   if (!iso) return null;
+
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
+
   return date.toLocaleDateString("de-DE", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
   });
 }
 
 const STATUS_CONFIG = {
   open: {
     label: "Offen",
-    fg: Colors.status.warning,
-    bg: Colors.status.warningBg,
-    border: Colors.status.warningBg,
-    accent: Colors.status.warning,
+    textColor: Colors.status.warning,
+    bgColor: Colors.status.warningBg,
   },
   in_progress: {
     label: "In Arbeit",
-    fg: Colors.accent.text,
-    bg: Colors.accent.subtle,
-    border: Colors.accent.subtle,
-    accent: Colors.accent.default,
+    textColor: Colors.accent.text,
+    bgColor: Colors.accent.subtle,
   },
   completed: {
     label: "Erledigt",
-    fg: Colors.status.success,
-    bg: Colors.status.successBg,
-    border: Colors.status.successBg,
-    accent: Colors.status.success,
+    textColor: Colors.status.success,
+    bgColor: Colors.status.successBg,
   },
 } as const;
 
-function PressableButton({
-  onPress,
-  disabled,
-  style,
-  children,
-}: {
-  onPress: () => void;
-  disabled?: boolean;
-  style?: object;
-  children: React.ReactNode;
-}) {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const onPressIn = () => {
-    Animated.spring(scale, {
-      toValue: 0.97,
-      useNativeDriver: true,
-      speed: 40,
-      bounciness: 4,
-    }).start();
-  };
-
-  const onPressOut = () => {
-    Animated.spring(scale, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 30,
-      bounciness: 6,
-    }).start();
-  };
-
-  return (
-    <Animated.View
-      style={[{ transform: [{ scale }] }, disabled && { opacity: 0.45 }]}
-    >
-      <TouchableOpacity
-        onPress={onPress}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        disabled={disabled}
-        activeOpacity={1}
-        style={style}
-      >
-        {children}
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
-
 export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
-  const cfg = STATUS_CONFIG[job.status];
+  const status = STATUS_CONFIG[job.status];
+
+  const date = formatDate(job.scheduledStart);
   const startTime = formatTime(job.scheduledStart);
   const endTime = formatTime(job.scheduledEnd);
-  const scheduleDate = formatDate(job.scheduledStart);
-  const timeDisplay =
-    startTime && endTime ? `${startTime} – ${endTime}` : startTime;
+
+  let scheduleText = "Keine Zeit";
+  if (date && startTime && endTime) {
+    scheduleText = `${date}, ${startTime} - ${endTime}`;
+  } else if (date && startTime) {
+    scheduleText = `${date}, ${startTime}`;
+  } else if (date) {
+    scheduleText = date;
+  }
 
   const canStart = job.status === "open";
   const canComplete = job.status === "in_progress";
 
   return (
     <View style={styles.card}>
-      <View style={[styles.topAccent, { backgroundColor: cfg.accent }]} />
+      <View style={styles.header}>
+        <Text style={styles.customerName}>{job.customerName}</Text>
 
-      <View style={styles.body}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.customerName} numberOfLines={1}>
-              {job.customerName}
-            </Text>
-            <Text style={styles.serviceLabel} numberOfLines={1}>
-              {job.service}
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.badge,
-              { backgroundColor: cfg.bg, borderColor: cfg.border },
-            ]}
-          >
-            <View style={[styles.badgeDot, { backgroundColor: cfg.accent }]} />
-            <Text style={[styles.badgeText, { color: cfg.fg }]}>
-              {cfg.label}
-            </Text>
-          </View>
+        <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
+          <Text style={[styles.statusText, { color: status.textColor }]}>
+            {status.label}
+          </Text>
         </View>
-
-        <View style={styles.metaGrid}>
-          <MetaChip icon="📍" value={job.location} />
-
-          {(timeDisplay || scheduleDate) && (
-            <MetaChip
-              icon="🕐"
-              value={[scheduleDate, timeDisplay].filter(Boolean).join(" · ")}
-            />
-          )}
-
-          {job.employeeName && <MetaChip icon="👤" value={job.employeeName} />}
-        </View>
-
-        {job.notes ? (
-          <View style={styles.notesBox}>
-            <Text style={styles.notesLabel}>NOTIZ</Text>
-            <Text style={styles.notesText} numberOfLines={2}>
-              {job.notes}
-            </Text>
-          </View>
-        ) : null}
-
-        <View style={styles.divider} />
-
-        <View style={styles.actions}>
-          <PressableButton
-            onPress={onStart}
-            disabled={!canStart}
-            style={[
-              styles.actionBtn,
-              canStart ? styles.actionBtnPrimary : styles.actionBtnGhost,
-            ]}
-          >
-            <Text
-              style={[
-                styles.actionBtnText,
-                canStart
-                  ? styles.actionBtnTextPrimary
-                  : styles.actionBtnTextMuted,
-              ]}
-            >
-              Start
-            </Text>
-          </PressableButton>
-
-          <PressableButton
-            onPress={onComplete}
-            disabled={!canComplete}
-            style={[
-              styles.actionBtn,
-              canComplete ? styles.actionBtnSuccess : styles.actionBtnGhost,
-            ]}
-          >
-            <Text
-              style={[
-                styles.actionBtnText,
-                canComplete
-                  ? styles.actionBtnTextSuccess
-                  : styles.actionBtnTextMuted,
-              ]}
-            >
-              Fertig
-            </Text>
-          </PressableButton>
-        </View>
-
-        {onEdit && (
-          <PressableButton
-            onPress={onEdit}
-            style={[
-              styles.actionBtn,
-              styles.actionBtnEdit,
-              styles.actionBtnFull,
-            ]}
-          >
-            <Text style={[styles.actionBtnText, styles.actionBtnTextEdit]}>
-              Bearbeiten
-            </Text>
-          </PressableButton>
-        )}
       </View>
-    </View>
-  );
-}
 
-function MetaChip({ icon, value }: { icon: string; value: string }) {
-  return (
-    <View style={styles.metaChip}>
-      <Text style={styles.metaIcon}>{icon}</Text>
-      <Text style={styles.metaText} numberOfLines={1}>
-        {value}
-      </Text>
+      <View style={styles.infoBlock}>
+        <Text style={styles.label}>Service</Text>
+        <Text style={styles.value}>{job.service}</Text>
+      </View>
+
+      <View style={styles.infoBlock}>
+        <Text style={styles.label}>Ort</Text>
+        <Text style={styles.value}>{job.location}</Text>
+      </View>
+
+      <View style={styles.infoBlock}>
+        <Text style={styles.label}>Zeit</Text>
+        <Text style={styles.value}>{scheduleText}</Text>
+      </View>
+
+      {job.employeeName ? (
+        <View style={styles.infoBlock}>
+          <Text style={styles.label}>Mitarbeiter</Text>
+          <Text style={styles.value}>{job.employeeName}</Text>
+        </View>
+      ) : null}
+
+      {job.notes ? (
+        <View style={styles.notesBox}>
+          <Text style={styles.label}>Notiz</Text>
+          <Text style={styles.notesText}>{job.notes}</Text>
+        </View>
+      ) : null}
+
+      <View style={styles.buttonRow}>
+        <TouchableOpacity
+          style={[
+            styles.button,
+            styles.startButton,
+            !canStart && styles.disabledButton,
+          ]}
+          onPress={onStart}
+          disabled={!canStart}
+        >
+          <Text
+            style={[
+              styles.buttonText,
+              styles.startButtonText,
+              !canStart && styles.disabledButtonText,
+            ]}
+          >
+            Start
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.button,
+            styles.completeButton,
+            !canComplete && styles.disabledButton,
+          ]}
+          onPress={onComplete}
+          disabled={!canComplete}
+        >
+          <Text
+            style={[
+              styles.buttonText,
+              styles.completeButtonText,
+              !canComplete && styles.disabledButtonText,
+            ]}
+          >
+            Fertig
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {onEdit ? (
+        <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+          <Text style={styles.editButtonText}>Bearbeiten</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -258,105 +177,58 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.border.default,
-    overflow: "hidden",
-    ...Shadows.md,
-  },
-
-  topAccent: {
-    height: 3,
-    width: "100%",
-  },
-
-  body: {
     padding: Spacing.lg,
     gap: Spacing.md,
+    ...Shadows.sm,
   },
 
-  headerRow: {
+  header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     gap: Spacing.sm,
   },
 
-  headerLeft: {
+  customerName: {
     flex: 1,
+    fontSize: Typography.size.lg,
+    fontWeight: Typography.weight.bold,
+    color: Colors.text.primary,
+  },
+
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+  },
+
+  statusText: {
+    fontSize: Typography.size.xs,
+    fontWeight: Typography.weight.semibold,
+  },
+
+  infoBlock: {
     gap: 4,
   },
 
-  customerName: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-    lineHeight: Typography.size.md * Typography.leading.tight,
-  },
-
-  serviceLabel: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-    fontWeight: Typography.weight.medium,
-  },
-
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-  },
-
-  badgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: Radius.full,
-  },
-
-  badgeText: {
+  label: {
     fontSize: Typography.size.xs,
+    color: Colors.text.muted,
     fontWeight: Typography.weight.semibold,
-    letterSpacing: 0.3,
     textTransform: "uppercase",
   },
 
-  metaGrid: {
-    gap: 6,
-  },
-
-  metaChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  metaIcon: {
-    fontSize: 13,
-    width: 18,
-    textAlign: "center",
-  },
-
-  metaText: {
+  value: {
     fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-    flex: 1,
+    color: Colors.text.primary,
+    lineHeight: Typography.size.sm * Typography.leading.normal,
   },
 
   notesBox: {
     backgroundColor: Colors.bg.elevated,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border.subtle,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
     gap: 4,
-  },
-
-  notesLabel: {
-    fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.muted,
-    letterSpacing: 0.5,
   },
 
   notesText: {
@@ -365,70 +237,67 @@ const styles = StyleSheet.create({
     lineHeight: Typography.size.sm * Typography.leading.normal,
   },
 
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border.subtle,
-  },
-
-  actions: {
+  buttonRow: {
     flexDirection: "row",
     gap: Spacing.sm,
-  },
-
-  actionBtn: {
-    flex: 1,
-    minHeight: 46,
-    paddingVertical: 12,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-
-  actionBtnFull: {
-    width: "100%",
     marginTop: Spacing.xs,
   },
 
-  actionBtnPrimary: {
+  button: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.md,
+    borderWidth: 1,
+  },
+
+  startButton: {
     backgroundColor: Colors.accent.default,
     borderColor: Colors.accent.default,
   },
 
-  actionBtnSuccess: {
+  completeButton: {
     backgroundColor: Colors.status.successBg,
     borderColor: Colors.status.success,
   },
 
-  actionBtnEdit: {
+  disabledButton: {
     backgroundColor: Colors.bg.elevated,
     borderColor: Colors.border.default,
   },
 
-  actionBtnGhost: {
-    backgroundColor: Colors.bg.overlay,
-    borderColor: Colors.border.subtle,
-  },
-
-  actionBtnText: {
+  buttonText: {
     fontSize: Typography.size.sm,
     fontWeight: Typography.weight.semibold,
   },
 
-  actionBtnTextMuted: {
-    color: Colors.text.muted,
-  },
-
-  actionBtnTextPrimary: {
+  startButtonText: {
     color: Colors.white,
   },
 
-  actionBtnTextSuccess: {
+  completeButtonText: {
     color: Colors.status.success,
   },
 
-  actionBtnTextEdit: {
+  disabledButtonText: {
+    color: Colors.text.muted,
+  },
+
+  editButton: {
+    minHeight: 44,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.bg.overlay,
+    borderWidth: 1,
+    borderColor: Colors.border.default,
+  },
+
+  editButtonText: {
+    fontSize: Typography.size.sm,
+    fontWeight: Typography.weight.semibold,
     color: Colors.text.primary,
   },
 });

@@ -1,7 +1,15 @@
 import { Input } from "@/components/ui/index";
-import { Colors, Radius, Shadows, Spacing, Typography } from "@/constants/theme";
+import {
+  Colors,
+  Radius,
+  Shadows,
+  Spacing,
+  Typography,
+} from "@/constants/theme";
 import { formatForDisplay } from "@/utils/date";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import React, { useState } from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -28,7 +36,10 @@ export function DateTimeField({
     setShowPickerModal(true);
   };
 
-  const handleTempDateChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+  const handleTempDateChange = (
+    _event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
     if (selectedDate) {
       setTempDate(selectedDate);
     }
@@ -91,26 +102,41 @@ export function DateTimeField({
                 mode={pickerStep}
                 display="spinner"
                 onChange={handleTempDateChange}
-                style={{ width: "100%", alignSelf: "center" }}
+                themeVariant="light"
+                textColor={Colors.text.primary}
+                locale="de-DE"
+                style={modalStyles.picker}
               />
             </View>
 
             <View style={modalStyles.footer}>
               {pickerStep === "date" ? (
                 <>
-                  <TouchableOpacity onPress={handlePickerCancel} style={modalStyles.btnCancel}>
+                  <TouchableOpacity
+                    onPress={handlePickerCancel}
+                    style={modalStyles.btnCancel}
+                  >
                     <Text style={modalStyles.btnCancelText}>Abbrechen</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={handlePickerNext} style={modalStyles.btnPrimary}>
+                  <TouchableOpacity
+                    onPress={handlePickerNext}
+                    style={modalStyles.btnPrimary}
+                  >
                     <Text style={modalStyles.btnPrimaryText}>Weiter</Text>
                   </TouchableOpacity>
                 </>
               ) : (
                 <>
-                  <TouchableOpacity onPress={handlePickerBack} style={modalStyles.btnCancel}>
+                  <TouchableOpacity
+                    onPress={handlePickerBack}
+                    style={modalStyles.btnCancel}
+                  >
                     <Text style={modalStyles.btnCancelText}>Zurück</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={handlePickerConfirm} style={modalStyles.btnPrimary}>
+                  <TouchableOpacity
+                    onPress={handlePickerConfirm}
+                    style={modalStyles.btnPrimary}
+                  >
                     <Text style={modalStyles.btnPrimaryText}>Bestätigen</Text>
                   </TouchableOpacity>
                 </>
@@ -151,7 +177,7 @@ const styles = StyleSheet.create({
 const modalStyles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "center",
     alignItems: "center",
     padding: Spacing.lg,
@@ -162,7 +188,7 @@ const modalStyles = StyleSheet.create({
     padding: Spacing.lg,
     width: "100%",
     maxWidth: 360,
-    ...Shadows.lg,
+    ...Shadows.md,
   },
   title: {
     fontSize: Typography.size.lg,
@@ -172,8 +198,17 @@ const modalStyles = StyleSheet.create({
     textAlign: "center",
   },
   pickerWrapper: {
+    backgroundColor: Colors.bg.surface,
+    borderRadius: Radius.md,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 220,
     marginVertical: Spacing.md,
+    overflow: "hidden",
+  },
+  picker: {
+    width: "100%",
+    height: 220,
   },
   footer: {
     flexDirection: "row",
@@ -185,13 +220,13 @@ const modalStyles = StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     borderRadius: Radius.md,
-    backgroundColor: Colors.bg.base,
+    backgroundColor: Colors.bg.elevated,
     borderWidth: 1,
     borderColor: Colors.border.default,
     alignItems: "center",
   },
   btnCancelText: {
-    fontSize: Typography.size.base,
+    fontSize: Typography.size.md,
     color: Colors.text.primary,
     fontWeight: Typography.weight.medium,
   },
@@ -203,7 +238,7 @@ const modalStyles = StyleSheet.create({
     alignItems: "center",
   },
   btnPrimaryText: {
-    fontSize: Typography.size.base,
+    fontSize: Typography.size.md,
     color: Colors.white,
     fontWeight: Typography.weight.semibold,
   },
