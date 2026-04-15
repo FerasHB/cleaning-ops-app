@@ -166,7 +166,13 @@ export default function AdminScreen() {
       >
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/home");
+              }
+            }}
             style={styles.backBtn}
             activeOpacity={0.7}
           >
