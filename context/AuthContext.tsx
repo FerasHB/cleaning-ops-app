@@ -1,8 +1,11 @@
 import { supabase } from "@/lib/supabase";
+import { registerForPushNotifications } from "@/services/notificationService";
+import {
+  getProfileByUserId,
+  type AppRole,
+  type AuthProfile,
+} from "@/services/profileService";
 import { Session, User } from "@supabase/supabase-js";
-import Constants from "expo-constants";
-import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
 import React, {
   createContext,
   useCallback,
@@ -11,17 +14,6 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { Platform } from "react-native";
-
-type AppRole = "admin" | "employee";
-
-type AuthProfile = {
-  id: string;
-  full_name: string;
-  company_id: string | null;
-  role: AppRole;
-  is_active: boolean;
-};
 
 type AuthContextType = {
   session: Session | null;
@@ -35,81 +27,11 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
-async function registerForPushNotificationsAsync(): Promise<string | null> {
-  if (Platform.OS === "web") {
-    return null;
-  }
-
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "default",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#2563EB",
-    });
-  }
-
-  if (!Device.isDevice) {
-    console.log("Push notifications require a physical device.");
-    return null;
-  }
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== "granted") {
-    console.log("Push notification permission was not granted.");
-    return null;
-  }
-
-  const projectId =
-    Constants?.expoConfig?.extra?.eas?.projectId ??
-    Constants?.easConfig?.projectId;
-
-  if (!projectId) {
-    console.log("Expo projectId not found. Skipping push token registration.");
-    return null;
-  }
-
-  const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  return token;
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const loadProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, company_id, role, is_active")
-      .eq("id", userId)
-      .single();
-
-    if (error) {
-      console.error("Failed to load profile:", error);
-      setProfile(null);
-      return;
-    }
-
-    setProfile(data as AuthProfile);
-  }, []);
 
   const refreshProfile = useCallback(async () => {
     const {
@@ -121,12 +43,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    await loadProfile(currentUser.id);
-  }, [loadProfile]);
+    const nextProfile = await getProfileByUserId(currentUser.id);
+    setProfile(nextProfile);
+  }, []);
 
   const syncPushToken = useCallback(async (userId: string) => {
     try {
-      const expoPushToken = await registerForPushNotificationsAsync();
+      const expoPushToken = await registerForPushNotifications();
 
       if (!expoPushToken) {
         return;
@@ -168,7 +91,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentSession?.user ?? null);
 
       if (currentSession?.user?.id) {
-        await loadProfile(currentSession.user.id);
+        const nextProfile = await getProfileByUserId(currentSession.user.id);
+        setProfile(nextProfile);
         await syncPushToken(currentSession.user.id);
       } else {
         setProfile(null);
@@ -188,7 +112,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(newSession?.user ?? null);
 
       if (newSession?.user?.id) {
-        await loadProfile(newSession.user.id);
+        const nextProfile = await getProfileByUserId(newSession.user.id);
+        setProfile(nextProfile);
         await syncPushToken(newSession.user.id);
       } else {
         setProfile(null);
@@ -201,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadProfile, syncPushToken]);
+  }, [syncPushToken]);
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();

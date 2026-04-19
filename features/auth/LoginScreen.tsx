@@ -1,4 +1,3 @@
-// screens/LoginScreen.tsx
 import { Input } from "@/components/ui";
 import {
   Colors,
@@ -30,11 +29,10 @@ export default function LoginScreen() {
   const [passwordError, setPasswordError] = useState("");
   const [formError, setFormError] = useState("");
 
-  // Eingangs-Animationen
   const logoAnim = useRef(new Animated.Value(0)).current;
-  const logoScale = useRef(new Animated.Value(0.85)).current;
+  const logoScale = useRef(new Animated.Value(0.95)).current;
   const formAnim = useRef(new Animated.Value(0)).current;
-  const formSlide = useRef(new Animated.Value(24)).current;
+  const formSlide = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -47,51 +45,60 @@ export default function LoginScreen() {
         toValue: 1,
         useNativeDriver: true,
         speed: 12,
-        bounciness: 8,
+        bounciness: 6,
       }),
     ]).start();
 
     Animated.parallel([
       Animated.timing(formAnim, {
         toValue: 1,
-        duration: 440,
-        delay: 160,
+        duration: 400,
+        delay: 120,
         useNativeDriver: true,
       }),
       Animated.timing(formSlide, {
         toValue: 0,
-        duration: 380,
-        delay: 160,
+        duration: 350,
+        delay: 120,
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [formAnim, formSlide, logoAnim, logoScale]);
 
   const validate = () => {
     let valid = true;
+
     setEmailError("");
     setPasswordError("");
     setFormError("");
+
     if (!email.trim()) {
       setEmailError("E-Mail ist erforderlich.");
       valid = false;
     }
+
     if (!password) {
       setPasswordError("Passwort ist erforderlich.");
       valid = false;
     }
+
     return valid;
   };
 
   const handleLogin = async () => {
     if (!validate()) return;
+
     try {
       setLoading(true);
+
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
-      if (error) setFormError("E-Mail oder Passwort ist falsch.");
+
+      if (error) {
+        setFormError("E-Mail oder Passwort ist falsch.");
+      }
     } catch {
       setFormError("Login fehlgeschlagen. Bitte erneut versuchen.");
     } finally {
@@ -101,11 +108,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <StatusBar barStyle="light-content" />
-
-      {/* Dekorative Hintergrund-Kreise */}
-      <View style={styles.bgDecor1} />
-      <View style={styles.bgDecor2} />
+      <StatusBar barStyle="dark-content" />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -116,40 +119,30 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Logo & Branding ── */}
           <Animated.View
             style={[
               styles.brandArea,
               { opacity: logoAnim, transform: [{ scale: logoScale }] },
             ]}
           >
-            <View style={styles.logoContainer}>
-              {/* Äußerer Glow-Ring */}
-              <View style={styles.logoGlow} />
-              <View style={styles.logoMark}>
-                <Text style={styles.logoLetter}>J</Text>
-              </View>
+            <View style={styles.logoMark}>
+              <Text style={styles.logoLetter}>J</Text>
             </View>
 
             <View style={styles.brandText}>
               <Text style={styles.brandName}>JobManager</Text>
-              <View style={styles.brandTagRow}>
-                <View style={styles.brandTagDot} />
-                <Text style={styles.brandTagline}>
-                  Professionelles Job-Management
-                </Text>
-              </View>
+              <Text style={styles.brandTagline}>
+                Professionelles Job-Management
+              </Text>
             </View>
           </Animated.View>
 
-          {/* ── Formular-Karte ── */}
           <Animated.View
             style={[
               styles.card,
               { opacity: formAnim, transform: [{ translateY: formSlide }] },
             ]}
           >
-            {/* Karten-Header */}
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Anmelden</Text>
               <Text style={styles.cardSubtitle}>
@@ -157,26 +150,19 @@ export default function LoginScreen() {
               </Text>
             </View>
 
-            <View style={styles.cardDivider} />
-
-            {/* Fehler-Banner */}
             {formError ? (
               <View style={styles.errorBanner}>
-                <View style={styles.errorIcon}>
-                  <Text style={styles.errorIconText}>!</Text>
-                </View>
                 <Text style={styles.errorBannerText}>{formError}</Text>
               </View>
             ) : null}
 
-            {/* Eingabefelder */}
             <View style={styles.fields}>
               <Input
                 label="E-Mail"
                 placeholder="name@firma.de"
                 value={email}
-                onChangeText={(t: string) => {
-                  setEmail(t);
+                onChangeText={(text: string) => {
+                  setEmail(text);
                   setEmailError("");
                   setFormError("");
                 }}
@@ -191,8 +177,8 @@ export default function LoginScreen() {
                 label="Passwort"
                 placeholder="••••••••"
                 value={password}
-                onChangeText={(t: string) => {
-                  setPassword(t);
+                onChangeText={(text: string) => {
+                  setPassword(text);
                   setPasswordError("");
                   setFormError("");
                 }}
@@ -204,22 +190,19 @@ export default function LoginScreen() {
               />
             </View>
 
-            {/* Login Button */}
             <TouchableOpacity
               onPress={handleLogin}
               disabled={loading}
               activeOpacity={0.85}
-              style={[styles.loginBtn, loading && styles.loginBtnLoading]}
+              style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
             >
               <Text style={styles.loginBtnText}>
-                {loading ? "Anmelden…" : "Anmelden"}
+                {loading ? "Anmelden..." : "Anmelden"}
               </Text>
             </TouchableOpacity>
           </Animated.View>
 
-          {/* ── Footer ── */}
           <Animated.View style={[styles.footer, { opacity: formAnim }]}>
-            <View style={styles.footerDivider} />
             <Text style={styles.footerText}>
               Nur für autorisierte Mitarbeiter
             </Text>
@@ -230,210 +213,116 @@ export default function LoginScreen() {
   );
 }
 
-const DECOR_SIZE = 320;
-
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: Colors.bg.base,
   },
-  flex: { flex: 1 },
-
-  // Dekorative Hintergrundkreise
-  bgDecor1: {
-    position: "absolute",
-    top: -DECOR_SIZE / 2,
-    right: -DECOR_SIZE / 3,
-    width: DECOR_SIZE,
-    height: DECOR_SIZE,
-    borderRadius: DECOR_SIZE / 2,
-    backgroundColor: Colors.accent.glow,
-    // Kein shadow – bleibt flat, nur Farbe
+  flex: {
+    flex: 1,
   },
-  bgDecor2: {
-    position: "absolute",
-    bottom: DECOR_SIZE / 4,
-    left: -DECOR_SIZE / 2,
-    width: DECOR_SIZE * 0.7,
-    height: DECOR_SIZE * 0.7,
-    borderRadius: DECOR_SIZE / 2,
-    backgroundColor: "rgba(99,102,241,0.06)",
-  },
-
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xxxl,
-    gap: Spacing.xxl,
+    paddingVertical: Spacing.xxl,
+    gap: Spacing.xl,
   },
 
-  // Branding
   brandArea: {
     alignItems: "center",
-    gap: Spacing.lg,
-  },
-  logoContainer: {
-    position: "relative",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoGlow: {
-    position: "absolute",
-    width: 88,
-    height: 88,
-    borderRadius: Radius.xl,
-    backgroundColor: Colors.accent.glow,
+    gap: Spacing.md,
   },
   logoMark: {
-    width: 68,
-    height: 68,
+    width: 72,
+    height: 72,
     borderRadius: Radius.lg,
     backgroundColor: Colors.accent.default,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: Colors.accent.border,
-    ...Shadows.accent,
+    ...Shadows.md,
   },
   logoLetter: {
-    fontSize: 30,
+    fontSize: Typography.size.xxl,
     fontWeight: Typography.weight.extrabold,
     color: Colors.white,
-    letterSpacing: -1,
   },
   brandText: {
     alignItems: "center",
-    gap: 6,
+    gap: Spacing.xs,
   },
   brandName: {
     fontSize: Typography.size.xl,
     fontWeight: Typography.weight.bold,
     color: Colors.text.primary,
-    letterSpacing: Typography.tracking.tight,
-  },
-  brandTagRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  brandTagDot: {
-    width: 5,
-    height: 5,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.status.success,
   },
   brandTagline: {
     fontSize: Typography.size.sm,
-    color: Colors.text.muted,
+    color: Colors.text.secondary,
   },
 
-  // Karte
   card: {
     backgroundColor: Colors.bg.surface,
     borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.border.default,
-    overflow: "hidden",
+    padding: Spacing.xl,
+    gap: Spacing.lg,
     ...Shadows.lg,
   },
   cardHeader: {
-    paddingHorizontal: Spacing.xxl,
-    paddingTop: Spacing.xxl,
-    paddingBottom: Spacing.lg,
-    gap: 4,
+    gap: Spacing.xs,
   },
   cardTitle: {
     fontSize: Typography.size.lg,
     fontWeight: Typography.weight.bold,
     color: Colors.text.primary,
-    letterSpacing: Typography.tracking.tight,
   },
   cardSubtitle: {
     fontSize: Typography.size.sm,
     color: Colors.text.muted,
   },
-  cardDivider: {
-    height: 1,
-    backgroundColor: Colors.border.subtle,
-    marginHorizontal: Spacing.xxl,
-    marginBottom: Spacing.lg,
-  },
 
-  // Fehler
   errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
     backgroundColor: Colors.status.dangerBg,
     borderWidth: 1,
-    borderColor: Colors.status.dangerBorder,
-    marginHorizontal: Spacing.xxl,
-    marginBottom: Spacing.md,
+    borderColor: Colors.status.danger,
+    borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    borderRadius: Radius.sm,
-  },
-  errorIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.status.danger,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  errorIconText: {
-    fontSize: 11,
-    fontWeight: Typography.weight.bold,
-    color: Colors.white,
   },
   errorBannerText: {
-    flex: 1,
     fontSize: Typography.size.sm,
     color: Colors.status.danger,
     fontWeight: Typography.weight.medium,
   },
 
-  // Felder
   fields: {
-    paddingHorizontal: Spacing.xxl,
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
+    gap: Spacing.md,
   },
 
-  // Login Button
   loginBtn: {
-    marginHorizontal: Spacing.xxl,
-    marginBottom: Spacing.xxl,
     backgroundColor: Colors.accent.default,
-    paddingVertical: 15,
+    paddingVertical: 14,
     borderRadius: Radius.md,
     alignItems: "center",
-    ...Shadows.accent,
+    ...Shadows.md,
   },
-  loginBtnLoading: {
-    opacity: 0.65,
+  loginBtnDisabled: {
+    opacity: 0.6,
   },
   loginBtnText: {
     fontSize: Typography.size.base,
     fontWeight: Typography.weight.semibold,
     color: Colors.white,
-    letterSpacing: Typography.tracking.wide,
   },
 
-  // Footer
   footer: {
     alignItems: "center",
-    gap: Spacing.md,
-  },
-  footerDivider: {
-    width: 40,
-    height: 1,
-    backgroundColor: Colors.border.subtle,
   },
   footerText: {
     fontSize: Typography.size.xs,
-    color: Colors.text.placeholder,
+    color: Colors.text.muted,
     textAlign: "center",
   },
 });

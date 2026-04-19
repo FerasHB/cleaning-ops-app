@@ -1,7 +1,9 @@
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { JobProvider } from "@/context/JobContext";
 import LoginScreen from "@/features/auth/LoginScreen";
+import { setupNotifications } from "@/services/notificationService";
 import { Stack } from "expo-router";
+import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 
 // Diese Komponente entscheidet, was der User sieht (Login, Loading oder App)
@@ -58,8 +60,11 @@ function RootNavigator() {
 
 // Root Layout wird ganz oben gerendert (Entry Point der App)
 export default function RootLayout() {
+  useEffect(() => {
+    setupNotifications();
+  }, []);
+
   return (
-    // AuthProvider um die ganze App → damit überall Zugriff auf Auth-Daten
     <AuthProvider>
       <RootNavigator />
     </AuthProvider>
