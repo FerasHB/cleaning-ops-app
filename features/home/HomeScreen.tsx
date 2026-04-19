@@ -1,6 +1,10 @@
 // screens/HomeScreen.tsx
 import { useAuth } from "@/context/AuthContext";
 
+import { EmptyState, LoadingScreen } from "@/components/ui";
+import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import HomeHeader from "@/features/home/components/HomeHeader";
+import HomeStats from "@/features/home/components/HomeStats";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,19 +13,9 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-import { EmptyState, LoadingScreen } from "@/components/ui";
-import {
-  Colors,
-  Radius,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/constants/theme";
 import JobCard from "../../components/JobCard";
 import { useJobs } from "../../context/JobContext";
 import { useTranslation } from "../../i18n/useTranslation";
@@ -127,73 +121,20 @@ export default function HomeScreen() {
         ListHeaderComponent={
           <>
             {/* ── Header ── */}
-            <Animated.View style={[styles.header, headerAnim]}>
-              <View style={styles.headerLeft}>
-                <View style={styles.greetingRow}>
-                  <View style={styles.onlineDot} />
-                  <Text style={styles.greetingHint}>Willkommen zurück</Text>
-                </View>
-                <Text style={styles.greeting}>{firstName} 👋</Text>
-                <Text style={styles.subtitle}>{t("subtitle")}</Text>
-              </View>
-
-              <View style={styles.headerActions}>
-                {role === "admin" && (
-                  <TouchableOpacity
-                    onPress={() => router.push("/admin")}
-                    style={styles.adminBtn}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={styles.adminBtnText}>Admin</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  onPress={handleLogout}
-                  style={styles.avatar}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.avatarText}>
-                    {firstName.charAt(0).toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </Animated.View>
+            <HomeHeader
+              firstName={firstName}
+              role={role}
+              onLogout={handleLogout}
+              headerAnim={headerAnim}
+            />
 
             {/* ── Stats Grid ── */}
-            <Animated.View style={[styles.statsGrid, statsAnim]}>
-              <StatCard
-                label="Gesamt"
-                count={jobs.length}
-                active={selectedFilter === "all"}
-                color={Colors.text.secondary}
-                activeBg={Colors.bg.elevated}
-                onPress={() => setSelectedFilter("all")}
-              />
-              <StatCard
-                label="Offen"
-                count={openJobs.length}
-                active={selectedFilter === "open"}
-                color={Colors.status.warning}
-                activeBg={Colors.status.warningBg}
-                onPress={() => setSelectedFilter("open")}
-              />
-              <StatCard
-                label="In Arbeit"
-                count={inProgressJobs.length}
-                active={selectedFilter === "in_progress"}
-                color={Colors.accent.text}
-                activeBg={Colors.accent.subtle}
-                onPress={() => setSelectedFilter("in_progress")}
-              />
-              <StatCard
-                label="Erledigt"
-                count={doneJobs.length}
-                active={selectedFilter === "completed"}
-                color={Colors.status.success}
-                activeBg={Colors.status.successBg}
-                onPress={() => setSelectedFilter("completed")}
-              />
-            </Animated.View>
+            <HomeStats
+              jobs={jobs}
+              selectedFilter={selectedFilter}
+              setSelectedFilter={setSelectedFilter}
+              statsAnim={statsAnim}
+            />
 
             {/* ── Abschnitts-Label ── */}
             <Animated.View style={[styles.sectionRow, listAnim]}>
@@ -266,61 +207,6 @@ function AnimatedJobCard({
         onComplete={onComplete}
         onEdit={onEdit}
       />
-    </Animated.View>
-  );
-}
-
-// ── Stat Card ──
-function StatCard({
-  label,
-  count,
-  color,
-  activeBg,
-  active,
-  onPress,
-}: {
-  label: string;
-  count: number;
-  color: string;
-  activeBg: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const onPressIn = () =>
-    Animated.spring(scale, {
-      toValue: 0.96,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
-  const onPressOut = () =>
-    Animated.spring(scale, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 30,
-      bounciness: 6,
-    }).start();
-
-  return (
-    <Animated.View style={[styles.statCardWrap, { transform: [{ scale }] }]}>
-      <TouchableOpacity
-        onPress={onPress}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        activeOpacity={1}
-        style={[
-          styles.statCard,
-          active && { backgroundColor: activeBg, borderColor: color + "40" },
-        ]}
-      >
-        <Text style={[styles.statCount, { color }]}>{count}</Text>
-        <Text style={styles.statLabel}>{label}</Text>
-        {active && (
-          <View style={[styles.statActiveDot, { backgroundColor: color }]} />
-        )}
-      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -415,50 +301,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.base,
     fontWeight: Typography.weight.bold,
     color: Colors.text.primary,
-  },
-
-  // Stats Grid – 2x2
-  statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.sm,
-    marginBottom: Spacing.xxl,
-  },
-  statCardWrap: {
-    width: "48.5%",
-  },
-  statCard: {
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.md,
-    gap: 4,
-    position: "relative",
-    overflow: "hidden",
-    ...Shadows.sm,
-  },
-  statCount: {
-    fontSize: Typography.size.xxl,
-    fontWeight: Typography.weight.extrabold,
-    letterSpacing: Typography.tracking.tight,
-    lineHeight: Typography.size.xxl * Typography.leading.tight,
-  },
-  statLabel: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-    fontWeight: Typography.weight.medium,
-    letterSpacing: Typography.tracking.wide,
-    textTransform: "uppercase",
-  },
-  statActiveDot: {
-    position: "absolute",
-    top: Spacing.md,
-    right: Spacing.md,
-    width: 6,
-    height: 6,
-    borderRadius: Radius.full,
   },
 
   // Sektion

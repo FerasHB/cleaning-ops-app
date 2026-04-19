@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border.default,
   },
-  btn_ghost: { backgroundColor: Colors.transparent },
+  btn_ghost: { backgroundColor: Colors.bg.base },
   btn_danger: { backgroundColor: Colors.status.dangerBg },
   btnDisabled: { opacity: 0.5 },
 
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing.xxxl * 2,
+    paddingVertical: Spacing.xxl * 2,
     gap: Spacing.sm,
   },
   emptyIcon: {
