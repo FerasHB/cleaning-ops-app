@@ -24,6 +24,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -82,7 +83,33 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Guards gegen doppelte Initialisierung / parallele Syncs
+  const didInitialLoadRef = useRef(false);
+  const hasHandledFirstNetInfoEventRef = useRef(false);
+  const syncInProgressRef = useRef(false);
+  const refreshJobsInProgressRef = useRef(false);
+
+  const runPendingSyncSafely = useCallback(async () => {
+    if (syncInProgressRef.current) {
+      return;
+    }
+
+    syncInProgressRef.current = true;
+
+    try {
+      await syncPendingJobActions();
+    } finally {
+      syncInProgressRef.current = false;
+    }
+  }, []);
+
   const refreshJobs = useCallback(async () => {
+    if (refreshJobsInProgressRef.current) {
+      return;
+    }
+
+    refreshJobsInProgressRef.current = true;
+
     try {
       setError(null);
 
@@ -124,6 +151,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       }
 
       setError(err?.message ?? "Jobs konnten nicht geladen werden.");
+    } finally {
+      refreshJobsInProgressRef.current = false;
     }
   }, []);
 
@@ -148,15 +177,28 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setJobs([]);
       setEmployees([]);
       setLoading(false);
+      setError(null);
+
+      didInitialLoadRef.current = false;
+      hasHandledFirstNetInfoEventRef.current = false;
+      syncInProgressRef.current = false;
+      refreshJobsInProgressRef.current = false;
+
       return;
     }
+
+    if (didInitialLoadRef.current) {
+      return;
+    }
+
+    didInitialLoadRef.current = true;
 
     const loadAll = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        await syncPendingJobActions();
+        await runPendingSyncSafely();
         await Promise.all([refreshJobs(), refreshEmployees()]);
       } finally {
         setLoading(false);
@@ -164,7 +206,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     };
 
     loadAll();
-  }, [session, refreshJobs, refreshEmployees]);
+  }, [session, refreshJobs, refreshEmployees, runPendingSyncSafely]);
 
   useEffect(() => {
     if (!session) {
@@ -174,12 +216,19 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = NetInfo.addEventListener(async (state) => {
       const online = !!state.isConnected;
 
+      // Erstes Event beim Mount ignorieren,
+      // weil NetInfo direkt den aktuellen Zustand liefert
+      if (!hasHandledFirstNetInfoEventRef.current) {
+        hasHandledFirstNetInfoEventRef.current = true;
+        return;
+      }
+
       if (!online) {
         return;
       }
 
       try {
-        await syncPendingJobActions();
+        await runPendingSyncSafely();
         await refreshJobs();
       } catch (err) {
         console.error("Failed to sync after reconnect:", err);
@@ -189,7 +238,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     return () => {
       unsubscribe();
     };
-  }, [session, refreshJobs]);
+  }, [session, refreshJobs, runPendingSyncSafely]);
 
   useEffect(() => {
     if (!session) {
@@ -236,7 +285,6 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       setJobs((prevJobs) => {
         const exists = prevJobs.some((job) => job.id === createdJob.id);
-
         const nextJobs: Job[] = exists ? prevJobs : [createdJob, ...prevJobs];
 
         saveCachedJobs(nextJobs).catch((err) =>

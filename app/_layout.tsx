@@ -3,37 +3,32 @@ import { JobProvider } from "@/context/JobContext";
 import LoginScreen from "@/features/auth/LoginScreen";
 import { setupNotifications } from "@/services/notificationService";
 import { Stack } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { ActivityIndicator, View } from "react-native";
-
+console.log("JobProvider import:", JobProvider);
 // Diese Komponente entscheidet, was der User sieht (Login, Loading oder App)
 function RootNavigator() {
-  // Holen uns die wichtigsten Daten aus dem AuthContext
   const { session, loading, profile } = useAuth();
 
-  // Während die Daten geladen werden → einfach Spinner anzeigen
   if (loading) {
     return (
       <View
         style={{
           flex: 1,
-          justifyContent: "center", // zentriert vertikal
-          alignItems: "center", // zentriert horizontal
-          backgroundColor: "#121212", // dunkler Hintergrund
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#121212",
         }}
       >
-        {/* Lade-Spinner */}
         <ActivityIndicator size="large" color="#2563EB" />
       </View>
     );
   }
 
-  // Wenn kein User eingeloggt ist → Login Screen anzeigen
   if (!session) {
     return <LoginScreen />;
   }
 
-  // Falls Session da ist, aber Profil noch nicht geladen → wieder Loading anzeigen
   if (!profile) {
     return (
       <View
@@ -49,10 +44,8 @@ function RootNavigator() {
     );
   }
 
-  // Wenn alles da ist (User + Profil) → App starten
   return (
     <JobProvider>
-      {/* Navigation Stack (alle Screens kommen hier rein) */}
       <Stack screenOptions={{ headerShown: false }} />
     </JobProvider>
   );
@@ -60,7 +53,14 @@ function RootNavigator() {
 
 // Root Layout wird ganz oben gerendert (Entry Point der App)
 export default function RootLayout() {
+  const didSetupNotificationsRef = useRef(false);
+
   useEffect(() => {
+    if (didSetupNotificationsRef.current) {
+      return;
+    }
+
+    didSetupNotificationsRef.current = true;
     setupNotifications();
   }, []);
 

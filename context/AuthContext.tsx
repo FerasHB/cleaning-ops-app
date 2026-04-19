@@ -12,6 +12,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -32,6 +33,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const isMountedRef = useRef(true);
+  const lastHandledUserIdRef = useRef<string | null>(null);
+  const isBootstrappingRef = useRef(true);
 
   const refreshProfile = useCallback(async () => {
     const {
@@ -71,35 +76,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const applySession = useCallback(
+    async (nextSession: Session | null, options?: { syncToken?: boolean }) => {
+      const syncToken = options?.syncToken ?? false;
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+
+      const nextUserId = nextSession?.user?.id ?? null;
+
+      if (!nextUserId) {
+        setProfile(null);
+        lastHandledUserIdRef.current = null;
+        return;
+      }
+
+      const nextProfile = await getProfileByUserId(nextUserId);
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setProfile(nextProfile);
+      lastHandledUserIdRef.current = nextUserId;
+
+      if (syncToken) {
+        await syncPushToken(nextUserId);
+      }
+    },
+    [syncPushToken],
+  );
+
   useEffect(() => {
-    let mounted = true;
+    isMountedRef.current = true;
 
     const bootstrap = async () => {
-      setLoading(true);
+      try {
+        setLoading(true);
 
-      const { data, error } = await supabase.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
 
-      if (error) {
-        console.error("Failed to get session:", error);
-      }
+        if (error) {
+          console.error("Failed to get session:", error);
+        }
 
-      const currentSession = data.session ?? null;
+        await applySession(data.session ?? null, { syncToken: true });
+      } finally {
+        isBootstrappingRef.current = false;
 
-      if (!mounted) return;
-
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
-
-      if (currentSession?.user?.id) {
-        const nextProfile = await getProfileByUserId(currentSession.user.id);
-        setProfile(nextProfile);
-        await syncPushToken(currentSession.user.id);
-      } else {
-        setProfile(null);
-      }
-
-      if (mounted) {
-        setLoading(false);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
     };
 
@@ -107,26 +138,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-
-      if (newSession?.user?.id) {
-        const nextProfile = await getProfileByUserId(newSession.user.id);
-        setProfile(nextProfile);
-        await syncPushToken(newSession.user.id);
-      } else {
-        setProfile(null);
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      // INITIAL_SESSION ignorieren, weil bootstrap das schon übernimmt
+      if (event === "INITIAL_SESSION") {
+        return;
       }
 
-      setLoading(false);
+      // Während bootstrap noch läuft, keine doppelte Verarbeitung
+      if (isBootstrappingRef.current) {
+        return;
+      }
+
+      const nextUserId = newSession?.user?.id ?? null;
+      const lastUserId = lastHandledUserIdRef.current;
+
+      // Bei gleichem User nicht unnötig alles doppelt laden
+      // Ausnahme: SIGNED_OUT muss trotzdem sauber verarbeitet werden
+      if (event !== "SIGNED_OUT" && nextUserId && nextUserId === lastUserId) {
+        return;
+      }
+
+      try {
+        setLoading(true);
+        await applySession(newSession, { syncToken: !!nextUserId });
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+      }
     });
 
     return () => {
-      mounted = false;
+      isMountedRef.current = false;
       subscription.unsubscribe();
     };
-  }, [syncPushToken]);
+  }, [applySession]);
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
@@ -138,6 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
     setUser(null);
     setProfile(null);
+    lastHandledUserIdRef.current = null;
   }, []);
 
   const value = useMemo(

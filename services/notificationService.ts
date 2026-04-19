@@ -3,8 +3,13 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
+let notificationsConfigured = false;
 
 export function setupNotifications() {
+  if (notificationsConfigured) {
+    return;
+  }
+
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldPlaySound: true,
@@ -13,8 +18,9 @@ export function setupNotifications() {
       shouldShowList: true,
     }),
   });
-}
 
+  notificationsConfigured = true;
+}
 
 export async function registerForPushNotifications(): Promise<string | null> {
   if (Platform.OS === "web") return null;
