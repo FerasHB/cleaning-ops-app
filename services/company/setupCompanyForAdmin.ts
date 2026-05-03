@@ -20,5 +20,6 @@ export async function setupCompanyForAdmin(companyName: string): Promise<string>
     throw new Error("Keine gültige Company-ID zurückbekommen.");
   }
 
+
   return data;
 }
