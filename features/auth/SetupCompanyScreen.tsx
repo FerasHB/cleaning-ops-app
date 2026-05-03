@@ -1,3 +1,4 @@
+import { Colors } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { setupCompanyForAdmin } from "@/services/company/setupCompanyForAdmin";
 import { router } from "expo-router";
@@ -78,7 +79,7 @@ export function SetupCompanyScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0B0B0F",
+    backgroundColor: Colors.bg.app,
   },
   content: {
     flex: 1,
