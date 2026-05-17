@@ -15,15 +15,15 @@ type JobRow = {
   notes: string | null;
   assigned_to: string | null;
   profiles?:
-    | {
-        id: string;
-        full_name: string;
-      }
-    | {
-        id: string;
-        full_name: string;
-      }[]
-    | null;
+  | {
+    id: string;
+    full_name: string;
+  }
+  | {
+    id: string;
+    full_name: string;
+  }[]
+  | null;
 };
 
 // Einfaches DB-Format für Mitarbeiter
@@ -128,9 +128,37 @@ export async function getJobs(): Promise<Job[]> {
 
 // Holt alle aktiven Mitarbeiter für Auswahl / Zuweisung
 export async function getEmployees(): Promise<EmployeeOption[]> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) {
+    throw userError;
+  }
+
+  if (!user) {
+    throw new Error("Nicht eingeloggt.");
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("company_id")
+    .eq("id", user.id)
+    .single();
+
+  if (profileError) {
+    throw profileError;
+  }
+
+  if (!profile?.company_id) {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("profiles")
     .select("id, full_name")
+    .eq("company_id", profile.company_id)
     .eq("role", "employee")
     .eq("is_active", true)
     .order("full_name", { ascending: true });
@@ -139,7 +167,6 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
     throw error;
   }
 
-  // full_name aus DB → fullName für die App
   return ((data ?? []) as EmployeeRow[]).map((item) => ({
     id: item.id,
     fullName: item.full_name,

@@ -7,6 +7,7 @@ import {
   Typography,
 } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
+import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -200,6 +201,24 @@ export default function LoginScreen() {
                 {loading ? "Anmelden..." : "Anmelden"}
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+
+              onPress={() => router.push("/register")}
+
+              activeOpacity={0.75}
+
+              style={styles.registerLink}
+
+            >
+
+              <Text style={styles.registerLinkText}>
+
+                Firma erstellen
+
+              </Text>
+
+            </TouchableOpacity>
           </Animated.View>
 
           <Animated.View style={[styles.footer, { opacity: formAnim }]}>
@@ -324,5 +343,23 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.xs,
     color: Colors.text.muted,
     textAlign: "center",
+  },
+
+  registerLink: {
+
+    marginTop: Spacing.sm,
+
+    alignItems: "center",
+
+  },
+
+  registerLinkText: {
+
+    fontSize: Typography.size.sm,
+
+    fontWeight: Typography.weight.medium,
+
+    color: Colors.accent.text,
+
   },
 });
