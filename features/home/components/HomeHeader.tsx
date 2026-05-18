@@ -41,7 +41,7 @@ export default function HomeHeader({
       <View style={styles.headerActions}>
         {role === "admin" && (
           <TouchableOpacity
-            onPress={() => router.push("/admin")}
+            onPress={() => router.push("/(admin-tabs)/dashboard")}
             style={styles.adminBtn}
             activeOpacity={0.75}
           >
