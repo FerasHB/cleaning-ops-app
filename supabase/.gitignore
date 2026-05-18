@@ -1,6 +1,27 @@
+# dependencies
+node_modules
+
+# Expo
+.expo
+dist
+web-build
+
+# local env files
+.env
+.env.*
+!.env.example
+
 # Supabase
-.branches
-.temp
+supabase/.branches
+supabase/.temp
+
+# macOS
+.DS_Store
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # dotenvx
 .env.keys
