@@ -1,5 +1,6 @@
 // features/home/components/HomeHeader.tsx
 import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React from "react";
 import {
@@ -54,9 +55,11 @@ export default function HomeHeader({
           style={styles.avatar}
           activeOpacity={0.75}
         >
-          <Text style={styles.avatarText}>
-            {firstName.charAt(0).toUpperCase()}
-          </Text>
+          <Ionicons
+            name="settings-outline"
+            size={20}
+            color={Colors.text.primary}
+          />
         </TouchableOpacity>
       </View>
     </Animated.View>
@@ -134,10 +137,5 @@ const styles = StyleSheet.create({
     borderColor: Colors.border.strong,
     alignItems: "center",
     justifyContent: "center",
-  },
-  avatarText: {
-    fontSize: Typography.size.base,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
   },
 });
