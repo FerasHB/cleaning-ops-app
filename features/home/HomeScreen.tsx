@@ -46,8 +46,8 @@ function useFadeIn(delay = 0) {
 }
 
 export default function HomeScreen() {
+  const { role, user } = useAuth();
   const { jobs, startJob, completeJob, loading } = useJobs();
-  const { signOut, role, user } = useAuth();
   const { t } = useTranslation();
 
   const [selectedFilter, setSelectedFilter] = useState<
@@ -58,12 +58,8 @@ export default function HomeScreen() {
   const statsAnim = useFadeIn(80);
   const listAnim = useFadeIn(160);
 
-  const handleLogout = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
+  const handleOpenProfile = () => {
+    router.push("/profile");
   };
 
   if (loading) return <LoadingScreen />;
@@ -124,7 +120,7 @@ export default function HomeScreen() {
             <HomeHeader
               firstName={firstName}
               role={role}
-              onLogout={handleLogout}
+              onLogout={handleOpenProfile}
               headerAnim={headerAnim}
             />
 

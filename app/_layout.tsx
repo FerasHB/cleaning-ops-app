@@ -7,12 +7,24 @@ import { useEffect, useRef } from "react";
 function RootNavigator() {
   return (
     <JobProvider>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
         <Stack.Screen name="index" />
         <Stack.Screen name="register" />
         <Stack.Screen name="setup-company" />
         <Stack.Screen name="home" />
         <Stack.Screen name="admin" />
+        <Stack.Screen name="profile" />
+
+        <Stack.Screen
+          name="(admin-tabs)"
+          options={{
+            headerShown: false,
+          }}
+        />
       </Stack>
     </JobProvider>
   );
