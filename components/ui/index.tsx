@@ -1,9 +1,14 @@
 // components/ui/index.tsx
-// Wiederverwendbare Basis-Komponenten für die gesamte App
-// Importiere immer von hier – nicht direkt aus RN
+// ─────────────────────────────────────────────────────────────────
+// Zentraler Export-Punkt für alle UI-Komponenten.
+// Importiere immer von hier: import { Button, Card, ... } from '@/components/ui'
+//
+// Bestehende Komponenten wurden auf useAppTheme() umgestellt →
+// unterstützen automatisch Light- und Dark-Mode.
+// ─────────────────────────────────────────────────────────────────
 
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
-import React from "react";
+import { useAppTheme } from "@/hooks/useAppTheme";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -13,11 +18,27 @@ import {
   TouchableOpacity,
   TouchableOpacityProps,
   View,
-  ViewStyle,
+  type ViewStyle,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import type { AppTheme } from "@/constants/theme";
 
 // ─────────────────────────────────────────────
-// PrimaryButton
+// Re-Exports: Neue Komponenten aus eigenen Dateien
+// ─────────────────────────────────────────────
+export { ScreenContainer } from "./ScreenContainer";
+export { AppHeader } from "./AppHeader";
+export { StatusBadge } from "./StatusBadge";
+export { SkeletonCard } from "./SkeletonCard";
+export { OfflineBanner } from "./OfflineBanner";
+export { ErrorBanner } from "./ErrorBanner";
+export { InitialsAvatar } from "./InitialsAvatar";
+export { InfoRow } from "./InfoRow";
+export { KPICard } from "./KPICard";
+export type { JobStatus } from "./StatusBadge";
+
+// ─────────────────────────────────────────────
+// Button
 // ─────────────────────────────────────────────
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -26,6 +47,7 @@ interface ButtonProps extends TouchableOpacityProps {
   loading?: boolean;
   variant?: ButtonVariant;
   fullWidth?: boolean;
+  icon?: React.ComponentProps<typeof Ionicons>["name"];
 }
 
 export function Button({
@@ -35,35 +57,125 @@ export function Button({
   fullWidth = true,
   disabled,
   style,
+  icon,
   ...props
 }: ButtonProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createButtonStyles(theme), [theme]);
   const isDisabled = disabled || loading;
+
+  const spinnerColor =
+    variant === "primary" || variant === "danger"
+      ? theme.colors.onPrimary
+      : theme.colors.primary;
+
+  // Container-Varianten-Styles explizit auswählen (TypeScript-sicher)
+  const variantContainerStyle = {
+    primary:   styles.btn_primary,
+    secondary: styles.btn_secondary,
+    ghost:     styles.btn_ghost,
+    danger:    styles.btn_danger,
+  }[variant];
+
+  // Text-Varianten-Styles explizit auswählen
+  const variantTextStyle = {
+    primary:   styles.btnText_primary,
+    secondary: styles.btnText_secondary,
+    ghost:     styles.btnText_ghost,
+    danger:    styles.btnText_danger,
+  }[variant];
 
   return (
     <TouchableOpacity
       style={[
         styles.btn,
-        styles[`btn_${variant}`],
+        variantContainerStyle,
         fullWidth && styles.btnFull,
         isDisabled && styles.btnDisabled,
         style as ViewStyle,
       ]}
       disabled={isDisabled}
-      activeOpacity={0.75}
+      activeOpacity={0.78}
       {...props}
     >
       {loading ? (
-        <ActivityIndicator
-          size="small"
-          color={variant === "primary" ? Colors.white : Colors.accent.default}
-        />
+        <ActivityIndicator size="small" color={spinnerColor} />
       ) : (
-        <Text style={[styles.btnText, styles[`btnText_${variant}`]]}>
-          {label}
-        </Text>
+        <View style={styles.btnInner}>
+          {icon && (
+            <Ionicons
+              name={icon}
+              size={16}
+              color={
+                variant === "primary" || variant === "danger"
+                  ? theme.colors.onPrimaryContainer
+                  : theme.colors.primary
+              }
+            />
+          )}
+          <Text style={[styles.btnText, variantTextStyle]}>{label}</Text>
+        </View>
       )}
     </TouchableOpacity>
   );
+}
+
+function createButtonStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    btn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 13,
+      paddingHorizontal: theme.spacing.xl,
+      borderRadius: theme.radius.md,
+      minHeight: theme.spacing.tapTarget,
+    },
+    btnFull: { width: "100%" },
+    btnDisabled: { opacity: 0.45 },
+
+    // Varianten
+    btn_primary: {
+      backgroundColor: theme.colors.primaryContainer,
+    },
+    btn_secondary: {
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+    },
+    btn_ghost: {
+      backgroundColor: theme.colors.transparent,
+    },
+    btn_danger: {
+      backgroundColor: theme.colors.errorContainer,
+      borderWidth: 1,
+      borderColor: theme.colors.error,
+    },
+
+    btnInner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    btnText: {
+      fontSize: theme.typography.size.sm,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      letterSpacing: theme.typography.letterSpacing.wide,
+    },
+    btnText_primary: {
+      color: theme.colors.onPrimaryContainer,
+    },
+    btnText_secondary: {
+      color: theme.colors.onSurface,
+    },
+    btnText_ghost: {
+      color: theme.colors.primary,
+    },
+    btnText_danger: {
+      color: theme.colors.error,
+    },
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -75,12 +187,23 @@ interface InputProps extends TextInputProps {
 }
 
 export function Input({ label, error, style, ...props }: InputProps) {
+  const theme = useAppTheme();
+  const [focused, setFocused] = useState(false);
+  const styles = useMemo(() => createInputStyles(theme), [theme]);
+
   return (
-    <View style={styles.inputWrapper}>
-      {label && <Text style={styles.inputLabel}>{label}</Text>}
+    <View style={styles.wrapper}>
+      {label && <Text style={styles.label}>{label}</Text>}
       <TextInput
-        style={[styles.input, error && styles.inputError, style as any]}
-        placeholderTextColor={Colors.text.muted}
+        style={[
+          styles.input,
+          focused && styles.inputFocused,
+          error && styles.inputError,
+          style as any,
+        ]}
+        placeholderTextColor={theme.colors.outline}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         {...props}
       />
       {error && <Text style={styles.errorText}>{error}</Text>}
@@ -89,7 +212,110 @@ export function Input({ label, error, style, ...props }: InputProps) {
 }
 
 // ─────────────────────────────────────────────
-// Badge – Status-Anzeige (z.B. "Offen", "In Arbeit")
+// PasswordInput (Input mit Toggle-Sichtbarkeit)
+// ─────────────────────────────────────────────
+interface PasswordInputProps extends Omit<InputProps, "secureTextEntry"> {
+  label?: string;
+  error?: string;
+}
+
+export function PasswordInput({ label, error, style, ...props }: PasswordInputProps) {
+  const theme = useAppTheme();
+  const [focused, setFocused] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const styles = useMemo(() => createInputStyles(theme), [theme]);
+
+  return (
+    <View style={styles.wrapper}>
+      {label && <Text style={styles.label}>{label}</Text>}
+      <View style={styles.passwordRow}>
+        <TextInput
+          style={[
+            styles.input,
+            styles.passwordInput,
+            focused && styles.inputFocused,
+            error && styles.inputError,
+            style as any,
+          ]}
+          placeholderTextColor={theme.colors.outline}
+          secureTextEntry={!visible}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          {...props}
+        />
+        <TouchableOpacity
+          onPress={() => setVisible((v) => !v)}
+          style={styles.eyeBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name={visible ? "eye-off-outline" : "eye-outline"}
+            size={18}
+            color={theme.colors.outline}
+          />
+        </TouchableOpacity>
+      </View>
+      {error && <Text style={styles.errorText}>{error}</Text>}
+    </View>
+  );
+}
+
+function createInputStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    wrapper: {
+      gap: 6,
+    },
+    label: {
+      fontSize: theme.typography.size.xs,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      color: theme.colors.onSurfaceVariant,
+      letterSpacing: theme.typography.letterSpacing.wide,
+    },
+    input: {
+      backgroundColor: theme.colors.background,
+      color: theme.colors.onSurface,
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.regular,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 13,
+      borderRadius: theme.radius.md,
+      borderWidth: 1.5,
+      borderColor: theme.colors.outlineVariant,
+      minHeight: theme.spacing.tapTarget,
+    },
+    inputFocused: {
+      borderColor: theme.colors.primary,
+    },
+    inputError: {
+      borderColor: theme.colors.error,
+    },
+    errorText: {
+      fontSize: theme.typography.size.xs,
+      color: theme.colors.error,
+      fontFamily: theme.typography.family.regular,
+      marginTop: 2,
+    },
+    // Password spezifisch
+    passwordRow: {
+      position: "relative",
+    },
+    passwordInput: {
+      paddingRight: 48,
+    },
+    eyeBtn: {
+      position: "absolute",
+      right: 14,
+      top: 0,
+      bottom: 0,
+      justifyContent: "center",
+    },
+  });
+}
+
+// ─────────────────────────────────────────────
+// Badge (generisch — für nicht-Job-Status Badges)
+// Für Job-Status: StatusBadge verwenden
 // ─────────────────────────────────────────────
 type BadgeVariant = "default" | "success" | "warning" | "danger" | "info";
 
@@ -99,17 +325,78 @@ interface BadgeProps {
 }
 
 export function Badge({ label, variant = "default" }: BadgeProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createBadgeStyles(theme), [theme]);
+
+  const variantBadgeStyle = {
+    default: styles.badge_default,
+    success: styles.badge_success,
+    warning: styles.badge_warning,
+    danger:  styles.badge_danger,
+    info:    styles.badge_info,
+  }[variant];
+
+  const variantTextStyle = {
+    default: styles.text_default,
+    success: styles.text_success,
+    warning: styles.text_warning,
+    danger:  styles.text_danger,
+    info:    styles.text_info,
+  }[variant];
+
   return (
-    <View style={[styles.badge, styles[`badge_${variant}`]]}>
-      <Text style={[styles.badgeText, styles[`badgeText_${variant}`]]}>
-        {label}
-      </Text>
+    <View style={[styles.badge, variantBadgeStyle]}>
+      <Text style={[styles.text, variantTextStyle]}>{label}</Text>
     </View>
   );
 }
 
+function createBadgeStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    badge: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: theme.radius.full,
+      alignSelf: "flex-start",
+      borderWidth: 1,
+    },
+    badge_default: {
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderColor: theme.colors.outlineVariant,
+    },
+    badge_success: {
+      backgroundColor: theme.colors.statusCompletedBg,
+      borderColor: theme.colors.statusCompletedBorder,
+    },
+    badge_warning: {
+      backgroundColor: theme.colors.statusOpenBg,
+      borderColor: theme.colors.statusOpenBorder,
+    },
+    badge_danger: {
+      backgroundColor: theme.colors.errorContainer,
+      borderColor: theme.colors.error,
+    },
+    badge_info: {
+      backgroundColor: theme.colors.statusInProgressBg,
+      borderColor: theme.colors.statusInProgressBorder,
+    },
+    text: {
+      fontSize: theme.typography.size.xs,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      letterSpacing: theme.typography.letterSpacing.wide,
+      textTransform: "uppercase",
+    },
+    text_default: { color: theme.colors.onSurfaceVariant },
+    text_success: { color: theme.colors.statusCompleted },
+    text_warning: { color: theme.colors.statusOpen },
+    text_danger:  { color: theme.colors.error },
+    text_info:    { color: theme.colors.statusInProgress },
+  });
+}
+
 // ─────────────────────────────────────────────
-// Card – Container für Inhalts-Abschnitte
+// Card
 // ─────────────────────────────────────────────
 interface CardProps {
   children: React.ReactNode;
@@ -117,12 +404,32 @@ interface CardProps {
   padding?: number;
 }
 
-export function Card({ children, style, padding = Spacing.lg }: CardProps) {
-  return <View style={[styles.card, { padding }, style]}>{children}</View>;
+export function Card({ children, style, padding }: CardProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createCardStyles(theme), [theme]);
+  const p = padding ?? theme.spacing.md;
+
+  return (
+    <View style={[styles.card, { padding: p }, style]}>
+      {children}
+    </View>
+  );
+}
+
+function createCardStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      ...theme.shadows.sm,
+    },
+  });
 }
 
 // ─────────────────────────────────────────────
-// SectionHeader – Abschnitts-Titel
+// SectionHeader
 // ─────────────────────────────────────────────
 interface SectionHeaderProps {
   title: string;
@@ -130,202 +437,153 @@ interface SectionHeaderProps {
 }
 
 export function SectionHeader({ title, subtitle }: SectionHeaderProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createSectionHeaderStyles(theme), [theme]);
+
   return (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
+    <View style={styles.wrapper}>
+      <Text style={styles.title}>{title}</Text>
+      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
   );
+}
+
+function createSectionHeaderStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    wrapper: {
+      gap: 4,
+      marginBottom: theme.spacing.md,
+    },
+    title: {
+      fontSize: theme.typography.size.xl,
+      fontWeight: theme.typography.weight.bold,
+      fontFamily: theme.typography.family.bold,
+      color: theme.colors.onSurface,
+      letterSpacing: theme.typography.letterSpacing.tight,
+    },
+    subtitle: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+  });
 }
 
 // ─────────────────────────────────────────────
 // Divider
 // ─────────────────────────────────────────────
 export function Divider({ style }: { style?: ViewStyle }) {
-  return <View style={[styles.divider, style]} />;
+  const theme = useAppTheme();
+  return (
+    <View
+      style={[
+        {
+          height: 1,
+          backgroundColor: theme.colors.outlineVariant,
+          marginVertical: theme.spacing.md,
+        },
+        style,
+      ]}
+    />
+  );
 }
 
 // ─────────────────────────────────────────────
-// EmptyState – wenn eine Liste leer ist
+// EmptyState
 // ─────────────────────────────────────────────
 interface EmptyStateProps {
   title: string;
   message?: string;
+  /** Optionaler CTA-Button */
+  ctaLabel?: string;
+  onCta?: () => void;
+  /** Emoji oder Ionicons-Name als Icon */
+  icon?: React.ComponentProps<typeof Ionicons>["name"];
 }
 
-export function EmptyState({ title, message }: EmptyStateProps) {
+export function EmptyState({ title, message, ctaLabel, onCta, icon }: EmptyStateProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createEmptyStateStyles(theme), [theme]);
+
   return (
-    <View style={styles.emptyState}>
-      <View style={styles.emptyIcon}>
-        <Text style={styles.emptyIconText}>📋</Text>
+    <View style={styles.container}>
+      <View style={styles.iconWrap}>
+        {icon ? (
+          <Ionicons name={icon} size={28} color={theme.colors.outline} />
+        ) : (
+          <Text style={styles.emoji}>📋</Text>
+        )}
       </View>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      {message && <Text style={styles.emptyMessage}>{message}</Text>}
+      <Text style={styles.title}>{title}</Text>
+      {message && <Text style={styles.message}>{message}</Text>}
+      {ctaLabel && onCta && (
+        <Button
+          label={ctaLabel}
+          onPress={onCta}
+          fullWidth={false}
+          style={{ marginTop: theme.spacing.sm, paddingHorizontal: theme.spacing.xl }}
+        />
+      )}
     </View>
   );
 }
 
+function createEmptyStateStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 64,
+      paddingHorizontal: theme.spacing.xl,
+      gap: theme.spacing.sm,
+    },
+    iconWrap: {
+      width: 60,
+      height: 60,
+      borderRadius: theme.radius.lg,
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: theme.spacing.xs,
+    },
+    emoji: {
+      fontSize: 26,
+    },
+    title: {
+      fontSize: theme.typography.size.md,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      color: theme.colors.onSurface,
+      textAlign: "center",
+    },
+    message: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+      textAlign: "center",
+      maxWidth: 260,
+      lineHeight: theme.typography.lineHeight.sm,
+    },
+  });
+}
+
 // ─────────────────────────────────────────────
-// LoadingScreen – Vollbild-Ladescreen
+// LoadingScreen (Vollbild-Spinner)
 // ─────────────────────────────────────────────
 export function LoadingScreen() {
+  const theme = useAppTheme();
+
   return (
-    <View style={styles.loadingScreen}>
-      <ActivityIndicator size="large" color={Colors.accent.default} />
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: theme.colors.background,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <ActivityIndicator size="large" color={theme.colors.primary} />
     </View>
   );
 }
-
-// ─────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────
-const styles = StyleSheet.create({
-  // Button
-  btn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: Radius.md,
-    minHeight: 50,
-    gap: 8,
-  },
-  btnFull: { width: "100%" },
-  btn_primary: { backgroundColor: Colors.accent.default },
-  btn_secondary: {
-    backgroundColor: Colors.bg.elevated,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-  },
-  btn_ghost: { backgroundColor: Colors.bg.base },
-  btn_danger: { backgroundColor: Colors.status.dangerBg },
-  btnDisabled: { opacity: 0.5 },
-
-  btnText: {
-    fontSize: Typography.size.base,
-    fontWeight: Typography.weight.semibold,
-    letterSpacing: 0.2,
-  },
-  btnText_primary: { color: Colors.white },
-  btnText_secondary: { color: Colors.text.primary },
-  btnText_ghost: { color: Colors.accent.default },
-  btnText_danger: { color: Colors.status.danger },
-
-  // Input
-  inputWrapper: { gap: 6, marginBottom: Spacing.md },
-  inputLabel: {
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.medium,
-    color: Colors.text.secondary,
-    letterSpacing: 0.3,
-  },
-  input: {
-    backgroundColor: Colors.bg.surface,
-    color: Colors.text.primary,
-    fontSize: Typography.size.base,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 14,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border.subtle,
-    minHeight: 50,
-  },
-  inputError: { borderColor: Colors.status.danger },
-  errorText: {
-    fontSize: Typography.size.xs,
-    color: Colors.status.danger,
-    marginTop: 2,
-  },
-
-  // Badge
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.full,
-    alignSelf: "flex-start",
-  },
-  badge_default: { backgroundColor: Colors.bg.elevated },
-  badge_success: { backgroundColor: Colors.status.successBg },
-  badge_warning: { backgroundColor: Colors.status.warningBg },
-  badge_danger: { backgroundColor: Colors.status.dangerBg },
-  badge_info: { backgroundColor: Colors.accent.subtle },
-
-  badgeText: {
-    fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-  },
-  badgeText_default: { color: Colors.text.secondary },
-  badgeText_success: { color: Colors.status.success },
-  badgeText_warning: { color: Colors.status.warning },
-  badgeText_danger: { color: Colors.status.danger },
-  badgeText_info: { color: Colors.accent.text },
-
-  // Card
-  card: {
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-  },
-
-  // SectionHeader
-  sectionHeader: { marginBottom: Spacing.lg, gap: 4 },
-  sectionTitle: {
-    fontSize: Typography.size.xl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-    letterSpacing: -0.3,
-  },
-  sectionSubtitle: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-  },
-
-  // Divider
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border.subtle,
-    marginVertical: Spacing.lg,
-  },
-
-  // EmptyState
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.xxl * 2,
-    gap: Spacing.sm,
-  },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.bg.elevated,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: Spacing.sm,
-  },
-  emptyIconText: { fontSize: 24 },
-  emptyTitle: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.primary,
-  },
-  emptyMessage: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-    textAlign: "center",
-    maxWidth: 240,
-  },
-
-  // LoadingScreen
-  loadingScreen: {
-    flex: 1,
-    backgroundColor: Colors.bg.base,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});

@@ -1,21 +1,20 @@
+// hooks/use-theme-color.ts
+// ─────────────────────────────────────────────────────────────────
+// Expo-Template-Kompatibilitätshook.
+// Nicht direkt verwenden — nutze stattdessen useAppTheme().
+// ─────────────────────────────────────────────────────────────────
+
+import { useAppTheme } from '@/hooks/useAppTheme';
+
 /**
- * Learn more about light and dark modes:
- * https://docs.expo.dev/guides/color-schemes/
+ * @deprecated Nutze useAppTheme() für das neue Theme-System.
+ * Dieser Hook ist nur für Expo-Template-Kompatibilität vorhanden.
  */
-
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
 export function useThemeColor(
   props: { light?: string; dark?: string },
-  colorName: keyof typeof Colors.light & keyof typeof Colors.dark
-) {
-  const theme = useColorScheme() ?? 'light';
-  const colorFromProps = props[theme];
-
-  if (colorFromProps) {
-    return colorFromProps;
-  } else {
-    return Colors[theme][colorName];
-  }
+  _colorName?: string
+): string {
+  const theme = useAppTheme();
+  const key = theme.isDark ? 'dark' : 'light';
+  return props[key] ?? theme.colors.onSurface;
 }
