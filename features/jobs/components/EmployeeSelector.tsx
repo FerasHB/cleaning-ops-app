@@ -1,7 +1,12 @@
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+// features/jobs/components/EmployeeSelector.tsx
+// Auswahl-Liste (Radio) für Mitarbeiterzuweisung.
+// Vollständig theme-aware (Light + Dark Mode).
+
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { EmployeeOption } from "@/types/job";
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { AppTheme } from "@/constants/theme";
 
 type Props = {
   employees: EmployeeOption[];
@@ -16,6 +21,9 @@ export function EmployeeSelector({
   onSelect,
   emptyLabel = "Keine Mitarbeiter verfügbar.",
 }: Props) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   return (
     <View style={styles.wrapper}>
       <EmployeeOptionRow
@@ -55,6 +63,9 @@ function EmployeeOptionRow({
   isSelected,
   onPress,
 }: EmployeeOptionRowProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -77,59 +88,69 @@ function EmployeeOptionRow({
   );
 }
 
-const styles = StyleSheet.create({
-  wrapper: {
-    gap: 6,
-  },
-  emptyText: {
-    textAlign: "center",
-    color: Colors.text.muted,
-    fontSize: Typography.size.sm,
-    paddingVertical: Spacing.lg,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: Radius.sm,
-  },
-  rowSelected: {
-    backgroundColor: Colors.accent.subtle,
-  },
-  radioOuter: {
-    width: 20,
-    height: 20,
-    borderRadius: Radius.full,
-    borderWidth: 2,
-    borderColor: Colors.border.default,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioOuterSelected: {
-    borderColor: Colors.accent.default,
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.accent.default,
-  },
-  info: {
-    flex: 1,
-    gap: 1,
-  },
-  name: {
-    fontSize: Typography.size.base,
-    color: Colors.text.secondary,
-    fontWeight: Typography.weight.medium,
-  },
-  nameSelected: {
-    color: Colors.accent.text,
-  },
-  sublabel: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    wrapper: {
+      gap: 6,
+    },
+    emptyText: {
+      textAlign: "center",
+      color: theme.colors.onSurfaceVariant,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      paddingVertical: theme.spacing.lg,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.md,
+      paddingVertical: theme.spacing.md,
+      paddingHorizontal: theme.spacing.sm,
+      borderRadius: theme.radius.sm,
+      borderWidth: 1,
+      borderColor: theme.colors.transparent,
+    },
+    rowSelected: {
+      backgroundColor: theme.colors.statusInProgressBg,
+      borderColor: theme.colors.statusInProgressBorder,
+    },
+    radioOuter: {
+      width: 20,
+      height: 20,
+      borderRadius: theme.radius.full,
+      borderWidth: 2,
+      borderColor: theme.colors.outline,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    radioOuterSelected: {
+      borderColor: theme.colors.primary,
+    },
+    radioInner: {
+      width: 10,
+      height: 10,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.primary,
+    },
+    info: {
+      flex: 1,
+      gap: 1,
+    },
+    name: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurface,
+    },
+    nameSelected: {
+      color: theme.colors.primary,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+    },
+    sublabel: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+  });
+}

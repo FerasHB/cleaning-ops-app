@@ -1,18 +1,18 @@
+// features/admin/AdminScreen.tsx
+// Job-Erstellen-Screen für Admins.
+// Vollständig auf useAppTheme() migriert — Light + Dark Mode.
+// Business-Logik (createJob, useJobForm, AuthContext, JobContext) unverändert.
+
 import { LoadingScreen } from "@/components/ui";
-import {
-  Colors,
-  Radius,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobFormFields } from "@/features/jobs/components/JobFormFields";
 import { useJobForm } from "@/features/jobs/hooks/useJobForm";
 import { formatToISO } from "@/utils/date";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -25,7 +25,11 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { AppTheme } from "@/constants/theme";
 
+// ─────────────────────────────────────────────
+// Section-Block (theme-aware Karte mit Header)
+// ─────────────────────────────────────────────
 function SectionBlock({
   title,
   subtitle,
@@ -35,53 +39,64 @@ function SectionBlock({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createSectionStyles(theme), [theme]);
+
   return (
-    <View style={sectionStyles.block}>
-      <View style={sectionStyles.header}>
-        <Text style={sectionStyles.title}>{title}</Text>
-        {subtitle ? (
-          <Text style={sectionStyles.subtitle}>{subtitle}</Text>
-        ) : null}
+    <View style={styles.block}>
+      <View style={styles.header}>
+        <Text style={styles.title}>{title}</Text>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
-      <View style={sectionStyles.body}>{children}</View>
+      <View style={styles.body}>{children}</View>
     </View>
   );
 }
 
-const sectionStyles = StyleSheet.create({
-  block: {
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    overflow: "hidden",
-    ...Shadows.sm,
-  },
-  header: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.subtle,
-    gap: 3,
-  },
-  title: {
-    fontSize: Typography.size.base,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.primary,
-    letterSpacing: Typography.tracking.tight,
-  },
-  subtitle: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-  },
-  body: {
-    padding: Spacing.lg,
-    gap: Spacing.sm,
-  },
-});
+function createSectionStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    block: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      overflow: "hidden",
+      ...theme.shadows.sm,
+    },
+    header: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.lg,
+      paddingBottom: theme.spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.outlineVariant,
+      gap: 3,
+    },
+    title: {
+      fontSize: theme.typography.size.md,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      color: theme.colors.onSurface,
+      letterSpacing: theme.typography.letterSpacing.tight,
+    },
+    subtitle: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+    body: {
+      padding: theme.spacing.lg,
+      gap: theme.spacing.sm,
+    },
+  });
+}
 
+// ─────────────────────────────────────────────
+// AdminScreen
+// ─────────────────────────────────────────────
 export default function AdminScreen() {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   const { createJob, employees, loading } = useJobs();
   const { signOut, role, loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
@@ -106,6 +121,7 @@ export default function AdminScreen() {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
+  // ── Logout (unveränderte Logik)
   const handleLogout = async () => {
     Alert.alert("Abmelden", "Möchtest du dich wirklich abmelden?", [
       { text: "Abbrechen", style: "cancel" },
@@ -125,6 +141,7 @@ export default function AdminScreen() {
     ]);
   };
 
+  // ── Job erstellen (unveränderte Logik)
   const handleCreateJob = async () => {
     if (!validate()) return;
 
@@ -159,11 +176,15 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar
+        barStyle={theme.isDark ? "light-content" : "dark-content"}
+        backgroundColor={theme.colors.background}
+      />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
+        {/* ── Header ── */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => {
@@ -176,7 +197,11 @@ export default function AdminScreen() {
             style={styles.backBtn}
             activeOpacity={0.7}
           >
-            <Text style={styles.backIcon}>‹</Text>
+            <Ionicons
+              name="chevron-back"
+              size={22}
+              color={theme.colors.primary}
+            />
             <Text style={styles.backLabel}>Zurück</Text>
           </TouchableOpacity>
 
@@ -199,6 +224,7 @@ export default function AdminScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* ── Scroll-Inhalt ── */}
         <Animated.ScrollView
           style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
           contentContainerStyle={styles.scroll}
@@ -238,102 +264,115 @@ export default function AdminScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: Colors.bg.base,
-  },
-  flex: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.subtle,
-    backgroundColor: Colors.bg.base,
-  },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    minWidth: 72,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: Colors.accent.default,
-    lineHeight: 28,
-    fontWeight: "300",
-  },
-  backLabel: {
-    fontSize: Typography.size.base,
-    color: Colors.accent.default,
-    fontWeight: Typography.weight.medium,
-  },
-  headerCenter: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.sm,
-  },
-  headerTitle: {
-    fontSize: Typography.size.base,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.primary,
-  },
-  rolePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: Colors.accent.muted,
-    borderWidth: 1,
-    borderColor: Colors.accent.border,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.full,
-  },
-  roleDot: {
-    width: 5,
-    height: 5,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.accent.default,
-  },
-  rolePillText: {
-    fontSize: Typography.size.xs,
-    color: Colors.accent.text,
-    fontWeight: Typography.weight.medium,
-  },
-  logoutBtn: {
-    minWidth: 72,
-    alignItems: "flex-end",
-  },
-  logoutText: {
-    fontSize: Typography.size.sm,
-    color: "#DC2626",
-    fontWeight: Typography.weight.medium,
-  },
-  scroll: {
-    padding: Spacing.lg,
-    gap: Spacing.md,
-  },
-  createBtn: {
-    backgroundColor: Colors.accent.default,
-    paddingVertical: 15,
-    borderRadius: Radius.md,
-    alignItems: "center",
-    ...Shadows.md,
-  },
-  createBtnDisabled: {
-    opacity: 0.5,
-  },
-  createBtnText: {
-    fontSize: Typography.size.base,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.white,
-    letterSpacing: Typography.tracking.wide,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    safe: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    flex: {
+      flex: 1,
+    },
+
+    // Header
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.outlineVariant,
+      backgroundColor: theme.colors.background,
+    },
+    backBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 2,
+      minWidth: 72,
+    },
+    backLabel: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.primary,
+    },
+    headerCenter: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: theme.spacing.sm,
+    },
+    headerTitle: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
+    },
+
+    // Rolle-Pill (z.B. "admin")
+    rolePill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor: theme.colors.statusInProgressBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusInProgressBorder,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: theme.radius.full,
+    },
+    roleDot: {
+      width: 5,
+      height: 5,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.statusInProgress,
+    },
+    rolePillText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.statusInProgress,
+    },
+
+    // Logout-Button
+    logoutBtn: {
+      minWidth: 72,
+      alignItems: "flex-end",
+    },
+    logoutText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.error,
+    },
+
+    // Scroll-Container
+    scroll: {
+      padding: theme.spacing.lg,
+      gap: theme.spacing.md,
+    },
+
+    // "Job erstellen"-Button
+    createBtn: {
+      backgroundColor: theme.colors.primaryContainer,
+      paddingVertical: 15,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      minHeight: theme.spacing.tapTarget,
+      justifyContent: "center",
+      ...theme.shadows.md,
+    },
+    createBtnDisabled: {
+      opacity: 0.5,
+    },
+    createBtnText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onPrimaryContainer,
+      letterSpacing: theme.typography.letterSpacing.wide,
+    },
+  });
+}

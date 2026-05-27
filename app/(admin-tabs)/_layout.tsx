@@ -1,17 +1,29 @@
-import { Colors } from "@/constants/theme";
+// app/(admin-tabs)/_layout.tsx
+// Bottom-Tab-Layout für den Admin-Bereich.
+// Vollständig theme-aware: passt sich automatisch an Light/Dark Mode an.
+
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+
 export default function AdminTabsLayout() {
+  const theme = useAppTheme();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: Colors.bg.surface,
-          borderTopColor: Colors.border.default,
+          backgroundColor: theme.colors.surface,
+          borderTopColor: theme.colors.outlineVariant,
+          borderTopWidth: 1,
         },
-        tabBarActiveTintColor: Colors.accent.default,
-        tabBarInactiveTintColor: Colors.text.muted,
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.outline,
+        tabBarLabelStyle: {
+          fontFamily: theme.typography.family.medium,
+          fontSize: theme.typography.size.xs,
+        },
       }}
     >
       <Tabs.Screen

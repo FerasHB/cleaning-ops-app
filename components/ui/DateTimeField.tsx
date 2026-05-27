@@ -1,17 +1,18 @@
+// components/ui/DateTimeField.tsx
+// Datum-/Uhrzeit-Auswahl mit Modal-Picker.
+// Vollständig theme-aware (Light + Dark Mode).
+// Native Picker passt sich über themeVariant automatisch an.
+
 import { Input } from "@/components/ui/index";
-import {
-  Colors,
-  Radius,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { formatForDisplay } from "@/utils/date";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
-import React, { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useMemo, useState } from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { AppTheme } from "@/constants/theme";
 
 export interface DateTimeFieldProps {
   label: string;
@@ -26,6 +27,10 @@ export function DateTimeField({
   value,
   onChange,
 }: DateTimeFieldProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const modalStyles = useMemo(() => createModalStyles(theme), [theme]);
+
   const [showPickerModal, setShowPickerModal] = useState(false);
   const [pickerStep, setPickerStep] = useState<"date" | "time">("date");
   const [tempDate, setTempDate] = useState<Date>(new Date());
@@ -84,7 +89,11 @@ export function DateTimeField({
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.6}
           >
-            <Text style={styles.clearBtnText}>✕</Text>
+            <Ionicons
+              name="close"
+              size={16}
+              color={theme.colors.onSurfaceVariant}
+            />
           </TouchableOpacity>
         )}
       </View>
@@ -102,8 +111,8 @@ export function DateTimeField({
                 mode={pickerStep}
                 display="spinner"
                 onChange={handleTempDateChange}
-                themeVariant="light"
-                textColor={Colors.text.primary}
+                themeVariant={theme.isDark ? "dark" : "light"}
+                textColor={theme.colors.onSurface}
                 locale="de-DE"
                 style={modalStyles.picker}
               />
@@ -149,97 +158,106 @@ export function DateTimeField({
   );
 }
 
-const styles = StyleSheet.create({
-  wrapper: {
-    position: "relative",
-    justifyContent: "center",
-  },
-  fieldArea: {
-    width: "100%",
-  },
-  clearBtn: {
-    position: "absolute",
-    right: Spacing.sm,
-    bottom: Spacing.sm + 4,
-    width: 28,
-    height: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.full,
-  },
-  clearBtnText: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.muted,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    wrapper: {
+      position: "relative",
+      justifyContent: "center",
+    },
+    fieldArea: {
+      width: "100%",
+    },
+    clearBtn: {
+      position: "absolute",
+      right: theme.spacing.sm,
+      bottom: theme.spacing.sm + 4,
+      width: 28,
+      height: 28,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.background,
+      borderRadius: theme.radius.full,
+    },
+  });
+}
 
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.lg,
-  },
-  container: {
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    width: "100%",
-    maxWidth: 360,
-    ...Shadows.md,
-  },
-  title: {
-    fontSize: Typography.size.lg,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-    marginBottom: Spacing.md,
-    textAlign: "center",
-  },
-  pickerWrapper: {
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 220,
-    marginVertical: Spacing.md,
-    overflow: "hidden",
-  },
-  picker: {
-    width: "100%",
-    height: 220,
-  },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
-  },
-  btnCancel: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.bg.elevated,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    alignItems: "center",
-  },
-  btnCancelText: {
-    fontSize: Typography.size.md,
-    color: Colors.text.primary,
-    fontWeight: Typography.weight.medium,
-  },
-  btnPrimary: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.accent.default,
-    alignItems: "center",
-  },
-  btnPrimaryText: {
-    fontSize: Typography.size.md,
-    color: Colors.white,
-    fontWeight: Typography.weight.semibold,
-  },
-});
+function createModalStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: theme.spacing.lg,
+    },
+    container: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      padding: theme.spacing.lg,
+      width: "100%",
+      maxWidth: 360,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      ...theme.shadows.md,
+    },
+    title: {
+      fontSize: theme.typography.size.lg,
+      fontWeight: theme.typography.weight.bold,
+      fontFamily: theme.typography.family.bold,
+      color: theme.colors.onSurface,
+      marginBottom: theme.spacing.md,
+      textAlign: "center",
+    },
+    pickerWrapper: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 220,
+      marginVertical: theme.spacing.md,
+      overflow: "hidden",
+    },
+    picker: {
+      width: "100%",
+      height: 220,
+    },
+    footer: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.md,
+    },
+    btnCancel: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      alignItems: "center",
+      minHeight: theme.spacing.tapTarget,
+      justifyContent: "center",
+    },
+    btnCancelText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurface,
+    },
+    btnPrimary: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.primaryContainer,
+      alignItems: "center",
+      minHeight: theme.spacing.tapTarget,
+      justifyContent: "center",
+    },
+    btnPrimaryText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onPrimaryContainer,
+    },
+  });
+}

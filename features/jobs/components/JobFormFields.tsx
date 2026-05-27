@@ -1,11 +1,16 @@
+// features/jobs/components/JobFormFields.tsx
+// Form-Felder für Job-Erstellung/-Bearbeitung.
+// Vollständig theme-aware (Light + Dark Mode).
+
 import { Input } from "@/components/ui";
 import { DateTimeField } from "@/components/ui/DateTimeField";
-import { Colors, Spacing, Typography } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { EmployeeSelector } from "@/features/jobs/components/EmployeeSelector";
 import { JobFormValues } from "@/features/jobs/hooks/useJobForm";
 import { EmployeeOption } from "@/types/job";
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, Text } from "react-native";
+import type { AppTheme } from "@/constants/theme";
 
 type JobFormFieldsProps = {
   values: JobFormValues;
@@ -23,6 +28,9 @@ export function JobFormFields({
   onChangeField,
   employees = [],
 }: JobFormFieldsProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   return (
     <>
       <Input
@@ -74,12 +82,15 @@ export function JobFormFields({
   );
 }
 
-const styles = StyleSheet.create({
-  sectionLabel: {
-    marginTop: Spacing.xs,
-    marginBottom: Spacing.xs,
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.primary,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    sectionLabel: {
+      marginTop: theme.spacing.xs,
+      marginBottom: theme.spacing.xs,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
+    },
+  });
+}
