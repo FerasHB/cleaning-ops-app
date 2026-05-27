@@ -1,8 +1,11 @@
 // features/home/components/HomeHeader.tsx
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+// Header der Home/Dashboard-Seite: Begrüßung + Admin/Profil-Buttons.
+// Vollständig theme-aware (Light + Dark Mode).
+
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Animated,
   StyleSheet,
@@ -10,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import type { AppTheme } from "@/constants/theme";
 
 type HomeHeaderProps = {
   firstName: string;
@@ -27,6 +31,9 @@ export default function HomeHeader({
   onLogout,
   headerAnim,
 }: HomeHeaderProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   return (
     <Animated.View style={[styles.header, headerAnim]}>
       <View style={styles.headerLeft}>
@@ -58,7 +65,7 @@ export default function HomeHeader({
           <Ionicons
             name="settings-outline"
             size={20}
-            color={Colors.text.primary}
+            color={theme.colors.onSurface}
           />
         </TouchableOpacity>
       </View>
@@ -66,76 +73,82 @@ export default function HomeHeader({
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingTop: Spacing.xl,
-    marginBottom: Spacing.xxl,
-  },
-  headerLeft: {
-    flex: 1,
-    gap: 4,
-  },
-  greetingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 2,
-  },
-  onlineDot: {
-    width: 6,
-    height: 6,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.status.success,
-  },
-  greetingHint: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-    fontWeight: Typography.weight.medium,
-    letterSpacing: Typography.tracking.wide,
-  },
-  greeting: {
-    fontSize: Typography.size.xxl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-    letterSpacing: Typography.tracking.tight,
-    lineHeight: Typography.size.xxl * Typography.leading.tight,
-  },
-  subtitle: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.muted,
-    marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginTop: 4,
-  },
-  adminBtn: {
-    backgroundColor: Colors.accent.muted,
-    borderWidth: 1,
-    borderColor: Colors.accent.border,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 7,
-    borderRadius: Radius.full,
-  },
-  adminBtnText: {
-    fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.accent.text,
-    letterSpacing: Typography.tracking.wide,
-  },
-  avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.bg.elevated,
-    borderWidth: 1,
-    borderColor: Colors.border.strong,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      paddingTop: theme.spacing.xl,
+      marginBottom: theme.spacing.xxl,
+    },
+    headerLeft: {
+      flex: 1,
+      gap: 4,
+    },
+    greetingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 2,
+    },
+    onlineDot: {
+      width: 6,
+      height: 6,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.statusCompleted,
+    },
+    greetingHint: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+      letterSpacing: theme.typography.letterSpacing.wide,
+    },
+    greeting: {
+      fontSize: theme.typography.size.xxl,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.bold,
+      color: theme.colors.onSurface,
+      letterSpacing: theme.typography.letterSpacing.tight,
+      lineHeight: theme.typography.lineHeight.xxl,
+    },
+    subtitle: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+      marginTop: 2,
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      marginTop: 4,
+    },
+    adminBtn: {
+      backgroundColor: theme.colors.statusInProgressBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusInProgressBorder,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 7,
+      borderRadius: theme.radius.full,
+    },
+    adminBtnText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.statusInProgress,
+      letterSpacing: theme.typography.letterSpacing.wide,
+    },
+    avatar: {
+      width: 38,
+      height: 38,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  });
+}

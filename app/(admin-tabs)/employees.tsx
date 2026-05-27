@@ -1,8 +1,14 @@
+// app/(admin-tabs)/employees.tsx
+// Mitarbeiter-Tab im Admin-Bereich.
+// Vollständig theme-aware (Light + Dark Mode).
+// Business-Logik (createEmployee, JobContext) unverändert.
+
 import { EmptyState, LoadingScreen } from "@/components/ui";
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { useJobs } from "@/context/JobContext";
 import { createEmployee } from "@/services/employees/createEmployee";
-import React, { useEffect, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -10,16 +16,20 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { AppTheme } from "@/constants/theme";
 
 export default function EmployeesScreen() {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   const { employees, loading, error, refreshEmployees } = useJobs();
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -43,6 +53,7 @@ export default function EmployeesScreen() {
     setPassword("");
   };
 
+  // ── Mitarbeiter erstellen (unveränderte Logik)
   const handleCreateEmployee = async () => {
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim().toLowerCase();
@@ -92,17 +103,26 @@ export default function EmployeesScreen() {
       setCreating(false);
     }
   };
+
   if (loading) {
     return <LoadingScreen />;
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <StatusBar
+        barStyle={theme.isDark ? "light-content" : "dark-content"}
+        backgroundColor={theme.colors.background}
+      />
       <FlatList
         data={employees}
         keyExtractor={(item) => item.id}
         refreshControl={
-          <RefreshControl refreshing={false} onRefresh={refreshEmployees} />
+          <RefreshControl
+            refreshing={false}
+            onRefresh={refreshEmployees}
+            tintColor={theme.colors.primary}
+          />
         }
         contentContainerStyle={[
           styles.content,
@@ -123,7 +143,11 @@ export default function EmployeesScreen() {
                 activeOpacity={0.8}
                 onPress={handleOpenModal}
               >
-                <Text style={styles.addButtonText}>+</Text>
+                <Ionicons
+                  name="add"
+                  size={26}
+                  color={theme.colors.onPrimaryContainer}
+                />
               </TouchableOpacity>
             </View>
 
@@ -139,6 +163,9 @@ export default function EmployeesScreen() {
           <EmptyState
             title="Keine Mitarbeiter vorhanden"
             message="Sobald du Mitarbeiter hinzufügst, erscheinen sie hier."
+            icon="people-outline"
+            ctaLabel="Mitarbeiter hinzufügen"
+            onCta={handleOpenModal}
           />
         }
         renderItem={({ item }) => (
@@ -162,6 +189,7 @@ export default function EmployeesScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
 
+      {/* ── Mitarbeiter-hinzufügen-Modal ── */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -173,6 +201,9 @@ export default function EmployeesScreen() {
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <View style={styles.modalCard}>
+            {/* Drag-Handle (visuelles Detail) */}
+            <View style={styles.modalHandle} />
+
             <Text style={styles.modalTitle}>Mitarbeiter hinzufügen</Text>
             <Text style={styles.modalSubtitle}>
               Lege einen neuen Mitarbeiter für deine Firma an.
@@ -184,8 +215,9 @@ export default function EmployeesScreen() {
                 value={fullName}
                 onChangeText={setFullName}
                 placeholder="z.B. Max Müller"
-                placeholderTextColor={Colors.text.muted}
+                placeholderTextColor={theme.colors.outline}
                 style={styles.input}
+                editable={!creating}
               />
             </View>
 
@@ -195,10 +227,11 @@ export default function EmployeesScreen() {
                 value={email}
                 onChangeText={setEmail}
                 placeholder="max@example.com"
-                placeholderTextColor={Colors.text.muted}
+                placeholderTextColor={theme.colors.outline}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 style={styles.input}
+                editable={!creating}
               />
             </View>
 
@@ -208,9 +241,10 @@ export default function EmployeesScreen() {
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Mindestens 6 Zeichen"
-                placeholderTextColor={Colors.text.muted}
+                placeholderTextColor={theme.colors.outline}
                 secureTextEntry
                 style={styles.input}
+                editable={!creating}
               />
             </View>
 
@@ -219,16 +253,23 @@ export default function EmployeesScreen() {
                 style={styles.cancelButton}
                 activeOpacity={0.8}
                 onPress={handleCloseModal}
+                disabled={creating}
               >
                 <Text style={styles.cancelButtonText}>Abbrechen</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.createButton}
+                style={[
+                  styles.createButton,
+                  creating && styles.createButtonDisabled,
+                ]}
                 activeOpacity={0.8}
                 onPress={handleCreateEmployee}
+                disabled={creating}
               >
-                <Text style={styles.createButtonText}>Erstellen</Text>
+                <Text style={styles.createButtonText}>
+                  {creating ? "Wird erstellt…" : "Erstellen"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -238,201 +279,250 @@ export default function EmployeesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bg.app,
-  },
-  content: {
-    padding: Spacing.lg,
-    paddingBottom: 48,
-  },
-  emptyContent: {
-    flexGrow: 1,
-  },
-  header: {
-    marginBottom: Spacing.lg,
-  },
-  headerTop: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: Spacing.md,
-  },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: Typography.size.xxl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-    letterSpacing: Typography.tracking.tight,
-  },
-  subtitle: {
-    marginTop: Spacing.xs,
-    fontSize: Typography.size.md,
-    color: Colors.text.secondary,
-    lineHeight: Typography.size.md * Typography.leading.normal,
-  },
-  addButton: {
-    width: 46,
-    height: 46,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.accent.default,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addButtonText: {
-    fontSize: 30,
-    fontWeight: Typography.weight.medium,
-    color: Colors.white,
-    marginTop: -2,
-  },
-  countCard: {
-    marginTop: Spacing.lg,
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    padding: Spacing.lg,
-  },
-  countNumber: {
-    fontSize: Typography.size.xxl,
-    fontWeight: Typography.weight.extrabold,
-    color: Colors.accent.default,
-  },
-  countLabel: {
-    marginTop: 2,
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.medium,
-    color: Colors.text.muted,
-  },
-  errorText: {
-    marginTop: Spacing.md,
-    color: Colors.status.danger,
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.medium,
-  },
-  employeeCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    padding: Spacing.md,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.accent.subtle,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: Spacing.md,
-  },
-  avatarText: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.bold,
-    color: Colors.accent.text,
-  },
-  employeeInfo: {
-    flex: 1,
-  },
-  employeeName: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.primary,
-  },
-  employeeRole: {
-    marginTop: 2,
-    fontSize: Typography.size.sm,
-    color: Colors.text.muted,
-  },
-  statusBadge: {
-    backgroundColor: Colors.status.successBg,
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-  },
-  statusText: {
-    fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.status.success,
-  },
-  separator: {
-    height: Spacing.sm,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(17, 24, 39, 0.35)",
-    justifyContent: "flex-end",
-  },
-  modalCard: {
-    backgroundColor: Colors.bg.surface,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    padding: Spacing.lg,
-    paddingBottom: Spacing.xxl,
-  },
-  modalTitle: {
-    fontSize: Typography.size.xl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-  },
-  modalSubtitle: {
-    marginTop: Spacing.xs,
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-  },
-  formGroup: {
-    marginTop: Spacing.lg,
-  },
-  label: {
-    marginBottom: Spacing.xs,
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.primary,
-  },
-  input: {
-    backgroundColor: Colors.bg.elevated,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    borderRadius: Radius.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    fontSize: Typography.size.md,
-    color: Colors.text.primary,
-  },
-  modalActions: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.xl,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: Colors.bg.elevated,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    borderRadius: Radius.lg,
-    paddingVertical: Spacing.md,
-    alignItems: "center",
-  },
-  cancelButtonText: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.secondary,
-  },
-  createButton: {
-    flex: 1,
-    backgroundColor: Colors.accent.default,
-    borderRadius: Radius.lg,
-    paddingVertical: Spacing.md,
-    alignItems: "center",
-  },
-  createButtonText: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.white,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    content: {
+      padding: theme.spacing.lg,
+      paddingBottom: 48,
+    },
+    emptyContent: {
+      flexGrow: 1,
+    },
+
+    // ── Header
+    header: {
+      marginBottom: theme.spacing.lg,
+    },
+    headerTop: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: theme.spacing.md,
+    },
+    headerText: {
+      flex: 1,
+    },
+    title: {
+      fontSize: theme.typography.size.xxl,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.bold,
+      color: theme.colors.onSurface,
+      letterSpacing: theme.typography.letterSpacing.tight,
+    },
+    subtitle: {
+      marginTop: theme.spacing.xs,
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+      lineHeight: theme.typography.lineHeight.md,
+    },
+
+    // ── Hinzufügen-Button (Plus)
+    addButton: {
+      width: 46,
+      height: 46,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.primaryContainer,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    // ── Counter-Card
+    countCard: {
+      marginTop: theme.spacing.lg,
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.xl,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      padding: theme.spacing.lg,
+      ...theme.shadows.sm,
+    },
+    countNumber: {
+      fontSize: theme.typography.size.xxl,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.extrabold,
+      color: theme.colors.primary,
+    },
+    countLabel: {
+      marginTop: 2,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+    },
+
+    // ── Error-Text
+    errorText: {
+      marginTop: theme.spacing.md,
+      color: theme.colors.error,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+    },
+
+    // ── Mitarbeiter-Karten in der Liste
+    employeeCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.xl,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      padding: theme.spacing.md,
+      ...theme.shadows.sm,
+    },
+    avatar: {
+      width: 44,
+      height: 44,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.statusInProgressBg,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: theme.spacing.md,
+    },
+    avatarText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.bold,
+      color: theme.colors.statusInProgress,
+    },
+    employeeInfo: {
+      flex: 1,
+    },
+    employeeName: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
+    },
+    employeeRole: {
+      marginTop: 2,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+    statusBadge: {
+      backgroundColor: theme.colors.statusCompletedBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusCompletedBorder,
+      borderRadius: theme.radius.full,
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: 4,
+    },
+    statusText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.statusCompleted,
+    },
+    separator: {
+      height: theme.spacing.sm,
+    },
+
+    // ── Modal (Bottom Sheet)
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0, 0, 0, 0.55)",
+      justifyContent: "flex-end",
+    },
+    modalCard: {
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: theme.radius.xl,
+      borderTopRightRadius: theme.radius.xl,
+      padding: theme.spacing.lg,
+      paddingBottom: theme.spacing.xxl,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.outlineVariant,
+    },
+    modalHandle: {
+      alignSelf: "center",
+      width: 36,
+      height: 4,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.outlineVariant,
+      marginBottom: theme.spacing.md,
+    },
+    modalTitle: {
+      fontSize: theme.typography.size.xl,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.bold,
+      color: theme.colors.onSurface,
+    },
+    modalSubtitle: {
+      marginTop: theme.spacing.xs,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+
+    // ── Formular-Felder im Modal
+    formGroup: {
+      marginTop: theme.spacing.lg,
+    },
+    label: {
+      marginBottom: theme.spacing.xs,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
+    },
+    input: {
+      backgroundColor: theme.colors.background,
+      borderWidth: 1.5,
+      borderColor: theme.colors.outlineVariant,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 13,
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurface,
+      minHeight: theme.spacing.tapTarget,
+    },
+
+    // ── Modal-Aktionen
+    modalActions: {
+      flexDirection: "row",
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.xl,
+    },
+    cancelButton: {
+      flex: 1,
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      borderRadius: theme.radius.md,
+      paddingVertical: theme.spacing.md,
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: theme.spacing.tapTarget,
+    },
+    cancelButtonText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
+    },
+    createButton: {
+      flex: 1,
+      backgroundColor: theme.colors.primaryContainer,
+      borderRadius: theme.radius.md,
+      paddingVertical: theme.spacing.md,
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: theme.spacing.tapTarget,
+    },
+    createButtonDisabled: {
+      opacity: 0.5,
+    },
+    createButtonText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onPrimaryContainer,
+    },
+  });
+}

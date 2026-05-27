@@ -1,8 +1,11 @@
-// screens/HomeScreen.tsx
-import { useAuth } from "@/context/AuthContext";
+// features/home/HomeScreen.tsx
+// Dashboard / Übersicht — wird sowohl von Employee Home als auch vom Admin-Tab "Übersicht" verwendet.
+// Vollständig theme-aware (Light + Dark Mode).
+// Business-Logik (JobContext, AuthContext, useTranslation) unverändert.
 
 import { EmptyState, LoadingScreen } from "@/components/ui";
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
+import { useAuth } from "@/context/AuthContext";
 import HomeHeader from "@/features/home/components/HomeHeader";
 import HomeStats from "@/features/home/components/HomeStats";
 import { router } from "expo-router";
@@ -16,6 +19,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { AppTheme } from "@/constants/theme";
 import JobCard from "../../components/JobCard";
 import { useJobs } from "../../context/JobContext";
 import { useTranslation } from "../../i18n/useTranslation";
@@ -46,6 +50,9 @@ function useFadeIn(delay = 0) {
 }
 
 export default function HomeScreen() {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   const { role, user } = useAuth();
   const { jobs, startJob, completeJob, loading } = useJobs();
   const { t } = useTranslation();
@@ -93,7 +100,10 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar
+        barStyle={theme.isDark ? "light-content" : "dark-content"}
+        backgroundColor={theme.colors.background}
+      />
 
       <FlatList
         data={filteredJobs}
@@ -112,6 +122,7 @@ export default function HomeScreen() {
                 ? "Sobald ein Admin einen Job erstellt, erscheint er hier."
                 : "Wähle einen anderen Filter oder erstelle neue Jobs."
             }
+            icon="briefcase-outline"
           />
         }
         ListHeaderComponent={
@@ -207,127 +218,50 @@ function AnimatedJobCard({
   );
 }
 
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: Colors.bg.base,
-  },
-  listContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: 48,
-  },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    safe: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    listContent: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingBottom: 48,
+      flexGrow: 1,
+    },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingTop: Spacing.xl,
-    marginBottom: Spacing.xxl,
-  },
-  headerLeft: {
-    flex: 1,
-    gap: 4,
-  },
-  greetingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 2,
-  },
-  onlineDot: {
-    width: 6,
-    height: 6,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.status.success,
-  },
-  greetingHint: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-    fontWeight: Typography.weight.medium,
-    letterSpacing: Typography.tracking.wide,
-  },
-  greeting: {
-    fontSize: Typography.size.xxl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-    letterSpacing: Typography.tracking.tight,
-    lineHeight: Typography.size.xxl * Typography.leading.tight,
-  },
-  subtitle: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.muted,
-    marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginTop: 4,
-  },
+    // Sektion-Label-Zeile
+    sectionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      marginBottom: theme.spacing.md,
+    },
+    sectionTitle: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurfaceVariant,
+      letterSpacing: theme.typography.letterSpacing.wider,
+      textTransform: "uppercase",
+    },
+    countBadge: {
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+    },
+    countText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      color: theme.colors.onSurfaceVariant,
+      fontWeight: theme.typography.weight.semibold,
+    },
 
-  // Admin Button
-  adminBtn: {
-    backgroundColor: Colors.accent.muted,
-    borderWidth: 1,
-    borderColor: Colors.accent.border,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 7,
-    borderRadius: Radius.full,
-  },
-  adminBtnText: {
-    fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.accent.text,
-    letterSpacing: Typography.tracking.wide,
-  },
-
-  // Avatar
-  avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.bg.elevated,
-    borderWidth: 1,
-    borderColor: Colors.border.strong,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    fontSize: Typography.size.base,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-  },
-
-  // Sektion
-  sectionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  sectionTitle: {
-    fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.muted,
-    letterSpacing: Typography.tracking.wider,
-    textTransform: "uppercase",
-  },
-  countBadge: {
-    backgroundColor: Colors.bg.elevated,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-  },
-  countText: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
-    fontWeight: Typography.weight.semibold,
-  },
-
-  separator: {
-    height: Spacing.sm,
-  },
-});
+    separator: {
+      height: theme.spacing.sm,
+    },
+  });
+}

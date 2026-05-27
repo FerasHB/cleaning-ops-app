@@ -1,12 +1,9 @@
 // features/home/components/HomeStats.tsx
-import {
-  Colors,
-  Radius,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/constants/theme";
-import React, { useRef } from "react";
+// 4 Statistik-Kacheln (Gesamt / Offen / In Arbeit / Erledigt) als Filter-Toggles.
+// Vollständig theme-aware (Light + Dark Mode).
+
+import { useAppTheme } from "@/hooks/useAppTheme";
+import React, { useMemo, useRef } from "react";
 import {
   Animated,
   StyleSheet,
@@ -14,13 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import type { AppTheme } from "@/constants/theme";
 
 type FilterType = "all" | "open" | "in_progress" | "completed";
-
-type JobItem = {
-  id: string;
-  status: FilterType extends infer T ? T : never;
-};
 
 type HomeStatsProps = {
   jobs: {
@@ -35,12 +28,45 @@ type HomeStatsProps = {
   };
 };
 
+// ── Theme-spezifische Farbpaare pro Filter
+function getStatColors(theme: AppTheme, kind: FilterType) {
+  switch (kind) {
+    case "all":
+      return {
+        color:       theme.colors.onSurface,
+        activeBg:    theme.colors.surfaceContainerHigh,
+        activeBorder: theme.colors.outline,
+      };
+    case "open":
+      return {
+        color:        theme.colors.statusOpen,
+        activeBg:     theme.colors.statusOpenBg,
+        activeBorder: theme.colors.statusOpenBorder,
+      };
+    case "in_progress":
+      return {
+        color:        theme.colors.statusInProgress,
+        activeBg:     theme.colors.statusInProgressBg,
+        activeBorder: theme.colors.statusInProgressBorder,
+      };
+    case "completed":
+      return {
+        color:        theme.colors.statusCompleted,
+        activeBg:     theme.colors.statusCompletedBg,
+        activeBorder: theme.colors.statusCompletedBorder,
+      };
+  }
+}
+
 export default function HomeStats({
   jobs,
   selectedFilter,
   setSelectedFilter,
   statsAnim,
 }: HomeStatsProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   const openJobs = jobs.filter((job) => job.status === "open");
   const inProgressJobs = jobs.filter((job) => job.status === "in_progress");
   const completedJobs = jobs.filter((job) => job.status === "completed");
@@ -51,8 +77,7 @@ export default function HomeStats({
         label="Gesamt"
         count={jobs.length}
         active={selectedFilter === "all"}
-        color={Colors.text.secondary}
-        activeBg={Colors.bg.elevated}
+        kind="all"
         onPress={() => setSelectedFilter("all")}
       />
 
@@ -60,8 +85,7 @@ export default function HomeStats({
         label="Offen"
         count={openJobs.length}
         active={selectedFilter === "open"}
-        color={Colors.status.warning}
-        activeBg={Colors.status.warningBg}
+        kind="open"
         onPress={() => setSelectedFilter("open")}
       />
 
@@ -69,8 +93,7 @@ export default function HomeStats({
         label="In Arbeit"
         count={inProgressJobs.length}
         active={selectedFilter === "in_progress"}
-        color={Colors.accent.text}
-        activeBg={Colors.accent.subtle}
+        kind="in_progress"
         onPress={() => setSelectedFilter("in_progress")}
       />
 
@@ -78,8 +101,7 @@ export default function HomeStats({
         label="Erledigt"
         count={completedJobs.length}
         active={selectedFilter === "completed"}
-        color={Colors.status.success}
-        activeBg={Colors.status.successBg}
+        kind="completed"
         onPress={() => setSelectedFilter("completed")}
       />
     </Animated.View>
@@ -89,20 +111,16 @@ export default function HomeStats({
 type StatCardProps = {
   label: string;
   count: number;
-  color: string;
-  activeBg: string;
+  kind: FilterType;
   active: boolean;
   onPress: () => void;
 };
 
-function StatCard({
-  label,
-  count,
-  color,
-  activeBg,
-  active,
-  onPress,
-}: StatCardProps) {
+function StatCard({ label, count, kind, active, onPress }: StatCardProps) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const colors = getStatColors(theme, kind);
+
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -133,63 +151,69 @@ function StatCard({
         style={[
           styles.statCard,
           active && {
-            backgroundColor: activeBg,
-            borderColor: `${color}40`,
+            backgroundColor: colors.activeBg,
+            borderColor: colors.activeBorder,
           },
         ]}
       >
-        <Text style={[styles.statCount, { color }]}>{count}</Text>
+        <Text style={[styles.statCount, { color: colors.color }]}>{count}</Text>
         <Text style={styles.statLabel}>{label}</Text>
 
         {active ? (
-          <View style={[styles.statActiveDot, { backgroundColor: color }]} />
+          <View
+            style={[styles.statActiveDot, { backgroundColor: colors.color }]}
+          />
         ) : null}
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
-  statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.sm,
-    marginBottom: Spacing.xxl,
-  },
-  statCardWrap: {
-    width: "48.5%",
-  },
-  statCard: {
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.md,
-    gap: 4,
-    position: "relative",
-    overflow: "hidden",
-    ...Shadows.sm,
-  },
-  statCount: {
-    fontSize: Typography.size.xxl,
-    fontWeight: Typography.weight.extrabold,
-    letterSpacing: Typography.tracking.tight,
-    lineHeight: Typography.size.xxl * Typography.leading.tight,
-  },
-  statLabel: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-    fontWeight: Typography.weight.medium,
-    letterSpacing: Typography.tracking.wide,
-    textTransform: "uppercase",
-  },
-  statActiveDot: {
-    position: "absolute",
-    top: Spacing.md,
-    right: Spacing.md,
-    width: 6,
-    height: 6,
-    borderRadius: Radius.full,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    statsGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: theme.spacing.sm,
+      marginBottom: theme.spacing.xxl,
+    },
+    statCardWrap: {
+      width: "48.5%",
+    },
+    statCard: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      paddingVertical: theme.spacing.lg,
+      paddingHorizontal: theme.spacing.md,
+      gap: 4,
+      position: "relative",
+      overflow: "hidden",
+      ...theme.shadows.sm,
+    },
+    statCount: {
+      fontSize: theme.typography.size.xxl,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.extrabold,
+      letterSpacing: theme.typography.letterSpacing.tight,
+      lineHeight: theme.typography.lineHeight.xxl,
+    },
+    statLabel: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+      letterSpacing: theme.typography.letterSpacing.wide,
+      textTransform: "uppercase",
+    },
+    statActiveDot: {
+      position: "absolute",
+      top: theme.spacing.md,
+      right: theme.spacing.md,
+      width: 6,
+      height: 6,
+      borderRadius: theme.radius.full,
+    },
+  });
+}

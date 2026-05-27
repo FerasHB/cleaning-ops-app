@@ -1,14 +1,12 @@
 // components/JobCard.tsx
-import {
-  Colors,
-  Radius,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/constants/theme";
+// Job-Karte mit Status-Badge, Details und Action-Buttons.
+// Vollständig theme-aware (Light + Dark Mode).
+
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { Job } from "@/types/job";
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { AppTheme } from "@/constants/theme";
 
 type Props = {
   job: Job;
@@ -42,26 +40,37 @@ function formatDate(iso?: string | null): string | null {
   });
 }
 
-const STATUS_CONFIG = {
-  open: {
-    label: "Offen",
-    textColor: Colors.status.warning,
-    bgColor: Colors.status.warningBg,
-  },
-  in_progress: {
-    label: "In Arbeit",
-    textColor: Colors.accent.text,
-    bgColor: Colors.accent.subtle,
-  },
-  completed: {
-    label: "Erledigt",
-    textColor: Colors.status.success,
-    bgColor: Colors.status.successBg,
-  },
-} as const;
+// ── Status-Mapping als Funktion (damit Theme-Farben aktuell bleiben)
+function getStatusConfig(theme: AppTheme, status: Job["status"]) {
+  switch (status) {
+    case "open":
+      return {
+        label: "Offen",
+        textColor: theme.colors.statusOpen,
+        bgColor: theme.colors.statusOpenBg,
+        borderColor: theme.colors.statusOpenBorder,
+      };
+    case "in_progress":
+      return {
+        label: "In Arbeit",
+        textColor: theme.colors.statusInProgress,
+        bgColor: theme.colors.statusInProgressBg,
+        borderColor: theme.colors.statusInProgressBorder,
+      };
+    case "completed":
+      return {
+        label: "Erledigt",
+        textColor: theme.colors.statusCompleted,
+        bgColor: theme.colors.statusCompletedBg,
+        borderColor: theme.colors.statusCompletedBorder,
+      };
+  }
+}
 
 export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
-  const status = STATUS_CONFIG[job.status];
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const status = getStatusConfig(theme, job.status);
 
   const date = formatDate(job.scheduledStart);
   const startTime = formatTime(job.scheduledStart);
@@ -84,7 +93,12 @@ export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
       <View style={styles.header}>
         <Text style={styles.customerName}>{job.customerName}</Text>
 
-        <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
+        <View
+          style={[
+            styles.statusBadge,
+            { backgroundColor: status.bgColor, borderColor: status.borderColor },
+          ]}
+        >
           <Text style={[styles.statusText, { color: status.textColor }]}>
             {status.label}
           </Text>
@@ -129,6 +143,7 @@ export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
           ]}
           onPress={onStart}
           disabled={!canStart}
+          activeOpacity={0.85}
         >
           <Text
             style={[
@@ -149,6 +164,7 @@ export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
           ]}
           onPress={onComplete}
           disabled={!canComplete}
+          activeOpacity={0.85}
         >
           <Text
             style={[
@@ -163,7 +179,11 @@ export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
       </View>
 
       {onEdit ? (
-        <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={onEdit}
+          activeOpacity={0.85}
+        >
           <Text style={styles.editButtonText}>Bearbeiten</Text>
         </TouchableOpacity>
       ) : null}
@@ -171,133 +191,145 @@ export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    padding: Spacing.lg,
-    gap: Spacing.md,
-    ...Shadows.sm,
-  },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      padding: theme.spacing.lg,
+      gap: theme.spacing.md,
+      ...theme.shadows.sm,
+    },
 
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: Spacing.sm,
-  },
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: theme.spacing.sm,
+    },
 
-  customerName: {
-    flex: 1,
-    fontSize: Typography.size.lg,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-  },
+    customerName: {
+      flex: 1,
+      fontSize: theme.typography.size.lg,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.bold,
+      color: theme.colors.onSurface,
+    },
 
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: Radius.full,
-  },
+    statusBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+    },
 
-  statusText: {
-    fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
-  },
+    statusText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      letterSpacing: theme.typography.letterSpacing.wide,
+    },
 
-  infoBlock: {
-    gap: 4,
-  },
+    infoBlock: {
+      gap: 4,
+    },
 
-  label: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-    fontWeight: Typography.weight.semibold,
-    textTransform: "uppercase",
-  },
+    label: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.outline,
+      letterSpacing: theme.typography.letterSpacing.wide,
+      textTransform: "uppercase",
+    },
 
-  value: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.primary,
-    lineHeight: Typography.size.sm * Typography.leading.normal,
-  },
+    value: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurface,
+      lineHeight: theme.typography.lineHeight.sm,
+    },
 
-  notesBox: {
-    backgroundColor: Colors.bg.elevated,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    gap: 4,
-  },
+    notesBox: {
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderRadius: theme.radius.md,
+      padding: theme.spacing.md,
+      gap: 4,
+    },
 
-  notesText: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-    lineHeight: Typography.size.sm * Typography.leading.normal,
-  },
+    notesText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+      lineHeight: theme.typography.lineHeight.sm,
+    },
 
-  buttonRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.xs,
-  },
+    buttonRow: {
+      flexDirection: "row",
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.xs,
+    },
 
-  button: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: Spacing.md,
-    borderWidth: 1,
-  },
+    button: {
+      flex: 1,
+      minHeight: theme.spacing.tapTarget,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: theme.spacing.md,
+      borderWidth: 1,
+    },
 
-  startButton: {
-    backgroundColor: Colors.accent.default,
-    borderColor: Colors.accent.default,
-  },
+    startButton: {
+      backgroundColor: theme.colors.primaryContainer,
+      borderColor: theme.colors.primaryContainer,
+    },
 
-  completeButton: {
-    backgroundColor: Colors.status.successBg,
-    borderColor: Colors.status.success,
-  },
+    completeButton: {
+      backgroundColor: theme.colors.statusCompletedBg,
+      borderColor: theme.colors.statusCompletedBorder,
+    },
 
-  disabledButton: {
-    backgroundColor: Colors.bg.elevated,
-    borderColor: Colors.border.default,
-  },
+    disabledButton: {
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderColor: theme.colors.outlineVariant,
+    },
 
-  buttonText: {
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.semibold,
-  },
+    buttonText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+    },
 
-  startButtonText: {
-    color: Colors.white,
-  },
+    startButtonText: {
+      color: theme.colors.onPrimaryContainer,
+    },
 
-  completeButtonText: {
-    color: Colors.status.success,
-  },
+    completeButtonText: {
+      color: theme.colors.statusCompleted,
+    },
 
-  disabledButtonText: {
-    color: Colors.text.muted,
-  },
+    disabledButtonText: {
+      color: theme.colors.outline,
+    },
 
-  editButton: {
-    minHeight: 44,
-    borderRadius: Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.bg.overlay,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-  },
+    editButton: {
+      minHeight: theme.spacing.tapTarget,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.colors.surfaceContainer,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+    },
 
-  editButtonText: {
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.text.primary,
-  },
-});
+    editButtonText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
+    },
+  });
+}
