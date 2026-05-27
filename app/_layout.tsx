@@ -28,7 +28,10 @@ function RootNavigator() {
         }}
       >
         <Stack.Screen name="index" />
+        <Stack.Screen name="welcome" />
+        <Stack.Screen name="login" />
         <Stack.Screen name="register" />
+        <Stack.Screen name="forgot-password" />
         <Stack.Screen name="setup-company" />
         <Stack.Screen name="home" />
         <Stack.Screen name="admin" />

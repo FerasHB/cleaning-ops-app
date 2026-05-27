@@ -1,14 +1,13 @@
-import { Input } from "@/components/ui";
-import {
-  Colors,
-  Radius,
-  Shadows,
-  Spacing,
-  Typography,
-} from "@/constants/theme";
+// features/auth/LoginScreen.tsx
+// Redesign: useAppTheme(), Inter-Font, PasswordInput, ErrorBanner.
+// Auth-Logik bleibt unverändert.
+
+import { ErrorBanner, PasswordInput, Input } from "@/components/ui";
+import { AuthBrand } from "@/features/auth/components/AuthBrand";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Animated,
   KeyboardAvoidingView,
@@ -21,54 +20,34 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { AppTheme } from "@/constants/theme";
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [emailError, setEmailError] = useState("");
-  const [passwordError, setPasswordError] = useState("");
+  const theme  = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
+  const [email,     setEmail]     = useState("");
+  const [password,  setPassword]  = useState("");
+  const [loading,   setLoading]   = useState(false);
   const [formError, setFormError] = useState("");
 
-  const logoAnim = useRef(new Animated.Value(0)).current;
-  const logoScale = useRef(new Animated.Value(0.95)).current;
-  const formAnim = useRef(new Animated.Value(0)).current;
-  const formSlide = useRef(new Animated.Value(20)).current;
+  // Einzel-Feld-Fehler
+  const [emailError,    setEmailError]    = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
-  useEffect(() => {
+  // Einmal-Animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(16)).current;
+  React.useEffect(() => {
     Animated.parallel([
-      Animated.timing(logoAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-      Animated.spring(logoScale, {
-        toValue: 1,
-        useNativeDriver: true,
-        speed: 12,
-        bounciness: 6,
-      }),
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 450, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 380, useNativeDriver: true }),
     ]).start();
+  }, [fadeAnim, slideAnim]);
 
-    Animated.parallel([
-      Animated.timing(formAnim, {
-        toValue: 1,
-        duration: 400,
-        delay: 120,
-        useNativeDriver: true,
-      }),
-      Animated.timing(formSlide, {
-        toValue: 0,
-        duration: 350,
-        delay: 120,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [formAnim, formSlide, logoAnim, logoScale]);
-
-  const validate = () => {
+  // ── Validierung
+  function validate(): boolean {
     let valid = true;
-
     setEmailError("");
     setPasswordError("");
     setFormError("");
@@ -77,39 +56,41 @@ export default function LoginScreen() {
       setEmailError("E-Mail ist erforderlich.");
       valid = false;
     }
-
     if (!password) {
       setPasswordError("Passwort ist erforderlich.");
       valid = false;
     }
-
     return valid;
-  };
+  }
 
-  const handleLogin = async () => {
+  // ── Login
+  async function handleLogin() {
     if (!validate()) return;
-
     try {
       setLoading(true);
-
       const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email:    email.trim().toLowerCase(),
         password,
       });
-
       if (error) {
         setFormError("E-Mail oder Passwort ist falsch.");
+        return;
       }
+      // Erfolgreich → index.tsx übernimmt die Weiterleitung
+      router.replace("/");
     } catch {
       setFormError("Login fehlgeschlagen. Bitte erneut versuchen.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar
+        barStyle={theme.isDark ? "light-content" : "dark-content"}
+        backgroundColor={theme.colors.background}
+      />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -120,111 +101,104 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
-            style={[
-              styles.brandArea,
-              { opacity: logoAnim, transform: [{ scale: logoScale }] },
-            ]}
-          >
-            <View style={styles.logoMark}>
-              <Text style={styles.logoLetter}>J</Text>
-            </View>
-
-            <View style={styles.brandText}>
-              <Text style={styles.brandName}>JobManager</Text>
-              <Text style={styles.brandTagline}>
-                Professionelles Job-Management
-              </Text>
-            </View>
+          {/* ── Branding ── */}
+          <Animated.View style={{ opacity: fadeAnim }}>
+            <AuthBrand tagline="Für autorisierte Mitarbeiter" />
           </Animated.View>
 
+          {/* ── Formular-Karte ── */}
           <Animated.View
             style={[
               styles.card,
-              { opacity: formAnim, transform: [{ translateY: formSlide }] },
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
             ]}
           >
+            {/* Karten-Header */}
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Anmelden</Text>
-              <Text style={styles.cardSubtitle}>
-                Für autorisierte Mitarbeiter
-              </Text>
+              <Text style={styles.cardTitle}>Willkommen zurück</Text>
+              <Text style={styles.cardSubtitle}>Melde dich mit deinem Konto an</Text>
             </View>
 
+            {/* Fehler-Banner */}
             {formError ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorBannerText}>{formError}</Text>
-              </View>
+              <ErrorBanner
+                message={formError}
+                onDismiss={() => setFormError("")}
+              />
             ) : null}
 
+            {/* Felder */}
             <View style={styles.fields}>
               <Input
                 label="E-Mail"
                 placeholder="name@firma.de"
                 value={email}
-                onChangeText={(text: string) => {
-                  setEmail(text);
-                  setEmailError("");
-                  setFormError("");
-                }}
+                onChangeText={(t) => { setEmail(t); setEmailError(""); setFormError(""); }}
                 error={emailError}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
                 returnKeyType="next"
+                editable={!loading}
               />
 
-              <Input
-                label="Passwort"
-                placeholder="••••••••"
-                value={password}
-                onChangeText={(text: string) => {
-                  setPassword(text);
-                  setPasswordError("");
-                  setFormError("");
-                }}
-                error={passwordError}
-                secureTextEntry
-                autoComplete="password"
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-              />
+              {/* Passwort + "Vergessen?"-Link */}
+              <View style={styles.passwordBlock}>
+                <PasswordInput
+                  label="Passwort"
+                  placeholder="••••••••"
+                  value={password}
+                  onChangeText={(t) => { setPassword(t); setPasswordError(""); setFormError(""); }}
+                  error={passwordError}
+                  autoComplete="password"
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
+                  editable={!loading}
+                />
+                <TouchableOpacity
+                  onPress={() => router.push("/forgot-password")}
+                  activeOpacity={0.7}
+                  style={styles.forgotLink}
+                >
+                  <Text style={styles.forgotLinkText}>Passwort vergessen?</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
+            {/* Login Button */}
             <TouchableOpacity
+              style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
               onPress={handleLogin}
               disabled={loading}
-              activeOpacity={0.85}
-              style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
+              activeOpacity={0.82}
             >
               <Text style={styles.loginBtnText}>
                 {loading ? "Anmelden..." : "Anmelden"}
               </Text>
             </TouchableOpacity>
 
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>oder</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Register Link */}
             <TouchableOpacity
-
-              onPress={() => router.push("/register")}
-
+              onPress={() => router.replace("/register")}
               activeOpacity={0.75}
-
-              style={styles.registerLink}
-
+              style={styles.registerRow}
+              disabled={loading}
             >
-
-              <Text style={styles.registerLinkText}>
-
-                Firma erstellen
-
-              </Text>
-
+              <Text style={styles.registerText}>Noch kein Konto?{" "}</Text>
+              <Text style={styles.registerLink}>Firma registrieren</Text>
             </TouchableOpacity>
           </Animated.View>
 
-          <Animated.View style={[styles.footer, { opacity: formAnim }]}>
-            <Text style={styles.footerText}>
-              Nur für autorisierte Mitarbeiter
-            </Text>
+          {/* ── Footer ── */}
+          <Animated.View style={{ opacity: fadeAnim }}>
+            <Text style={styles.footer}>Nur für autorisierte Mitarbeiter</Text>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -232,134 +206,116 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: Colors.bg.base,
-  },
-  flex: {
-    flex: 1,
-  },
-  scroll: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xxl,
-    gap: Spacing.xl,
-  },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    safe: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    flex: { flex: 1 },
+    scroll: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: theme.spacing.gutter,
+      paddingVertical: theme.spacing.xl,
+      gap: theme.spacing.xl,
+    },
 
-  brandArea: {
-    alignItems: "center",
-    gap: Spacing.md,
-  },
-  logoMark: {
-    width: 72,
-    height: 72,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.accent.default,
-    alignItems: "center",
-    justifyContent: "center",
-    ...Shadows.md,
-  },
-  logoLetter: {
-    fontSize: Typography.size.xxl,
-    fontWeight: Typography.weight.extrabold,
-    color: Colors.white,
-  },
-  brandText: {
-    alignItems: "center",
-    gap: Spacing.xs,
-  },
-  brandName: {
-    fontSize: Typography.size.xl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-  },
-  brandTagline: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
-  },
+    // Karte
+    card: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.xl,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      padding: theme.spacing.xl,
+      gap: theme.spacing.lg,
+      ...theme.shadows.md,
+    },
+    cardHeader: { gap: 4 },
+    cardTitle: {
+      fontSize: theme.typography.size.xl,
+      fontWeight: theme.typography.weight.bold,
+      fontFamily: theme.typography.family.bold,
+      color: theme.colors.onSurface,
+      letterSpacing: theme.typography.letterSpacing.tight,
+    },
+    cardSubtitle: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
 
-  card: {
-    backgroundColor: Colors.bg.surface,
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    padding: Spacing.xl,
-    gap: Spacing.lg,
-    ...Shadows.lg,
-  },
-  cardHeader: {
-    gap: Spacing.xs,
-  },
-  cardTitle: {
-    fontSize: Typography.size.lg,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-  },
-  cardSubtitle: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.muted,
-  },
+    // Felder
+    fields: { gap: theme.spacing.md },
 
-  errorBanner: {
-    backgroundColor: Colors.status.dangerBg,
-    borderWidth: 1,
-    borderColor: Colors.status.danger,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  errorBannerText: {
-    fontSize: Typography.size.sm,
-    color: Colors.status.danger,
-    fontWeight: Typography.weight.medium,
-  },
+    // Passwort + Vergessen-Link
+    passwordBlock: { gap: 6 },
+    forgotLink: { alignSelf: "flex-end" },
+    forgotLinkText: {
+      fontSize: theme.typography.size.xs,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      color: theme.colors.primary,
+    },
 
-  fields: {
-    gap: Spacing.md,
-  },
+    // Login-Button
+    loginBtn: {
+      backgroundColor: theme.colors.primaryContainer,
+      borderRadius: theme.radius.md,
+      minHeight: theme.spacing.tapTarget,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 14,
+    },
+    loginBtnDisabled: { opacity: 0.5 },
+    loginBtnText: {
+      fontSize: theme.typography.size.md,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      color: theme.colors.onPrimaryContainer,
+    },
 
-  loginBtn: {
-    backgroundColor: Colors.accent.default,
-    paddingVertical: 14,
-    borderRadius: Radius.md,
-    alignItems: "center",
-    ...Shadows.md,
-  },
-  loginBtnDisabled: {
-    opacity: 0.6,
-  },
-  loginBtnText: {
-    fontSize: Typography.size.base,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.white,
-  },
+    // Divider
+    dividerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+    },
+    dividerLine: {
+      flex: 1,
+      height: 1,
+      backgroundColor: theme.colors.outlineVariant,
+    },
+    dividerText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.outline,
+    },
 
-  footer: {
-    alignItems: "center",
-  },
-  footerText: {
-    fontSize: Typography.size.xs,
-    color: Colors.text.muted,
-    textAlign: "center",
-  },
+    // Register-Link
+    registerRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    registerText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+    registerLink: {
+      fontSize: theme.typography.size.sm,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      color: theme.colors.primary,
+    },
 
-  registerLink: {
-
-    marginTop: Spacing.sm,
-
-    alignItems: "center",
-
-  },
-
-  registerLinkText: {
-
-    fontSize: Typography.size.sm,
-
-    fontWeight: Typography.weight.medium,
-
-    color: Colors.accent.text,
-
-  },
-});
+    // Footer
+    footer: {
+      textAlign: "center",
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.outline,
+    },
+  });
+}
