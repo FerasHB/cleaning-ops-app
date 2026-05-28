@@ -159,11 +159,9 @@ export default function HomeScreen() {
             onPress={() => router.push(`/jobs/${item.id}`)}
             onStart={() => startJob(item.id)}
             onComplete={() => completeJob(item.id)}
-            onEdit={
-              role === "admin"
-                ? () => router.push(`/jobs/${item.id}/edit`)
-                : undefined
-            }
+            // Admins sehen Mitarbeiter-Name in der Card (Übersicht über Zuweisungen).
+            // Employees sehen ihn nicht — wäre redundant (sie sehen nur eigene Jobs).
+            showEmployeeName={role === "admin"}
           />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -178,15 +176,15 @@ function AnimatedJobCard({
   index,
   onStart,
   onComplete,
-  onEdit,
   onPress,
+  showEmployeeName,
 }: {
   item: any;
   index: number;
   onStart: () => void;
   onComplete: () => void;
-  onEdit?: () => void;
   onPress?: () => void;
+  showEmployeeName?: boolean;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(16)).current;
@@ -215,8 +213,8 @@ function AnimatedJobCard({
         job={item}
         onStart={onStart}
         onComplete={onComplete}
-        onEdit={onEdit}
         onPress={onPress}
+        showEmployeeName={showEmployeeName}
       />
     </Animated.View>
   );

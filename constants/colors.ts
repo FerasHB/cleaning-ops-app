@@ -73,17 +73,17 @@ export const darkColors: ColorPalette = {
   onPrimary:          '#002E6A',
   onPrimaryContainer: '#FFFFFF',
 
-  statusOpen:       '#F59E0B',
-  statusOpenBg:     'rgba(245,158,11,0.12)',
-  statusOpenBorder: 'rgba(245,158,11,0.30)',
+  statusOpen:       '#FBBF24',
+  statusOpenBg:     'rgba(251,191,36,0.14)',
+  statusOpenBorder: '#FBBF24',
 
-  statusInProgress:       '#ADC6FF',
-  statusInProgressBg:     'rgba(173,198,255,0.12)',
-  statusInProgressBorder: 'rgba(173,198,255,0.30)',
+  statusInProgress:       '#93C5FD',
+  statusInProgressBg:     'rgba(96,165,250,0.14)',
+  statusInProgressBorder: '#60A5FA',
 
-  statusCompleted:       '#22C55E',
-  statusCompletedBg:     'rgba(34,197,94,0.12)',
-  statusCompletedBorder: 'rgba(34,197,94,0.30)',
+  statusCompleted:       '#86EFAC',
+  statusCompletedBg:     'rgba(74,222,128,0.14)',
+  statusCompletedBorder: '#4ADE80',
 
   error:          '#FFB4AB',
   errorContainer: '#93000A',
@@ -112,17 +112,17 @@ export const lightColors: ColorPalette = {
   onPrimary:          '#FFFFFF',
   onPrimaryContainer: '#FFFFFF',
 
-  statusOpen:       '#D97706',
-  statusOpenBg:     '#FEF3C7',
-  statusOpenBorder: '#FDE68A',
+  statusOpen:       '#B45309',
+  statusOpenBg:     'rgba(245,158,11,0.14)',
+  statusOpenBorder: '#F59E0B',
 
-  statusInProgress:       '#2563EB',
-  statusInProgressBg:     '#DBEAFE',
-  statusInProgressBorder: '#BFDBFE',
+  statusInProgress:       '#1D4ED8',
+  statusInProgressBg:     'rgba(37,99,235,0.14)',
+  statusInProgressBorder: '#3B82F6',
 
-  statusCompleted:       '#16A34A',
-  statusCompletedBg:     '#DCFCE7',
-  statusCompletedBorder: '#BBF7D0',
+  statusCompleted:       '#15803D',
+  statusCompletedBg:     'rgba(34,197,94,0.14)',
+  statusCompletedBorder: '#22C55E',
 
   error:          '#DC2626',
   errorContainer: '#FEE2E2',

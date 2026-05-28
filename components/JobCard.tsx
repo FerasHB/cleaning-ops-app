@@ -1,11 +1,17 @@
 // components/JobCard.tsx
-// Job-Karte mit Status-Badge, Details und Action-Buttons.
+// Kompakte Übersichts-Karte für Job-Listen.
 // Vollständig theme-aware (Light + Dark Mode).
 //
+// Design-Prinzip:
+// - Card ist Navigations-Tile zum DetailScreen — onPress macht ganze Karte tappable
+// - Nur die wichtigsten Felder sichtbar (Kunde, Service, Ort, Zeit)
+// - Mitarbeiter-Zeile nur wenn `showEmployeeName` gesetzt ist (i.d.R. nur Admin)
+// - Genau EINE kontextuelle Quick-Action: "Start" bei open, "Fertig" bei in_progress
+// - Notizen, Edit, ausführliche Felder → leben im DetailScreen
+//
 // Tap-Verhalten:
-// - onPress (optional) → Navigation zur Detail-Seite (ganze Karte tappable)
-// - Start/Complete/Edit-Buttons fangen Touch innerhalb der Buttons selbst ab
-//   (verschachtelte TouchableOpacity, Inner-Touch gewinnt)
+// - Tap auf Card-Fläche → onPress (Detail)
+// - Tap auf Quick-Action-Button → onStart/onComplete (Inner-Touch gewinnt in RN)
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,19 +22,28 @@ import type { AppTheme } from "@/constants/theme";
 
 type Props = {
   job: Job;
-  onStart: () => void;
-  onComplete: () => void;
-  onEdit?: () => void;
-  /** Tap auf die Karte (außerhalb der Buttons) — z.B. Navigation zum Detail */
+  /** Tap auf die Karte (außerhalb der Quick-Action) — i.d.R. Detail-Navigation */
   onPress?: () => void;
+  /**
+   * Inline-Quick-Action "Start" — wird nur gezeigt, wenn übergeben UND job.status === "open".
+   * Wer keine Inline-Action will (z.B. Admin), lässt das Prop einfach weg.
+   */
+  onStart?: () => void;
+  /**
+   * Inline-Quick-Action "Fertig" — wird nur gezeigt, wenn übergeben UND job.status === "in_progress".
+   */
+  onComplete?: () => void;
+  /** Soll der Name des zugewiesenen Mitarbeiters in der Card stehen? (Default: false) */
+  showEmployeeName?: boolean;
 };
 
+// ─────────────────────────────────────────────
+// Zeit-Formatierung
+// ─────────────────────────────────────────────
 function formatTime(iso?: string | null): string | null {
   if (!iso) return null;
-
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
-
   return date.toLocaleTimeString("de-DE", {
     hour: "2-digit",
     minute: "2-digit",
@@ -37,10 +52,8 @@ function formatTime(iso?: string | null): string | null {
 
 function formatDate(iso?: string | null): string | null {
   if (!iso) return null;
-
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
-
   return date.toLocaleDateString("de-DE", {
     day: "2-digit",
     month: "2-digit",
@@ -48,7 +61,7 @@ function formatDate(iso?: string | null): string | null {
   });
 }
 
-// ── Status-Mapping als Funktion (damit Theme-Farben aktuell bleiben)
+// ── Status-Farben aus Theme (jeder Status hat sein Farbtripel)
 function getStatusConfig(theme: AppTheme, status: Job["status"]) {
   switch (status) {
     case "open":
@@ -77,30 +90,39 @@ function getStatusConfig(theme: AppTheme, status: Job["status"]) {
 
 export default function JobCard({
   job,
+  onPress,
   onStart,
   onComplete,
-  onEdit,
-  onPress,
+  showEmployeeName = false,
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const status = getStatusConfig(theme, job.status);
 
+  // Zeit-Zeile bauen
   const date = formatDate(job.scheduledStart);
   const startTime = formatTime(job.scheduledStart);
   const endTime = formatTime(job.scheduledEnd);
 
-  let scheduleText = "Keine Zeit";
+  let scheduleText: string | null = null;
   if (date && startTime && endTime) {
-    scheduleText = `${date}, ${startTime} - ${endTime}`;
+    scheduleText = `${date} · ${startTime} – ${endTime}`;
   } else if (date && startTime) {
-    scheduleText = `${date}, ${startTime}`;
+    scheduleText = `${date} · ${startTime}`;
   } else if (date) {
     scheduleText = date;
   }
 
-  const canStart = job.status === "open";
-  const canComplete = job.status === "in_progress";
+  // Service · Ort (kompakte Einzeiler-Subline)
+  const subline = [job.service, job.location].filter(Boolean).join(" · ");
+
+  // Quick-Action — exakt EINE, abhängig von Status (oder gar keine)
+  const showStartAction = job.status === "open" && !!onStart;
+  const showCompleteAction = job.status === "in_progress" && !!onComplete;
+  const employeeText = showEmployeeName ? job.employeeName : null;
+
+  // Footer wird nur gerendert, wenn Mitarbeiter ODER Action vorhanden
+  const hasFooter = !!employeeText || showStartAction || showCompleteAction;
 
   // ── Root: TouchableOpacity wenn navigierbar, sonst stiller View
   const CardRoot: React.ComponentType<{
@@ -117,9 +139,21 @@ export default function JobCard({
     : (props) => <View {...props} />;
 
   return (
-    <CardRoot style={styles.card}>
+    <CardRoot
+      style={[
+        styles.card,
+        {
+          borderColor: status.borderColor,
+          borderLeftColor: status.borderColor,
+          borderLeftWidth: 4,
+        },
+      ]}
+    >
+      {/* ── Header: Kunde + Status + Chevron ── */}
       <View style={styles.header}>
-        <Text style={styles.customerName}>{job.customerName}</Text>
+        <Text style={styles.customerName} numberOfLines={1}>
+          {job.customerName}
+        </Text>
 
         <View style={styles.headerRight}>
           <View
@@ -145,87 +179,77 @@ export default function JobCard({
         </View>
       </View>
 
-      <View style={styles.infoBlock}>
-        <Text style={styles.label}>Service</Text>
-        <Text style={styles.value}>{job.service}</Text>
-      </View>
+      {/* ── Service · Ort (eine Zeile) ── */}
+      {subline ? (
+        <Text style={styles.subline} numberOfLines={1}>
+          {subline}
+        </Text>
+      ) : null}
 
-      <View style={styles.infoBlock}>
-        <Text style={styles.label}>Ort</Text>
-        <Text style={styles.value}>{job.location}</Text>
-      </View>
-
-      <View style={styles.infoBlock}>
-        <Text style={styles.label}>Zeit</Text>
-        <Text style={styles.value}>{scheduleText}</Text>
-      </View>
-
-      {job.employeeName ? (
-        <View style={styles.infoBlock}>
-          <Text style={styles.label}>Mitarbeiter</Text>
-          <Text style={styles.value}>{job.employeeName}</Text>
+      {/* ── Zeit (mit Icon) ── */}
+      {scheduleText ? (
+        <View style={styles.metaRow}>
+          <Ionicons
+            name="time-outline"
+            size={14}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <Text style={styles.metaText} numberOfLines={1}>
+            {scheduleText}
+          </Text>
         </View>
       ) : null}
 
-      {job.notes ? (
-        <View style={styles.notesBox}>
-          <Text style={styles.label}>Notiz</Text>
-          <Text style={styles.notesText}>{job.notes}</Text>
+      {/* ── Footer: Mitarbeiter (links) + Quick-Action (rechts) ── */}
+      {hasFooter ? (
+        <View style={styles.footer}>
+          {employeeText ? (
+            <View style={styles.employeeRow}>
+              <Ionicons
+                name="person-outline"
+                size={14}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text style={styles.metaText} numberOfLines={1}>
+                {employeeText}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.footerSpacer} />
+          )}
+
+          {showStartAction ? (
+            <TouchableOpacity
+              style={styles.quickActionPrimary}
+              onPress={onStart}
+              activeOpacity={0.85}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons
+                name="play"
+                size={13}
+                color={theme.colors.onPrimaryContainer}
+              />
+              <Text style={styles.quickActionPrimaryText}>Start</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {showCompleteAction ? (
+            <TouchableOpacity
+              style={styles.quickActionSuccess}
+              onPress={onComplete}
+              activeOpacity={0.85}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons
+                name="checkmark"
+                size={14}
+                color={theme.colors.statusCompleted}
+              />
+              <Text style={styles.quickActionSuccessText}>Fertig</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
-      ) : null}
-
-      <View style={styles.buttonRow}>
-        <TouchableOpacity
-          style={[
-            styles.button,
-            styles.startButton,
-            !canStart && styles.disabledButton,
-          ]}
-          onPress={onStart}
-          disabled={!canStart}
-          activeOpacity={0.85}
-        >
-          <Text
-            style={[
-              styles.buttonText,
-              styles.startButtonText,
-              !canStart && styles.disabledButtonText,
-            ]}
-          >
-            Start
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.button,
-            styles.completeButton,
-            !canComplete && styles.disabledButton,
-          ]}
-          onPress={onComplete}
-          disabled={!canComplete}
-          activeOpacity={0.85}
-        >
-          <Text
-            style={[
-              styles.buttonText,
-              styles.completeButtonText,
-              !canComplete && styles.disabledButtonText,
-            ]}
-          >
-            Fertig
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {onEdit ? (
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={onEdit}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.editButtonText}>Bearbeiten</Text>
-        </TouchableOpacity>
       ) : null}
     </CardRoot>
   );
@@ -238,39 +262,40 @@ function createStyles(theme: AppTheme) {
       borderRadius: theme.radius.lg,
       borderWidth: 1,
       borderColor: theme.colors.outlineVariant,
-      padding: theme.spacing.lg,
-      gap: theme.spacing.md,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.md,
+      gap: 6,
       ...theme.shadows.sm,
     },
 
+    // Header
     header: {
       flexDirection: "row",
       justifyContent: "space-between",
-      alignItems: "flex-start",
+      alignItems: "center",
       gap: theme.spacing.sm,
     },
-
     headerRight: {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
     },
-
     customerName: {
       flex: 1,
-      fontSize: theme.typography.size.lg,
-      fontFamily: theme.typography.family.bold,
-      fontWeight: theme.typography.weight.bold,
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
       color: theme.colors.onSurface,
+      letterSpacing: theme.typography.letterSpacing.tight,
     },
 
+    // Status-Badge
     statusBadge: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      paddingHorizontal: 9,
+      paddingVertical: 3,
       borderRadius: theme.radius.full,
       borderWidth: 1,
     },
-
     statusText: {
       fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.semibold,
@@ -278,104 +303,78 @@ function createStyles(theme: AppTheme) {
       letterSpacing: theme.typography.letterSpacing.wide,
     },
 
-    infoBlock: {
-      gap: 4,
-    },
-
-    label: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.outline,
-      letterSpacing: theme.typography.letterSpacing.wide,
-      textTransform: "uppercase",
-    },
-
-    value: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.onSurface,
-      lineHeight: theme.typography.lineHeight.sm,
-    },
-
-    notesBox: {
-      backgroundColor: theme.colors.surfaceContainerHigh,
-      borderRadius: theme.radius.md,
-      padding: theme.spacing.md,
-      gap: 4,
-    },
-
-    notesText: {
+    // Subline: Service · Ort
+    subline: {
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurfaceVariant,
       lineHeight: theme.typography.lineHeight.sm,
     },
 
-    buttonRow: {
+    // Meta-Zeile (Zeit / Mitarbeiter)
+    metaRow: {
       flexDirection: "row",
-      gap: theme.spacing.sm,
-      marginTop: theme.spacing.xs,
-    },
-
-    button: {
-      flex: 1,
-      minHeight: theme.spacing.tapTarget,
-      borderRadius: theme.radius.md,
       alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: theme.spacing.md,
-      borderWidth: 1,
+      gap: 6,
+    },
+    metaText: {
+      flex: 1,
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
     },
 
-    startButton: {
+    // Footer (Mitarbeiter links + Quick-Action rechts)
+    footer: {
+      marginTop: 2,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+    },
+    footerSpacer: {
+      flex: 1,
+    },
+    employeeRow: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+
+    // Quick-Action "Start" (primär)
+    quickActionPrimary: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: theme.radius.full,
       backgroundColor: theme.colors.primaryContainer,
-      borderColor: theme.colors.primaryContainer,
     },
-
-    completeButton: {
-      backgroundColor: theme.colors.statusCompletedBg,
-      borderColor: theme.colors.statusCompletedBorder,
-    },
-
-    disabledButton: {
-      backgroundColor: theme.colors.surfaceContainerHigh,
-      borderColor: theme.colors.outlineVariant,
-    },
-
-    buttonText: {
-      fontSize: theme.typography.size.sm,
+    quickActionPrimaryText: {
+      fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
-    },
-
-    startButtonText: {
       color: theme.colors.onPrimaryContainer,
     },
 
-    completeButtonText: {
-      color: theme.colors.statusCompleted,
-    },
-
-    disabledButtonText: {
-      color: theme.colors.outline,
-    },
-
-    editButton: {
-      minHeight: theme.spacing.tapTarget,
-      borderRadius: theme.radius.md,
+    // Quick-Action "Fertig" (success-Outline)
+    quickActionSuccess: {
+      flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: theme.colors.surfaceContainer,
+      gap: 4,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.statusCompletedBg,
       borderWidth: 1,
-      borderColor: theme.colors.outlineVariant,
+      borderColor: theme.colors.statusCompletedBorder,
     },
-
-    editButtonText: {
-      fontSize: theme.typography.size.sm,
+    quickActionSuccessText: {
+      fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onSurface,
+      color: theme.colors.statusCompleted,
     },
   });
 }
