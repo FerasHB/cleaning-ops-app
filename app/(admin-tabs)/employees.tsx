@@ -27,6 +27,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 
+function roleLabel(role?: string | null): string {
+  if (role === "admin") return "Admin";
+  return "Mitarbeiter";
+}
+
 export default function EmployeesScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -182,12 +187,29 @@ export default function EmployeesScreen() {
             </View>
 
             <View style={styles.employeeInfo}>
-              <Text style={styles.employeeName}>{item.fullName}</Text>
-              <Text style={styles.employeeRole}>Mitarbeiter</Text>
+              <Text style={styles.employeeName} numberOfLines={1}>
+                {item.fullName}
+              </Text>
+              <Text style={styles.employeeEmail} numberOfLines={1}>
+                {item.email?.trim() ? item.email : "Nicht hinterlegt"}
+              </Text>
+              <Text style={styles.employeeRole}>{roleLabel(item.role)}</Text>
             </View>
 
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusText}>Aktiv</Text>
+            <View
+              style={[
+                styles.statusBadge,
+                item.isActive === false && styles.statusBadgeInactive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusText,
+                  item.isActive === false && styles.statusTextInactive,
+                ]}
+              >
+                {item.isActive === false ? "Inaktiv" : "Aktiv"}
+              </Text>
             </View>
 
             <Ionicons
@@ -411,11 +433,18 @@ function createStyles(theme: AppTheme) {
       fontWeight: theme.typography.weight.semibold,
       color: theme.colors.onSurface,
     },
-    employeeRole: {
+    employeeEmail: {
       marginTop: 2,
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurfaceVariant,
+    },
+    employeeRole: {
+      marginTop: 2,
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.outline,
     },
     statusBadge: {
       backgroundColor: theme.colors.statusCompletedBg,
@@ -425,11 +454,18 @@ function createStyles(theme: AppTheme) {
       paddingHorizontal: theme.spacing.sm,
       paddingVertical: 4,
     },
+    statusBadgeInactive: {
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderColor: theme.colors.outlineVariant,
+    },
     statusText: {
       fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
       color: theme.colors.statusCompleted,
+    },
+    statusTextInactive: {
+      color: theme.colors.onSurfaceVariant,
     },
     chevron: {
       marginLeft: theme.spacing.sm,

@@ -29,4 +29,7 @@ export type CreateJobInput = {
 export type EmployeeOption = {
   id: string;
   fullName: string;
+  email?: string | null;
+  role?: "admin" | "employee" | string | null;
+  isActive?: boolean | null;
 };

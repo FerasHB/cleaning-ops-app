@@ -27,9 +27,13 @@ type JobRow = {
 };
 
 // Einfaches DB-Format für Mitarbeiter
+// Hinweis: profiles hat KEINE email-Spalte (siehe lib/schema.sql) — die
+// E-Mail liegt nur in auth.users. Daher wird email hier NICHT selektiert.
 type EmployeeRow = {
   id: string;
-  full_name: string;
+  full_name: string | null;
+  role: "admin" | "employee" | null;
+  is_active: boolean | null;
 };
 type UpdateJobInput = {
   jobId: string;
@@ -157,7 +161,7 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name")
+    .select("id, full_name, role, is_active")
     .eq("company_id", profile.company_id)
     .eq("role", "employee")
     .eq("is_active", true)
@@ -169,7 +173,11 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
 
   return ((data ?? []) as EmployeeRow[]).map((item) => ({
     id: item.id,
-    fullName: item.full_name,
+    fullName: item.full_name ?? "Unbenannt",
+    // profiles.email existiert nicht → bewusst null, UI zeigt Fallback
+    email: null,
+    role: item.role ?? "employee",
+    isActive: item.is_active ?? null,
   }));
 }
 

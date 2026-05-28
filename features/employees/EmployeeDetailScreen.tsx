@@ -3,9 +3,9 @@
 // Reines Lesen aus dem JobContext (employees + jobs) — keine Business-Logik.
 //
 // Hinweis zu Datenquellen:
-// - EmployeeOption liefert nur { id, fullName }. E-Mail/Rolle sind pro
-//   Mitarbeiter NICHT verfügbar → Rolle wird statisch als "Mitarbeiter"
-//   gezeigt, E-Mail als "Nicht hinterlegt". Keine erfundenen Daten.
+// - EmployeeOption liefert id, fullName, role, isActive (aus profiles).
+// - profiles hat KEINE email-Spalte → email ist immer null, UI zeigt
+//   "Nicht hinterlegt". Keine erfundenen Daten.
 
 import {
   AppHeader,
@@ -34,6 +34,11 @@ const STATUS_ORDER: Record<JobStatus, number> = {
   open: 1,
   completed: 2,
 };
+
+function roleLabel(role?: string | null): string {
+  if (role === "admin") return "Admin";
+  return "Mitarbeiter";
+}
 
 function jobDateValue(job: Job): number {
   const iso = job.completedAt ?? job.startedAt ?? job.scheduledStart;
@@ -136,7 +141,10 @@ export default function EmployeeDetailScreen() {
     );
   }
 
-  const isActive = !!activeJob;
+  // Konto-Status aus profiles.is_active (neutraler Fallback: nicht "inaktiv"
+  // behaupten, wenn der Wert fehlt).
+  const accountActive = employee.isActive !== false;
+  const emailDisplay = employee.email?.trim() ? employee.email : "Nicht hinterlegt";
 
   const handleAssignJob = () => router.push("/jobs/create");
   const handleDeactivate = () =>
@@ -163,11 +171,11 @@ export default function EmployeeDetailScreen() {
             style={[
               styles.statusPill,
               {
-                backgroundColor: isActive
-                  ? theme.colors.statusInProgressBg
+                backgroundColor: accountActive
+                  ? theme.colors.statusCompletedBg
                   : theme.colors.surfaceContainerHigh,
-                borderColor: isActive
-                  ? theme.colors.statusInProgressBorder
+                borderColor: accountActive
+                  ? theme.colors.statusCompletedBorder
                   : theme.colors.outlineVariant,
               },
             ]}
@@ -176,8 +184,8 @@ export default function EmployeeDetailScreen() {
               style={[
                 styles.statusDot,
                 {
-                  backgroundColor: isActive
-                    ? theme.colors.statusInProgress
+                  backgroundColor: accountActive
+                    ? theme.colors.statusCompleted
                     : theme.colors.onSurfaceVariant,
                 },
               ]}
@@ -186,25 +194,31 @@ export default function EmployeeDetailScreen() {
               style={[
                 styles.statusText,
                 {
-                  color: isActive
-                    ? theme.colors.statusInProgress
+                  color: accountActive
+                    ? theme.colors.statusCompleted
                     : theme.colors.onSurfaceVariant,
                 },
               ]}
             >
-              {isActive ? "Aktiv" : "Kein aktiver Job"}
+              {accountActive ? "Aktiv" : "Inaktiv"}
             </Text>
           </View>
         </Card>
 
         {/* ── Stammdaten ── */}
         <Card padding={theme.spacing.lg} style={styles.card}>
-          <InfoRow label="Rolle" value="Mitarbeiter" icon="briefcase-outline" />
+          <InfoRow
+            label="Rolle"
+            value={roleLabel(employee.role)}
+            icon="briefcase-outline"
+          />
+          <View style={styles.rowDivider} />
+          <InfoRow label="E-Mail" value={emailDisplay} icon="mail-outline" />
           <View style={styles.rowDivider} />
           <InfoRow
-            label="E-Mail"
-            value="Nicht hinterlegt"
-            icon="mail-outline"
+            label="Konto-Status"
+            value={accountActive ? "Aktiv" : "Inaktiv"}
+            icon="pulse-outline"
           />
         </Card>
 
