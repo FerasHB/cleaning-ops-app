@@ -156,6 +156,7 @@ export default function HomeScreen() {
           <AnimatedJobCard
             item={item}
             index={index}
+            onPress={() => router.push(`/jobs/${item.id}`)}
             onStart={() => startJob(item.id)}
             onComplete={() => completeJob(item.id)}
             onEdit={
@@ -178,12 +179,14 @@ function AnimatedJobCard({
   onStart,
   onComplete,
   onEdit,
+  onPress,
 }: {
   item: any;
   index: number;
   onStart: () => void;
   onComplete: () => void;
   onEdit?: () => void;
+  onPress?: () => void;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(16)).current;
@@ -213,6 +216,7 @@ function AnimatedJobCard({
         onStart={onStart}
         onComplete={onComplete}
         onEdit={onEdit}
+        onPress={onPress}
       />
     </Animated.View>
   );

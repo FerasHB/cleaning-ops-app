@@ -1,8 +1,14 @@
 // components/JobCard.tsx
 // Job-Karte mit Status-Badge, Details und Action-Buttons.
 // Vollständig theme-aware (Light + Dark Mode).
+//
+// Tap-Verhalten:
+// - onPress (optional) → Navigation zur Detail-Seite (ganze Karte tappable)
+// - Start/Complete/Edit-Buttons fangen Touch innerhalb der Buttons selbst ab
+//   (verschachtelte TouchableOpacity, Inner-Touch gewinnt)
 
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { Ionicons } from "@expo/vector-icons";
 import { Job } from "@/types/job";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -13,6 +19,8 @@ type Props = {
   onStart: () => void;
   onComplete: () => void;
   onEdit?: () => void;
+  /** Tap auf die Karte (außerhalb der Buttons) — z.B. Navigation zum Detail */
+  onPress?: () => void;
 };
 
 function formatTime(iso?: string | null): string | null {
@@ -67,7 +75,13 @@ function getStatusConfig(theme: AppTheme, status: Job["status"]) {
   }
 }
 
-export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
+export default function JobCard({
+  job,
+  onStart,
+  onComplete,
+  onEdit,
+  onPress,
+}: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const status = getStatusConfig(theme, job.status);
@@ -88,20 +102,46 @@ export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
   const canStart = job.status === "open";
   const canComplete = job.status === "in_progress";
 
+  // ── Root: TouchableOpacity wenn navigierbar, sonst stiller View
+  const CardRoot: React.ComponentType<{
+    style: any;
+    children: React.ReactNode;
+  }> = onPress
+    ? (props) => (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onPress}
+          {...props}
+        />
+      )
+    : (props) => <View {...props} />;
+
   return (
-    <View style={styles.card}>
+    <CardRoot style={styles.card}>
       <View style={styles.header}>
         <Text style={styles.customerName}>{job.customerName}</Text>
 
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: status.bgColor, borderColor: status.borderColor },
-          ]}
-        >
-          <Text style={[styles.statusText, { color: status.textColor }]}>
-            {status.label}
-          </Text>
+        <View style={styles.headerRight}>
+          <View
+            style={[
+              styles.statusBadge,
+              {
+                backgroundColor: status.bgColor,
+                borderColor: status.borderColor,
+              },
+            ]}
+          >
+            <Text style={[styles.statusText, { color: status.textColor }]}>
+              {status.label}
+            </Text>
+          </View>
+          {onPress ? (
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={theme.colors.outline}
+            />
+          ) : null}
         </View>
       </View>
 
@@ -187,7 +227,7 @@ export default function JobCard({ job, onStart, onComplete, onEdit }: Props) {
           <Text style={styles.editButtonText}>Bearbeiten</Text>
         </TouchableOpacity>
       ) : null}
-    </View>
+    </CardRoot>
   );
 }
 
@@ -208,6 +248,12 @@ function createStyles(theme: AppTheme) {
       justifyContent: "space-between",
       alignItems: "flex-start",
       gap: theme.spacing.sm,
+    },
+
+    headerRight: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
     },
 
     customerName: {
