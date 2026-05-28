@@ -14,6 +14,7 @@ import {
   EmptyState,
   KPICard,
   LoadingScreen,
+  OfflineBanner,
   ScreenContainer,
   SectionHeader,
 } from "@/components/ui";
@@ -165,15 +166,11 @@ export default function EmployeeOverviewScreen() {
 
   return (
     <ScreenContainer>
+      {/* ── Save-Status ── */}
+      <OfflineBanner />
+
       {/* ── Header ── */}
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View style={styles.syncPill}>
-            <View style={styles.syncDot} />
-            <Text style={styles.syncText}>Synchronisiert</Text>
-          </View>
-        </View>
-
         <Text style={styles.greeting}>
           {getGreeting(now)}, {firstName}
         </Text>
@@ -405,34 +402,6 @@ function createStyles(theme: AppTheme) {
     header: {
       paddingTop: theme.spacing.md,
       marginBottom: theme.spacing.xl,
-    },
-    headerTop: {
-      flexDirection: "row",
-      justifyContent: "flex-start",
-      marginBottom: theme.spacing.sm,
-    },
-    syncPill: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      backgroundColor: theme.colors.statusCompletedBg,
-      borderWidth: 1,
-      borderColor: theme.colors.statusCompletedBorder,
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: 4,
-      borderRadius: theme.radius.full,
-    },
-    syncDot: {
-      width: 6,
-      height: 6,
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.statusCompleted,
-    },
-    syncText: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.statusCompleted,
     },
     greeting: {
       fontSize: theme.typography.size.xxl,

@@ -11,6 +11,7 @@ import {
   ErrorBanner,
   InfoRow,
   LoadingScreen,
+  OfflineBanner,
   StatusBadge,
 } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -190,6 +191,9 @@ export default function JobDetailScreen() {
           <Text style={styles.customerName}>{job.customerName}</Text>
           <StatusBadge status={job.status} />
         </View>
+
+        {/* ── Save-Status ── */}
+        <OfflineBanner />
 
         {/* ── Fehler-Banner (Aktionen) ── */}
         {actionError ? (

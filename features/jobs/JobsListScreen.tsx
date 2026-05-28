@@ -4,7 +4,7 @@
 // Admin: alle Firmen-Jobs + Suche + Status-Filter + Mitarbeiter-Filter + Plus-Button.
 // Business-Logik (JobContext) unverändert — nur Lesezugriff + bestehende Quick-Actions.
 
-import { EmptyState, LoadingScreen } from "@/components/ui";
+import { EmptyState, LoadingScreen, OfflineBanner } from "@/components/ui";
 import JobCard from "@/components/JobCard";
 import { useJobs } from "@/context/JobContext";
 import { useAuth } from "@/context/AuthContext";
@@ -97,6 +97,8 @@ export default function JobsListScreen() {
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={styles.header}>
+            <OfflineBanner />
+
             <Text style={styles.title}>Jobs</Text>
 
             {/* ── Suchleiste ── */}

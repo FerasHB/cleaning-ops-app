@@ -13,6 +13,7 @@ import {
   InitialsAvatar,
   KPICard,
   LoadingScreen,
+  OfflineBanner,
   ScreenContainer,
   SectionHeader,
 } from "@/components/ui";
@@ -149,11 +150,6 @@ export default function AdminDashboardScreen() {
             </View>
             <Text style={styles.companyName}>{COMPANY_NAME}</Text>
           </View>
-
-          <View style={styles.syncPill}>
-            <View style={styles.syncDot} />
-            <Text style={styles.syncText}>Synchronisiert</Text>
-          </View>
         </View>
 
         <Text style={styles.greeting}>
@@ -163,6 +159,9 @@ export default function AdminDashboardScreen() {
           {dateLabel} · {timeLabel}
         </Text>
       </View>
+
+      {/* ── Save-Status ── */}
+      <OfflineBanner />
 
       {/* ── KPI-Karten (2×2) ── */}
       <View style={styles.kpiGrid}>
@@ -354,29 +353,6 @@ function createStyles(theme: AppTheme) {
       fontWeight: theme.typography.weight.bold,
       color: theme.colors.onSurface,
       letterSpacing: theme.typography.letterSpacing.tight,
-    },
-    syncPill: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      backgroundColor: theme.colors.statusCompletedBg,
-      borderWidth: 1,
-      borderColor: theme.colors.statusCompletedBorder,
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: 4,
-      borderRadius: theme.radius.full,
-    },
-    syncDot: {
-      width: 6,
-      height: 6,
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.statusCompleted,
-    },
-    syncText: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.statusCompleted,
     },
     greeting: {
       marginTop: theme.spacing.sm,

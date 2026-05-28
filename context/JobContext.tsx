@@ -13,6 +13,7 @@ import { applyPendingActionsToJobs } from "@/services/offline/jobs.merge";
 import {
   addPendingJobAction,
   getPendingJobActions,
+  PendingJobAction,
 } from "@/services/offline/jobs.queue";
 import { getCachedJobs, saveCachedJobs } from "@/services/offline/jobs.storage";
 import { syncPendingJobActions } from "@/services/offline/jobs.sync";
@@ -49,6 +50,15 @@ type JobContextType = {
   deleteJob: (jobId: string) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
   completeJob: (jobId: string) => Promise<void>;
+
+  // ── Nur lesbare UI-State-Werte für die Save-Status-Anzeige ──
+  // (keine neue Offline-Logik — nur sichtbar gemachte Queue-/Netz-Infos)
+  online: boolean;
+  pendingCount: number;
+  pendingActions: PendingJobAction[];
+  isSyncing: boolean;
+  syncFailed: boolean;
+  retrySync: () => Promise<void>;
 };
 
 const JobContext = createContext<JobContextType | undefined>(undefined);
@@ -83,11 +93,24 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Lesbare Save-Status-Werte (UI-only)
+  const [online, setOnline] = useState(true);
+  const [pendingActions, setPendingActions] = useState<PendingJobAction[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncFailed, setSyncFailed] = useState(false);
+
   // Guards gegen doppelte Initialisierung / parallele Syncs
   const didInitialLoadRef = useRef(false);
   const hasHandledFirstNetInfoEventRef = useRef(false);
   const syncInProgressRef = useRef(false);
   const refreshJobsInProgressRef = useRef(false);
+
+  const refreshPendingState = useCallback(async () => {
+    const actions = await getPendingJobActions();
+    setPendingActions(actions);
+    setPendingCount(actions.length);
+  }, []);
 
   const runPendingSyncSafely = useCallback(async () => {
     if (syncInProgressRef.current) {
@@ -95,13 +118,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
 
     syncInProgressRef.current = true;
+    setIsSyncing(true);
 
     try {
-      await syncPendingJobActions();
+      const result = await syncPendingJobActions();
+      setSyncFailed(result.failed > 0);
     } finally {
       syncInProgressRef.current = false;
+      setIsSyncing(false);
+      await refreshPendingState();
     }
-  }, []);
+  }, [refreshPendingState]);
 
   const refreshJobs = useCallback(async () => {
     if (refreshJobsInProgressRef.current) {
@@ -153,8 +180,14 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setError(err?.message ?? "Jobs konnten nicht geladen werden.");
     } finally {
       refreshJobsInProgressRef.current = false;
+      await refreshPendingState();
     }
-  }, []);
+  }, [refreshPendingState]);
+
+  const retrySync = useCallback(async () => {
+    await runPendingSyncSafely();
+    await refreshJobs();
+  }, [runPendingSyncSafely, refreshJobs]);
 
   const refreshEmployees = useCallback(async () => {
     try {
@@ -178,6 +211,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setEmployees([]);
       setLoading(false);
       setError(null);
+      setPendingActions([]);
+      setPendingCount(0);
+      setIsSyncing(false);
+      setSyncFailed(false);
 
       didInitialLoadRef.current = false;
       hasHandledFirstNetInfoEventRef.current = false;
@@ -198,6 +235,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         setLoading(true);
         setError(null);
 
+        setOnline(await isOnline());
         await runPendingSyncSafely();
         await Promise.all([refreshJobs(), refreshEmployees()]);
       } finally {
@@ -215,6 +253,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
     const unsubscribe = NetInfo.addEventListener(async (state) => {
       const online = !!state.isConnected;
+      setOnline(online);
 
       // Erstes Event beim Mount ignorieren,
       // weil NetInfo direkt den aktuellen Zustand liefert
@@ -378,11 +417,13 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       const timestamp = new Date().toISOString();
 
-      await addPendingJobAction({
+      const nextActions = await addPendingJobAction({
         type: "start_job",
         jobId,
         timestamp,
       });
+      setPendingActions(nextActions);
+      setPendingCount(nextActions.length);
 
       setJobs((prevJobs) => {
         const nextJobs = updateJobInList(prevJobs, jobId, {
@@ -427,11 +468,13 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       const timestamp = new Date().toISOString();
 
-      await addPendingJobAction({
+      const nextActions = await addPendingJobAction({
         type: "complete_job",
         jobId,
         timestamp,
       });
+      setPendingActions(nextActions);
+      setPendingCount(nextActions.length);
 
       setJobs((prevJobs) => {
         const nextJobs = updateJobInList(prevJobs, jobId, {
@@ -464,6 +507,12 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      online,
+      pendingCount,
+      pendingActions,
+      isSyncing,
+      syncFailed,
+      retrySync,
     }),
     [
       jobs,
@@ -477,6 +526,12 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      online,
+      pendingCount,
+      pendingActions,
+      isSyncing,
+      syncFailed,
+      retrySync,
     ],
   );
 
