@@ -1,8 +1,8 @@
 // features/jobs/JobsListScreen.tsx
-// Gemeinsamer Jobs-Tab für Employee und Admin.
-// Employee: sieht eigene Jobs (JobContext liefert sie rollenabhängig).
-// Admin: sieht alle Jobs + Plus-Button zum Erstellen + Mitarbeiter-Name auf der Card.
-// Business-Logik (JobContext) unverändert.
+// Gemeinsamer Jobs-Tab für Employee und Admin — vollständige Job-Verwaltung/Liste.
+// Employee: eigene Jobs + Suche + Status-Filter.
+// Admin: alle Firmen-Jobs + Suche + Status-Filter + Mitarbeiter-Filter + Plus-Button.
+// Business-Logik (JobContext) unverändert — nur Lesezugriff + bestehende Quick-Actions.
 
 import { EmptyState, LoadingScreen } from "@/components/ui";
 import JobCard from "@/components/JobCard";
@@ -14,9 +14,11 @@ import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   FlatList,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -37,17 +39,48 @@ export default function JobsListScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { role } = useAuth();
-  const { jobs, startJob, completeJob, loading } = useJobs();
+  const { jobs, employees, startJob, completeJob, loading } = useJobs();
+
   const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
+  const [employeeId, setEmployeeId] = useState<string | "all">("all");
 
   const isAdmin = role === "admin";
 
   const filteredJobs = useMemo(() => {
-    if (filter === "all") return jobs;
-    return jobs.filter((j) => j.status === filter);
-  }, [filter, jobs]);
+    const query = search.trim().toLowerCase();
+
+    return jobs.filter((job) => {
+      // Status-Filter
+      if (filter !== "all" && job.status !== filter) return false;
+
+      // Mitarbeiter-Filter (nur Admin)
+      if (isAdmin && employeeId !== "all" && job.employeeId !== employeeId) {
+        return false;
+      }
+
+      // Suche über Kunde / Service / Ort / (Admin) Mitarbeiter
+      if (query) {
+        const haystack = [
+          job.customerName,
+          job.service,
+          job.location,
+          isAdmin ? job.employeeName : null,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+
+      return true;
+    });
+  }, [jobs, filter, search, employeeId, isAdmin]);
 
   if (loading) return <LoadingScreen />;
+
+  const hasActiveQuery =
+    !!search.trim() || filter !== "all" || (isAdmin && employeeId !== "all");
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -60,11 +93,48 @@ export default function JobsListScreen() {
         data={filteredJobs}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View style={styles.header}>
             <Text style={styles.title}>Jobs</Text>
 
+            {/* ── Suchleiste ── */}
+            <View style={styles.searchBar}>
+              <Ionicons
+                name="search"
+                size={18}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder={
+                  isAdmin
+                    ? "Kunde, Service, Ort oder Mitarbeiter…"
+                    : "Kunde, Service oder Ort…"
+                }
+                placeholderTextColor={theme.colors.outline}
+                style={styles.searchInput}
+                autoCapitalize="none"
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+              {search.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearch("")}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons
+                    name="close-circle"
+                    size={18}
+                    color={theme.colors.outline}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* ── Status-Filter ── */}
             <View style={styles.filterRow}>
               {FILTERS.map((f) => {
                 const active = filter === f.key;
@@ -87,19 +157,51 @@ export default function JobsListScreen() {
                 );
               })}
             </View>
+
+            {/* ── Mitarbeiter-Filter (nur Admin) ── */}
+            {isAdmin && employees.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.employeeRow}
+                keyboardShouldPersistTaps="handled"
+              >
+                <EmployeeChip
+                  label="Alle Mitarbeiter"
+                  active={employeeId === "all"}
+                  onPress={() => setEmployeeId("all")}
+                  styles={styles}
+                />
+                {employees.map((emp) => (
+                  <EmployeeChip
+                    key={emp.id}
+                    label={emp.fullName}
+                    active={employeeId === emp.id}
+                    onPress={() => setEmployeeId(emp.id)}
+                    styles={styles}
+                  />
+                ))}
+              </ScrollView>
+            )}
+
+            {/* ── Ergebniszähler ── */}
+            <Text style={styles.resultCount}>
+              {filteredJobs.length}{" "}
+              {filteredJobs.length === 1 ? "Job" : "Jobs"}
+            </Text>
           </View>
         }
         ListEmptyComponent={
           <EmptyState
             title={
-              filter === "all"
-                ? "Keine Jobs vorhanden"
-                : "Keine Jobs in diesem Filter"
+              hasActiveQuery
+                ? "Keine passenden Jobs"
+                : "Keine Jobs vorhanden"
             }
             message={
-              filter === "all"
-                ? "Sobald ein Job erstellt wird, erscheint er hier."
-                : "Wähle einen anderen Filter."
+              hasActiveQuery
+                ? "Passe Suche oder Filter an."
+                : "Sobald ein Job erstellt wird, erscheint er hier."
             }
             icon="briefcase-outline"
           />
@@ -134,6 +236,33 @@ export default function JobsListScreen() {
   );
 }
 
+function EmployeeChip({
+  label,
+  active,
+  onPress,
+  styles,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={[styles.empChip, active && styles.empChipActive]}
+    >
+      <Text
+        style={[styles.empChipText, active && styles.empChipTextActive]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function createStyles(theme: AppTheme) {
   return StyleSheet.create({
     safe: {
@@ -157,6 +286,28 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onSurface,
       letterSpacing: theme.typography.letterSpacing.tight,
     },
+
+    // ── Suchleiste
+    searchBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      minHeight: theme.spacing.tapTarget,
+    },
+    searchInput: {
+      flex: 1,
+      paddingVertical: 10,
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurface,
+    },
+
+    // ── Status-Filter
     filterRow: {
       flexDirection: "row",
       flexWrap: "wrap",
@@ -185,6 +336,48 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
     },
+
+    // ── Mitarbeiter-Filter
+    employeeRow: {
+      flexDirection: "row",
+      gap: theme.spacing.sm,
+      paddingVertical: 2,
+    },
+    empChip: {
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 7,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      backgroundColor: theme.colors.surface,
+      maxWidth: 180,
+    },
+    empChipActive: {
+      backgroundColor: theme.colors.statusInProgressBg,
+      borderColor: theme.colors.statusInProgressBorder,
+    },
+    empChipText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+    },
+    empChipTextActive: {
+      color: theme.colors.statusInProgress,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+    },
+
+    // ── Ergebniszähler
+    resultCount: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+      letterSpacing: theme.typography.letterSpacing.wide,
+      textTransform: "uppercase",
+    },
+
     separator: {
       height: theme.spacing.sm,
     },
