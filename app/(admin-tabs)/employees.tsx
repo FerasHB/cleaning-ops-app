@@ -8,6 +8,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useJobs } from "@/context/JobContext";
 import { createEmployee } from "@/services/employees/createEmployee";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -169,7 +170,11 @@ export default function EmployeesScreen() {
           />
         }
         renderItem={({ item }) => (
-          <View style={styles.employeeCard}>
+          <TouchableOpacity
+            style={styles.employeeCard}
+            activeOpacity={0.7}
+            onPress={() => router.push(`/employees/${item.id}`)}
+          >
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
                 {item.fullName.charAt(0).toUpperCase()}
@@ -184,7 +189,14 @@ export default function EmployeesScreen() {
             <View style={styles.statusBadge}>
               <Text style={styles.statusText}>Aktiv</Text>
             </View>
-          </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={theme.colors.outline}
+              style={styles.chevron}
+            />
+          </TouchableOpacity>
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
@@ -418,6 +430,9 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
       color: theme.colors.statusCompleted,
+    },
+    chevron: {
+      marginLeft: theme.spacing.sm,
     },
     separator: {
       height: theme.spacing.sm,
