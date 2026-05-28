@@ -33,9 +33,10 @@ function RootNavigator() {
         <Stack.Screen name="register" />
         <Stack.Screen name="forgot-password" />
         <Stack.Screen name="setup-company" />
-        <Stack.Screen name="home" />
-        <Stack.Screen name="admin" />
-        <Stack.Screen name="profile" />
+        <Stack.Screen
+          name="(employee-tabs)"
+          options={{ headerShown: false }}
+        />
         <Stack.Screen
           name="(admin-tabs)"
           options={{ headerShown: false }}

@@ -191,7 +191,7 @@ export default function AdminScreen() {
               if (router.canGoBack()) {
                 router.back();
               } else {
-                router.replace("/home");
+                router.replace("/(admin-tabs)/jobs");
               }
             }}
             style={styles.backBtn}

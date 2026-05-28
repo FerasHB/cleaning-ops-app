@@ -1,12 +1,12 @@
-// app/(admin-tabs)/_layout.tsx
-// Bottom-Tab-Layout für den Admin-Bereich.
+// app/(employee-tabs)/_layout.tsx
+// Bottom-Tab-Layout für den Employee-Bereich.
 // Vollständig theme-aware: passt sich automatisch an Light/Dark Mode an.
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
-export default function AdminTabsLayout() {
+export default function EmployeeTabsLayout() {
   const theme = useAppTheme();
 
   return (
@@ -27,11 +27,11 @@ export default function AdminTabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="dashboard"
+        name="overview"
         options={{
-          title: "Dashboard",
+          title: "Übersicht",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="grid-outline" size={size} color={color} />
+            <Ionicons name="home-outline" size={size} color={color} />
           ),
         }}
       />
@@ -42,16 +42,6 @@ export default function AdminTabsLayout() {
           title: "Jobs",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="briefcase-outline" size={size} color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="employees"
-        options={{
-          title: "Mitarbeiter",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size} color={color} />
           ),
         }}
       />

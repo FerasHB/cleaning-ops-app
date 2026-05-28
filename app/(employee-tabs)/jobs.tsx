@@ -1,5 +1,5 @@
 import JobsListScreen from "@/features/jobs/JobsListScreen";
 
-export default function AdminJobsTab() {
+export default function EmployeeJobsTab() {
   return <JobsListScreen />;
 }

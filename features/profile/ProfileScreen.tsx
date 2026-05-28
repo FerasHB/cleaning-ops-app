@@ -1,6 +1,6 @@
-// app/profile.tsx
+// features/profile/ProfileScreen.tsx
 // Profil-Screen mit Avatar, Rolle und Logout.
-// Vollständig auf useAppTheme() migriert — Light + Dark Mode.
+// Wird als Tab (Employee + Admin) verwendet — Zurück-Button standardmäßig aus.
 // Business-Logik (signOut via AuthContext) unverändert.
 
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -19,7 +19,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 
-export default function ProfileScreen() {
+export default function ProfileScreen({
+  showBack = false,
+}: {
+  showBack?: boolean;
+}) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -45,25 +49,27 @@ export default function ProfileScreen() {
       />
 
       <View style={styles.content}>
-        {/* ── Zurück-Button ── */}
-        <TouchableOpacity
-          style={styles.backButton}
-          activeOpacity={0.8}
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-              return;
-            }
-            router.replace("/home");
-          }}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={18}
-            color={theme.colors.onSurface}
-          />
-          <Text style={styles.backButtonText}>Zurück</Text>
-        </TouchableOpacity>
+        {/* ── Zurück-Button (nur außerhalb der Tabs) ── */}
+        {showBack && (
+          <TouchableOpacity
+            style={styles.backButton}
+            activeOpacity={0.8}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+              router.replace("/");
+            }}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={18}
+              color={theme.colors.onSurface}
+            />
+            <Text style={styles.backButtonText}>Zurück</Text>
+          </TouchableOpacity>
+        )}
 
         {/* ── Avatar ── */}
         <View style={styles.avatar}>

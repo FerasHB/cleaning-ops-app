@@ -65,10 +65,6 @@ export default function HomeScreen() {
   const statsAnim = useFadeIn(80);
   const listAnim = useFadeIn(160);
 
-  const handleOpenProfile = () => {
-    router.push("/profile");
-  };
-
   if (loading) return <LoadingScreen />;
 
   const displayName = user?.email?.split("@")[0] ?? "Hey";
@@ -128,12 +124,7 @@ export default function HomeScreen() {
         ListHeaderComponent={
           <>
             {/* ── Header ── */}
-            <HomeHeader
-              firstName={firstName}
-              role={role}
-              onLogout={handleOpenProfile}
-              headerAnim={headerAnim}
-            />
+            <HomeHeader firstName={firstName} headerAnim={headerAnim} />
 
             {/* ── Stats Grid ── */}
             <HomeStats

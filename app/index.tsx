@@ -9,7 +9,7 @@ import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 export default function IndexScreen() {
-  const { loading, session, profile } = useAuth();
+  const { loading, session, profile, role } = useAuth();
   const theme = useAppTheme();
 
   useEffect(() => {
@@ -31,9 +31,13 @@ export default function IndexScreen() {
       return;
     }
 
-    // Alles passt → zur Hauptseite
-    router.replace("/home");
-  }, [loading, session, profile]);
+    // Alles passt → rollenabhängig in die jeweiligen Bottom-Tabs
+    if (role === "admin") {
+      router.replace("/(admin-tabs)/dashboard");
+    } else {
+      router.replace("/(employee-tabs)/overview");
+    }
+  }, [loading, session, profile, role]);
 
   // Spinner – sichtbar solange Auth-Zustand ermittelt wird
   return (
