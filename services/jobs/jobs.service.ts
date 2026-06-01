@@ -222,14 +222,31 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
     throw new Error("Nur Admins dürfen Jobs erstellen.");
   }
 
+  // Pflichtfelder server-seitig härten (nicht nur auf die UI verlassen)
+  const customerName = input.customerName.trim();
+  const serviceName = input.service.trim();
+  const locationAddress = input.location.trim();
+
+  if (!customerName) {
+    throw new Error("Kundenname fehlt.");
+  }
+
+  if (!locationAddress) {
+    throw new Error("Adresse fehlt.");
+  }
+
+  if (!serviceName) {
+    throw new Error("Service fehlt.");
+  }
+
   // Daten vorbereiten für den Insert in die jobs-Tabelle
   const payload = {
     company_id: profile.company_id,
     created_by: userId,
     assigned_to: input.employeeId ?? null,
-    customer_name: input.customerName.trim(),
-    service_name: input.service.trim(),
-    location_address: input.location.trim(),
+    customer_name: customerName,
+    service_name: serviceName,
+    location_address: locationAddress,
     scheduled_start: input.scheduledStart ?? null,
     scheduled_end: input.scheduledEnd ?? null,
     notes: input.notes?.trim() ? input.notes.trim() : null,
@@ -261,8 +278,10 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
     )
     .single();
 
-  // Hilfreich fürs Debugging
-  console.log("Created job raw data:", data);
+  // Hilfreich fürs Debugging (nur in Development)
+  if (__DEV__) {
+    console.log("Created job raw data:", data);
+  }
 
   if (error) {
     throw error;
@@ -319,15 +338,47 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     throw new Error("Nur Admins dürfen Jobs bearbeiten.");
   }
 
-  const payload = {
+  // Pflichtfelder server-seitig härten (nicht nur auf die UI verlassen)
+  const customerName = input.customerName.trim();
+  const serviceName = input.service.trim();
+  const locationAddress = input.location.trim();
+
+  if (!customerName) {
+    throw new Error("Kundenname fehlt.");
+  }
+
+  if (!locationAddress) {
+    throw new Error("Adresse fehlt.");
+  }
+
+  if (!serviceName) {
+    throw new Error("Service fehlt.");
+  }
+
+  const payload: {
+    assigned_to: string | null;
+    customer_name: string;
+    service_name: string;
+    location_address: string;
+    scheduled_start: string | null;
+    notes: string | null;
+    scheduled_end?: string | null;
+  } = {
     assigned_to: input.employeeId ?? null,
-    customer_name: input.customerName.trim(),
-    service_name: input.service.trim(),
-    location_address: input.location.trim(),
+    customer_name: customerName,
+    service_name: serviceName,
+    location_address: locationAddress,
     scheduled_start: input.scheduledStart ?? null,
-    scheduled_end: input.scheduledEnd ?? null,
     notes: input.notes?.trim() ? input.notes.trim() : null,
   };
+
+  // scheduled_end nur dann ins Update aufnehmen, wenn explizit übergeben.
+  // Sonst würde ein bestehender Endzeitpunkt bei jeder Bearbeitung
+  // versehentlich auf null gesetzt (Datenverlust), weil die UI das Feld
+  // aktuell nicht mitschickt.
+  if (input.scheduledEnd !== undefined) {
+    payload.scheduled_end = input.scheduledEnd;
+  }
 
   const { data, error } = await supabase
     .from("jobs")
@@ -361,44 +412,51 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
   return mapJob(data as JobRow);
 }
 
-// Setzt einen Job auf "in_progress" und speichert Startzeit
-export async function startJob(jobId: string): Promise<string> {
-  const timestamp = new Date().toISOString();
+// Setzt einen Job auf "in_progress" und speichert Startzeit.
+// WICHTIG: Läuft über die RPC start_own_job, weil Employees per RLS
+// KEIN direktes UPDATE auf jobs haben (siehe lib/schema.sql). Der Timestamp
+// wird als Parameter übergeben, damit die Offline-Sync den echten
+// Aktionszeitpunkt (statt "jetzt") nachreichen kann.
+export async function startJob(
+  jobId: string,
+  startedAt?: string,
+): Promise<string> {
+  const timestamp = startedAt ?? new Date().toISOString();
 
-  const { error } = await supabase
-    .from("jobs")
-    .update({
-      status: "in_progress",
-      started_at: timestamp,
-    })
-    .eq("id", jobId);
+  const { data, error } = await supabase.rpc("start_own_job", {
+    job_id_input: jobId,
+    started_at_input: timestamp,
+  });
 
   if (error) {
     throw error;
   }
 
-  // Zeit zurückgeben, damit wir den State direkt aktualisieren können
-  return timestamp;
+  // Die RPC gibt den tatsächlich gesetzten Timestamp zurück.
+  // Falls (z.B. ältere Signatur) nichts zurückkommt, fallen wir auf den
+  // übergebenen Timestamp zurück, damit der State sauber aktualisiert wird.
+  return typeof data === "string" && data ? data : timestamp;
 }
 
-// Setzt einen Job auf "completed" und speichert Endzeit
-export async function completeJob(jobId: string): Promise<string> {
-  const timestamp = new Date().toISOString();
+// Setzt einen Job auf "completed" und speichert Endzeit.
+// WICHTIG: Läuft über die RPC complete_own_job (gleicher RLS-Grund wie oben).
+export async function completeJob(
+  jobId: string,
+  completedAt?: string,
+): Promise<string> {
+  const timestamp = completedAt ?? new Date().toISOString();
 
-  const { error } = await supabase
-    .from("jobs")
-    .update({
-      status: "completed",
-      completed_at: timestamp,
-    })
-    .eq("id", jobId);
+  const { data, error } = await supabase.rpc("complete_own_job", {
+    job_id_input: jobId,
+    completed_at_input: timestamp,
+  });
 
   if (error) {
     throw error;
   }
 
-  // Zeit zurückgeben, damit wir den State direkt aktualisieren können
-  return timestamp;
+  // Die RPC gibt den tatsächlich gesetzten Timestamp zurück.
+  return typeof data === "string" && data ? data : timestamp;
 }
 
 // Schickt eine Expo Push Notification an ein Gerät

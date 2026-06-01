@@ -294,7 +294,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           table: "jobs",
         },
         async (payload) => {
-          console.log("Realtime jobs change:", payload.eventType);
+          if (__DEV__) {
+            console.log("Realtime jobs change:", payload.eventType);
+          }
 
           try {
             const online = await isOnline();
@@ -310,7 +312,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         },
       )
       .subscribe((status) => {
-        console.log("Jobs realtime status:", status);
+        if (__DEV__) {
+          console.log("Jobs realtime status:", status);
+        }
       });
 
     return () => {
@@ -333,7 +337,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         return nextJobs;
       });
 
-      console.log("Creating job with employeeId:", input.employeeId);
+      if (__DEV__) {
+        console.log("Creating job with employeeId:", input.employeeId);
+      }
     } catch (err) {
       console.error("Failed to create job:", err);
       throw err;

@@ -70,7 +70,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      console.log("Expo push token saved successfully.");
+      if (__DEV__) {
+        console.log("Expo push token saved successfully.");
+      }
     } catch (error) {
       console.error("Failed to register for push notifications:", error);
     }

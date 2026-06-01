@@ -24,11 +24,13 @@ async function isOnline(): Promise<boolean> {
 async function executeAction(action: PendingJobAction): Promise<void> {
   switch (action.type) {
     case "start_job":
-      await startJobService(action.jobId);
+      // Echten Offline-Zeitpunkt aus der Queue übergeben (nicht "jetzt")
+      await startJobService(action.jobId, action.timestamp);
       break;
 
     case "complete_job":
-      await completeJobService(action.jobId);
+      // Echten Offline-Zeitpunkt aus der Queue übergeben (nicht "jetzt")
+      await completeJobService(action.jobId, action.timestamp);
       break;
 
     default:
@@ -49,18 +51,24 @@ export async function syncPendingJobActions(): Promise<{
   const online = await isOnline();
 
   if (!online) {
-    console.log("Skip sync: offline");
+    if (__DEV__) {
+      console.log("Skip sync: offline");
+    }
     return { success: 0, failed: 0 };
   }
 
   const actions = await getPendingJobActions();
 
   if (!actions.length) {
-    console.log("No pending actions to sync");
+    if (__DEV__) {
+      console.log("No pending actions to sync");
+    }
     return { success: 0, failed: 0 };
   }
 
-  console.log("Start syncing actions:", actions.length);
+  if (__DEV__) {
+    console.log("Start syncing actions:", actions.length);
+  }
 
   let success = 0;
   let failed = 0;
@@ -81,7 +89,9 @@ export async function syncPendingJobActions(): Promise<{
     }
   }
 
-  console.log("Sync finished:", { success, failed });
+  if (__DEV__) {
+    console.log("Sync finished:", { success, failed });
+  }
 
   return { success, failed };
 }
