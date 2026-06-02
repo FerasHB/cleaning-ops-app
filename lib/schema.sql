@@ -72,6 +72,32 @@ create table if not exists public.jobs (
   updated_at timestamptz not null default now()
 );
 
+-- Job-Kommentare (append-only): Mitarbeiter schreiben kurze Nachrichten zu
+-- ihren Jobs, Admins lesen (und schreiben optional) firmenweit.
+-- Bewusst KEIN updated_at / Edit / Delete (siehe RLS unten).
+-- author_id ist nullable + on delete set null: verlässt ein Mitarbeiter die
+-- Firma (profiles wird via auth.users gelöscht), bleiben seine Kommentare
+-- erhalten, nur der Autor-Verweis wird auf null gesetzt — analog jobs.created_by.
+create table if not exists public.job_comments (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  job_id uuid not null references public.jobs(id) on delete cascade,
+  author_id uuid references public.profiles(id) on delete set null,
+  message text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Read-State pro User + Job für ungelesene Kommentare (roter Punkt, MVP).
+-- Genau EIN Zeitstempel pro (job_id, user_id): wann der User die Kommentare
+-- dieses Jobs zuletzt gesehen hat. Kein per-Kommentar-Read, kein Chat.
+-- Scope läuft über EXISTS auf jobs (RLS) — daher KEIN company_id nötig.
+create table if not exists public.job_comment_reads (
+  job_id uuid not null references public.jobs(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  last_seen_at timestamptz not null default now(),
+  primary key (job_id, user_id)
+);
+
 -- =========================================================
 -- INDEXES
 -- =========================================================
@@ -84,6 +110,10 @@ create index if not exists idx_jobs_company_id on public.jobs(company_id);
 create index if not exists idx_jobs_assigned_to on public.jobs(assigned_to);
 create index if not exists idx_jobs_status on public.jobs(status);
 create index if not exists idx_jobs_created_at on public.jobs(created_at);
+
+create index if not exists idx_job_comments_job_id on public.job_comments(job_id);
+
+create index if not exists idx_job_comment_reads_user_id on public.job_comment_reads(user_id);
 
 -- =========================================================
 -- FUNCTIONS
@@ -300,6 +330,48 @@ $$;
 grant execute on function public.complete_own_job(uuid, timestamptz) to authenticated;
 
 -- =========================================================
+-- RPC: UNGELESENE KOMMENTAR-JOB-IDS
+-- =========================================================
+-- Liefert die Job-IDs, bei denen es für den aktuellen User ungelesene
+-- Kommentare gibt: neuester Kommentar-Zeitpunkt > eigenes last_seen_at.
+-- - Admin: alle Jobs der eigenen Firma
+-- - Employee: nur eigene (zugewiesene) Jobs
+-- - eigene Kommentare zählen NICHT als ungelesen (author_id != auth.uid())
+
+create or replace function public.get_unread_comment_job_ids()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select c.job_id
+  from public.job_comments c
+  join public.jobs j on j.id = c.job_id
+  where j.company_id = public.current_user_company_id()
+    and (
+      public.current_user_role() = 'admin'
+      or (
+        public.current_user_role() = 'employee'
+        and j.assigned_to = auth.uid()
+      )
+    )
+    and c.author_id is distinct from auth.uid()
+  group by c.job_id
+  having max(c.created_at) > coalesce(
+    (
+      select r.last_seen_at
+      from public.job_comment_reads r
+      where r.job_id = c.job_id
+        and r.user_id = auth.uid()
+    ),
+    'epoch'::timestamptz
+  );
+$$;
+
+grant execute on function public.get_unread_comment_job_ids() to authenticated;
+
+-- =========================================================
 -- TRIGGERS
 -- =========================================================
 
@@ -334,6 +406,8 @@ execute function public.handle_new_user();
 alter table public.companies enable row level security;
 alter table public.profiles enable row level security;
 alter table public.jobs enable row level security;
+alter table public.job_comments enable row level security;
+alter table public.job_comment_reads enable row level security;
 
 -- =========================================================
 -- DROP OLD POLICIES
@@ -353,6 +427,15 @@ drop policy if exists "admin insert jobs in own company" on public.jobs;
 drop policy if exists "admin update jobs in own company" on public.jobs;
 drop policy if exists "employee update own assigned jobs" on public.jobs;
 drop policy if exists "admin delete jobs in own company" on public.jobs;
+
+drop policy if exists "admin read comments in own company" on public.job_comments;
+drop policy if exists "employee read comments on own jobs" on public.job_comments;
+drop policy if exists "employee insert comments on own jobs" on public.job_comments;
+drop policy if exists "admin insert comments in own company" on public.job_comments;
+
+drop policy if exists "read own comment-read state" on public.job_comment_reads;
+drop policy if exists "insert own comment-read state" on public.job_comment_reads;
+drop policy if exists "update own comment-read state" on public.job_comment_reads;
 
 -- =========================================================
 -- RLS: COMPANIES
@@ -464,6 +547,140 @@ using (
 -- Employee darf Start/Complete nur über RPC:
 --   start_own_job(...)
 --   complete_own_job(...)
+
+-- =========================================================
+-- RLS: JOB_COMMENTS
+-- =========================================================
+
+-- Admin liest alle Kommentare der eigenen Firma.
+create policy "admin read comments in own company"
+on public.job_comments
+for select
+to authenticated
+using (
+  public.current_user_role() = 'admin'
+  and company_id = public.current_user_company_id()
+);
+
+-- Employee liest nur Kommentare zu den ihm zugewiesenen Jobs.
+create policy "employee read comments on own jobs"
+on public.job_comments
+for select
+to authenticated
+using (
+  public.current_user_role() = 'employee'
+  and company_id = public.current_user_company_id()
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = job_comments.job_id
+      and j.assigned_to = auth.uid()
+  )
+);
+
+-- Employee schreibt nur zu eigenen Jobs und nur als eigener Autor.
+create policy "employee insert comments on own jobs"
+on public.job_comments
+for insert
+to authenticated
+with check (
+  public.current_user_role() = 'employee'
+  and author_id = auth.uid()
+  and company_id = public.current_user_company_id()
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = job_comments.job_id
+      and j.assigned_to = auth.uid()
+      and j.company_id = public.current_user_company_id()
+  )
+);
+
+-- Admin schreibt zu jedem Job der eigenen Firma und nur als eigener Autor.
+create policy "admin insert comments in own company"
+on public.job_comments
+for insert
+to authenticated
+with check (
+  public.current_user_role() = 'admin'
+  and author_id = auth.uid()
+  and company_id = public.current_user_company_id()
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = job_comments.job_id
+      and j.company_id = public.current_user_company_id()
+  )
+);
+
+-- WICHTIG:
+-- absichtlich KEINE update/delete policy auf job_comments.
+-- Kommentare sind append-only (kein Edit/Delete) → bei aktivem RLS
+-- sind UPDATE/DELETE damit für alle gesperrt.
+
+-- =========================================================
+-- RLS: JOB_COMMENT_READS
+-- =========================================================
+
+-- Jeder liest nur seinen eigenen Read-State.
+create policy "read own comment-read state"
+on public.job_comment_reads
+for select
+to authenticated
+using (
+  user_id = auth.uid()
+);
+
+-- Eigenen Read-State anlegen — nur für Jobs, die man sehen darf
+-- (Admin: Firmen-Jobs, Employee: eigene Jobs).
+create policy "insert own comment-read state"
+on public.job_comment_reads
+for insert
+to authenticated
+with check (
+  user_id = auth.uid()
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = job_comment_reads.job_id
+      and j.company_id = public.current_user_company_id()
+      and (
+        public.current_user_role() = 'admin'
+        or (
+          public.current_user_role() = 'employee'
+          and j.assigned_to = auth.uid()
+        )
+      )
+  )
+);
+
+-- Eigenen Read-State aktualisieren (zweite Hälfte des Upserts).
+create policy "update own comment-read state"
+on public.job_comment_reads
+for update
+to authenticated
+using (
+  user_id = auth.uid()
+)
+with check (
+  user_id = auth.uid()
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = job_comment_reads.job_id
+      and j.company_id = public.current_user_company_id()
+      and (
+        public.current_user_role() = 'admin'
+        or (
+          public.current_user_role() = 'employee'
+          and j.assigned_to = auth.uid()
+        )
+      )
+  )
+);
+
+-- WICHTIG:
+-- absichtlich KEINE delete policy auf job_comment_reads.
 
 -- =========================================================
 -- OPTIONAL HARDENING

@@ -17,9 +17,10 @@ import {
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
+import { JobComments } from "@/features/jobs/components/JobComments";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Linking,
   Platform,
@@ -61,7 +62,8 @@ export default function JobDetailScreen() {
 
   const { id } = useLocalSearchParams<{ id: string }>();
   const { role } = useAuth();
-  const { jobs, startJob, completeJob, loading } = useJobs();
+  const { jobs, startJob, completeJob, loading, markJobCommentsAsRead } =
+    useJobs();
 
   const job = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
 
@@ -69,6 +71,14 @@ export default function JobDetailScreen() {
   const [actionError, setActionError] = useState("");
 
   const isAdmin = role === "admin";
+
+  // Beim Öffnen die Kommentare dieses Jobs als gesehen markieren
+  // (entfernt den roten Punkt). Online-only, optimistisch im Context.
+  useEffect(() => {
+    if (id) {
+      markJobCommentsAsRead(id);
+    }
+  }, [id, markJobCommentsAsRead]);
 
   // ── Loading-Zustand (JobContext lädt noch)
   if (loading) {
@@ -278,6 +288,9 @@ export default function JobDetailScreen() {
             <Text style={styles.notesText}>{job.notes}</Text>
           </Card>
         ) : null}
+
+        {/* ── Kommentare (append-only, online-only) ── */}
+        <JobComments jobId={job.id} />
 
         {/* ── Aktionen ── */}
         <View style={styles.actions}>

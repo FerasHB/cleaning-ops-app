@@ -156,6 +156,12 @@ export default function JobCard({
         </Text>
 
         <View style={styles.headerRight}>
+          {job.hasUnreadComments ? (
+            <View
+              style={styles.unreadDot}
+              accessibilityLabel="Ungelesene Kommentare"
+            />
+          ) : null}
           <View
             style={[
               styles.statusBadge,
@@ -279,6 +285,14 @@ function createStyles(theme: AppTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
+    },
+
+    // Roter Punkt für ungelesene Kommentare
+    unreadDot: {
+      width: 9,
+      height: 9,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.error,
     },
     customerName: {
       flex: 1,

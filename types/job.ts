@@ -14,6 +14,9 @@ export type Job = {
   scheduledEnd?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
+  // True, wenn dieser Job für den aktuellen User ungelesene Kommentare hat
+  // (roter Punkt). Wird im JobContext nach getJobs gemerged, nicht in mapJob.
+  hasUnreadComments?: boolean;
 };
 
 export type CreateJobInput = {

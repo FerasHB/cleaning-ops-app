@@ -2,12 +2,17 @@
 // Bottom-Tab-Layout für den Employee-Bereich.
 // Vollständig theme-aware: passt sich automatisch an Light/Dark Mode an.
 
+import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
 export default function EmployeeTabsLayout() {
   const theme = useAppTheme();
+  const { jobs } = useJobs();
+
+  // Roter Punkt am Jobs-Tab, wenn irgendein Job ungelesene Kommentare hat.
+  const hasUnreadComments = jobs.some((job) => job.hasUnreadComments);
 
   return (
     <Tabs
@@ -43,6 +48,16 @@ export default function EmployeeTabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="briefcase-outline" size={size} color={color} />
           ),
+          // Kleiner roter Punkt (leeres Badge) bei ungelesenen Kommentaren.
+          tabBarBadge: hasUnreadComments ? "" : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: theme.colors.error,
+            minWidth: 10,
+            maxWidth: 10,
+            minHeight: 10,
+            maxHeight: 10,
+            borderRadius: 5,
+          },
         }}
       />
 

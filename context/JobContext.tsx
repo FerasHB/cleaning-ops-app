@@ -9,6 +9,10 @@ import {
   startJob as startJobService,
   updateJob as updateJobService,
 } from "@/services/jobs/jobs.service";
+import {
+  getUnreadCommentJobIds,
+  markJobCommentsAsRead as markJobCommentsAsReadService,
+} from "@/services/comments/comments.service";
 import { applyPendingActionsToJobs } from "@/services/offline/jobs.merge";
 import {
   addPendingJobAction,
@@ -50,6 +54,8 @@ type JobContextType = {
   deleteJob: (jobId: string) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
   completeJob: (jobId: string) => Promise<void>;
+  // Markiert die Kommentare eines Jobs als gesehen (entfernt den roten Punkt).
+  markJobCommentsAsRead: (jobId: string) => Promise<void>;
 
   // ── Nur lesbare UI-State-Werte für die Save-Status-Anzeige ──
   // (keine neue Offline-Logik — nur sichtbar gemachte Queue-/Netz-Infos)
@@ -83,6 +89,17 @@ function updateJobInList(
       ...updates,
     };
   });
+}
+
+// Setzt das hasUnreadComments-Flag anhand der ungelesenen Job-IDs.
+// Reines In-Memory-Merging — der Cache bleibt unberührt (Offline-Services
+// werden nicht angefasst).
+function mergeUnreadFlags(jobs: Job[], unreadJobIds: string[]): Job[] {
+  const unreadSet = new Set(unreadJobIds);
+  return jobs.map((job): Job => ({
+    ...job,
+    hasUnreadComments: unreadSet.has(job.id),
+  }));
 }
 
 export function JobProvider({ children }: { children: React.ReactNode }) {
@@ -152,7 +169,16 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           pendingActions,
         );
 
-        setJobs(mergedJobs);
+        // Ungelesene Kommentare best-effort dazumergen (online-only).
+        // Schlägt das fehl, zeigen wir die Jobs trotzdem (ohne Punkt).
+        let unreadJobIds: string[] = [];
+        try {
+          unreadJobIds = await getUnreadCommentJobIds();
+        } catch (unreadErr) {
+          console.error("Failed to load unread comment job ids:", unreadErr);
+        }
+
+        setJobs(mergeUnreadFlags(mergedJobs, unreadJobIds));
         return;
       }
 
@@ -500,6 +526,21 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const markJobCommentsAsRead = useCallback(async (jobId: string) => {
+    // Optimistisch sofort den Punkt entfernen (gute UX, kein Warten auf DB).
+    setJobs((prevJobs) =>
+      updateJobInList(prevJobs, jobId, { hasUnreadComments: false }),
+    );
+
+    try {
+      await markJobCommentsAsReadService(jobId);
+    } catch (err) {
+      // Kein Revert: offline/Fehler → Punkt erscheint beim nächsten
+      // refreshJobs ohnehin wieder. Keine Offline-Queue (bewusst).
+      console.error("Failed to mark job comments as read:", err);
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       jobs,
@@ -513,6 +554,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      markJobCommentsAsRead,
       online,
       pendingCount,
       pendingActions,
@@ -532,6 +574,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      markJobCommentsAsRead,
       online,
       pendingCount,
       pendingActions,
