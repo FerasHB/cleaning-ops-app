@@ -33,9 +33,12 @@ function formatDateTime(iso?: string | null): string | null {
 
 type JobCommentsProps = {
   jobId: string;
+  // Wird gerufen, wenn das Kommentarfeld fokussiert wird — der Screen scrollt
+  // dann so, dass Eingabe + Senden über der Tastatur sichtbar bleiben.
+  onInputFocus?: () => void;
 };
 
-export function JobComments({ jobId }: JobCommentsProps) {
+export function JobComments({ jobId, onInputFocus }: JobCommentsProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -116,6 +119,7 @@ export function JobComments({ jobId }: JobCommentsProps) {
           placeholder="Kommentar schreiben…"
           value={draft}
           onChangeText={setDraft}
+          onFocus={onInputFocus}
           multiline
           editable={!submitting}
         />

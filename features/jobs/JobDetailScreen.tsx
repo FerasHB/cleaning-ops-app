@@ -20,8 +20,9 @@ import { useJobs } from "@/context/JobContext";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Linking,
   Platform,
   ScrollView,
@@ -30,7 +31,10 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 
 // ─────────────────────────────────────────────
@@ -59,6 +63,22 @@ function formatDateTime(iso?: string | null): string | null {
 export default function JobDetailScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+
+  // Offset für KeyboardAvoidingView: oberer Safe-Area-Inset + Header-Höhe,
+  // damit das Input-Feld beim Öffnen der Tastatur sichtbar bleibt (kein Overlap).
+  const insets = useSafeAreaInsets();
+  const keyboardOffset = insets.top + theme.spacing.tapTarget;
+
+  // Ref auf die ScrollView, um beim Fokus des Kommentarfelds ans Ende zu
+  // scrollen (Eingabe + Senden über der Tastatur sichtbar halten).
+  const scrollRef = useRef<ScrollView>(null);
+  const handleCommentFocus = useCallback(() => {
+    // Kurzer Timeout, damit die Tastatur zuerst öffnen kann und scrollToEnd
+    // die endgültige Content-Höhe trifft (iOS + Android).
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 250);
+  }, []);
 
   const { id } = useLocalSearchParams<{ id: string }>();
   const { role } = useAuth();
@@ -192,9 +212,16 @@ export default function JobDetailScreen() {
         }
       />
 
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={keyboardOffset}
+      >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* ── Hero: Kunden-Name + Status ── */}
         <View style={styles.hero}>
@@ -290,7 +317,7 @@ export default function JobDetailScreen() {
         ) : null}
 
         {/* ── Kommentare (append-only, online-only) ── */}
-        <JobComments jobId={job.id} />
+        <JobComments jobId={job.id} onInputFocus={handleCommentFocus} />
 
         {/* ── Aktionen ── */}
         <View style={styles.actions}>
@@ -340,6 +367,7 @@ export default function JobDetailScreen() {
 
         <View style={{ height: theme.spacing.xl }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -349,6 +377,11 @@ function createStyles(theme: AppTheme) {
     safe: {
       flex: 1,
       backgroundColor: theme.colors.background,
+    },
+
+    // Wrapper für KeyboardAvoidingView (füllt Platz unter dem Header)
+    flex: {
+      flex: 1,
     },
 
     // Empty-Variante

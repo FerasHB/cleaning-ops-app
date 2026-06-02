@@ -186,7 +186,7 @@ interface InputProps extends TextInputProps {
   error?: string;
 }
 
-export function Input({ label, error, style, ...props }: InputProps) {
+export function Input({ label, error, style, onFocus, onBlur, ...props }: InputProps) {
   const theme = useAppTheme();
   const [focused, setFocused] = useState(false);
   const styles = useMemo(() => createInputStyles(theme), [theme]);
@@ -202,8 +202,16 @@ export function Input({ label, error, style, ...props }: InputProps) {
           style as any,
         ]}
         placeholderTextColor={theme.colors.outline}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        // Internen Focus-State behalten UND ein durchgereichtes onFocus/onBlur
+        // aufrufen (Spread darf den internen Handler nicht überschreiben).
+        onFocus={(e) => {
+          setFocused(true);
+          onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setFocused(false);
+          onBlur?.(e);
+        }}
         {...props}
       />
       {error && <Text style={styles.errorText}>{error}</Text>}
