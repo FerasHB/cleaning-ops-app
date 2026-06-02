@@ -9,7 +9,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobFormFields } from "@/features/jobs/components/JobFormFields";
 import { useJobForm } from "@/features/jobs/hooks/useJobForm";
-import { formatToISO } from "@/utils/date";
+import { formatDateISO, formatTimeHHmm, formatToISO } from "@/utils/date";
+import type { CreateJobInput } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -148,14 +149,37 @@ export default function AdminScreen() {
     try {
       setSubmitting(true);
 
-      await createJob({
+      // Gemeinsame Basis
+      const base = {
         customerName: values.customerName.trim(),
         location: values.location.trim(),
         service: values.service.trim(),
-        scheduledStart: formatToISO(values.scheduledStart),
         employeeId: values.employeeId,
         notes: values.notes.trim() || null,
-      });
+      };
+
+      // Terminierung je nach Auftragstyp aufbauen
+      const input: CreateJobInput =
+        values.jobType === "single"
+          ? {
+              ...base,
+              jobType: "single",
+              date: formatDateISO(values.singleDateTime),
+              startTime: formatTimeHHmm(values.singleDateTime),
+              // scheduled_start für Detail-/Monats-Anzeigen zusätzlich befüllen
+              scheduledStart: formatToISO(values.singleDateTime),
+            }
+          : {
+              ...base,
+              jobType: "recurring",
+              startTime: formatTimeHHmm(values.startTime),
+              recurringDays: values.recurringDays,
+              isActive: values.isActive,
+              // recurring hat keinen einzelnen Termin
+              scheduledStart: null,
+            };
+
+      await createJob(input);
 
       reset();
       Alert.alert("✓ Erstellt", "Der Job wurde erfolgreich angelegt.");

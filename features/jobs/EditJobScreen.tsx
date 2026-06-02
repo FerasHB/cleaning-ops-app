@@ -10,7 +10,13 @@ import { useJobs } from "@/context/JobContext";
 import { EmployeeSelector } from "@/features/jobs/components/EmployeeSelector";
 import { JobFormFields } from "@/features/jobs/components/JobFormFields";
 import { useJobForm } from "@/features/jobs/hooks/useJobForm";
-import { formatToISO } from "@/utils/date";
+import {
+  formatDateISO,
+  formatTimeHHmm,
+  formatToISO,
+  timeStringToDate,
+} from "@/utils/date";
+import type { WeekdayKey } from "@/utils/recurrence";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -66,15 +72,20 @@ export default function EditJobScreen() {
     if (!job) return;
 
     const parsedStart = job.scheduledStart ? new Date(job.scheduledStart) : null;
+    const singleDateTime =
+      parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null;
 
     setValues({
       customerName: job.customerName,
       location: job.location,
       service: job.service,
-      scheduledStart:
-        parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null,
       employeeId: job.employeeId ?? null,
       notes: job.notes ?? "",
+      jobType: job.jobType ?? "single",
+      singleDateTime,
+      startTime: timeStringToDate(job.startTime),
+      recurringDays: (job.recurringDays ?? []) as WeekdayKey[],
+      isActive: job.isActive ?? true,
     });
 
     setErrors({});
@@ -83,21 +94,37 @@ export default function EditJobScreen() {
   const hasChanges = useMemo(() => {
     if (!job) return false;
 
-    const originalStartMs = job.scheduledStart
-      ? new Date(job.scheduledStart).getTime()
-      : null;
-
-    const currentStartMs = values.scheduledStart
-      ? values.scheduledStart.getTime()
-      : null;
-
-    return (
+    // Basisfelder
+    const basicsChanged =
       values.customerName !== job.customerName ||
       values.location !== job.location ||
       values.service !== job.service ||
-      currentStartMs !== originalStartMs ||
       values.employeeId !== (job.employeeId ?? null) ||
-      values.notes !== (job.notes ?? "")
+      values.notes !== (job.notes ?? "") ||
+      values.jobType !== (job.jobType ?? "single");
+
+    if (basicsChanged) return true;
+
+    // Terminierung je nach Typ
+    if (values.jobType === "single") {
+      const originalStartMs = job.scheduledStart
+        ? new Date(job.scheduledStart).getTime()
+        : null;
+      const currentStartMs = values.singleDateTime
+        ? values.singleDateTime.getTime()
+        : null;
+      return currentStartMs !== originalStartMs;
+    }
+
+    // recurring
+    const sameDays =
+      values.recurringDays.length === (job.recurringDays?.length ?? 0) &&
+      values.recurringDays.every((d) => job.recurringDays?.includes(d));
+
+    return (
+      !sameDays ||
+      formatTimeHHmm(values.startTime) !== (job.startTime ?? null) ||
+      values.isActive !== (job.isActive ?? true)
     );
   }, [job, values]);
 
@@ -135,15 +162,33 @@ export default function EditJobScreen() {
     try {
       setSubmitting(true);
 
-      await updateJob({
+      const base = {
         jobId: job.id,
         customerName: values.customerName.trim(),
         location: values.location.trim(),
         service: values.service.trim(),
-        scheduledStart: formatToISO(values.scheduledStart),
         employeeId: values.employeeId,
         notes: values.notes.trim() || null,
-      });
+      };
+
+      await updateJob(
+        values.jobType === "single"
+          ? {
+              ...base,
+              jobType: "single",
+              date: formatDateISO(values.singleDateTime),
+              startTime: formatTimeHHmm(values.singleDateTime),
+              scheduledStart: formatToISO(values.singleDateTime),
+            }
+          : {
+              ...base,
+              jobType: "recurring",
+              startTime: formatTimeHHmm(values.startTime),
+              recurringDays: values.recurringDays,
+              isActive: values.isActive,
+              scheduledStart: null,
+            },
+      );
 
       Alert.alert("Erfolgreich", "Job wurde aktualisiert.");
       router.back();

@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
-import { CreateJobInput, EmployeeOption, Job } from "@/types/job";
+import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
+import { normalizeTime } from "@/utils/date";
 
 // So sieht ein Job direkt aus der Datenbank aus
 type JobRow = {
@@ -14,6 +15,11 @@ type JobRow = {
   completed_at: string | null;
   notes: string | null;
   assigned_to: string | null;
+  job_type: JobType | null;
+  date: string | null;
+  start_time: string | null;
+  recurring_days: string[] | null;
+  is_active: boolean | null;
   profiles?:
   | {
     id: string;
@@ -44,7 +50,63 @@ type UpdateJobInput = {
   notes?: string | null;
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
+  // ── Terminierung ──
+  jobType: JobType;
+  date?: string | null;
+  startTime?: string | null;
+  recurringDays?: string[] | null;
+  isActive?: boolean;
 };
+
+// Validiert & normalisiert die Terminierungs-Felder serverseitig
+// (nicht nur auf die UI verlassen). Wirft bei ungültiger Kombination.
+function buildSchedulePayload(input: {
+  jobType: JobType;
+  date?: string | null;
+  startTime?: string | null;
+  recurringDays?: string[] | null;
+  isActive?: boolean;
+}): {
+  job_type: JobType;
+  date: string | null;
+  start_time: string | null;
+  recurring_days: string[] | null;
+  is_active: boolean;
+} {
+  const startTime = input.startTime?.trim() || null;
+
+  if (!startTime) {
+    throw new Error("Uhrzeit fehlt.");
+  }
+
+  if (input.jobType === "recurring") {
+    const days = (input.recurringDays ?? []).filter(Boolean);
+    if (days.length === 0) {
+      throw new Error("Bitte mindestens einen Wochentag auswählen.");
+    }
+    return {
+      job_type: "recurring",
+      date: null,
+      start_time: startTime,
+      recurring_days: days,
+      // recurring darf inaktiv sein; Default true
+      is_active: input.isActive ?? true,
+    };
+  }
+
+  // single
+  if (!input.date) {
+    throw new Error("Datum fehlt.");
+  }
+  return {
+    job_type: "single",
+    date: input.date,
+    start_time: startTime,
+    recurring_days: null,
+    // einmalige Aufträge sind immer aktiv
+    is_active: true,
+  };
+}
 
 // Formatiert ein Datum / eine Uhrzeit schön auf Deutsch
 function formatDateTime(value: string): string {
@@ -94,6 +156,14 @@ function mapJob(row: JobRow): Job {
     scheduledEnd: row.scheduled_end,
     startedAt: row.started_at,
     completedAt: row.completed_at,
+
+    // Terminierung — bestehende Zeilen ohne Typ gelten als "single"/aktiv.
+    jobType: row.job_type ?? "single",
+    date: row.date,
+    // DB liefert "HH:mm:ss" → auf "HH:mm" normalisieren
+    startTime: normalizeTime(row.start_time),
+    recurringDays: row.recurring_days,
+    isActive: row.is_active ?? true,
   };
 }
 
@@ -113,6 +183,11 @@ export async function getJobs(): Promise<Job[]> {
       started_at,
       completed_at,
       notes,
+      job_type,
+      date,
+      start_time,
+      recurring_days,
+      is_active,
       assigned_to,
       profiles:assigned_to (
         id,
@@ -239,6 +314,9 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
     throw new Error("Service fehlt.");
   }
 
+  // Terminierung validieren & aufbauen (single vs. recurring)
+  const schedule = buildSchedulePayload(input);
+
   // Daten vorbereiten für den Insert in die jobs-Tabelle
   const payload = {
     company_id: profile.company_id,
@@ -247,10 +325,13 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
     customer_name: customerName,
     service_name: serviceName,
     location_address: locationAddress,
+    // scheduled_start wird für single zusätzlich befüllt (siehe AdminScreen),
+    // damit Detail-/Monats-Anzeigen weiter funktionieren; recurring → null.
     scheduled_start: input.scheduledStart ?? null,
     scheduled_end: input.scheduledEnd ?? null,
     notes: input.notes?.trim() ? input.notes.trim() : null,
     status: "open" as const,
+    ...schedule,
   };
 
   // Job in Supabase anlegen und direkt wieder zurückholen
@@ -269,6 +350,11 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
       started_at,
       completed_at,
       notes,
+      job_type,
+      date,
+      start_time,
+      recurring_days,
+      is_active,
       assigned_to,
       profiles:assigned_to (
         id,
@@ -355,6 +441,9 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     throw new Error("Service fehlt.");
   }
 
+  // Terminierung validieren & aufbauen (single vs. recurring)
+  const schedule = buildSchedulePayload(input);
+
   const payload: {
     assigned_to: string | null;
     customer_name: string;
@@ -363,13 +452,20 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     scheduled_start: string | null;
     notes: string | null;
     scheduled_end?: string | null;
+    job_type: JobType;
+    date: string | null;
+    start_time: string | null;
+    recurring_days: string[] | null;
+    is_active: boolean;
   } = {
     assigned_to: input.employeeId ?? null,
     customer_name: customerName,
     service_name: serviceName,
     location_address: locationAddress,
+    // single: aus date+time abgeleiteter ISO-Wert; recurring: null
     scheduled_start: input.scheduledStart ?? null,
     notes: input.notes?.trim() ? input.notes.trim() : null,
+    ...schedule,
   };
 
   // scheduled_end nur dann ins Update aufnehmen, wenn explizit übergeben.
@@ -396,6 +492,11 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
       started_at,
       completed_at,
       notes,
+      job_type,
+      date,
+      start_time,
+      recurring_days,
+      is_active,
       assigned_to,
       profiles:assigned_to (
         id,

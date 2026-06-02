@@ -24,6 +24,7 @@ import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
+import { isJobToday } from "@/utils/jobSchedule";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -58,16 +59,6 @@ function parse(iso: string | null | undefined): Date | null {
   if (!iso) return null;
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
-}
-
-function isSameDay(iso: string | null | undefined, ref: Date): boolean {
-  const d = parse(iso);
-  if (!d) return false;
-  return (
-    d.getFullYear() === ref.getFullYear() &&
-    d.getMonth() === ref.getMonth() &&
-    d.getDate() === ref.getDate()
-  );
 }
 
 function isSameMonth(iso: string | null | undefined, ref: Date): boolean {
@@ -106,17 +97,18 @@ export default function EmployeeOverviewScreen() {
     [now],
   );
 
-  // Hat überhaupt irgendein Job ein Datum? Sonst Fallback auf alle Jobs.
+  // ── Heutige Jobs: single mit heutigem Datum + recurring mit heutigem
+  // Wochentag, jeweils nur aktive. Siehe isJobToday().
+  const todayJobs = useMemo(
+    () => jobs.filter((j) => isJobToday(j, now)),
+    [jobs, now],
+  );
+
+  // Für die Monats-KPIs unten: gibt es überhaupt terminierte (single) Jobs?
   const anyScheduled = useMemo(
     () => jobs.some((j) => !!j.scheduledStart),
     [jobs],
   );
-
-  // ── Heutige Jobs (mit Datum-Fallback)
-  const todayJobs = useMemo(() => {
-    if (!anyScheduled) return jobs;
-    return jobs.filter((j) => isSameDay(j.scheduledStart, now));
-  }, [jobs, anyScheduled, now]);
 
   // ── Heute-KPIs
   const todayTotal = todayJobs.length;
@@ -268,7 +260,7 @@ export default function EmployeeOverviewScreen() {
                   </Text>
                 </View>
               ) : null}
-              {formatTime(activeJob.scheduledStart) ? (
+              {activeJob.startTime ?? formatTime(activeJob.scheduledStart) ? (
                 <View style={styles.activeMetaItem}>
                   <Ionicons
                     name="time-outline"
@@ -276,7 +268,7 @@ export default function EmployeeOverviewScreen() {
                     color={theme.colors.onPrimaryContainer}
                   />
                   <Text style={styles.activeMetaText}>
-                    {formatTime(activeJob.scheduledStart)}
+                    {activeJob.startTime ?? formatTime(activeJob.scheduledStart)}
                   </Text>
                 </View>
               ) : null}
@@ -340,6 +332,7 @@ export default function EmployeeOverviewScreen() {
               <JobCard
                 key={job.id}
                 job={job}
+                dueToday
                 onPress={() => router.push(`/jobs/${job.id}`)}
                 onStart={() => startJob(job.id)}
                 onComplete={() => completeJob(job.id)}

@@ -5,7 +5,7 @@
 
 import { Input } from "@/components/ui/index";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { formatForDisplay } from "@/utils/date";
+import { formatForDisplay, formatTimeHHmm } from "@/utils/date";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
@@ -19,6 +19,11 @@ export interface DateTimeFieldProps {
   placeholder?: string;
   value: Date | null;
   onChange: (date: Date | null) => void;
+  /**
+   * "datetime" (Default): Datum → Uhrzeit in zwei Schritten (einmalige Aufträge).
+   * "time": nur Uhrzeit (wiederkehrende Aufträge — Wochentage kommen separat).
+   */
+  mode?: "datetime" | "time";
 }
 
 export function DateTimeField({
@@ -26,10 +31,13 @@ export function DateTimeField({
   placeholder = "Datum auswählen...",
   value,
   onChange,
+  mode = "datetime",
 }: DateTimeFieldProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const modalStyles = useMemo(() => createModalStyles(theme), [theme]);
+
+  const isTimeOnly = mode === "time";
 
   const [showPickerModal, setShowPickerModal] = useState(false);
   const [pickerStep, setPickerStep] = useState<"date" | "time">("date");
@@ -37,9 +45,15 @@ export function DateTimeField({
 
   const openPicker = () => {
     setTempDate(value ?? new Date());
-    setPickerStep("date");
+    setPickerStep(isTimeOnly ? "time" : "date");
     setShowPickerModal(true);
   };
+
+  const displayValue = value
+    ? isTimeOnly
+      ? formatTimeHHmm(value) ?? ""
+      : formatForDisplay(value)
+    : "";
 
   const handleTempDateChange = (
     _event: DateTimePickerEvent,
@@ -75,7 +89,7 @@ export function DateTimeField({
               <Input
                 label={label}
                 placeholder={placeholder}
-                value={value ? formatForDisplay(value) : ""}
+                value={displayValue}
                 editable={false}
               />
             </View>
@@ -119,7 +133,22 @@ export function DateTimeField({
             </View>
 
             <View style={modalStyles.footer}>
-              {pickerStep === "date" ? (
+              {isTimeOnly ? (
+                <>
+                  <TouchableOpacity
+                    onPress={handlePickerCancel}
+                    style={modalStyles.btnCancel}
+                  >
+                    <Text style={modalStyles.btnCancelText}>Abbrechen</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handlePickerConfirm}
+                    style={modalStyles.btnPrimary}
+                  >
+                    <Text style={modalStyles.btnPrimaryText}>Bestätigen</Text>
+                  </TouchableOpacity>
+                </>
+              ) : pickerStep === "date" ? (
                 <>
                   <TouchableOpacity
                     onPress={handlePickerCancel}

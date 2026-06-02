@@ -18,6 +18,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobComments } from "@/features/jobs/components/JobComments";
+import { formatRecurringDays } from "@/utils/recurrence";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -181,6 +182,10 @@ export default function JobDetailScreen() {
   };
 
   // ── Formatierte Werte
+  const isRecurring = job.jobType === "recurring";
+  const jobTypeText = isRecurring ? "Wiederkehrend" : "Einmalig";
+  const recurringDaysText = formatRecurringDays(job.recurringDays);
+  const timeText = job.startTime ? `${job.startTime} Uhr` : "—";
   const scheduledStartText =
     formatDateTime(job.scheduledStart) ?? "Kein Termin geplant";
   const startedAtText = formatDateTime(job.startedAt);
@@ -265,11 +270,39 @@ export default function JobDetailScreen() {
           <View style={styles.rowDivider} />
 
           <InfoRow
-            label="Geplanter Start"
-            value={scheduledStartText}
-            icon="calendar-outline"
+            label="Auftragstyp"
+            value={jobTypeText}
+            icon={isRecurring ? "repeat-outline" : "calendar-outline"}
           />
           <View style={styles.rowDivider} />
+
+          {isRecurring ? (
+            <>
+              <InfoRow
+                label="Wochentage"
+                value={recurringDaysText}
+                icon="calendar-number-outline"
+              />
+              <View style={styles.rowDivider} />
+              <InfoRow label="Uhrzeit" value={timeText} icon="time-outline" />
+              <View style={styles.rowDivider} />
+              <InfoRow
+                label="Status"
+                value={job.isActive ? "Aktiv" : "Inaktiv"}
+                icon={job.isActive ? "checkmark-circle-outline" : "pause-circle-outline"}
+              />
+              <View style={styles.rowDivider} />
+            </>
+          ) : (
+            <>
+              <InfoRow
+                label="Geplanter Start"
+                value={scheduledStartText}
+                icon="calendar-outline"
+              />
+              <View style={styles.rowDivider} />
+            </>
+          )}
 
           <InfoRow
             label="Mitarbeiter"

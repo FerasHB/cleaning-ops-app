@@ -16,6 +16,7 @@
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import { Job } from "@/types/job";
+import { getJobDisplayTime, getRecurringDaysLabel } from "@/utils/jobSchedule";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
@@ -35,6 +36,12 @@ type Props = {
   onComplete?: () => void;
   /** Soll der Name des zugewiesenen Mitarbeiters in der Card stehen? (Default: false) */
   showEmployeeName?: boolean;
+  /**
+   * Heute-Kontext (Employee-Übersicht): zeigt einfache Hinweise wie
+   * "Heute fällig", "Startet um HH:mm" und "Noch nicht gestartet".
+   * Admin-Listen lassen das Prop weg → keine Hinweise.
+   */
+  dueToday?: boolean;
 };
 
 // ─────────────────────────────────────────────
@@ -59,6 +66,14 @@ function formatDate(iso?: string | null): string | null {
     month: "2-digit",
     year: "numeric",
   });
+}
+
+// Formatiert "YYYY-MM-DD" → "dd.mm.yyyy" (ohne Zeitzonen-Verschiebung).
+function formatDateOnly(value?: string | null): string | null {
+  if (!value) return null;
+  const [y, m, d] = value.slice(0, 10).split("-");
+  if (!y || !m || !d) return null;
+  return `${d}.${m}.${y}`;
 }
 
 // ── Status-Farben aus Theme (jeder Status hat sein Farbtripel)
@@ -94,23 +109,40 @@ export default function JobCard({
   onStart,
   onComplete,
   showEmployeeName = false,
+  dueToday = false,
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const status = getStatusConfig(theme, job.status);
 
-  // Zeit-Zeile bauen
-  const date = formatDate(job.scheduledStart);
-  const startTime = formatTime(job.scheduledStart);
-  const endTime = formatTime(job.scheduledEnd);
+  // Anzeige-Uhrzeit (zentral): start_time mit Fallback auf scheduledStart.
+  const startTime = getJobDisplayTime(job);
 
+  // Zeit-Zeile je nach Auftragstyp
   let scheduleText: string | null = null;
-  if (date && startTime && endTime) {
-    scheduleText = `${date} · ${startTime} – ${endTime}`;
-  } else if (date && startTime) {
-    scheduleText = `${date} · ${startTime}`;
-  } else if (date) {
-    scheduleText = date;
+  if (job.jobType === "recurring") {
+    const days = getRecurringDaysLabel(job);
+    scheduleText = startTime ? `${days} · ${startTime} Uhr` : days;
+  } else {
+    const date = formatDateOnly(job.date) ?? formatDate(job.scheduledStart);
+    const endTime = formatTime(job.scheduledEnd);
+    if (date && startTime && endTime) {
+      scheduleText = `${date} · ${startTime} – ${endTime} Uhr`;
+    } else if (date && startTime) {
+      scheduleText = `${date} · ${startTime} Uhr`;
+    } else if (date) {
+      scheduleText = date;
+    } else if (startTime) {
+      scheduleText = `${startTime} Uhr`;
+    }
+  }
+
+  // Einfache Hinweise (nur im Heute-Kontext der Employee-Übersicht)
+  const hints: string[] = [];
+  if (dueToday) {
+    hints.push("Heute fällig");
+    if (startTime) hints.push(`Startet um ${startTime}`);
+    if (job.status === "open") hints.push("Noch nicht gestartet");
   }
 
   // Service · Ort (kompakte Einzeiler-Subline)
@@ -203,6 +235,17 @@ export default function JobCard({
           <Text style={styles.metaText} numberOfLines={1}>
             {scheduleText}
           </Text>
+        </View>
+      ) : null}
+
+      {/* ── Hinweise (Heute-Kontext) ── */}
+      {hints.length > 0 ? (
+        <View style={styles.hintRow}>
+          {hints.map((hint) => (
+            <View key={hint} style={styles.hintChip}>
+              <Text style={styles.hintText}>{hint}</Text>
+            </View>
+          ))}
         </View>
       ) : null}
 
@@ -330,6 +373,28 @@ function createStyles(theme: AppTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
+    },
+
+    // Hinweis-Chips (Heute fällig / Startet um … / Noch nicht gestartet)
+    hintRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+      marginTop: 2,
+    },
+    hintChip: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.statusInProgressBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusInProgressBorder,
+    },
+    hintText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.statusInProgress,
     },
     metaText: {
       flex: 1,

@@ -21,7 +21,7 @@ import {
 } from "@/services/offline/jobs.queue";
 import { getCachedJobs, saveCachedJobs } from "@/services/offline/jobs.storage";
 import { syncPendingJobActions } from "@/services/offline/jobs.sync";
-import { CreateJobInput, EmployeeOption, Job } from "@/types/job";
+import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
 import NetInfo from "@react-native-community/netinfo";
 import React, {
   createContext,
@@ -50,6 +50,11 @@ type JobContextType = {
     notes?: string | null;
     scheduledStart?: string | null;
     scheduledEnd?: string | null;
+    jobType: JobType;
+    date?: string | null;
+    startTime?: string | null;
+    recurringDays?: string[] | null;
+    isActive?: boolean;
   }) => Promise<void>;
   deleteJob: (jobId: string) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
@@ -382,6 +387,11 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       notes?: string | null;
       scheduledStart?: string | null;
       scheduledEnd?: string | null;
+      jobType: JobType;
+      date?: string | null;
+      startTime?: string | null;
+      recurringDays?: string[] | null;
+      isActive?: boolean;
     }) => {
       try {
         const updatedJob = await updateJobService(input);

@@ -23,3 +23,54 @@ export function parseToDate(date: Date | string | null | undefined): Date | null
   const d = new Date(date);
   return isNaN(d.getTime()) ? null : d;
 }
+
+// ─────────────────────────────────────────────
+// Helfer für wiederkehrende/terminierte Jobs
+// ─────────────────────────────────────────────
+
+/** Formatiert ein Datum als lokale Uhrzeit "HH:mm" (für DB-Spalte start_time). */
+export function formatTimeHHmm(date: Date | null | undefined): string | null {
+  if (!date) return null;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return null;
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+/** Normalisiert eine DB-Zeit ("HH:mm:ss" oder "HH:mm") auf "HH:mm". */
+export function normalizeTime(time: string | null | undefined): string | null {
+  if (!time) return null;
+  return time.slice(0, 5);
+}
+
+/** Baut aus einer Zeit "HH:mm" ein Date (heutiges Datum) für den Time-Picker. */
+export function timeStringToDate(time: string | null | undefined): Date | null {
+  const normalized = normalizeTime(time);
+  if (!normalized) return null;
+  const [h, m] = normalized.split(":").map((n) => parseInt(n, 10));
+  if (isNaN(h) || isNaN(m)) return null;
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+
+/** Formatiert ein Datum als lokales "YYYY-MM-DD" (für DB-Spalte date). */
+export function formatDateISO(date: Date | null | undefined): string | null {
+  if (!date) return null;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return null;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/** Prüft, ob ein "YYYY-MM-DD"-String dem lokalen Datum von `ref` entspricht. */
+export function isSameLocalDate(
+  dateString: string | null | undefined,
+  ref: Date,
+): boolean {
+  if (!dateString) return false;
+  return formatDateISO(ref) === dateString.slice(0, 10);
+}

@@ -5,7 +5,8 @@
 // Hinweise zu Platzhaltern:
 // - Firmenname: profile liefert nur company_id (keinen Namen) → fixer Platzhalter "FieldService Pro".
 // - Sync/Online-Status: statischer Anzeige-Platzhalter ("Synchronisiert"), keine echte NetInfo-Abfrage.
-// - "Heute fällig": basiert auf job.scheduledStart (Kalendertag = heute).
+// - "Heute fällig": isJobToday() aus utils/jobSchedule (single per date/scheduledStart,
+//   recurring per Wochentag, nur aktive) — gleiche Logik wie EmployeeOverviewScreen.
 
 import {
   Card,
@@ -22,6 +23,7 @@ import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Job } from "@/types/job";
+import { isJobToday } from "@/utils/jobSchedule";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo } from "react";
@@ -35,17 +37,6 @@ function getGreeting(date: Date): string {
   if (h < 11) return "Guten Morgen";
   if (h < 18) return "Guten Tag";
   return "Guten Abend";
-}
-
-function isSameDay(iso: string | null | undefined, ref: Date): boolean {
-  if (!iso) return false;
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return false;
-  return (
-    d.getFullYear() === ref.getFullYear() &&
-    d.getMonth() === ref.getMonth() &&
-    d.getDate() === ref.getDate()
-  );
 }
 
 // ── Aktivitäts-Mapping pro Status
@@ -110,7 +101,9 @@ export default function AdminDashboardScreen() {
   const openCount = jobs.filter((j) => j.status === "open").length;
   const inProgressCount = jobs.filter((j) => j.status === "in_progress").length;
   const completedCount = jobs.filter((j) => j.status === "completed").length;
-  const todayCount = jobs.filter((j) => isSameDay(j.scheduledStart, now)).length;
+  // Heute fällig: single mit heutigem Datum + recurring mit heutigem Wochentag,
+  // jeweils nur aktive — identische Logik wie in der Employee-Übersicht.
+  const todayCount = jobs.filter((j) => isJobToday(j, now)).length;
 
   // ── Mitarbeiter-Aktivität: aktiver (in_progress) Job pro Mitarbeiter
   const employeeActivity = useMemo(

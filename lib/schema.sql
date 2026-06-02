@@ -30,6 +30,16 @@ begin
 end
 $$;
 
+do $$
+begin
+  if not exists (
+    select 1 from pg_type where typname = 'job_type'
+  ) then
+    create type public.job_type as enum ('single', 'recurring');
+  end if;
+end
+$$;
+
 -- =========================================================
 -- TABLES
 -- =========================================================
@@ -67,10 +77,26 @@ create table if not exists public.jobs (
   scheduled_end timestamptz,
   started_at timestamptz,
   completed_at timestamptz,
+  -- ── Terminierung: einmalig (single) vs. wiederkehrend (recurring) ──
+  -- single:    date + start_time gesetzt, recurring_days null
+  -- recurring: recurring_days (Wochentage) + start_time gesetzt, date null
+  job_type public.job_type not null default 'single',
+  date date,
+  start_time time,
+  recurring_days text[],
+  is_active boolean not null default true,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Idempotente Erweiterung für bestehende Installationen (jobs-Tabelle existierte
+-- bereits ohne Terminierungs-Spalten). Bestehende Zeilen werden zu single.
+alter table public.jobs add column if not exists job_type public.job_type not null default 'single';
+alter table public.jobs add column if not exists date date;
+alter table public.jobs add column if not exists start_time time;
+alter table public.jobs add column if not exists recurring_days text[];
+alter table public.jobs add column if not exists is_active boolean not null default true;
 
 -- Job-Kommentare (append-only): Mitarbeiter schreiben kurze Nachrichten zu
 -- ihren Jobs, Admins lesen (und schreiben optional) firmenweit.
@@ -110,6 +136,8 @@ create index if not exists idx_jobs_company_id on public.jobs(company_id);
 create index if not exists idx_jobs_assigned_to on public.jobs(assigned_to);
 create index if not exists idx_jobs_status on public.jobs(status);
 create index if not exists idx_jobs_created_at on public.jobs(created_at);
+create index if not exists idx_jobs_job_type on public.jobs(job_type);
+create index if not exists idx_jobs_is_active on public.jobs(is_active);
 
 create index if not exists idx_job_comments_job_id on public.job_comments(job_id);
 
