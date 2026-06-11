@@ -18,6 +18,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobComments } from "@/features/jobs/components/JobComments";
+import { JobPhotos } from "@/features/jobs/components/JobPhotos";
 import { formatRecurringDays } from "@/utils/recurrence";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -82,8 +83,8 @@ export default function JobDetailScreen() {
   }, []);
 
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { role } = useAuth();
-  const { jobs, startJob, completeJob, loading, markJobCommentsAsRead } =
+  const { role, profile } = useAuth();
+  const { jobs, startJob, completeJob, loading, online, markJobCommentsAsRead } =
     useJobs();
 
   const job = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -195,6 +196,12 @@ export default function JobDetailScreen() {
   const canStart = job.status === "open";
   const canComplete = job.status === "in_progress";
   const isDone = job.status === "completed";
+
+  // Foto-Upload: Admin immer; Employee nur wenn diesem Job zugewiesen.
+  // isOnline wird separat übergeben — JobPhotos zeigt den Offline-Hinweis selbst.
+  const canUploadPhotos =
+    role === "admin" ||
+    (role === "employee" && job.employeeId === profile?.id);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -348,6 +355,13 @@ export default function JobDetailScreen() {
             <Text style={styles.notesText}>{job.notes}</Text>
           </Card>
         ) : null}
+
+        {/* ── Fotos (Upload + Anzeige, online-only) ── */}
+        <JobPhotos
+          jobId={job.id}
+          canUpload={canUploadPhotos}
+          isOnline={online}
+        />
 
         {/* ── Kommentare (append-only, online-only) ── */}
         <JobComments jobId={job.id} onInputFocus={handleCommentFocus} />
