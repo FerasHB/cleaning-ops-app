@@ -193,8 +193,14 @@ export default function JobDetailScreen() {
   const completedAtText = formatDateTime(job.completedAt);
   const employeeText = job.employeeName ?? "Nicht zugewiesen";
 
-  const canStart = job.status === "open";
-  const canComplete = job.status === "in_progress";
+  // Start/Abschluss laufen über die RPCs start_own_job/complete_own_job, die
+  // role='employee' UND assigned_to=auth.uid() verlangen. Daher nur dem
+  // zugewiesenen Mitarbeiter anbieten — sonst RPC-Fehler "Job not found or not
+  // allowed" (z. B. wenn ein Admin den Button drückt). Admins nutzen "Bearbeiten".
+  const isAssignedEmployee =
+    role === "employee" && job.employeeId === profile?.id;
+  const canStart = isAssignedEmployee && job.status === "open";
+  const canComplete = isAssignedEmployee && job.status === "in_progress";
   const isDone = job.status === "completed";
 
   // Foto-Upload: Admin immer; Employee nur wenn diesem Job zugewiesen.

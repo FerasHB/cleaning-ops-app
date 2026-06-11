@@ -211,8 +211,13 @@ export default function JobsListScreen() {
         renderItem={({ item }) => (
           <JobCard
             job={item}
-            onStart={() => startJob(item.id)}
-            onComplete={() => completeJob(item.id)}
+            // Start/Fertig sind Employee-Aktionen (RPCs start_own_job/
+            // complete_own_job verlangen role='employee' UND assigned_to=auth.uid()).
+            // Admins dürfen den Status NICHT über diese RPCs ändern → bei ihnen
+            // keine Quick-Action-Buttons zeigen, sonst RPC-Fehler "Job not found
+            // or not allowed". (JobCard blendet die Buttons ohne diese Props aus.)
+            onStart={isAdmin ? undefined : () => startJob(item.id)}
+            onComplete={isAdmin ? undefined : () => completeJob(item.id)}
             onPress={() => router.push(`/jobs/${item.id}`)}
             showEmployeeName={isAdmin}
           />
