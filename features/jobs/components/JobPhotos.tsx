@@ -14,7 +14,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -63,14 +65,55 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
     };
   }, []);
 
+  // Vollbild-Vorschau: signedUrl des angetippten Fotos (null = geschlossen)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
   // Upload-Button ist nur aktiv wenn: canUpload, online und kein Upload läuft
   const uploadEnabled = canUpload && isOnline && !uploading;
 
-  // ── Foto auswählen und hochladen ──
-  async function handlePickAndUpload() {
+  // ── Quelle wählen: Kamera oder Galerie ──
+  function handleAddPhoto() {
+    setUploadError(null);
+    Alert.alert(
+      "Foto hinzufügen",
+      "Wähle eine Quelle:",
+      [
+        { text: "Foto aufnehmen", onPress: pickFromCamera },
+        { text: "Aus Galerie wählen", onPress: pickFromLibrary },
+        { text: "Abbrechen", style: "cancel" },
+      ],
+      { cancelable: true },
+    );
+  }
+
+  // ── Kamera-Flow ──
+  async function pickFromCamera() {
     setUploadError(null);
 
-    // Berechtigung anfragen — Alert ist hier erlaubt (Systempermission)
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Kamera-Zugriff verweigert",
+        "Damit du ein Foto aufnehmen kannst, benötigt die App Zugriff auf die Kamera. Bitte erteile die Berechtigung in den Einstellungen.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: "images",
+      quality: 0.7,
+      allowsEditing: false,
+      exif: false,
+    });
+
+    await processPickerResult(result);
+  }
+
+  // ── Galerie-Flow ──
+  async function pickFromLibrary() {
+    setUploadError(null);
+
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(
@@ -86,10 +129,14 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
       quality: 0.7,
       allowsEditing: false,
       allowsMultipleSelection: false,
-      // exif nicht benötigt
       exif: false,
     });
 
+    await processPickerResult(result);
+  }
+
+  // ── Gemeinsame Verarbeitung: Validierung + Upload (Kamera und Galerie) ──
+  async function processPickerResult(result: ImagePicker.ImagePickerResult) {
     if (result.canceled || result.assets.length === 0) return;
 
     const asset = result.assets[0];
@@ -160,7 +207,7 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
             fullWidth={false}
             disabled={!uploadEnabled}
             loading={uploading}
-            onPress={handlePickAndUpload}
+            onPress={handleAddPhoto}
             style={styles.uploadButton}
           />
         )}
@@ -219,14 +266,19 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
           {photos.map((photo) => (
             <View key={photo.id} style={styles.thumbnailWrap}>
               {photo.signedUrl ? (
-                <Image
-                  source={{ uri: photo.signedUrl }}
-                  style={styles.thumbnail}
-                  contentFit="cover"
-                  transition={150}
-                  // Placeholder zeigen solange Bild lädt
-                  placeholder={{ thumbhash: undefined }}
-                />
+                // Antippen öffnet die Vollbild-Vorschau (gleiche Signed URL)
+                <Pressable
+                  onPress={() => setPreviewUrl(photo.signedUrl)}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel="Foto groß anzeigen"
+                >
+                  <Image
+                    source={{ uri: photo.signedUrl }}
+                    style={styles.thumbnail}
+                    contentFit="cover"
+                    transition={150}
+                  />
+                </Pressable>
               ) : (
                 // Signed URL fehlt (z. B. Storage-Fehler) → Platzhalter
                 <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
@@ -241,6 +293,36 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
           ))}
         </ScrollView>
       )}
+
+      {/* ── Vollbild-Vorschau (Modal) ── */}
+      <Modal
+        visible={previewUrl !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewUrl(null)}
+        statusBarTranslucent
+      >
+        <View style={styles.previewBackdrop}>
+          <Pressable
+            style={styles.previewCloseButton}
+            onPress={() => setPreviewUrl(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Vorschau schließen"
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </Pressable>
+
+          {previewUrl ? (
+            <Image
+              source={{ uri: previewUrl }}
+              style={styles.previewImage}
+              contentFit="contain"
+              transition={150}
+            />
+          ) : null}
+        </View>
+      </Modal>
     </Card>
   );
 }
@@ -353,6 +435,30 @@ function createStyles(theme: AppTheme) {
     },
     thumbnailPlaceholder: {
       backgroundColor: theme.colors.surfaceContainerHigh,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    // Vollbild-Vorschau (Modal) — bewusst feste dunkle Farben, unabhängig vom Theme
+    previewBackdrop: {
+      flex: 1,
+      backgroundColor: "rgba(0, 0, 0, 0.92)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    previewImage: {
+      width: "100%",
+      height: "100%",
+    },
+    previewCloseButton: {
+      position: "absolute",
+      top: Platform.OS === "ios" ? 56 : 24,
+      right: 20,
+      zIndex: 2,
+      width: 44,
+      height: 44,
+      borderRadius: theme.radius.full,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
       alignItems: "center",
       justifyContent: "center",
     },

@@ -43,7 +43,14 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Die App benötigt Zugriff auf deine Fotos, um Fotos zu einem Auftrag hinzuzufügen.",
+          "cameraPermission": "Die App benötigt Zugriff auf die Kamera, um Fotos zu einem Auftrag aufzunehmen."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
