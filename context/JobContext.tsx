@@ -22,6 +22,7 @@ import {
 import { getCachedJobs, saveCachedJobs } from "@/services/offline/jobs.storage";
 import { syncPendingJobActions } from "@/services/offline/jobs.sync";
 import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
+import { isNetworkError } from "@/utils/networkError";
 import NetInfo from "@react-native-community/netinfo";
 import React, {
   createContext,
@@ -77,21 +78,6 @@ const JobContext = createContext<JobContextType | undefined>(undefined);
 async function isOnline(): Promise<boolean> {
   const state = await NetInfo.fetch();
   return !!state.isConnected;
-}
-
-// Erkennt erwartete Offline-/Netzwerkfehler (z. B. wenn NetInfo noch "connected"
-// meldet, der fetch aber bereits scheitert). Diese sind kein harter App-Fehler,
-// sondern ein normaler Zustand → kein console.error / kein Redbox.
-function isNetworkError(err: unknown): boolean {
-  const message =
-    err instanceof Error
-      ? err.message
-      : typeof err === "string"
-        ? err
-        : typeof (err as { message?: unknown })?.message === "string"
-          ? ((err as { message: string }).message)
-          : "";
-  return /network request failed|failed to fetch|network error/i.test(message);
 }
 
 function updateJobInList(
@@ -195,7 +181,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         try {
           unreadJobIds = await getUnreadCommentJobIds();
         } catch (unreadErr) {
-          console.error("Failed to load unread comment job ids:", unreadErr);
+          // Netzwerkfehler hier erwartbar (Verbindung verloren) → kein Redbox.
+          if (!isNetworkError(unreadErr)) {
+            console.error("Failed to load unread comment job ids:", unreadErr);
+          }
         }
 
         setJobs(mergeUnreadFlags(mergedJobs, unreadJobIds));
@@ -582,7 +571,11 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       // Kein Revert: offline/Fehler → Punkt erscheint beim nächsten
       // refreshJobs ohnehin wieder. Keine Offline-Queue (bewusst).
-      console.error("Failed to mark job comments as read:", err);
+      // Netzwerkfehler offline leise ignorieren (kein Redbox); nur echte
+      // Fehler loggen.
+      if (!isNetworkError(err)) {
+        console.error("Failed to mark job comments as read:", err);
+      }
     }
   }, []);
 

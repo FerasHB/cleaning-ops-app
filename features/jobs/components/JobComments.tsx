@@ -6,6 +6,7 @@
 import { Button, Card, ErrorBanner, Input } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useJobComments } from "@/features/jobs/hooks/useJobComments";
+import { isNetworkError } from "@/utils/networkError";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
@@ -57,11 +58,19 @@ export function JobComments({ jobId, onInputFocus }: JobCommentsProps) {
       await submit(draft);
       setDraft("");
     } catch (err: unknown) {
-      setSubmitError(
-        err instanceof Error
-          ? err.message
-          : "Kommentar konnte nicht gesendet werden.",
-      );
+      // Offline ist erwartbar (Kommentare sind online-only) — ruhige Meldung
+      // statt der rohen "Network request failed"-Fehlermeldung.
+      if (isNetworkError(err)) {
+        setSubmitError(
+          "Kommentar kann offline nicht gesendet werden. Bitte mit Internet erneut versuchen.",
+        );
+      } else {
+        setSubmitError(
+          err instanceof Error
+            ? err.message
+            : "Kommentar konnte nicht gesendet werden.",
+        );
+      }
     } finally {
       setSubmitting(false);
     }

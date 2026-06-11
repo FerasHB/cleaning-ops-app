@@ -7,6 +7,7 @@ import {
   getJobComments,
 } from "@/services/comments/comments.service";
 import { JobComment } from "@/types/comment";
+import { isNetworkError } from "@/utils/networkError";
 import { useCallback, useEffect, useState } from "react";
 
 export function useJobComments(jobId: string) {
@@ -20,8 +21,14 @@ export function useJobComments(jobId: string) {
       const data = await getJobComments(jobId);
       setComments(data);
     } catch (err: any) {
-      console.error("Failed to load comments:", err);
-      setError(err?.message ?? "Kommentare konnten nicht geladen werden.");
+      // Offline-/Netzwerkfehler ist erwartbar (Kommentare sind online-only):
+      // kein console.error/Redbox, ruhige UI-Meldung statt hartem Fehler.
+      if (isNetworkError(err)) {
+        setError("Kommentare sind offline nicht verfügbar.");
+      } else {
+        console.error("Failed to load comments:", err);
+        setError(err?.message ?? "Kommentare konnten nicht geladen werden.");
+      }
     } finally {
       setLoading(false);
     }
