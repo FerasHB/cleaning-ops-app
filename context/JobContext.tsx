@@ -79,6 +79,21 @@ async function isOnline(): Promise<boolean> {
   return !!state.isConnected;
 }
 
+// Erkennt erwartete Offline-/Netzwerkfehler (z. B. wenn NetInfo noch "connected"
+// meldet, der fetch aber bereits scheitert). Diese sind kein harter App-Fehler,
+// sondern ein normaler Zustand → kein console.error / kein Redbox.
+function isNetworkError(err: unknown): boolean {
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : typeof (err as { message?: unknown })?.message === "string"
+          ? ((err as { message: string }).message)
+          : "";
+  return /network request failed|failed to fetch|network error/i.test(message);
+}
+
 function updateJobInList(
   jobs: Job[],
   jobId: string,
@@ -193,7 +208,15 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       setJobs(mergedJobs);
     } catch (err: any) {
-      console.error("Failed to load jobs:", err);
+      // Erwartete Offline-/Netzwerkfehler nicht als harten Fehler behandeln:
+      // kein console.error (sonst Redbox im Dev), kein setError. Cache laden.
+      const networkError = isNetworkError(err);
+
+      if (!networkError) {
+        console.error("Failed to load jobs:", err);
+      } else if (__DEV__) {
+        console.warn("Jobs offline geladen (kein Netz) — nutze Cache.");
+      }
 
       try {
         const cachedJobs = await getCachedJobs();
@@ -208,7 +231,11 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         console.error("Failed to load cached jobs:", cacheErr);
       }
 
-      setError(err?.message ?? "Jobs konnten nicht geladen werden.");
+      // Bei Netzwerkfehler keinen Fehler-State setzen — Offline ist erwartbar
+      // und der Cache wurde bereits geladen. Nur echte Fehler sichtbar machen.
+      if (!networkError) {
+        setError(err?.message ?? "Jobs konnten nicht geladen werden.");
+      }
     } finally {
       refreshJobsInProgressRef.current = false;
       await refreshPendingState();
@@ -231,6 +258,14 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const data = await getEmployeesService();
       setEmployees(data);
     } catch (err: any) {
+      // Netzwerkfehler (Verbindung mitten im Request verloren) ist erwartbar —
+      // kein Redbox, kein Fehler-State. Nur echte Fehler sichtbar machen.
+      if (isNetworkError(err)) {
+        if (__DEV__) {
+          console.warn("Mitarbeiter offline nicht geladen (kein Netz).");
+        }
+        return;
+      }
       console.error("Failed to load employees:", err);
       setError(err?.message ?? "Mitarbeiter konnten nicht geladen werden.");
     }
