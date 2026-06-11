@@ -9,33 +9,55 @@ import {
   uploadJobPhoto,
 } from "@/services/photos/photos.service";
 import type { JobPhoto, UploadPhotoInput } from "@/types/photo";
+import { isNetworkError } from "@/utils/networkError";
 import { useCallback, useEffect, useState } from "react";
 
 type UploadArgs = Omit<UploadPhotoInput, "jobId" | "companyId">;
 
-export function useJobPhotos(jobId: string) {
+export function useJobPhotos(jobId: string, isOnline: boolean) {
   const { profile } = useAuth();
 
   const [photos, setPhotos] = useState<JobPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True, wenn Fotos wegen fehlender Verbindung nicht geladen werden konnten.
+  // Wird ruhig behandelt (kein roter Fehler) — Fotos sind online-only.
+  const [offline, setOffline] = useState(false);
 
   const load = useCallback(async () => {
+    // Offline gar keinen Online-Request stellen (Fotos sind online-only).
+    // Verhindert den fehlschlagenden fetch und damit das Dev-Error-Overlay.
+    // Vorhandene Fotos bleiben erhalten.
+    if (!isOnline) {
+      setError(null);
+      setOffline(true);
+      setLoading(false);
+      return;
+    }
+
     try {
       setError(null);
+      setOffline(false);
       const data = await getJobPhotos(jobId);
       setPhotos(data);
     } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Fotos konnten nicht geladen werden.";
-      setError(message);
+      // Verbindung mitten im Request verloren → ruhig behandeln, kein roter
+      // Fehler, vorhandene Fotos behalten.
+      if (isNetworkError(err)) {
+        setOffline(true);
+        setError(null);
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Fotos konnten nicht geladen werden.",
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [jobId]);
+  }, [jobId, isOnline]);
 
   useEffect(() => {
     setLoading(true);
@@ -76,5 +98,5 @@ export function useJobPhotos(jobId: string) {
     [jobId, profile?.company_id],
   );
 
-  return { photos, loading, uploading, error, upload, reload: load };
+  return { photos, loading, uploading, error, offline, upload, reload: load };
 }

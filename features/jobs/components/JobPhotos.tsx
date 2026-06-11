@@ -52,7 +52,10 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const { photos, loading, uploading, error, upload } = useJobPhotos(jobId);
+  const { photos, loading, uploading, error, offline, upload } = useJobPhotos(
+    jobId,
+    isOnline,
+  );
 
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [successVisible, setSuccessVisible] = useState(false);
@@ -255,7 +258,12 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
           <ActivityIndicator size="small" color={theme.colors.primary} />
         </View>
       ) : photos.length === 0 ? (
-        <Text style={styles.emptyText}>Noch keine Fotos vorhanden.</Text>
+        // Offline ohne geladene Fotos: ruhige Meldung statt rotem Fehler.
+        <Text style={styles.emptyText}>
+          {offline
+            ? "Fotos sind offline nicht verfügbar."
+            : "Noch keine Fotos vorhanden."}
+        </Text>
       ) : (
         <ScrollView
           horizontal
