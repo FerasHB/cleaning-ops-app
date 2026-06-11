@@ -6,7 +6,6 @@
 
 import { supabase } from "@/lib/supabase";
 import type { JobPhoto, UploadPhotoInput } from "@/types/photo";
-import { readAsStringAsync } from "expo-file-system/legacy";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Konstanten
@@ -61,19 +60,14 @@ function validateUploadInput(mimeType: string, fileSize: number): AllowedMimeTyp
   return mimeType as AllowedMimeType;
 }
 
-// Liest eine lokale Datei als Base64 und gibt einen ArrayBuffer zurück.
-// React Native (Hermes, RN 0.70+) stellt atob() global bereit — kein
-// externes base64-arraybuffer-Paket nötig.
+// Liest eine lokale Datei als ArrayBuffer.
+// React Native unterstützt fetch() für lokale file://-URIs (iOS + Android).
+// response.arrayBuffer() ist in Hermes (RN 0.64+) verfügbar und deutlich
+// performanter als eine charCodeAt-Schleife über Base64 — kein einfrieren
+// des JS-Threads bei großen Fotos.
 async function readFileAsArrayBuffer(uri: string): Promise<ArrayBuffer> {
-  const base64 = await readAsStringAsync(uri, { encoding: "base64" });
-
-  // base64 → binary string → ArrayBuffer über globales atob() (Hermes)
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes.buffer;
+  const response = await fetch(uri);
+  return response.arrayBuffer();
 }
 
 // Baut den Storage-Pfad: {company_id}/{job_id}/{timestamp}_{random}.{ext}
