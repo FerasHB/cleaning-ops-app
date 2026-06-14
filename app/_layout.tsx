@@ -5,6 +5,7 @@
 import { AuthProvider } from "@/context/AuthContext";
 import { JobProvider } from "@/context/JobContext";
 import { setupNotifications } from "@/services/notificationService";
+import { installNetworkErrorGuard } from "@/utils/networkError";
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -18,6 +19,11 @@ import { useEffect, useRef } from "react";
 
 // Splash Screen bleibt sichtbar, bis Fonts fertig geladen sind
 SplashScreen.preventAutoHideAsync();
+
+// Globaler Guard: erwartete Netzwerkfehler (offline) erzeugen kein Dev-Redbox/
+// -Toast. Nur Entwicklung, echte Fehler bleiben sichtbar. Modul-Scope, damit der
+// Guard aktiv ist, bevor Provider-Effekte erste Requests starten.
+installNetworkErrorGuard();
 
 function RootNavigator() {
   return (

@@ -5,6 +5,7 @@ import {
   type AppRole,
   type AuthProfile,
 } from "@/services/profileService";
+import { isNetworkError } from "@/utils/networkError";
 import { Session, User } from "@supabase/supabase-js";
 import React, {
   createContext,
@@ -39,17 +40,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isBootstrappingRef = useRef(true);
 
   const refreshProfile = useCallback(async () => {
-    const {
-      data: { user: currentUser },
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { user: currentUser },
+      } = await supabase.auth.getUser();
 
-    if (!currentUser) {
-      setProfile(null);
-      return;
+      if (!currentUser) {
+        setProfile(null);
+        return;
+      }
+
+      const nextProfile = await getProfileByUserId(currentUser.id);
+      setProfile(nextProfile);
+    } catch (err) {
+      // Offline ist erwartbar — kein roher Throw/Redbox. Profil bleibt wie es ist.
+      if (!isNetworkError(err)) {
+        throw err;
+      }
     }
-
-    const nextProfile = await getProfileByUserId(currentUser.id);
-    setProfile(nextProfile);
   }, []);
 
   const syncPushToken = useCallback(async (userId: string) => {
@@ -66,7 +74,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq("id", userId);
 
       if (error) {
-        console.error("Failed to save expo push token:", error);
+        // Offline ist erwartbar — Push-Token wird beim nächsten Login/Online
+        // ohnehin erneut gespeichert. Kein Redbox für Netzwerkfehler.
+        if (!isNetworkError(error)) {
+          console.error("Failed to save expo push token:", error);
+        }
         return;
       }
 
@@ -74,7 +86,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("Expo push token saved successfully.");
       }
     } catch (error) {
-      console.error("Failed to register for push notifications:", error);
+      if (!isNetworkError(error)) {
+        console.error("Failed to register for push notifications:", error);
+      }
     }
   }, []);
 
@@ -122,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const { data, error } = await supabase.auth.getSession();
 
-        if (error) {
+        if (error && !isNetworkError(error)) {
           console.error("Failed to get session:", error);
         }
 
