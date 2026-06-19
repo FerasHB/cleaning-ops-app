@@ -3,6 +3,7 @@
 // Employee: eigene Jobs + Suche + Status-Filter.
 // Admin: alle Firmen-Jobs + Suche + Status-Filter + Mitarbeiter-Filter + Plus-Button.
 // Business-Logik (JobContext) unverändert — nur Lesezugriff + bestehende Quick-Actions.
+// Pull-to-Refresh: zieht Jobs + Mitarbeiter neu vom Server (refreshJobs + refreshEmployees).
 
 import { EmptyState, LoadingScreen, OfflineBanner } from "@/components/ui";
 import JobCard from "@/components/JobCard";
@@ -11,9 +12,10 @@ import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -39,13 +41,24 @@ export default function JobsListScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { role } = useAuth();
-  const { jobs, employees, startJob, completeJob, loading } = useJobs();
+  const { jobs, employees, startJob, completeJob, loading, refreshJobs, refreshEmployees } = useJobs();
 
   const [filter, setFilter] = useState<Filter>("all");
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [employeeId, setEmployeeId] = useState<string | "all">("all");
 
   const isAdmin = role === "admin";
+
+  // ── Pull-to-Refresh: Jobs + Mitarbeiter neu laden
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refreshJobs(), refreshEmployees()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshJobs, refreshEmployees]);
 
   const filteredJobs = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -95,6 +108,14 @@ export default function JobsListScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
         ListHeaderComponent={
           <View style={styles.header}>
             <OfflineBanner />
