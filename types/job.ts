@@ -41,6 +41,10 @@ export type Job = {
   parentJobId?: string | null;
   // Kurzform: true wenn parentJobId gesetzt (= konkrete Occurrence eines Recurring Jobs).
   isOccurrence?: boolean;
+
+  // Gültigkeitszeitraum der Recurring-Regel (nur auf Parent-Zeilen, "YYYY-MM-DD").
+  recurrenceStartDate?: string | null;
+  recurrenceEndDate?:   string | null;
 };
 
 export type CreateJobInput = {
@@ -60,6 +64,9 @@ export type CreateJobInput = {
   recurringDays?: string[] | null;
   // recurring: Aktiv-Schalter (Default true)
   isActive?: boolean;
+  // recurring: Gültigkeitszeitraum der Regel ("YYYY-MM-DD")
+  recurrenceStartDate?: string | null;
+  recurrenceEndDate?:   string | null;
   // Für single zusätzlich aus date + startTime abgeleiteter ISO-Zeitstempel
   // (hält die bestehenden Detail-/Monats-Anzeigen lauffähig).
   scheduledStart?: string | null;

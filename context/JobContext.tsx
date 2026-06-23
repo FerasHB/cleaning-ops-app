@@ -56,6 +56,8 @@ type JobContextType = {
     startTime?: string | null;
     recurringDays?: string[] | null;
     isActive?: boolean;
+    recurrenceStartDate?: string | null;
+    recurrenceEndDate?: string | null;
   }) => Promise<void>;
   deleteJob: (jobId: string) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;

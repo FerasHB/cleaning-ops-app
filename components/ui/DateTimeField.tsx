@@ -5,7 +5,7 @@
 
 import { Input } from "@/components/ui/index";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { formatForDisplay, formatTimeHHmm } from "@/utils/date";
+import { formatDateISO, formatForDisplay, formatTimeHHmm } from "@/utils/date";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
@@ -22,8 +22,9 @@ export interface DateTimeFieldProps {
   /**
    * "datetime" (Default): Datum → Uhrzeit in zwei Schritten (einmalige Aufträge).
    * "time": nur Uhrzeit (wiederkehrende Aufträge — Wochentage kommen separat).
+   * "date": nur Datum, keine Uhrzeit (Start-/Enddatum für Recurring-Regeln).
    */
-  mode?: "datetime" | "time";
+  mode?: "datetime" | "time" | "date";
 }
 
 export function DateTimeField({
@@ -38,6 +39,7 @@ export function DateTimeField({
   const modalStyles = useMemo(() => createModalStyles(theme), [theme]);
 
   const isTimeOnly = mode === "time";
+  const isDateOnly = mode === "date";
 
   const [showPickerModal, setShowPickerModal] = useState(false);
   const [pickerStep, setPickerStep] = useState<"date" | "time">("date");
@@ -51,8 +53,16 @@ export function DateTimeField({
 
   const displayValue = value
     ? isTimeOnly
-      ? formatTimeHHmm(value) ?? ""
-      : formatForDisplay(value)
+      ? (formatTimeHHmm(value) ?? "")
+      : isDateOnly
+        // "YYYY-MM-DD" → "dd.mm.yyyy" ohne Zeitzonen-Verschiebung
+        ? (() => {
+            const iso = formatDateISO(value);
+            if (!iso) return "";
+            const [y, m, d] = iso.split("-");
+            return `${d}.${m}.${y}`;
+          })()
+        : formatForDisplay(value)
     : "";
 
   const handleTempDateChange = (
@@ -116,7 +126,11 @@ export function DateTimeField({
         <View style={modalStyles.overlay}>
           <View style={modalStyles.container}>
             <Text style={modalStyles.title}>
-              {pickerStep === "date" ? "Datum wählen" : "Uhrzeit wählen"}
+              {isTimeOnly
+                ? "Uhrzeit wählen"
+                : pickerStep === "date"
+                  ? "Datum wählen"
+                  : "Uhrzeit wählen"}
             </Text>
 
             <View style={modalStyles.pickerWrapper}>
@@ -133,48 +147,42 @@ export function DateTimeField({
             </View>
 
             <View style={modalStyles.footer}>
+              {/* mode="time": nur Uhrzeit, direkt bestätigen */}
               {isTimeOnly ? (
                 <>
-                  <TouchableOpacity
-                    onPress={handlePickerCancel}
-                    style={modalStyles.btnCancel}
-                  >
+                  <TouchableOpacity onPress={handlePickerCancel} style={modalStyles.btnCancel}>
                     <Text style={modalStyles.btnCancelText}>Abbrechen</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handlePickerConfirm}
-                    style={modalStyles.btnPrimary}
-                  >
+                  <TouchableOpacity onPress={handlePickerConfirm} style={modalStyles.btnPrimary}>
                     <Text style={modalStyles.btnPrimaryText}>Bestätigen</Text>
                   </TouchableOpacity>
                 </>
-              ) : pickerStep === "date" ? (
+              ) : /* mode="date": nur Datum, direkt bestätigen (kein Uhrzeit-Schritt) */
+              isDateOnly ? (
                 <>
-                  <TouchableOpacity
-                    onPress={handlePickerCancel}
-                    style={modalStyles.btnCancel}
-                  >
+                  <TouchableOpacity onPress={handlePickerCancel} style={modalStyles.btnCancel}>
                     <Text style={modalStyles.btnCancelText}>Abbrechen</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handlePickerNext}
-                    style={modalStyles.btnPrimary}
-                  >
+                  <TouchableOpacity onPress={handlePickerConfirm} style={modalStyles.btnPrimary}>
+                    <Text style={modalStyles.btnPrimaryText}>Bestätigen</Text>
+                  </TouchableOpacity>
+                </>
+              ) : /* mode="datetime": Datum → Uhrzeit in zwei Schritten */
+              pickerStep === "date" ? (
+                <>
+                  <TouchableOpacity onPress={handlePickerCancel} style={modalStyles.btnCancel}>
+                    <Text style={modalStyles.btnCancelText}>Abbrechen</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handlePickerNext} style={modalStyles.btnPrimary}>
                     <Text style={modalStyles.btnPrimaryText}>Weiter</Text>
                   </TouchableOpacity>
                 </>
               ) : (
                 <>
-                  <TouchableOpacity
-                    onPress={handlePickerBack}
-                    style={modalStyles.btnCancel}
-                  >
+                  <TouchableOpacity onPress={handlePickerBack} style={modalStyles.btnCancel}>
                     <Text style={modalStyles.btnCancelText}>Zurück</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handlePickerConfirm}
-                    style={modalStyles.btnPrimary}
-                  >
+                  <TouchableOpacity onPress={handlePickerConfirm} style={modalStyles.btnPrimary}>
                     <Text style={modalStyles.btnPrimaryText}>Bestätigen</Text>
                   </TouchableOpacity>
                 </>

@@ -21,6 +21,8 @@ type JobRow = {
   recurring_days: string[] | null;
   is_active: boolean | null;
   parent_job_id: string | null;
+  recurrence_start_date: string | null;
+  recurrence_end_date: string | null;
   profiles?:
   | {
     id: string;
@@ -57,6 +59,8 @@ type UpdateJobInput = {
   startTime?: string | null;
   recurringDays?: string[] | null;
   isActive?: boolean;
+  recurrenceStartDate?: string | null;
+  recurrenceEndDate?: string | null;
 };
 
 // Validiert & normalisiert die Terminierungs-Felder serverseitig
@@ -67,12 +71,16 @@ function buildSchedulePayload(input: {
   startTime?: string | null;
   recurringDays?: string[] | null;
   isActive?: boolean;
+  recurrenceStartDate?: string | null;
+  recurrenceEndDate?: string | null;
 }): {
   job_type: JobType;
   date: string | null;
   start_time: string | null;
   recurring_days: string[] | null;
   is_active: boolean;
+  recurrence_start_date: string | null;
+  recurrence_end_date: string | null;
 } {
   const startTime = input.startTime?.trim() || null;
 
@@ -85,13 +93,17 @@ function buildSchedulePayload(input: {
     if (days.length === 0) {
       throw new Error("Bitte mindestens einen Wochentag auswählen.");
     }
+    if (!input.recurrenceStartDate) {
+      throw new Error("Startdatum fehlt.");
+    }
     return {
       job_type: "recurring",
       date: null,
       start_time: startTime,
       recurring_days: days,
-      // recurring darf inaktiv sein; Default true
       is_active: input.isActive ?? true,
+      recurrence_start_date: input.recurrenceStartDate,
+      recurrence_end_date: input.recurrenceEndDate ?? null,
     };
   }
 
@@ -104,8 +116,9 @@ function buildSchedulePayload(input: {
     date: input.date,
     start_time: startTime,
     recurring_days: null,
-    // einmalige Aufträge sind immer aktiv
     is_active: true,
+    recurrence_start_date: null,
+    recurrence_end_date: null,
   };
 }
 
@@ -169,6 +182,8 @@ function mapJob(row: JobRow): Job {
     // Recurring-Job-Materialisierung: gesetzt wenn Occurrence eines Parents.
     parentJobId: row.parent_job_id ?? null,
     isOccurrence: row.parent_job_id != null,
+    recurrenceStartDate: row.recurrence_start_date ?? null,
+    recurrenceEndDate: row.recurrence_end_date ?? null,
   };
 }
 
@@ -194,6 +209,8 @@ export async function getJobs(): Promise<Job[]> {
       recurring_days,
       is_active,
       parent_job_id,
+      recurrence_start_date,
+      recurrence_end_date,
       assigned_to,
       profiles:assigned_to (
         id,
@@ -362,6 +379,8 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
       recurring_days,
       is_active,
       parent_job_id,
+      recurrence_start_date,
+      recurrence_end_date,
       assigned_to,
       profiles:assigned_to (
         id,
@@ -398,7 +417,7 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
   if (schedule.job_type === "recurring") {
     const { data: rpcResult, error: occurrenceError } = await supabase.rpc(
       "generate_job_occurrences",
-      { parent_job_id_input: data.id, weeks_ahead: 8 }
+      { parent_job_id_input: data.id }
     );
     if (occurrenceError) {
       // Immer loggen (nicht nur in Dev), damit der Fehler im Expo-Log sichtbar ist.
@@ -537,6 +556,8 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
       recurring_days,
       is_active,
       parent_job_id,
+      recurrence_start_date,
+      recurrence_end_date,
       assigned_to,
       profiles:assigned_to (
         id,
@@ -556,10 +577,10 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
   if (input.jobType === "recurring" && !data.parent_job_id) {
     const { error: occurrenceError } = await supabase.rpc(
       "update_job_occurrences",
-      { parent_job_id_input: input.jobId, weeks_ahead: 8 }
+      { parent_job_id_input: input.jobId }
     );
-    if (occurrenceError && __DEV__) {
-      console.warn("update_job_occurrences fehlgeschlagen:", occurrenceError);
+    if (occurrenceError) {
+      console.error("[updateJob] update_job_occurrences fehlgeschlagen:", occurrenceError.message, occurrenceError);
     }
   }
 
@@ -653,6 +674,8 @@ export async function getJobOccurrences(parentJobId: string): Promise<Job[]> {
       recurring_days,
       is_active,
       parent_job_id,
+      recurrence_start_date,
+      recurrence_end_date,
       assigned_to,
       profiles:assigned_to (
         id,
