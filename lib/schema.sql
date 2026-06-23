@@ -85,6 +85,11 @@ create table if not exists public.jobs (
   start_time time,
   recurring_days text[],
   is_active boolean not null default true,
+  -- ── Recurring-Job-Materialisierung ──
+  -- Gesetzt wenn dieser Job eine generierte Occurrence eines Recurring-Parents ist.
+  -- NULL bei normalen Single-Jobs und bei Recurring-Parent-Regeln selbst.
+  -- ON DELETE CASCADE: Parent löschen → alle Occurrences verschwinden automatisch.
+  parent_job_id uuid references public.jobs(id) on delete cascade,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -97,6 +102,7 @@ alter table public.jobs add column if not exists date date;
 alter table public.jobs add column if not exists start_time time;
 alter table public.jobs add column if not exists recurring_days text[];
 alter table public.jobs add column if not exists is_active boolean not null default true;
+alter table public.jobs add column if not exists parent_job_id uuid references public.jobs(id) on delete cascade;
 
 -- Job-Kommentare (append-only): Mitarbeiter schreiben kurze Nachrichten zu
 -- ihren Jobs, Admins lesen (und schreiben optional) firmenweit.
@@ -138,6 +144,12 @@ create index if not exists idx_jobs_status on public.jobs(status);
 create index if not exists idx_jobs_created_at on public.jobs(created_at);
 create index if not exists idx_jobs_job_type on public.jobs(job_type);
 create index if not exists idx_jobs_is_active on public.jobs(is_active);
+create index if not exists idx_jobs_parent_job_id on public.jobs(parent_job_id);
+
+-- Verhindert Duplikate: Pro Parent + Datum + Uhrzeit nur eine Occurrence.
+create unique index if not exists idx_jobs_occurrence_unique
+  on public.jobs(parent_job_id, date, start_time)
+  where parent_job_id is not null;
 
 create index if not exists idx_job_comments_job_id on public.job_comments(job_id);
 
@@ -308,7 +320,8 @@ begin
   where id = job_id_input
     and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
-    and public.current_user_role() = 'employee';
+    and public.current_user_role() = 'employee'
+    and job_type = 'single';   -- Parent-Recurring-Regeln dürfen nicht gestartet werden
 
   if not found then
     raise exception 'Job not found or not allowed';
@@ -345,7 +358,8 @@ begin
   where id = job_id_input
     and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
-    and public.current_user_role() = 'employee';
+    and public.current_user_role() = 'employee'
+    and job_type = 'single';   -- Parent-Recurring-Regeln dürfen nicht abgeschlossen werden
 
   if not found then
     raise exception 'Job not found or not allowed';
@@ -529,12 +543,17 @@ using (
   and company_id = public.current_user_company_id()
 );
 
+-- Employees sehen nur job_type = 'single' (konkrete Termine).
+-- Das schließt Parent-Recurring-Regeln (job_type = 'recurring') aus.
+-- Gilt für normale Single-Jobs (parent_job_id IS NULL) und
+-- generierte Occurrences (parent_job_id IS NOT NULL) gleichermaßen.
 create policy "employee read own assigned jobs"
 on public.jobs
 for select
 to authenticated
 using (
   public.current_user_role() = 'employee'
+  and job_type = 'single'
   and assigned_to = auth.uid()
   and company_id = public.current_user_company_id()
 );
@@ -709,6 +728,144 @@ with check (
 
 -- WICHTIG:
 -- absichtlich KEINE delete policy auf job_comment_reads.
+
+-- =========================================================
+-- RPC: GENERATE JOB OCCURRENCES
+-- =========================================================
+-- Erzeugt konkrete Single-Job-Einträge für einen Recurring-Parent
+-- für die nächsten N Wochen. Idempotent via Unique Index.
+
+create or replace function public.generate_job_occurrences(
+  parent_job_id_input uuid,
+  weeks_ahead         int default 8
+)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  parent         public.jobs%rowtype;
+  check_date     date := current_date;
+  end_date_      date := current_date + (weeks_ahead * 7);
+  day_code       text;
+  inserted_count int  := 0;
+  rows_affected  int;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if public.current_user_role() != 'admin' then
+    raise exception 'Only admins can generate occurrences';
+  end if;
+
+  select * into parent
+  from public.jobs
+  where id          = parent_job_id_input
+    and company_id  = public.current_user_company_id()
+    and job_type    = 'recurring'
+    and parent_job_id is null;
+
+  if not found then
+    raise exception 'Recurring parent job not found or not accessible';
+  end if;
+
+  while check_date <= end_date_ loop
+    day_code := lower(to_char(check_date, 'Dy'));
+
+    if parent.recurring_days @> array[day_code] then
+      insert into public.jobs (
+        company_id, parent_job_id, customer_name, service_name,
+        location_address, notes, status, assigned_to,
+        job_type, date, start_time, scheduled_start, is_active, created_by
+      )
+      values (
+        parent.company_id, parent.id, parent.customer_name, parent.service_name,
+        parent.location_address, parent.notes, 'open', parent.assigned_to,
+        'single', check_date, parent.start_time,
+        case
+          when parent.start_time is not null
+          then (check_date::text || ' ' || parent.start_time::text)::timestamptz
+          else null
+        end,
+        parent.is_active, parent.created_by
+      )
+      on conflict (parent_job_id, date, start_time) do nothing;
+
+      get diagnostics rows_affected = row_count;
+      inserted_count := inserted_count + rows_affected;
+    end if;
+
+    check_date := check_date + 1;
+  end loop;
+
+  return inserted_count;
+end;
+$$;
+
+grant execute on function public.generate_job_occurrences(uuid, int) to authenticated;
+
+comment on function public.generate_job_occurrences(uuid, int) is
+'Erzeugt konkrete Single-Job-Einträge für einen Recurring-Parent. Idempotent.';
+
+
+-- =========================================================
+-- RPC: UPDATE JOB OCCURRENCES
+-- =========================================================
+-- Nach Admin-Edit einer Recurring-Regel:
+-- Löscht nur zukünftige offene Occurrences, regeneriert neu.
+-- Abgeschlossene / laufende Occurrences bleiben erhalten.
+
+create or replace function public.update_job_occurrences(
+  parent_job_id_input uuid,
+  weeks_ahead         int default 8
+)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  parent    public.jobs%rowtype;
+  new_count int;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if public.current_user_role() != 'admin' then
+    raise exception 'Only admins can update occurrences';
+  end if;
+
+  select * into parent
+  from public.jobs
+  where id         = parent_job_id_input
+    and company_id = public.current_user_company_id()
+    and job_type   = 'recurring'
+    and parent_job_id is null;
+
+  if not found then
+    raise exception 'Recurring parent job not found';
+  end if;
+
+  delete from public.jobs
+  where parent_job_id = parent_job_id_input
+    and status        = 'open'
+    and date          >= current_date;
+
+  select public.generate_job_occurrences(parent_job_id_input, weeks_ahead)
+  into new_count;
+
+  return new_count;
+end;
+$$;
+
+grant execute on function public.update_job_occurrences(uuid, int) to authenticated;
+
+comment on function public.update_job_occurrences(uuid, int) is
+'Löscht zukünftige offene Occurrences und regeneriert auf Basis der aktuellen Regel.';
+
 
 -- =========================================================
 -- OPTIONAL HARDENING
