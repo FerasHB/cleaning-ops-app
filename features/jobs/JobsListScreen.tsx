@@ -86,6 +86,10 @@ export default function JobsListScreen() {
     const query = search.trim().toLowerCase();
 
     const filtered = jobs.filter((job) => {
+      // Defensiv: Employees sollen keine Parent-Recurring-Regeln sehen.
+      // RLS filtert sie serverseitig aus, aber als Schutz im Client-State:
+      if (!isAdmin && job.jobType !== "single") return false;
+
       // Status-Filter
       if (filter !== "all" && job.status !== filter) return false;
 

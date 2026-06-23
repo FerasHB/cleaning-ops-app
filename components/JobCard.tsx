@@ -76,6 +76,12 @@ function formatDateOnly(value?: string | null): string | null {
   return `${d}.${m}.${y}`;
 }
 
+// Ist dieser Job eine Parent-Recurring-Regel (keine konkrete Ausführung)?
+// Parent = job_type 'recurring' ohne parentJobId — nur Vorlage, kein startbarer Termin.
+function isParentRecurringJob(job: Job): boolean {
+  return job.jobType === "recurring" && !job.parentJobId;
+}
+
 // ── Status-Farben aus Theme (jeder Status hat sein Farbtripel)
 function getStatusConfig(theme: AppTheme, status: Job["status"]) {
   switch (status) {
@@ -115,6 +121,9 @@ export default function JobCard({
   const styles = useMemo(() => createStyles(theme), [theme]);
   const status = getStatusConfig(theme, job.status);
 
+  // Parent-Recurring-Regeln dürfen weder gestartet noch abgeschlossen werden.
+  const isParentRule = isParentRecurringJob(job);
+
   // Anzeige-Uhrzeit (zentral): start_time mit Fallback auf scheduledStart.
   const startTime = getJobDisplayTime(job);
 
@@ -148,9 +157,10 @@ export default function JobCard({
   // Service · Ort (kompakte Einzeiler-Subline)
   const subline = [job.service, job.location].filter(Boolean).join(" · ");
 
-  // Quick-Action — exakt EINE, abhängig von Status (oder gar keine)
-  const showStartAction = job.status === "open" && !!onStart;
-  const showCompleteAction = job.status === "in_progress" && !!onComplete;
+  // Quick-Action — exakt EINE, abhängig von Status (oder gar keine).
+  // Bei Parent-Recurring-Regeln grundsätzlich keine Quick-Actions.
+  const showStartAction = !isParentRule && job.status === "open" && !!onStart;
+  const showCompleteAction = !isParentRule && job.status === "in_progress" && !!onComplete;
   const employeeText = showEmployeeName ? job.employeeName : null;
 
   // Footer wird nur gerendert, wenn Mitarbeiter ODER Action vorhanden
@@ -194,19 +204,33 @@ export default function JobCard({
               accessibilityLabel="Ungelesene Kommentare"
             />
           ) : null}
-          <View
-            style={[
-              styles.statusBadge,
-              {
-                backgroundColor: status.bgColor,
-                borderColor: status.borderColor,
-              },
-            ]}
-          >
-            <Text style={[styles.statusText, { color: status.textColor }]}>
-              {status.label}
-            </Text>
-          </View>
+          {isParentRule ? (
+            // Parent-Recurring-Regeln bekommen ein neutrales "Regel"-Badge
+            // statt des Status-Badges, damit Admins auf einen Blick erkennen:
+            // das ist eine Vorlage, kein konkreter Termin.
+            <View style={styles.ruleBadge}>
+              <Ionicons
+                name="repeat-outline"
+                size={11}
+                color={theme.colors.primary}
+              />
+              <Text style={styles.ruleBadgeText}>Regel</Text>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor: status.bgColor,
+                  borderColor: status.borderColor,
+                },
+              ]}
+            >
+              <Text style={[styles.statusText, { color: status.textColor }]}>
+                {status.label}
+              </Text>
+            </View>
+          )}
           {onPress ? (
             <Ionicons
               name="chevron-forward"
@@ -357,6 +381,26 @@ function createStyles(theme: AppTheme) {
       fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
+      letterSpacing: theme.typography.letterSpacing.wide,
+    },
+
+    // "Regel"-Badge für Parent-Recurring-Jobs (neutrales Farb-Schema)
+    ruleBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 9,
+      paddingVertical: 3,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.primaryContainer,
+    },
+    ruleBadgeText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.primary,
       letterSpacing: theme.typography.letterSpacing.wide,
     },
 

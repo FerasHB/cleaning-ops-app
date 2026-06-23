@@ -19,7 +19,9 @@ import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { JobPhotos } from "@/features/jobs/components/JobPhotos";
+import { getJobOccurrences } from "@/services/jobs/jobs.service";
 import { formatRecurringDays } from "@/utils/recurrence";
+import type { Job } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -92,6 +94,10 @@ export default function JobDetailScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
 
+  // Occurrences für Parent-Recurring-Regeln (nur Admin-Ansicht)
+  const [occurrences, setOccurrences] = useState<Job[]>([]);
+  const [occurrencesLoading, setOccurrencesLoading] = useState(false);
+
   const isAdmin = role === "admin";
 
   // Beim Öffnen die Kommentare dieses Jobs als gesehen markieren
@@ -101,6 +107,17 @@ export default function JobDetailScreen() {
       markJobCommentsAsRead(id);
     }
   }, [id, markJobCommentsAsRead]);
+
+  // Occurrences für Parent-Recurring-Regeln laden (nur Admin, online-only).
+  // job ist hier noch ggf. undefined — Prüfung erfolgt im Effect selbst.
+  useEffect(() => {
+    if (!job || !isAdmin || job.jobType !== "recurring" || job.parentJobId) return;
+    setOccurrencesLoading(true);
+    getJobOccurrences(job.id)
+      .then(setOccurrences)
+      .catch(() => setOccurrences([]))
+      .finally(() => setOccurrencesLoading(false));
+  }, [job?.id, isAdmin, job?.jobType, job?.parentJobId]);
 
   // ── Loading-Zustand (JobContext lädt noch)
   if (loading) {
@@ -184,6 +201,8 @@ export default function JobDetailScreen() {
 
   // ── Formatierte Werte
   const isRecurring = job.jobType === "recurring";
+  // Parent-Regel: job_type=recurring ohne parentJobId — nur Vorlage, kein startbarer Termin.
+  const isParentRule = isRecurring && !job.parentJobId;
   const jobTypeText = isRecurring ? "Wiederkehrend" : "Einmalig";
   const recurringDaysText = formatRecurringDays(job.recurringDays);
   const timeText = job.startTime ? `${job.startTime} Uhr` : "—";
@@ -199,8 +218,10 @@ export default function JobDetailScreen() {
   // allowed" (z. B. wenn ein Admin den Button drückt). Admins nutzen "Bearbeiten".
   const isAssignedEmployee =
     role === "employee" && job.employeeId === profile?.id;
-  const canStart = isAssignedEmployee && job.status === "open";
-  const canComplete = isAssignedEmployee && job.status === "in_progress";
+  // Parent-Recurring-Regeln dürfen niemals gestartet/abgeschlossen werden —
+  // nur konkrete Occurrences (job_type='single') sind ausführbare Termine.
+  const canStart = !isParentRule && isAssignedEmployee && job.status === "open";
+  const canComplete = !isParentRule && isAssignedEmployee && job.status === "in_progress";
   const isDone = job.status === "completed";
 
   // Foto-Upload: Admin immer; Employee nur wenn diesem Job zugewiesen.
@@ -362,6 +383,56 @@ export default function JobDetailScreen() {
           </Card>
         ) : null}
 
+        {/* ── Regel-Hinweis + Termine (nur für Admin bei Parent-Recurring-Jobs) ── */}
+        {isParentRule && isAdmin ? (
+          <>
+            {/* Hinweis-Banner: das ist eine Vorlage */}
+            <View style={styles.ruleInfoBanner}>
+              <Ionicons
+                name="repeat-outline"
+                size={18}
+                color={theme.colors.primary}
+              />
+              <View style={styles.ruleInfoText}>
+                <Text style={styles.ruleInfoTitle}>Wiederkehrende Regel</Text>
+                <Text style={styles.ruleInfoBody}>
+                  Dies ist eine Vorlage. Die generierten Einzeltermine werden
+                  unten angezeigt und können von Mitarbeitern gestartet werden.
+                </Text>
+              </View>
+            </View>
+
+            {/* Generierte Termine (Occurrences) */}
+            <Card padding={theme.spacing.lg} style={styles.card}>
+              <View style={styles.occurrencesHeader}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={theme.colors.primary}
+                />
+                <Text style={styles.occurrencesTitle}>GENERIERTE TERMINE</Text>
+              </View>
+
+              {occurrencesLoading ? (
+                <Text style={styles.occurrencesEmpty}>Wird geladen …</Text>
+              ) : occurrences.length === 0 ? (
+                <Text style={styles.occurrencesEmpty}>
+                  Keine Termine generiert.
+                </Text>
+              ) : (
+                occurrences.map((occ, index) => (
+                  <OccurrenceRow
+                    key={occ.id}
+                    occurrence={occ}
+                    isLast={index === occurrences.length - 1}
+                    theme={theme}
+                  />
+                ))
+              )}
+            </Card>
+          </>
+        ) : null}
+
         {/* ── Fotos (Upload + Anzeige, online-only) ── */}
         <JobPhotos
           jobId={job.id}
@@ -422,6 +493,61 @@ export default function JobDetailScreen() {
       </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Zeile in der Occurrence-Liste (Admin-Ansicht)
+// ─────────────────────────────────────────────
+function formatOccurrenceDate(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.slice(0, 10).split("-");
+  if (!y || !m || !d) return dateStr;
+  const weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+  const day = weekdays[new Date(`${y}-${m}-${d}`).getDay()] ?? "";
+  return `${day} ${d}.${m}.${y}`;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  open: "Offen",
+  in_progress: "In Arbeit",
+  completed: "Erledigt",
+};
+
+function OccurrenceRow({
+  occurrence,
+  isLast,
+  theme,
+}: {
+  occurrence: Job;
+  isLast: boolean;
+  theme: AppTheme;
+}) {
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  return (
+    <>
+      <View style={styles.occurrenceRow}>
+        <View style={styles.occurrenceLeft}>
+          <Text style={styles.occurrenceDate}>
+            {formatOccurrenceDate(occurrence.date)}
+          </Text>
+          {occurrence.startTime ? (
+            <Text style={styles.occurrenceTime}>{occurrence.startTime} Uhr</Text>
+          ) : null}
+        </View>
+        <View style={styles.occurrenceRight}>
+          <Text style={styles.occurrenceStatus}>
+            {STATUS_LABELS[occurrence.status] ?? occurrence.status}
+          </Text>
+          {occurrence.employeeName ? (
+            <Text style={styles.occurrenceEmployee} numberOfLines={1}>
+              {occurrence.employeeName}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+      {!isLast ? <View style={styles.rowDivider} /> : null}
+    </>
   );
 }
 
@@ -546,6 +672,91 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.medium,
       fontWeight: theme.typography.weight.medium,
       color: theme.colors.statusCompleted,
+    },
+
+    // Regel-Hinweis-Banner (Parent-Recurring)
+    ruleInfoBanner: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.primaryContainer,
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+      borderRadius: theme.radius.md,
+      padding: theme.spacing.md,
+    },
+    ruleInfoText: {
+      flex: 1,
+      gap: 4,
+    },
+    ruleInfoTitle: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.primary,
+    },
+    ruleInfoBody: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurface,
+      lineHeight: theme.typography.lineHeight.sm,
+    },
+
+    // Occurrences-Liste
+    occurrencesHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      marginBottom: theme.spacing.sm,
+    },
+    occurrencesTitle: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.outline,
+      letterSpacing: theme.typography.letterSpacing.wider,
+    },
+    occurrencesEmpty: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+    occurrenceRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: theme.spacing.sm,
+      gap: theme.spacing.sm,
+    },
+    occurrenceLeft: {
+      gap: 2,
+    },
+    occurrenceDate: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurface,
+    },
+    occurrenceTime: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+    occurrenceRight: {
+      alignItems: "flex-end",
+      gap: 2,
+    },
+    occurrenceStatus: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurfaceVariant,
+    },
+    occurrenceEmployee: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+      maxWidth: 120,
     },
   });
 }

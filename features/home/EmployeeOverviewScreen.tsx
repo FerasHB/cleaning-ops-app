@@ -99,8 +99,13 @@ export default function EmployeeOverviewScreen() {
 
   // ── Heutige Jobs: single mit heutigem Datum + recurring mit heutigem
   // Wochentag, jeweils nur aktive. Siehe isJobToday().
+  // Defensiv: Parent-Recurring-Regeln (job_type='recurring', kein parentJobId)
+  // filtern wir heraus — Employees sollten sie via RLS nie sehen, aber sicher ist sicher.
   const todayJobs = useMemo(
-    () => jobs.filter((j) => isJobToday(j, now)),
+    () =>
+      jobs
+        .filter((j) => j.jobType === "single")
+        .filter((j) => isJobToday(j, now)),
     [jobs, now],
   );
 
