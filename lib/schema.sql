@@ -90,6 +90,11 @@ create table if not exists public.jobs (
   -- NULL bei normalen Single-Jobs und bei Recurring-Parent-Regeln selbst.
   -- ON DELETE CASCADE: Parent löschen → alle Occurrences verschwinden automatisch.
   parent_job_id uuid references public.jobs(id) on delete cascade,
+  -- Gültigkeitszeitraum der Recurring-Regel (nur auf Parent-Zeilen gesetzt).
+  -- recurrence_start_date: frühestmöglicher Termin (Pflicht bei recurring).
+  -- recurrence_end_date:   letzter Termin, optional (NULL = läuft weiter).
+  recurrence_start_date date,
+  recurrence_end_date   date,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -103,6 +108,18 @@ alter table public.jobs add column if not exists start_time time;
 alter table public.jobs add column if not exists recurring_days text[];
 alter table public.jobs add column if not exists is_active boolean not null default true;
 alter table public.jobs add column if not exists parent_job_id uuid references public.jobs(id) on delete cascade;
+alter table public.jobs add column if not exists recurrence_start_date date;
+alter table public.jobs add column if not exists recurrence_end_date   date;
+
+-- Constraint: Enddatum darf nicht vor Startdatum liegen (NULL-Werte ausgenommen).
+alter table public.jobs
+  drop constraint if exists chk_recurrence_dates;
+alter table public.jobs
+  add constraint chk_recurrence_dates check (
+    recurrence_end_date   is null
+    or recurrence_start_date is null
+    or recurrence_end_date >= recurrence_start_date
+  );
 
 -- Job-Kommentare (append-only): Mitarbeiter schreiben kurze Nachrichten zu
 -- ihren Jobs, Admins lesen (und schreiben optional) firmenweit.
@@ -732,12 +749,12 @@ with check (
 -- =========================================================
 -- RPC: GENERATE JOB OCCURRENCES
 -- =========================================================
--- Erzeugt konkrete Single-Job-Einträge für einen Recurring-Parent
--- für die nächsten N Wochen. Idempotent via Unique Index.
+-- Erzeugt konkrete Single-Job-Einträge für einen Recurring-Parent.
+-- Zeitraum aus recurrence_start_date / recurrence_end_date des Parents.
+-- Hartes Maximum: 730 Tage. Idempotent via Unique Index.
 
 create or replace function public.generate_job_occurrences(
-  parent_job_id_input uuid,
-  weeks_ahead         int default 8
+  parent_job_id_input uuid
 )
 returns int
 language plpgsql
@@ -745,12 +762,14 @@ security definer
 set search_path = public
 as $$
 declare
-  parent         public.jobs%rowtype;
-  check_date     date := current_date;
-  end_date_      date := current_date + (weeks_ahead * 7);
-  day_code       text;
-  inserted_count int  := 0;
-  rows_affected  int;
+  parent           public.jobs%rowtype;
+  generation_start date;
+  generation_end   date;
+  hard_limit       date;
+  check_date       date;
+  day_code         text;
+  inserted_count   int := 0;
+  rows_affected    int;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -771,7 +790,29 @@ begin
     raise exception 'Recurring parent job not found or not accessible';
   end if;
 
-  while check_date <= end_date_ loop
+  -- Startpunkt: frühestens heute, damit keine Alttermine entstehen
+  generation_start := greatest(
+    coalesce(parent.recurrence_start_date, current_date),
+    current_date
+  );
+
+  -- Hartes Maximum: 730 Tage ab Startpunkt
+  hard_limit := generation_start + interval '730 days';
+
+  -- Endpunkt: Enddatum des Parents (begrenzt durch hard_limit)
+  -- Kein Enddatum → 3 Monate voraus
+  generation_end := least(
+    case
+      when parent.recurrence_end_date is not null
+        then parent.recurrence_end_date
+      else generation_start + interval '3 months'
+    end,
+    hard_limit
+  );
+
+  check_date := generation_start;
+  while check_date <= generation_end loop
+
     -- extract(isodow) ist locale-unabhängig: 1=Mo, 2=Di, ..., 7=So
     day_code := case extract(isodow from check_date)::int
       when 1 then 'mon'
@@ -815,22 +856,21 @@ begin
 end;
 $$;
 
-grant execute on function public.generate_job_occurrences(uuid, int) to authenticated;
+grant execute on function public.generate_job_occurrences(uuid) to authenticated;
 
-comment on function public.generate_job_occurrences(uuid, int) is
-'Erzeugt konkrete Single-Job-Einträge für einen Recurring-Parent. Idempotent.';
+comment on function public.generate_job_occurrences(uuid) is
+'Erzeugt konkrete Single-Jobs aus Recurring-Regel. Zeitraum aus recurrence_start/end_date. '
+'Hartes Maximum: 730 Tage. Idempotent.';
 
 
 -- =========================================================
 -- RPC: UPDATE JOB OCCURRENCES
 -- =========================================================
--- Nach Admin-Edit einer Recurring-Regel:
--- Löscht nur zukünftige offene Occurrences, regeneriert neu.
+-- Löscht zukünftige offene Occurrences, regeneriert auf Basis der aktuellen Regel.
 -- Abgeschlossene / laufende Occurrences bleiben erhalten.
 
 create or replace function public.update_job_occurrences(
-  parent_job_id_input uuid,
-  weeks_ahead         int default 8
+  parent_job_id_input uuid
 )
 returns int
 language plpgsql
@@ -865,16 +905,16 @@ begin
     and status        = 'open'
     and date          >= current_date;
 
-  select public.generate_job_occurrences(parent_job_id_input, weeks_ahead)
+  select public.generate_job_occurrences(parent_job_id_input)
   into new_count;
 
   return new_count;
 end;
 $$;
 
-grant execute on function public.update_job_occurrences(uuid, int) to authenticated;
+grant execute on function public.update_job_occurrences(uuid) to authenticated;
 
-comment on function public.update_job_occurrences(uuid, int) is
+comment on function public.update_job_occurrences(uuid) is
 'Löscht zukünftige offene Occurrences und regeneriert auf Basis der aktuellen Regel.';
 
 
