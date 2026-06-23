@@ -800,7 +800,9 @@ begin
         end,
         parent.is_active, parent.created_by
       )
-      on conflict (parent_job_id, date, start_time) do nothing;
+      on conflict (parent_job_id, date, start_time)
+        where parent_job_id is not null
+      do nothing;
 
       get diagnostics rows_affected = row_count;
       inserted_count := inserted_count + rows_affected;

@@ -172,7 +172,9 @@ begin
         parent.is_active,
         parent.created_by
       )
-      on conflict (parent_job_id, date, start_time) do nothing;
+      on conflict (parent_job_id, date, start_time)
+        where parent_job_id is not null
+      do nothing;
 
       -- Zeilen, die wirklich eingefügt wurden (nicht durch CONFLICT übersprungen)
       get diagnostics rows_affected = row_count;
