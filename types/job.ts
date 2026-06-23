@@ -34,6 +34,13 @@ export type Job = {
   // True, wenn dieser Job für den aktuellen User ungelesene Kommentare hat
   // (roter Punkt). Wird im JobContext nach getJobs gemerged, nicht in mapJob.
   hasUnreadComments?: boolean;
+
+  // ── Recurring-Job-Materialisierung ──
+  // Gesetzt wenn dieser Job eine generierte Occurrence eines Recurring-Parents ist.
+  // NULL bei normalen Single-Jobs und bei Recurring-Parent-Regeln selbst.
+  parentJobId?: string | null;
+  // Kurzform: true wenn parentJobId gesetzt (= konkrete Occurrence eines Recurring Jobs).
+  isOccurrence?: boolean;
 };
 
 export type CreateJobInput = {
