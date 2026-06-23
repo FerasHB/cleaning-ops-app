@@ -380,15 +380,35 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
     throw error;
   }
 
+  // Sicherheitscheck: data muss nach erfolgreichem Insert vorhanden sein.
+  if (!data) {
+    throw new Error("Job wurde angelegt, aber kein Datensatz zurückgegeben.");
+  }
+
   // Bei Recurring Jobs: konkrete Einzel-Termine für die nächsten 8 Wochen erzeugen.
   // Fehler hier brechen den Job-Create nicht ab — der Parent existiert bereits.
+  if (__DEV__) {
+    console.log(
+      "[createJob] job_type:", schedule.job_type,
+      "| parent id:", data.id,
+      "| generate occurrences:", schedule.job_type === "recurring"
+    );
+  }
+
   if (schedule.job_type === "recurring") {
-    const { error: occurrenceError } = await supabase.rpc(
+    const { data: rpcResult, error: occurrenceError } = await supabase.rpc(
       "generate_job_occurrences",
       { parent_job_id_input: data.id, weeks_ahead: 8 }
     );
-    if (occurrenceError && __DEV__) {
-      console.warn("generate_job_occurrences fehlgeschlagen:", occurrenceError);
+    if (occurrenceError) {
+      // Immer loggen (nicht nur in Dev), damit der Fehler im Expo-Log sichtbar ist.
+      console.error(
+        "[createJob] generate_job_occurrences fehlgeschlagen:",
+        occurrenceError.message,
+        occurrenceError
+      );
+    } else if (__DEV__) {
+      console.log("[createJob] Occurrences generiert:", rpcResult);
     }
   }
 
