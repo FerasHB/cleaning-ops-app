@@ -772,7 +772,16 @@ begin
   end if;
 
   while check_date <= end_date_ loop
-    day_code := lower(to_char(check_date, 'Dy'));
+    -- extract(isodow) ist locale-unabhängig: 1=Mo, 2=Di, ..., 7=So
+    day_code := case extract(isodow from check_date)::int
+      when 1 then 'mon'
+      when 2 then 'tue'
+      when 3 then 'wed'
+      when 4 then 'thu'
+      when 5 then 'fri'
+      when 6 then 'sat'
+      when 7 then 'sun'
+    end;
 
     if parent.recurring_days @> array[day_code] then
       insert into public.jobs (
