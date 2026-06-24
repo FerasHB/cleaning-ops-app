@@ -225,6 +225,13 @@ export default function ProfileScreen({
               theme={theme}
             />
             <SettingsRow
+              icon="document-text-outline"
+              label="Stundenzettel"
+              onPress={() => router.push("/timesheets")}
+              styles={styles}
+              theme={theme}
+            />
+            <SettingsRow
               icon="options-outline"
               label="App-Einstellungen"
               comingSoon

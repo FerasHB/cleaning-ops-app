@@ -74,3 +74,31 @@ export function isSameLocalDate(
   if (!dateString) return false;
   return formatDateISO(ref) === dateString.slice(0, 10);
 }
+
+// ─────────────────────────────────────────────
+// Dauer-Helfer (Stundenzettel/Arbeitszeit)
+// ─────────────────────────────────────────────
+
+/**
+ * Differenz zweier ISO-Zeitstempel in Minuten (kaufmännisch gerundet).
+ * Negative oder ungültige Werte ergeben 0 (defensiv gegen Datenanomalien).
+ */
+export function diffInMinutes(
+  startIso: string | null | undefined,
+  endIso: string | null | undefined,
+): number {
+  if (!startIso || !endIso) return 0;
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  if (isNaN(start) || isNaN(end)) return 0;
+  const minutes = Math.round((end - start) / 60000);
+  return minutes > 0 ? minutes : 0;
+}
+
+/** Formatiert Minuten als "H:mm" (z.B. 150 → "2:30"). */
+export function formatDurationHm(totalMinutes: number): string {
+  const safe = totalMinutes > 0 ? totalMinutes : 0;
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
+}
