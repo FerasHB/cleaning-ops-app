@@ -71,6 +71,7 @@ function RootNavigator() {
           <Stack.Screen name="jobs/[id]/index" />
           <Stack.Screen name="jobs/[id]/edit" />
           <Stack.Screen name="employees/[id]/index" />
+          <Stack.Screen name="timesheets/index" />
           <Stack.Screen name="change-password" />
         </Stack.Protected>
       </Stack>

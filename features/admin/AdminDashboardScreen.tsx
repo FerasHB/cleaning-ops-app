@@ -317,6 +317,32 @@ export default function AdminDashboardScreen() {
         )}
       </View>
 
+      {/* ── Stundenzettel ── */}
+      <TouchableOpacity
+        style={styles.timesheetCard}
+        activeOpacity={0.8}
+        onPress={() => router.push("/timesheets")}
+      >
+        <View style={styles.timesheetIcon}>
+          <Ionicons
+            name="document-text-outline"
+            size={20}
+            color={theme.colors.primary}
+          />
+        </View>
+        <View style={styles.timesheetInfo}>
+          <Text style={styles.timesheetTitle}>Stundenzettel</Text>
+          <Text style={styles.timesheetSub} numberOfLines={1}>
+            Arbeitszeitnachweis als PDF erstellen
+          </Text>
+        </View>
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={theme.colors.outline}
+        />
+      </TouchableOpacity>
+
       <View style={{ height: theme.spacing.xxl }} />
 
       {/* ── Quick Action: Job erstellen ── */}
@@ -452,6 +478,42 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onSurface,
     },
     activitySub: {
+      marginTop: 2,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+
+    // ── Stundenzettel-Karte
+    timesheetCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.md,
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      padding: theme.spacing.md,
+      ...theme.shadows.sm,
+    },
+    timesheetIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    timesheetInfo: {
+      flex: 1,
+    },
+    timesheetTitle: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
+    },
+    timesheetSub: {
       marginTop: 2,
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.regular,
