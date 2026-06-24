@@ -2,9 +2,9 @@
 // Admin-Dashboard (Tab "Dashboard") im SaaS-/Field-Service-Stil.
 // Vollständig theme-aware (Light + Dark Mode), nur Lesezugriff auf JobContext/AuthContext.
 //
-// Hinweise zu Platzhaltern:
-// - Firmenname: profile liefert nur company_id (keinen Namen) → fixer Platzhalter "FieldService Pro".
-// - Sync/Online-Status: statischer Anzeige-Platzhalter ("Synchronisiert"), keine echte NetInfo-Abfrage.
+// Hinweise:
+// - Firmenname: profile liefert nur company_id (keinen Namen) → neutraler Titel "Dashboard"
+//   (bewusst kein company.name-Fetch im MVP).
 // - "Heute fällig": isJobToday() aus utils/jobSchedule (single per date/scheduledStart,
 //   recurring per Wochentag, nur aktive) — gleiche Logik wie EmployeeOverviewScreen.
 
@@ -30,7 +30,7 @@ import { router } from "expo-router";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-const COMPANY_NAME = "FieldService Pro";
+const COMPANY_NAME = "Dashboard";
 
 // ── Tageszeit-abhängige Begrüßung
 function getGreeting(date: Date): string {
