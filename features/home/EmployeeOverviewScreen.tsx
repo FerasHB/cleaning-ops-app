@@ -15,6 +15,7 @@ import {
   KPICard,
   LoadingScreen,
   OfflineBanner,
+  SaveStatusBadge,
   ScreenContainer,
   SectionHeader,
 } from "@/components/ui";
@@ -168,9 +169,13 @@ export default function EmployeeOverviewScreen() {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.greeting}>
-          {getGreeting(now)}, {firstName}
-        </Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.greeting} numberOfLines={1}>
+            {getGreeting(now)}, {firstName}
+          </Text>
+          {/* Dezenter Online-Status oben rechts */}
+          <SaveStatusBadge />
+        </View>
         <Text style={styles.dateText}>{dateLabel}</Text>
 
         <View style={styles.weatherRow}>
@@ -193,6 +198,7 @@ export default function EmployeeOverviewScreen() {
               value={todayTotal}
               icon="briefcase-outline"
               accentColor={theme.colors.primary}
+              onPress={() => router.push("/(employee-tabs)/jobs")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -201,6 +207,7 @@ export default function EmployeeOverviewScreen() {
               value={todayOpen}
               icon="folder-open-outline"
               accentColor={theme.colors.statusOpen}
+              onPress={() => router.push("/(employee-tabs)/jobs")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -209,6 +216,7 @@ export default function EmployeeOverviewScreen() {
               value={todayInProgress}
               icon="time-outline"
               accentColor={theme.colors.statusInProgress}
+              onPress={() => router.push("/(employee-tabs)/jobs")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -217,6 +225,7 @@ export default function EmployeeOverviewScreen() {
               value={todayCompleted}
               icon="checkmark-done-outline"
               accentColor={theme.colors.statusCompleted}
+              onPress={() => router.push("/(employee-tabs)/jobs")}
             />
           </View>
         </View>
@@ -360,6 +369,7 @@ export default function EmployeeOverviewScreen() {
               value={monthCompleted}
               icon="checkmark-done-outline"
               accentColor={theme.colors.statusCompleted}
+              onPress={() => router.push("/(employee-tabs)/jobs")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -368,6 +378,7 @@ export default function EmployeeOverviewScreen() {
               value={monthInProgress}
               icon="time-outline"
               accentColor={theme.colors.statusInProgress}
+              onPress={() => router.push("/(employee-tabs)/jobs")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -376,6 +387,7 @@ export default function EmployeeOverviewScreen() {
               value={monthOpen}
               icon="folder-open-outline"
               accentColor={theme.colors.statusOpen}
+              onPress={() => router.push("/(employee-tabs)/jobs")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -384,6 +396,7 @@ export default function EmployeeOverviewScreen() {
               value={monthTotal}
               icon="albums-outline"
               accentColor={theme.colors.primary}
+              onPress={() => router.push("/(employee-tabs)/jobs")}
             />
           </View>
         </View>
@@ -401,7 +414,14 @@ function createStyles(theme: AppTheme) {
       paddingTop: theme.spacing.md,
       marginBottom: theme.spacing.xl,
     },
+    headerTopRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: theme.spacing.sm,
+    },
     greeting: {
+      flex: 1,
       fontSize: theme.typography.size.xxl,
       fontFamily: theme.typography.family.bold,
       fontWeight: theme.typography.weight.bold,

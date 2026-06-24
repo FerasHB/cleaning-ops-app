@@ -2,7 +2,7 @@
 // Root Layout — lädt Inter-Font und stellt Auth + Job Context bereit.
 // Der Splash Screen bleibt sichtbar, bis die Fonts geladen sind.
 
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { JobProvider } from "@/context/JobContext";
 import { setupNotifications } from "@/services/notificationService";
 import { installNetworkErrorGuard } from "@/utils/networkError";
@@ -26,6 +26,20 @@ SplashScreen.preventAutoHideAsync();
 installNetworkErrorGuard();
 
 function RootNavigator() {
+  const { session, profile } = useAuth();
+
+  // ── Auth-Gates für den Back-Stack ──────────────────────────────────────
+  // Entscheidet, welche Routen-Gruppen überhaupt im Navigations-State liegen.
+  // Stack.Protected entfernt nicht-zugängliche Routen vollständig aus dem
+  // Stack → eingeloggte User können nicht per Swipe/Back auf Welcome/Login
+  // zurück, und Auth-Screens bleiben nicht hinter den Tabs liegen.
+  const hasSession = !!session;
+  const hasCompany = !!profile?.company_id;
+  // Eingeloggt, Profil geladen, aber noch kein Unternehmen → Setup.
+  const needsSetup = hasSession && !!profile && !hasCompany;
+  // Voll eingeloggt (Session + Unternehmen) → App/Tabs.
+  const isAuthed = hasSession && hasCompany;
+
   return (
     <JobProvider>
       <Stack
@@ -33,20 +47,32 @@ function RootNavigator() {
           headerShown: false,
         }}
       >
+        {/* Routing-Gate: immer verfügbar, leitet je nach Auth-Zustand weiter. */}
         <Stack.Screen name="index" />
-        <Stack.Screen name="welcome" />
-        <Stack.Screen name="login" />
-        <Stack.Screen name="register" />
-        <Stack.Screen name="forgot-password" />
-        <Stack.Screen name="setup-company" />
-        <Stack.Screen
-          name="(employee-tabs)"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="(admin-tabs)"
-          options={{ headerShown: false }}
-        />
+
+        {/* Auth-Screens: nur ohne Session erreichbar. */}
+        <Stack.Protected guard={!hasSession}>
+          <Stack.Screen name="welcome" />
+          <Stack.Screen name="login" />
+          <Stack.Screen name="register" />
+          <Stack.Screen name="forgot-password" />
+        </Stack.Protected>
+
+        {/* Setup: eingeloggt, aber noch kein Unternehmen. */}
+        <Stack.Protected guard={needsSetup}>
+          <Stack.Screen name="setup-company" />
+        </Stack.Protected>
+
+        {/* App: eingeloggt mit Unternehmen → Tabs + Detail-/Form-Routen. */}
+        <Stack.Protected guard={isAuthed}>
+          <Stack.Screen name="(admin-tabs)" />
+          <Stack.Screen name="(employee-tabs)" />
+          <Stack.Screen name="jobs/create" />
+          <Stack.Screen name="jobs/[id]/index" />
+          <Stack.Screen name="jobs/[id]/edit" />
+          <Stack.Screen name="employees/[id]/index" />
+          <Stack.Screen name="change-password" />
+        </Stack.Protected>
       </Stack>
     </JobProvider>
   );

@@ -30,7 +30,7 @@ export { ScreenContainer } from "./ScreenContainer";
 export { AppHeader } from "./AppHeader";
 export { StatusBadge } from "./StatusBadge";
 export { SkeletonCard } from "./SkeletonCard";
-export { OfflineBanner } from "./OfflineBanner";
+export { OfflineBanner, SaveStatusBadge } from "./OfflineBanner";
 export { ErrorBanner } from "./ErrorBanner";
 export { InitialsAvatar } from "./InitialsAvatar";
 export { InfoRow } from "./InfoRow";

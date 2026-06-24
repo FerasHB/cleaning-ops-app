@@ -24,6 +24,28 @@ import {
 
 type SaveState = "offline" | "saving" | "error" | "pending" | "saved";
 
+// Leitet den Speicher-/Verbindungszustand aus den Offline-/Queue-Werten ab.
+// Zentral, damit Banner (volle Anzeige) und Badge (kompakt) dieselbe Logik teilen.
+function deriveSaveState(args: {
+  online: boolean;
+  isSyncing: boolean;
+  syncFailed: boolean;
+  pendingCount: number;
+}): SaveState {
+  const { online, isSyncing, syncFailed, pendingCount } = args;
+  if (!online) return "offline";
+  if (isSyncing) return "saving";
+  if (syncFailed) return "error";
+  if (pendingCount > 0) return "pending";
+  return "saved";
+}
+
+// Hook-Variante für Komponenten, die nur den Zustand brauchen (z. B. Badge).
+export function useSaveState(): SaveState {
+  const { online, isSyncing, syncFailed, pendingCount } = useJobs();
+  return deriveSaveState({ online, isSyncing, syncFailed, pendingCount });
+}
+
 function pendingLabel(count: number): string {
   return count === 1 ? "1 Änderung wartet" : `${count} Änderungen warten`;
 }
@@ -55,15 +77,13 @@ export function OfflineBanner() {
 
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const state: SaveState = !online
-    ? "offline"
-    : isSyncing
-      ? "saving"
-      : syncFailed
-        ? "error"
-        : pendingCount > 0
-          ? "pending"
-          : "saved";
+  const state = deriveSaveState({ online, isSyncing, syncFailed, pendingCount });
+
+  // Online & alles gespeichert → kein volles Banner. Dieser Zustand wird
+  // dezent über <SaveStatusBadge/> oben rechts im Header angezeigt.
+  // Das volle Banner bleibt den wichtigen Zuständen vorbehalten
+  // (offline / saving / error / pending).
+  if (state === "saved") return null;
 
   // Farb-/Icon-/Text-Konfiguration je Zustand (alles über Theme-Tokens)
   const config = {
@@ -219,6 +239,55 @@ export function OfflineBanner() {
       </Modal>
     </>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Kompakter Status-Badge für den Header (oben rechts).
+// Zeigt im Online-/Alles-gespeichert-Zustand dezent "Online".
+// Wichtige Zustände (offline/pending/saving/error) übernimmt das volle
+// <OfflineBanner/> — der Badge rendert dann nichts.
+// ─────────────────────────────────────────────────────────────────
+export function SaveStatusBadge() {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createBadgeStyles(theme), [theme]);
+  const state = useSaveState();
+
+  if (state !== "saved") return null;
+
+  return (
+    <View style={styles.badge}>
+      <View style={styles.dot} />
+      <Text style={styles.label}>Online</Text>
+    </View>
+  );
+}
+
+function createBadgeStyles(theme: ReturnType<typeof useAppTheme>) {
+  return StyleSheet.create({
+    badge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.statusCompletedBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusCompletedBorder,
+    },
+    dot: {
+      width: 6,
+      height: 6,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.statusCompleted,
+    },
+    label: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.statusCompleted,
+    },
+  });
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
