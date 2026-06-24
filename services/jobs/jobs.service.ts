@@ -257,12 +257,16 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
     return [];
   }
 
+  // Alle Mitarbeiter der Firma laden — inkl. inaktiver, damit die Admin-Liste
+  // und der Detail-Screen deaktivierte Mitarbeiter weiterhin anzeigen können.
+  // Das Filtern auf "nur aktive" passiert gezielt am Zuweisungs-Picker, nicht
+  // hier in der Datenquelle.
   const { data, error } = await supabase
     .from("profiles")
     .select("id, full_name, role, is_active")
     .eq("company_id", profile.company_id)
     .eq("role", "employee")
-    .eq("is_active", true)
+    .order("is_active", { ascending: false }) // aktive zuerst
     .order("full_name", { ascending: true });
 
   if (error) {
@@ -277,6 +281,25 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
     role: item.role ?? "employee",
     isActive: item.is_active ?? null,
   }));
+}
+
+// Setzt den Aktiv-Status eines Mitarbeiters (Deaktivieren/Reaktivieren).
+// Läuft unter der RLS-Policy "admin update profiles in own company" — daher
+// keine RPC nötig. Der Guard .eq("role", "employee") verhindert versehentliche
+// Updates an Admin-Profilen; die Firmen-Zugehörigkeit erzwingt die RLS.
+export async function setEmployeeActive(
+  employeeId: string,
+  active: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ is_active: active })
+    .eq("id", employeeId)
+    .eq("role", "employee");
+
+  if (error) {
+    throw error;
+  }
 }
 
 // Erstellt einen neuen Job

@@ -108,12 +108,14 @@ export default function AdminDashboardScreen() {
   // ── Mitarbeiter-Aktivität: aktiver (in_progress) Job pro Mitarbeiter
   const employeeActivity = useMemo(
     () =>
-      employees.map((emp) => {
-        const activeJob = jobs.find(
-          (j) => j.employeeId === emp.id && j.status === "in_progress",
-        );
-        return { id: emp.id, name: emp.fullName, activeJob };
-      }),
+      employees
+        .filter((emp) => emp.isActive !== false)
+        .map((emp) => {
+          const activeJob = jobs.find(
+            (j) => j.employeeId === emp.id && j.status === "in_progress",
+          );
+          return { id: emp.id, name: emp.fullName, activeJob };
+        }),
     [employees, jobs],
   );
 

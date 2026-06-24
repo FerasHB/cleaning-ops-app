@@ -40,7 +40,7 @@ export function EmployeeSelector({
           <EmployeeOptionRow
             key={emp.id}
             label={emp.fullName}
-            sublabel="Mitarbeiter"
+            sublabel={emp.isActive === false ? "Inaktiv" : "Mitarbeiter"}
             isSelected={selectedEmployeeId === emp.id}
             onPress={() => onSelect(emp.id)}
           />

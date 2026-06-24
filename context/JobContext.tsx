@@ -5,6 +5,7 @@ import {
   createJob as createJobService,
   deleteJob as deleteJobService,
   getEmployees as getEmployeesService,
+  setEmployeeActive as setEmployeeActiveService,
   getJobs,
   startJob as startJobService,
   updateJob as updateJobService,
@@ -41,6 +42,8 @@ type JobContextType = {
   error: string | null;
   refreshJobs: () => Promise<void>;
   refreshEmployees: () => Promise<void>;
+  // Setzt den Aktiv-Status eines Mitarbeiters und lädt die Liste neu.
+  setEmployeeActive: (employeeId: string, active: boolean) => Promise<void>;
   createJob: (input: CreateJobInput) => Promise<void>;
   updateJob: (input: {
     jobId: string;
@@ -261,6 +264,16 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setError(err?.message ?? "Mitarbeiter konnten nicht geladen werden.");
     }
   }, []);
+
+  // Mitarbeiter deaktivieren/reaktivieren. Schreibt direkt auf profiles.is_active
+  // (unter Admin-RLS) und lädt danach die Liste neu, damit Badge/Picker stimmen.
+  const setEmployeeActive = useCallback(
+    async (employeeId: string, active: boolean) => {
+      await setEmployeeActiveService(employeeId, active);
+      await refreshEmployees();
+    },
+    [refreshEmployees],
+  );
 
   useEffect(() => {
     if (!session) {
@@ -589,6 +602,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       error,
       refreshJobs,
       refreshEmployees,
+      setEmployeeActive,
       createJob,
       updateJob,
       deleteJob,
@@ -609,6 +623,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       error,
       refreshJobs,
       refreshEmployees,
+      setEmployeeActive,
       createJob,
       updateJob,
       deleteJob,

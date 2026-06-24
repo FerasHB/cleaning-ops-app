@@ -102,6 +102,12 @@ export default function AdminScreen() {
   const { signOut, role, loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
 
+  // Beim Job-Erstellen nur aktive Mitarbeiter zur Auswahl anbieten.
+  const activeEmployees = useMemo(
+    () => employees.filter((e) => e.isActive !== false),
+    [employees],
+  );
+
   const { values, errors, setField, validate, reset } = useJobForm();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -265,7 +271,7 @@ export default function AdminScreen() {
               values={values}
               errors={errors}
               onChangeField={setField}
-              employees={employees}
+              employees={activeEmployees}
             />
           </SectionBlock>
 
