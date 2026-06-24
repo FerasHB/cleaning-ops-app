@@ -175,6 +175,8 @@ export default function AdminScreen() {
               startTime: formatTimeHHmm(values.startTime),
               recurringDays: values.recurringDays,
               isActive: values.isActive,
+              recurrenceStartDate: formatDateISO(values.recurrenceStartDate),
+              recurrenceEndDate: formatDateISO(values.recurrenceEndDate),
               // recurring hat keinen einzelnen Termin
               scheduledStart: null,
             };

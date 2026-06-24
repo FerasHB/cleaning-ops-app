@@ -34,6 +34,17 @@ export type Job = {
   // True, wenn dieser Job für den aktuellen User ungelesene Kommentare hat
   // (roter Punkt). Wird im JobContext nach getJobs gemerged, nicht in mapJob.
   hasUnreadComments?: boolean;
+
+  // ── Recurring-Job-Materialisierung ──
+  // Gesetzt wenn dieser Job eine generierte Occurrence eines Recurring-Parents ist.
+  // NULL bei normalen Single-Jobs und bei Recurring-Parent-Regeln selbst.
+  parentJobId?: string | null;
+  // Kurzform: true wenn parentJobId gesetzt (= konkrete Occurrence eines Recurring Jobs).
+  isOccurrence?: boolean;
+
+  // Gültigkeitszeitraum der Recurring-Regel (nur auf Parent-Zeilen, "YYYY-MM-DD").
+  recurrenceStartDate?: string | null;
+  recurrenceEndDate?:   string | null;
 };
 
 export type CreateJobInput = {
@@ -53,6 +64,9 @@ export type CreateJobInput = {
   recurringDays?: string[] | null;
   // recurring: Aktiv-Schalter (Default true)
   isActive?: boolean;
+  // recurring: Gültigkeitszeitraum der Regel ("YYYY-MM-DD")
+  recurrenceStartDate?: string | null;
+  recurrenceEndDate?:   string | null;
   // Für single zusätzlich aus date + startTime abgeleiteter ISO-Zeitstempel
   // (hält die bestehenden Detail-/Monats-Anzeigen lauffähig).
   scheduledStart?: string | null;

@@ -3,6 +3,8 @@
 // Employee: eigene Jobs + Suche + Status-Filter.
 // Admin: alle Firmen-Jobs + Suche + Status-Filter + Mitarbeiter-Filter + Plus-Button.
 // Business-Logik (JobContext) unverändert — nur Lesezugriff + bestehende Quick-Actions.
+// Pull-to-Refresh: zieht Jobs + Mitarbeiter neu vom Server (refreshJobs + refreshEmployees).
+// Sortierung: Datum ↑↓, Kunde A→Z, Status-Reihenfolge (offen → in Arbeit → erledigt).
 
 import { EmptyState, LoadingScreen, OfflineBanner } from "@/components/ui";
 import JobCard from "@/components/JobCard";
@@ -11,9 +13,12 @@ import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
+  Modal,
+  Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -34,23 +39,57 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "completed", label: "Erledigt" },
 ];
 
+// ── Sortier-Optionen
+type SortKey = "datum_asc" | "datum_desc" | "kunde_az" | "status";
+
+const SORT_OPTIONS: { key: SortKey; label: string; icon: string }[] = [
+  { key: "datum_asc", label: "Datum ↑", icon: "calendar-outline" },
+  { key: "datum_desc", label: "Datum ↓", icon: "calendar-outline" },
+  { key: "kunde_az", label: "Kunde A→Z", icon: "text-outline" },
+  { key: "status", label: "Status", icon: "funnel-outline" },
+];
+
+// Status-Gewichtung für Sortierung: offen zuerst, dann in Arbeit, dann erledigt
+const STATUS_ORDER: Record<string, number> = {
+  open: 0,
+  in_progress: 1,
+  completed: 2,
+};
+
 export default function JobsListScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { role } = useAuth();
-  const { jobs, employees, startJob, completeJob, loading } = useJobs();
+  const { jobs, employees, startJob, completeJob, loading, refreshJobs, refreshEmployees } = useJobs();
 
   const [filter, setFilter] = useState<Filter>("all");
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [employeeId, setEmployeeId] = useState<string | "all">("all");
+  const [sortKey, setSortKey] = useState<SortKey>("datum_asc");
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
   const isAdmin = role === "admin";
+
+  // ── Pull-to-Refresh: Jobs + Mitarbeiter neu laden
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refreshJobs(), refreshEmployees()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshJobs, refreshEmployees]);
 
   const filteredJobs = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return jobs.filter((job) => {
+    const filtered = jobs.filter((job) => {
+      // Defensiv: Employees sollen keine Parent-Recurring-Regeln sehen.
+      // RLS filtert sie serverseitig aus, aber als Schutz im Client-State:
+      if (!isAdmin && job.jobType !== "single") return false;
+
       // Status-Filter
       if (filter !== "all" && job.status !== filter) return false;
 
@@ -75,7 +114,30 @@ export default function JobsListScreen() {
 
       return true;
     });
-  }, [jobs, filter, search, employeeId, isAdmin]);
+
+    // ── Sortierung anwenden
+    return [...filtered].sort((a, b) => {
+      switch (sortKey) {
+        case "datum_asc":
+        case "datum_desc": {
+          // Datum aus date (single) oder scheduledStart, fehlende Daten ans Ende
+          const da = a.date ?? a.scheduledStart ?? "";
+          const db = b.date ?? b.scheduledStart ?? "";
+          if (!da && !db) return 0;
+          if (!da) return 1;
+          if (!db) return -1;
+          const cmp = da.localeCompare(db);
+          return sortKey === "datum_asc" ? cmp : -cmp;
+        }
+        case "kunde_az":
+          return a.customerName.localeCompare(b.customerName, "de");
+        case "status":
+          return (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9);
+        default:
+          return 0;
+      }
+    });
+  }, [jobs, filter, search, employeeId, isAdmin, sortKey]);
 
   if (loading) return <LoadingScreen />;
 
@@ -95,11 +157,36 @@ export default function JobsListScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
         ListHeaderComponent={
           <View style={styles.header}>
             <OfflineBanner />
 
-            <Text style={styles.title}>Jobs</Text>
+            {/* ── Titel + Sort-Button ── */}
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Jobs</Text>
+              <TouchableOpacity
+                style={styles.sortButton}
+                onPress={() => setSortMenuOpen(true)}
+                activeOpacity={0.75}
+              >
+                <Ionicons
+                  name="swap-vertical-outline"
+                  size={16}
+                  color={theme.colors.onSurfaceVariant}
+                />
+                <Text style={styles.sortButtonLabel}>
+                  {SORT_OPTIONS.find((o) => o.key === sortKey)?.label ?? "Sortieren"}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {/* ── Suchleiste ── */}
             <View style={styles.searchBar}>
@@ -239,6 +326,63 @@ export default function JobsListScreen() {
           />
         </TouchableOpacity>
       )}
+
+      {/* ── Sortier-Menü ── */}
+      <Modal
+        visible={sortMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSortMenuOpen(false)}
+      >
+        <Pressable
+          style={styles.sortBackdrop}
+          onPress={() => setSortMenuOpen(false)}
+        >
+          <View style={styles.sortSheet}>
+            <Text style={styles.sortSheetTitle}>Sortierung</Text>
+            {SORT_OPTIONS.map((opt) => {
+              const active = sortKey === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.sortOption, active && styles.sortOptionActive]}
+                  activeOpacity={0.75}
+                  onPress={() => {
+                    setSortKey(opt.key);
+                    setSortMenuOpen(false);
+                  }}
+                >
+                  <Ionicons
+                    name={opt.icon as any}
+                    size={18}
+                    color={
+                      active
+                        ? theme.colors.onPrimaryContainer
+                        : theme.colors.onSurfaceVariant
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.sortOptionLabel,
+                      active && styles.sortOptionLabelActive,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                  {active && (
+                    <Ionicons
+                      name="checkmark"
+                      size={16}
+                      color={theme.colors.onPrimaryContainer}
+                      style={{ marginLeft: "auto" }}
+                    />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -286,12 +430,34 @@ function createStyles(theme: AppTheme) {
       marginBottom: theme.spacing.lg,
       gap: theme.spacing.md,
     },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
     title: {
       fontSize: theme.typography.size.xxl,
       fontFamily: theme.typography.family.bold,
       fontWeight: theme.typography.weight.bold,
       color: theme.colors.onSurface,
       letterSpacing: theme.typography.letterSpacing.tight,
+    },
+    sortButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      borderRadius: theme.radius.sm,
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: 6,
+    },
+    sortButtonLabel: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
     },
 
     // ── Suchleiste
@@ -399,6 +565,55 @@ function createStyles(theme: AppTheme) {
       alignItems: "center",
       justifyContent: "center",
       ...theme.shadows.md,
+    },
+
+    // ── Sortier-Modal
+    sortBackdrop: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: theme.spacing.xl,
+    },
+    sortSheet: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      padding: theme.spacing.md,
+      width: "100%",
+      maxWidth: 320,
+      gap: theme.spacing.xs,
+      ...theme.shadows.lg,
+    },
+    sortSheetTitle: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.bold,
+      color: theme.colors.onSurface,
+      paddingHorizontal: theme.spacing.sm,
+      paddingBottom: theme.spacing.xs,
+      marginBottom: 4,
+    },
+    sortOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: 12,
+    },
+    sortOptionActive: {
+      backgroundColor: theme.colors.primaryContainer,
+    },
+    sortOptionLabel: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurface,
+    },
+    sortOptionLabelActive: {
+      color: theme.colors.onPrimaryContainer,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
     },
   });
 }

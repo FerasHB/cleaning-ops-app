@@ -154,6 +154,28 @@ export function JobFormFields({
             <Text style={styles.errorText}>{errors.startTime}</Text>
           ) : null}
 
+          <DateTimeField
+            label="Startdatum *"
+            placeholder="Startdatum auswählen..."
+            mode="date"
+            value={values.recurrenceStartDate}
+            onChange={(val) => onChangeField("recurrenceStartDate", val)}
+          />
+          {errors.recurrenceStartDate ? (
+            <Text style={styles.errorText}>{errors.recurrenceStartDate}</Text>
+          ) : null}
+
+          <DateTimeField
+            label="Enddatum (optional)"
+            placeholder="Kein Enddatum"
+            mode="date"
+            value={values.recurrenceEndDate}
+            onChange={(val) => onChangeField("recurrenceEndDate", val)}
+          />
+          {errors.recurrenceEndDate ? (
+            <Text style={styles.errorText}>{errors.recurrenceEndDate}</Text>
+          ) : null}
+
           <View style={styles.activeRow}>
             <View style={styles.activeTextWrap}>
               <Text style={styles.activeLabel}>Aktiv</Text>

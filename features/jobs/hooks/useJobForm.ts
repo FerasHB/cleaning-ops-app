@@ -19,6 +19,9 @@ export type JobFormValues = {
     recurringDays: WeekdayKey[];
     // recurring: aktiv/inaktiv
     isActive: boolean;
+    // recurring: Gültigkeitszeitraum (Startdatum Pflicht, Enddatum optional)
+    recurrenceStartDate: Date | null;
+    recurrenceEndDate:   Date | null;
 };
 
 export type JobFormErrors = Partial<Record<keyof JobFormValues, string>>;
@@ -34,6 +37,8 @@ const emptyValues: JobFormValues = {
     startTime: null,
     recurringDays: [],
     isActive: true,
+    recurrenceStartDate: null,
+    recurrenceEndDate: null,
 };
 
 export function useJobForm(initialValues?: Partial<JobFormValues>) {
@@ -84,6 +89,16 @@ export function useJobForm(initialValues?: Partial<JobFormValues>) {
             }
             if (!values.startTime) {
                 nextErrors.startTime = "Bitte Uhrzeit wählen.";
+            }
+            if (!values.recurrenceStartDate) {
+                nextErrors.recurrenceStartDate = "Bitte Startdatum wählen.";
+            }
+            if (
+                values.recurrenceStartDate &&
+                values.recurrenceEndDate &&
+                values.recurrenceEndDate < values.recurrenceStartDate
+            ) {
+                nextErrors.recurrenceEndDate = "Enddatum darf nicht vor dem Startdatum liegen.";
             }
         }
 

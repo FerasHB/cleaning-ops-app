@@ -20,6 +20,9 @@ type JobRow = {
   start_time: string | null;
   recurring_days: string[] | null;
   is_active: boolean | null;
+  parent_job_id: string | null;
+  recurrence_start_date: string | null;
+  recurrence_end_date: string | null;
   profiles?:
   | {
     id: string;
@@ -56,6 +59,8 @@ type UpdateJobInput = {
   startTime?: string | null;
   recurringDays?: string[] | null;
   isActive?: boolean;
+  recurrenceStartDate?: string | null;
+  recurrenceEndDate?: string | null;
 };
 
 // Validiert & normalisiert die Terminierungs-Felder serverseitig
@@ -66,12 +71,16 @@ function buildSchedulePayload(input: {
   startTime?: string | null;
   recurringDays?: string[] | null;
   isActive?: boolean;
+  recurrenceStartDate?: string | null;
+  recurrenceEndDate?: string | null;
 }): {
   job_type: JobType;
   date: string | null;
   start_time: string | null;
   recurring_days: string[] | null;
   is_active: boolean;
+  recurrence_start_date: string | null;
+  recurrence_end_date: string | null;
 } {
   const startTime = input.startTime?.trim() || null;
 
@@ -84,13 +93,17 @@ function buildSchedulePayload(input: {
     if (days.length === 0) {
       throw new Error("Bitte mindestens einen Wochentag auswählen.");
     }
+    if (!input.recurrenceStartDate) {
+      throw new Error("Startdatum fehlt.");
+    }
     return {
       job_type: "recurring",
       date: null,
       start_time: startTime,
       recurring_days: days,
-      // recurring darf inaktiv sein; Default true
       is_active: input.isActive ?? true,
+      recurrence_start_date: input.recurrenceStartDate,
+      recurrence_end_date: input.recurrenceEndDate ?? null,
     };
   }
 
@@ -103,8 +116,9 @@ function buildSchedulePayload(input: {
     date: input.date,
     start_time: startTime,
     recurring_days: null,
-    // einmalige Aufträge sind immer aktiv
     is_active: true,
+    recurrence_start_date: null,
+    recurrence_end_date: null,
   };
 }
 
@@ -164,6 +178,12 @@ function mapJob(row: JobRow): Job {
     startTime: normalizeTime(row.start_time),
     recurringDays: row.recurring_days,
     isActive: row.is_active ?? true,
+
+    // Recurring-Job-Materialisierung: gesetzt wenn Occurrence eines Parents.
+    parentJobId: row.parent_job_id ?? null,
+    isOccurrence: row.parent_job_id != null,
+    recurrenceStartDate: row.recurrence_start_date ?? null,
+    recurrenceEndDate: row.recurrence_end_date ?? null,
   };
 }
 
@@ -188,6 +208,9 @@ export async function getJobs(): Promise<Job[]> {
       start_time,
       recurring_days,
       is_active,
+      parent_job_id,
+      recurrence_start_date,
+      recurrence_end_date,
       assigned_to,
       profiles:assigned_to (
         id,
@@ -355,6 +378,9 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
       start_time,
       recurring_days,
       is_active,
+      parent_job_id,
+      recurrence_start_date,
+      recurrence_end_date,
       assigned_to,
       profiles:assigned_to (
         id,
@@ -371,6 +397,38 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
 
   if (error) {
     throw error;
+  }
+
+  // Sicherheitscheck: data muss nach erfolgreichem Insert vorhanden sein.
+  if (!data) {
+    throw new Error("Job wurde angelegt, aber kein Datensatz zurückgegeben.");
+  }
+
+  // Bei Recurring Jobs: konkrete Einzel-Termine für die nächsten 8 Wochen erzeugen.
+  // Fehler hier brechen den Job-Create nicht ab — der Parent existiert bereits.
+  if (__DEV__) {
+    console.log(
+      "[createJob] job_type:", schedule.job_type,
+      "| parent id:", data.id,
+      "| generate occurrences:", schedule.job_type === "recurring"
+    );
+  }
+
+  if (schedule.job_type === "recurring") {
+    const { data: rpcResult, error: occurrenceError } = await supabase.rpc(
+      "generate_job_occurrences",
+      { parent_job_id_input: data.id }
+    );
+    if (occurrenceError) {
+      // Immer loggen (nicht nur in Dev), damit der Fehler im Expo-Log sichtbar ist.
+      console.error(
+        "[createJob] generate_job_occurrences fehlgeschlagen:",
+        occurrenceError.message,
+        occurrenceError
+      );
+    } else if (__DEV__) {
+      console.log("[createJob] Occurrences generiert:", rpcResult);
+    }
   }
 
   // Wenn ein Mitarbeiter direkt zugewiesen wurde,
@@ -497,6 +555,9 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
       start_time,
       recurring_days,
       is_active,
+      parent_job_id,
+      recurrence_start_date,
+      recurrence_end_date,
       assigned_to,
       profiles:assigned_to (
         id,
@@ -508,6 +569,19 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
 
   if (error) {
     throw error;
+  }
+
+  // Bei Recurring-Parent-Jobs: zukünftige offene Occurrences löschen und neu erzeugen.
+  // Nur für Parent-Regeln (parent_job_id IS NULL), nicht für Occurrences selbst.
+  // Fehler hier brechen das Update nicht ab — die Regeländerung ist bereits gespeichert.
+  if (input.jobType === "recurring" && !data.parent_job_id) {
+    const { error: occurrenceError } = await supabase.rpc(
+      "update_job_occurrences",
+      { parent_job_id_input: input.jobId }
+    );
+    if (occurrenceError) {
+      console.error("[updateJob] update_job_occurrences fehlgeschlagen:", occurrenceError.message, occurrenceError);
+    }
   }
 
   return mapJob(data as JobRow);
@@ -574,6 +648,50 @@ async function sendPushNotification(token: string, title: string, body: string) 
       body,
     }),
   });
+}
+
+// Lädt alle generierten Occurrences eines Recurring-Parent-Jobs.
+// Wird im Admin-Detail-Screen genutzt, um die Terminübersicht anzuzeigen.
+// Sortiert nach Datum aufsteigend, dann nach Uhrzeit.
+export async function getJobOccurrences(parentJobId: string): Promise<Job[]> {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select(
+      `
+      id,
+      customer_name,
+      service_name,
+      location_address,
+      scheduled_start,
+      scheduled_end,
+      status,
+      started_at,
+      completed_at,
+      notes,
+      job_type,
+      date,
+      start_time,
+      recurring_days,
+      is_active,
+      parent_job_id,
+      recurrence_start_date,
+      recurrence_end_date,
+      assigned_to,
+      profiles:assigned_to (
+        id,
+        full_name
+      )
+      `
+    )
+    .eq("parent_job_id", parentJobId)
+    .order("date", { ascending: true })
+    .order("start_time", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((item) => mapJob(item as JobRow));
 }
 
 // Löscht einen bestehenden Job

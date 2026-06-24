@@ -86,6 +86,12 @@ export default function EditJobScreen() {
       startTime: timeStringToDate(job.startTime),
       recurringDays: (job.recurringDays ?? []) as WeekdayKey[],
       isActive: job.isActive ?? true,
+      recurrenceStartDate: job.recurrenceStartDate
+        ? new Date(job.recurrenceStartDate)
+        : null,
+      recurrenceEndDate: job.recurrenceEndDate
+        ? new Date(job.recurrenceEndDate)
+        : null,
     });
 
     setErrors({});
@@ -121,10 +127,19 @@ export default function EditJobScreen() {
       values.recurringDays.length === (job.recurringDays?.length ?? 0) &&
       values.recurringDays.every((d) => job.recurringDays?.includes(d));
 
+    const sameStartDate =
+      formatDateISO(values.recurrenceStartDate) ===
+      (job.recurrenceStartDate ?? null);
+    const sameEndDate =
+      formatDateISO(values.recurrenceEndDate) ===
+      (job.recurrenceEndDate ?? null);
+
     return (
       !sameDays ||
       formatTimeHHmm(values.startTime) !== (job.startTime ?? null) ||
-      values.isActive !== (job.isActive ?? true)
+      values.isActive !== (job.isActive ?? true) ||
+      !sameStartDate ||
+      !sameEndDate
     );
   }, [job, values]);
 
@@ -186,6 +201,8 @@ export default function EditJobScreen() {
               startTime: formatTimeHHmm(values.startTime),
               recurringDays: values.recurringDays,
               isActive: values.isActive,
+              recurrenceStartDate: formatDateISO(values.recurrenceStartDate),
+              recurrenceEndDate: formatDateISO(values.recurrenceEndDate),
               scheduledStart: null,
             },
       );
