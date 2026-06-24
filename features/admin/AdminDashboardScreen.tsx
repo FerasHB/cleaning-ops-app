@@ -2,9 +2,9 @@
 // Admin-Dashboard (Tab "Dashboard") im SaaS-/Field-Service-Stil.
 // Vollständig theme-aware (Light + Dark Mode), nur Lesezugriff auf JobContext/AuthContext.
 //
-// Hinweise zu Platzhaltern:
-// - Firmenname: profile liefert nur company_id (keinen Namen) → fixer Platzhalter "FieldService Pro".
-// - Sync/Online-Status: statischer Anzeige-Platzhalter ("Synchronisiert"), keine echte NetInfo-Abfrage.
+// Hinweise:
+// - Firmenname: profile liefert nur company_id (keinen Namen) → neutraler Titel "Dashboard"
+//   (bewusst kein company.name-Fetch im MVP).
 // - "Heute fällig": isJobToday() aus utils/jobSchedule (single per date/scheduledStart,
 //   recurring per Wochentag, nur aktive) — gleiche Logik wie EmployeeOverviewScreen.
 
@@ -30,7 +30,7 @@ import { router } from "expo-router";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-const COMPANY_NAME = "FieldService Pro";
+const COMPANY_NAME = "Dashboard";
 
 // ── Tageszeit-abhängige Begrüßung
 function getGreeting(date: Date): string {
@@ -78,7 +78,8 @@ export default function AdminDashboardScreen() {
   const { profile } = useAuth();
   const { jobs, employees, loading } = useJobs();
 
-  const now = useMemo(() => new Date(), []);
+  // Zeitpunkt beim Render. Header zeigt nur das Datum (keine Live-Uhrzeit).
+  const now = new Date();
 
   const adminName = profile?.full_name?.trim() || "Admin";
 
@@ -90,11 +91,6 @@ export default function AdminDashboardScreen() {
         month: "long",
         year: "numeric",
       }),
-    [now],
-  );
-  const timeLabel = useMemo(
-    () =>
-      now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
     [now],
   );
 
@@ -165,9 +161,7 @@ export default function AdminDashboardScreen() {
         <Text style={styles.greeting}>
           {getGreeting(now)}, {adminName}
         </Text>
-        <Text style={styles.dateText}>
-          {dateLabel} · {timeLabel}
-        </Text>
+        <Text style={styles.dateText}>{dateLabel}</Text>
       </View>
 
       {/* ── Save-Status ── */}

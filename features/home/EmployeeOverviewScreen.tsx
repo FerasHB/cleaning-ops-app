@@ -3,9 +3,7 @@
 // Vollständig theme-aware (Light + Dark Mode). Nur Lesezugriff auf Context
 // (+ startJob/completeJob für Quick-Actions, die bereits Teil von JobContext sind).
 //
-// Hinweise zu Platzhaltern:
-// - Wetter "18°C · Leicht bewölkt": fixer Platzhalter, keine Wetter-API.
-// - Sync/Online-Status "Synchronisiert": statische Anzeige, keine echte NetInfo-Abfrage.
+// Hinweise:
 // - "Heute"/"Monat" basieren auf job.scheduledStart bzw. job.completedAt.
 //   Falls KEIN Job ein Datum hat, fällt die Anzeige auf alle eigenen Jobs zurück.
 
@@ -30,8 +28,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-
-const WEATHER_PLACEHOLDER = "18°C · Leicht bewölkt";
 
 type Filter = "all" | JobStatus;
 
@@ -85,7 +81,8 @@ export default function EmployeeOverviewScreen() {
 
   const [filter, setFilter] = useState<Filter>("all");
 
-  const now = useMemo(() => new Date(), []);
+  // Zeitpunkt beim Render. Header zeigt nur das Datum (keine Live-Uhrzeit).
+  const now = new Date();
   const firstName = (profile?.full_name?.trim() || "Hey").split(/\s+/)[0];
 
   const dateLabel = useMemo(
@@ -177,15 +174,6 @@ export default function EmployeeOverviewScreen() {
           <SaveStatusBadge />
         </View>
         <Text style={styles.dateText}>{dateLabel}</Text>
-
-        <View style={styles.weatherRow}>
-          <Ionicons
-            name="partly-sunny-outline"
-            size={16}
-            color={theme.colors.onSurfaceVariant}
-          />
-          <Text style={styles.weatherText}>{WEATHER_PLACEHOLDER}</Text>
-        </View>
       </View>
 
       {/* ── Heute-Übersicht (2×2) ── */}
@@ -435,19 +423,6 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onSurfaceVariant,
       textTransform: "capitalize",
     },
-    weatherRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginTop: theme.spacing.sm,
-    },
-    weatherText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.onSurfaceVariant,
-    },
-
     // ── Sections
     section: {
       marginBottom: theme.spacing.xl,
