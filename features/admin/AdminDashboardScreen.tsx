@@ -27,7 +27,7 @@ import type { Job } from "@/types/job";
 import { isJobToday } from "@/utils/jobSchedule";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const COMPANY_NAME = "Dashboard";
@@ -78,13 +78,8 @@ export default function AdminDashboardScreen() {
   const { profile } = useAuth();
   const { jobs, employees, loading } = useJobs();
 
-  // Aktuelle Zeit, die sich minütlich aktualisiert (Datum/Uhrzeit-Label im Header).
-  // Kein Sekunden-Ticker; 60s reichen. Timer wird beim Unmount aufgeräumt.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(interval);
-  }, []);
+  // Zeitpunkt beim Render. Header zeigt nur das Datum (keine Live-Uhrzeit).
+  const now = new Date();
 
   const adminName = profile?.full_name?.trim() || "Admin";
 
@@ -96,11 +91,6 @@ export default function AdminDashboardScreen() {
         month: "long",
         year: "numeric",
       }),
-    [now],
-  );
-  const timeLabel = useMemo(
-    () =>
-      now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
     [now],
   );
 
@@ -171,9 +161,7 @@ export default function AdminDashboardScreen() {
         <Text style={styles.greeting}>
           {getGreeting(now)}, {adminName}
         </Text>
-        <Text style={styles.dateText}>
-          {dateLabel} · {timeLabel}
-        </Text>
+        <Text style={styles.dateText}>{dateLabel}</Text>
       </View>
 
       {/* ── Save-Status ── */}

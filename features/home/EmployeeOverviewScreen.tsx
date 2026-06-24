@@ -26,7 +26,7 @@ import type { Job, JobStatus } from "@/types/job";
 import { isJobToday } from "@/utils/jobSchedule";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Filter = "all" | JobStatus;
@@ -81,13 +81,8 @@ export default function EmployeeOverviewScreen() {
 
   const [filter, setFilter] = useState<Filter>("all");
 
-  // Aktuelle Zeit, die sich minütlich aktualisiert (Datums-Label im Header).
-  // Kein Sekunden-Ticker; 60s reichen. Timer wird beim Unmount aufgeräumt.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(interval);
-  }, []);
+  // Zeitpunkt beim Render. Header zeigt nur das Datum (keine Live-Uhrzeit).
+  const now = new Date();
   const firstName = (profile?.full_name?.trim() || "Hey").split(/\s+/)[0];
 
   const dateLabel = useMemo(
