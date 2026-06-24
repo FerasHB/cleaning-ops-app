@@ -160,8 +160,7 @@ export default function ProfileScreen({
           <SettingsRow
             icon="lock-closed-outline"
             label="Passwort ändern"
-            comingSoon
-            onPress={showComingSoon}
+            onPress={() => router.push("/change-password")}
             isLast
             styles={styles}
             theme={theme}
