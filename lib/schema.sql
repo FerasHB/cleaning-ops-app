@@ -147,6 +147,26 @@ create table if not exists public.job_comment_reads (
   primary key (job_id, user_id)
 );
 
+-- Job-Fotos (Nachweise, append-only, online-only). Mitarbeiter/Admins laden
+-- Fotos zu Jobs hoch; gespeichert wird nur die Metadaten-Zeile, die Datei liegt
+-- im privaten Storage-Bucket "job-photos". Kein Löschen im MVP (siehe RLS unten).
+-- uploaded_by ist nullable + on delete set null: verlässt ein Mitarbeiter die
+-- Firma, bleibt das Foto als Nachweis erhalten, nur der Uploader-Verweis entfällt
+-- (analog jobs.created_by / job_comments.author_id).
+-- Pfadkonvention im Bucket: {company_id}/{job_id}/{timestamp}_{random}.{ext}
+-- (siehe services/photos/photos.service.ts → buildStoragePath).
+create table if not exists public.job_photos (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  job_id uuid not null references public.jobs(id) on delete cascade,
+  uploaded_by uuid references public.profiles(id) on delete set null,
+  storage_path text not null,
+  file_name text not null,
+  file_size bigint,
+  mime_type text,
+  created_at timestamptz not null default now()
+);
+
 -- =========================================================
 -- INDEXES
 -- =========================================================
@@ -171,6 +191,10 @@ create unique index if not exists idx_jobs_occurrence_unique
 create index if not exists idx_job_comments_job_id on public.job_comments(job_id);
 
 create index if not exists idx_job_comment_reads_user_id on public.job_comment_reads(user_id);
+
+create index if not exists idx_job_photos_job_id on public.job_photos(job_id);
+create index if not exists idx_job_photos_company_id on public.job_photos(company_id);
+create index if not exists idx_job_photos_created_at on public.job_photos(created_at);
 
 -- =========================================================
 -- FUNCTIONS
@@ -467,6 +491,7 @@ alter table public.profiles enable row level security;
 alter table public.jobs enable row level security;
 alter table public.job_comments enable row level security;
 alter table public.job_comment_reads enable row level security;
+alter table public.job_photos enable row level security;
 
 -- =========================================================
 -- DROP OLD POLICIES
@@ -745,6 +770,185 @@ with check (
 
 -- WICHTIG:
 -- absichtlich KEINE delete policy auf job_comment_reads.
+
+-- =========================================================
+-- RLS: JOB_PHOTOS
+-- =========================================================
+-- Spiegelt die job_comments-Policies: Admin sieht firmenweit, Employee nur
+-- eigene zugewiesene Jobs. Insert nur als eigener Uploader (uploaded_by).
+-- Idempotent via drop-if-exists, damit Schema + Migration mehrfach laufen können.
+
+-- Admin liest alle Fotos der eigenen Firma.
+drop policy if exists "admin read photos in own company" on public.job_photos;
+create policy "admin read photos in own company"
+on public.job_photos
+for select
+to authenticated
+using (
+  public.current_user_role() = 'admin'
+  and company_id = public.current_user_company_id()
+);
+
+-- Employee liest nur Fotos zu den ihm zugewiesenen Jobs.
+drop policy if exists "employee read photos on own jobs" on public.job_photos;
+create policy "employee read photos on own jobs"
+on public.job_photos
+for select
+to authenticated
+using (
+  public.current_user_role() = 'employee'
+  and company_id = public.current_user_company_id()
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = job_photos.job_id
+      and j.assigned_to = auth.uid()
+  )
+);
+
+-- Employee lädt nur zu eigenen Jobs hoch und nur als eigener Uploader.
+drop policy if exists "employee insert photos on own jobs" on public.job_photos;
+create policy "employee insert photos on own jobs"
+on public.job_photos
+for insert
+to authenticated
+with check (
+  public.current_user_role() = 'employee'
+  and uploaded_by = auth.uid()
+  and company_id = public.current_user_company_id()
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = job_photos.job_id
+      and j.assigned_to = auth.uid()
+      and j.company_id = public.current_user_company_id()
+  )
+);
+
+-- Admin lädt zu jedem Job der eigenen Firma hoch und nur als eigener Uploader.
+drop policy if exists "admin insert photos in own company" on public.job_photos;
+create policy "admin insert photos in own company"
+on public.job_photos
+for insert
+to authenticated
+with check (
+  public.current_user_role() = 'admin'
+  and uploaded_by = auth.uid()
+  and company_id = public.current_user_company_id()
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = job_photos.job_id
+      and j.company_id = public.current_user_company_id()
+  )
+);
+
+-- WICHTIG:
+-- absichtlich KEINE update/delete policy auf public.job_photos.
+-- Fotos sind append-only Nachweise (kein Edit/Delete in der UI) → bei aktivem
+-- RLS sind UPDATE/DELETE damit für alle gesperrt. Der best-effort Rollback in
+-- photos.service.ts entfernt nur die STORAGE-Datei (siehe Storage-DELETE-Policy
+-- unten), nicht die Tabellen-Zeile — die Zeile wird bei DB-Fehler gar nicht
+-- erst angelegt.
+
+-- =========================================================
+-- STORAGE: BUCKET job-photos
+-- =========================================================
+-- Privater Bucket. Zugriff nur über Signed URLs (services/photos/photos.service.ts).
+-- Limits/MIME-Typen entsprechen der clientseitigen Validierung im Service:
+--   10 MB, image/jpeg | image/png | image/webp.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'job-photos',
+  'job-photos',
+  false,
+  10485760, -- 10 MB (= MAX_FILE_SIZE_BYTES)
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update
+  set public             = excluded.public,
+      file_size_limit    = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+-- =========================================================
+-- STORAGE: POLICIES auf storage.objects (Bucket job-photos)
+-- =========================================================
+-- Pfadkonvention: {company_id}/{job_id}/{datei}
+--   (storage.foldername(name))[1] = company_id
+--   (storage.foldername(name))[2] = job_id
+-- Jede Policy bindet zusätzlich an die eigene Firma → kein Cross-Company-Zugriff.
+
+-- SELECT (= Signed URLs erzeugen): Admin firmenweit, Employee nur eigene Jobs.
+drop policy if exists "job-photos read allowed" on storage.objects;
+create policy "job-photos read allowed"
+on storage.objects
+for select
+to authenticated
+using (
+  bucket_id = 'job-photos'
+  and (storage.foldername(name))[1] = public.current_user_company_id()::text
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = ((storage.foldername(name))[2])::uuid
+      and j.company_id = public.current_user_company_id()
+      and (
+        public.current_user_role() = 'admin'
+        or (
+          public.current_user_role() = 'employee'
+          and j.assigned_to = auth.uid()
+        )
+      )
+  )
+);
+
+-- INSERT (= Upload): nur in den eigenen Firmen-Pfad und nur für erlaubte Jobs.
+drop policy if exists "job-photos insert allowed" on storage.objects;
+create policy "job-photos insert allowed"
+on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'job-photos'
+  and (storage.foldername(name))[1] = public.current_user_company_id()::text
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = ((storage.foldername(name))[2])::uuid
+      and j.company_id = public.current_user_company_id()
+      and (
+        public.current_user_role() = 'admin'
+        or (
+          public.current_user_role() = 'employee'
+          and j.assigned_to = auth.uid()
+        )
+      )
+  )
+);
+
+-- DELETE (eng begrenzt): KEIN UI-Feature. Nur technische Absicherung für den
+-- best-effort Rollback in photos.service.ts (uploadJobPhoto entfernt die Datei,
+-- wenn der anschließende Tabellen-Insert fehlschlägt). Erlaubt ist daher nur:
+--   - der Uploader selbst (owner = auth.uid())
+--   - innerhalb des eigenen Firmen-Pfads
+--   - für einen Job der eigenen Firma
+-- Keine breite Lösch-Freigabe, kein Zugriff auf fremde Firmen.
+drop policy if exists "job-photos delete own upload" on storage.objects;
+create policy "job-photos delete own upload"
+on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'job-photos'
+  and owner = auth.uid()
+  and (storage.foldername(name))[1] = public.current_user_company_id()::text
+  and exists (
+    select 1
+    from public.jobs j
+    where j.id = ((storage.foldername(name))[2])::uuid
+      and j.company_id = public.current_user_company_id()
+  )
+);
 
 -- =========================================================
 -- RPC: GENERATE JOB OCCURRENCES
