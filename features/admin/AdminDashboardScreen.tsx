@@ -15,6 +15,7 @@ import {
   KPICard,
   LoadingScreen,
   OfflineBanner,
+  SaveStatusBadge,
   ScreenContainer,
   SectionHeader,
 } from "@/components/ui";
@@ -119,14 +120,25 @@ export default function AdminDashboardScreen() {
     [employees, jobs],
   );
 
-  // ── Letzte Aktivitäten: nach Zeitstempel absteigend, max. 5
-  const recentActivity = useMemo(
-    () =>
-      [...jobs]
-        .sort((a, b) => activityTimestamp(b) - activityTimestamp(a))
-        .slice(0, 5),
-    [jobs],
-  );
+  // ── Letzte Aktivitäten: nach Zeitstempel absteigend, dann pro
+  // Recurring-Parent nur den neuesten Eintrag (Dedup nach parentJobId ?? id),
+  // damit materialisierte Daueraufträge denselben Kunden nicht mehrfach zeigen.
+  // Danach max. 5 eindeutige Aktivitäten. Konkrete Jobs bleiben unverändert.
+  const recentActivity = useMemo(() => {
+    const sorted = [...jobs].sort(
+      (a, b) => activityTimestamp(b) - activityTimestamp(a),
+    );
+    const seen = new Set<string>();
+    const unique: Job[] = [];
+    for (const job of sorted) {
+      const key = job.parentJobId ?? job.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(job);
+      if (unique.length >= 5) break;
+    }
+    return unique;
+  }, [jobs]);
 
   if (loading) return <LoadingScreen />;
 
@@ -145,6 +157,9 @@ export default function AdminDashboardScreen() {
             </View>
             <Text style={styles.companyName}>{COMPANY_NAME}</Text>
           </View>
+
+          {/* Dezenter Online-Status oben rechts */}
+          <SaveStatusBadge />
         </View>
 
         <Text style={styles.greeting}>
@@ -158,7 +173,7 @@ export default function AdminDashboardScreen() {
       {/* ── Save-Status ── */}
       <OfflineBanner />
 
-      {/* ── KPI-Karten (2×2) ── */}
+      {/* ── KPI-Karten (2×2) → tippen öffnet die Jobliste ── */}
       <View style={styles.kpiGrid}>
         <View style={styles.kpiItem}>
           <KPICard
@@ -166,6 +181,7 @@ export default function AdminDashboardScreen() {
             value={openCount}
             icon="folder-open-outline"
             accentColor={theme.colors.statusOpen}
+            onPress={() => router.push("/(admin-tabs)/jobs")}
           />
         </View>
         <View style={styles.kpiItem}>
@@ -174,6 +190,7 @@ export default function AdminDashboardScreen() {
             value={inProgressCount}
             icon="time-outline"
             accentColor={theme.colors.statusInProgress}
+            onPress={() => router.push("/(admin-tabs)/jobs")}
           />
         </View>
         <View style={styles.kpiItem}>
@@ -182,6 +199,7 @@ export default function AdminDashboardScreen() {
             value={completedCount}
             icon="checkmark-done-outline"
             accentColor={theme.colors.statusCompleted}
+            onPress={() => router.push("/(admin-tabs)/jobs")}
           />
         </View>
         <View style={styles.kpiItem}>
@@ -190,6 +208,7 @@ export default function AdminDashboardScreen() {
             value={todayCount}
             icon="calendar-outline"
             accentColor={theme.colors.primary}
+            onPress={() => router.push("/(admin-tabs)/jobs")}
           />
         </View>
       </View>
@@ -213,8 +232,10 @@ export default function AdminDashboardScreen() {
             {employeeActivity.map((emp, idx) => {
               const isActive = !!emp.activeJob;
               return (
-                <View
+                <TouchableOpacity
                   key={emp.id}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/employees/${emp.id}`)}
                   style={[
                     styles.empRow,
                     idx > 0 && styles.rowDivider,
@@ -243,7 +264,7 @@ export default function AdminDashboardScreen() {
                       },
                     ]}
                   />
-                </View>
+                </TouchableOpacity>
               );
             })}
           </Card>
@@ -269,8 +290,10 @@ export default function AdminDashboardScreen() {
             {recentActivity.map((job, idx) => {
               const cfg = activityConfig(theme, job.status);
               return (
-                <View
+                <TouchableOpacity
                   key={job.id}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/jobs/${job.id}`)}
                   style={[
                     styles.activityRow,
                     idx > 0 && styles.rowDivider,
@@ -293,7 +316,7 @@ export default function AdminDashboardScreen() {
                       {job.service ? ` · ${job.service}` : ""}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </Card>
