@@ -106,6 +106,18 @@ export default function EmployeeJobsCalendarScreen() {
     return set;
   }, [singleJobs]);
 
+  // Tage mit mindestens einem offenen/laufenden Job → primärer Punkt (Handlungsbedarf).
+  const activeMarkedKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const job of singleJobs) {
+      if (job.status === "open" || job.status === "in_progress") {
+        const key = getJobDateKey(job);
+        if (key) set.add(key);
+      }
+    }
+    return set;
+  }, [singleJobs]);
+
   // Jobs des ausgewählten Tags, sortiert nach Uhrzeit (ohne Zeit ans Ende).
   const dayJobs = useMemo(() => {
     const list = singleJobs.filter((j) => getJobDateKey(j) === selectedKey);
@@ -187,6 +199,7 @@ export default function EmployeeJobsCalendarScreen() {
               selectedKey={selectedKey}
               onSelectDay={setSelectedKey}
               markedKeys={markedKeys}
+              activeMarkedKeys={activeMarkedKeys}
               todayKey={todayKey}
             />
 
@@ -224,7 +237,11 @@ export default function EmployeeJobsCalendarScreen() {
         ListEmptyComponent={
           <EmptyState
             title="Keine Jobs für diesen Tag"
-            message="Wähle einen anderen Tag im Kalender."
+            message={
+              markedKeys.size > 0
+                ? "Wähle einen markierten Tag im Kalender aus."
+                : "Keine Jobs in diesem Monat."
+            }
             icon="calendar-outline"
           />
         }

@@ -2,8 +2,9 @@
 // Eigenbau-Monatskalender (KEINE externe Library).
 // Reine Präsentations-Komponente — hält keinen eigenen State:
 // - zeigt einen Monat als Mo–So-Grid
-// - markiert Tage mit Jobs (kleiner Punkt)
-// - hebt "heute" und den ausgewählten Tag hervor
+// - markiert Tage mit offenen/laufenden Jobs (primärer Punkt) oder
+//   ausschließlich erledigten Jobs (gedämpfter Punkt)
+// - hebt "heute" (Container-Tönnung) und den ausgewählten Tag (primäre Füllung) hervor
 // - Monat vor/zurück über die Pfeile (onChangeMonth)
 // Theme-aware (Light + Dark) über useAppTheme().
 
@@ -24,8 +25,10 @@ export type MonthCalendarProps = {
   selectedKey: string;
   /** Tag auswählen (liefert "YYYY-MM-DD"). */
   onSelectDay: (key: string) => void;
-  /** Tage mit Jobs als Set von "YYYY-MM-DD". */
+  /** Tage mit Jobs (beliebiger Status) — zeigen einen Punkt. */
   markedKeys: Set<string>;
+  /** Tage mit mindestens einem offenen oder laufenden Job — primärer Punkt. */
+  activeMarkedKeys: Set<string>;
   /** Heute als "YYYY-MM-DD". */
   todayKey: string;
 };
@@ -38,6 +41,7 @@ export function MonthCalendar({
   selectedKey,
   onSelectDay,
   markedKeys,
+  activeMarkedKeys,
   todayKey,
 }: MonthCalendarProps) {
   const theme = useAppTheme();
@@ -56,8 +60,7 @@ export function MonthCalendar({
 
     const cells: Cell[] = [];
     for (let i = 0; i < totalCells; i++) {
-      // Negative/überlaufende Tage normalisiert JS Date automatisch
-      // → führende Tage aus Vor-, nachlaufende aus Folgemonat.
+      // Negative/überlaufende Tage normalisiert JS Date automatisch.
       const d = new Date(year, month, 1 - leading + i);
       cells.push({
         date: d,
@@ -95,7 +98,7 @@ export function MonthCalendar({
           <Ionicons
             name="chevron-back"
             size={20}
-            color={theme.colors.onSurface}
+            color={theme.colors.primary}
           />
         </TouchableOpacity>
 
@@ -111,7 +114,7 @@ export function MonthCalendar({
           <Ionicons
             name="chevron-forward"
             size={20}
-            color={theme.colors.onSurface}
+            color={theme.colors.primary}
           />
         </TouchableOpacity>
       </View>
@@ -125,13 +128,14 @@ export function MonthCalendar({
         ))}
       </View>
 
-      {/* ── Tage ── */}
+      {/* ── Tage-Grid ── */}
       {weeks.map((week, wi) => (
         <View key={wi} style={styles.weekRow}>
           {week.map((cell) => {
             const isSelected = cell.key === selectedKey;
             const isToday = cell.key === todayKey;
             const isMarked = cell.inMonth && markedKeys.has(cell.key);
+            const isActiveMarked = cell.inMonth && activeMarkedKeys.has(cell.key);
 
             return (
               <TouchableOpacity
@@ -144,7 +148,9 @@ export function MonthCalendar({
                 <View
                   style={[
                     styles.dayInner,
+                    // Heute (nicht ausgewählt): dezente Container-Tönnung
                     isToday && !isSelected && styles.dayToday,
+                    // Ausgewählt: kräftige primäre Füllung (stärker als Heute-Tint)
                     isSelected && styles.daySelected,
                   ]}
                 >
@@ -164,7 +170,13 @@ export function MonthCalendar({
                 <View style={styles.dotSlot}>
                   {isMarked ? (
                     <View
-                      style={[styles.dot, isSelected && styles.dotSelected]}
+                      style={[
+                        styles.dot,
+                        // Ausschließlich erledigte Jobs → gedämpfte Farbe
+                        !isActiveMarked && styles.dotCompleted,
+                        // Auf ausgewähltem (gefülltem) Tag → sichtbare Kontrastfarbe
+                        isSelected && styles.dotOnSelected,
+                      ]}
                     />
                   ) : null}
                 </View>
@@ -201,7 +213,8 @@ function createStyles(theme: AppTheme) {
       borderRadius: theme.radius.full,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: theme.colors.surfaceContainerHigh,
+      // Container-Hintergrund macht Pfeile als Buttons erkennbar
+      backgroundColor: theme.colors.primaryContainer,
     },
     monthLabel: {
       fontSize: theme.typography.size.md,
@@ -234,8 +247,7 @@ function createStyles(theme: AppTheme) {
     dayCell: {
       flex: 1,
       alignItems: "center",
-      paddingVertical: 4,
-      minHeight: theme.spacing.tapTarget,
+      paddingVertical: 3,
     },
     dayInner: {
       width: 34,
@@ -244,12 +256,14 @@ function createStyles(theme: AppTheme) {
       alignItems: "center",
       justifyContent: "center",
     },
-    daySelected: {
+    // Heute (nicht ausgewählt): dezente Container-Tönnung — gut sichtbar,
+    // ohne den ausgewählten Tag zu konkurrieren.
+    dayToday: {
       backgroundColor: theme.colors.primaryContainer,
     },
-    dayToday: {
-      borderWidth: 1.5,
-      borderColor: theme.colors.primary,
+    // Ausgewählt: kräftige primäre Füllung (sofort erkennbar, welcher Tag aktiv ist)
+    daySelected: {
+      backgroundColor: theme.colors.primary,
     },
     dayText: {
       fontSize: theme.typography.size.sm,
@@ -261,31 +275,37 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.outline,
     },
     dayTextToday: {
-      color: theme.colors.primary,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-    },
-    dayTextSelected: {
       color: theme.colors.onPrimaryContainer,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
     },
+    dayTextSelected: {
+      color: theme.colors.onPrimary,
+      fontFamily: theme.typography.family.bold,
+      fontWeight: theme.typography.weight.bold,
+    },
 
     // ── Job-Punkt
     dotSlot: {
-      height: 8,
+      height: 6,
       marginTop: 2,
       alignItems: "center",
       justifyContent: "center",
     },
+    // Tage mit offenen/laufenden Jobs: primäre Akzentfarbe (Handlungsbedarf)
     dot: {
       width: 5,
       height: 5,
       borderRadius: theme.radius.full,
       backgroundColor: theme.colors.primary,
     },
-    dotSelected: {
-      backgroundColor: theme.colors.primary,
+    // Tage mit ausschließlich erledigten Jobs: gedämpfte Farbe (kein Handlungsbedarf)
+    dotCompleted: {
+      backgroundColor: theme.colors.outline,
+    },
+    // Punkt auf ausgewähltem Tag: auf primärem Hintergrund sichtbar bleiben
+    dotOnSelected: {
+      backgroundColor: theme.colors.onPrimary,
     },
   });
 }
