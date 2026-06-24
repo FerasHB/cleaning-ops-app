@@ -24,7 +24,7 @@ import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -63,7 +63,10 @@ export default function EmployeeDetailScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { employees, jobs, loading } = useJobs();
+  const { employees, jobs, loading, setEmployeeActive } = useJobs();
+
+  // Loading-State für Deaktivieren/Reaktivieren.
+  const [updatingActive, setUpdatingActive] = useState(false);
 
   const employee = useMemo(
     () => employees.find((e) => e.id === id),
@@ -147,8 +150,61 @@ export default function EmployeeDetailScreen() {
   const emailDisplay = employee.email?.trim() ? employee.email : "Nicht hinterlegt";
 
   const handleAssignJob = () => router.push("/jobs/create");
-  const handleDeactivate = () =>
-    Alert.alert("Bald verfügbar", "Diese Funktion kommt später.");
+
+  // Deaktivieren/Reaktivieren mit Sicherheitsabfrage. Schreibt is_active und
+  // lädt die Mitarbeiterliste neu (passiert in setEmployeeActive).
+  const applyActiveChange = async (nextActive: boolean) => {
+    if (!employee) return;
+    try {
+      setUpdatingActive(true);
+      await setEmployeeActive(employee.id, nextActive);
+      Alert.alert(
+        "Erfolg",
+        nextActive
+          ? "Mitarbeiter wurde reaktiviert."
+          : "Mitarbeiter wurde deaktiviert.",
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Status konnte nicht geändert werden.";
+      Alert.alert("Fehler", message);
+    } finally {
+      setUpdatingActive(false);
+    }
+  };
+
+  const handleToggleActive = () => {
+    if (!employee || updatingActive) return;
+
+    if (accountActive) {
+      Alert.alert(
+        "Mitarbeiter deaktivieren",
+        `${employee.fullName} wird deaktiviert und kann keinen neuen Jobs mehr zugewiesen werden. Bestehende Jobs bleiben unverändert.`,
+        [
+          { text: "Abbrechen", style: "cancel" },
+          {
+            text: "Deaktivieren",
+            style: "destructive",
+            onPress: () => applyActiveChange(false),
+          },
+        ],
+      );
+    } else {
+      Alert.alert(
+        "Mitarbeiter reaktivieren",
+        `${employee.fullName} wird wieder aktiv und kann erneut Jobs zugewiesen bekommen.`,
+        [
+          { text: "Abbrechen", style: "cancel" },
+          {
+            text: "Reaktivieren",
+            onPress: () => applyActiveChange(true),
+          },
+        ],
+      );
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -320,10 +376,17 @@ export default function EmployeeDetailScreen() {
             onPress={handleAssignJob}
           />
           <Button
-            label="Mitarbeiter deaktivieren"
-            variant="secondary"
-            icon="person-remove-outline"
-            onPress={handleDeactivate}
+            label={
+              accountActive
+                ? "Mitarbeiter deaktivieren"
+                : "Mitarbeiter reaktivieren"
+            }
+            variant={accountActive ? "danger" : "secondary"}
+            icon={
+              accountActive ? "person-remove-outline" : "person-add-outline"
+            }
+            loading={updatingActive}
+            onPress={handleToggleActive}
           />
         </View>
 

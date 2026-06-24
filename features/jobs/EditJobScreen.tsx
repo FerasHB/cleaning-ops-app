@@ -53,6 +53,19 @@ export default function EditJobScreen() {
   const job = useMemo(() => jobs.find((item) => item.id === id), [jobs, id]);
   const [submitting, setSubmitting] = useState(false);
 
+  // Picker beim Bearbeiten: aktive Mitarbeiter + der aktuell zugewiesene,
+  // falls dieser inzwischen inaktiv ist (damit die Zuweisung sichtbar bleibt
+  // und nicht still verloren geht).
+  const pickerEmployees = useMemo(() => {
+    const active = employees.filter((e) => e.isActive !== false);
+    const assignedId = job?.employeeId ?? null;
+    if (assignedId && !active.some((e) => e.id === assignedId)) {
+      const assigned = employees.find((e) => e.id === assignedId);
+      if (assigned) return [...active, assigned];
+    }
+    return active;
+  }, [employees, job?.employeeId]);
+
   const { values, errors, setField, validate, setValues, setErrors } =
     useJobForm();
 
@@ -369,7 +382,7 @@ export default function EditJobScreen() {
             <Divider style={styles.sectionDivider} />
 
             <EmployeeSelector
-              employees={employees}
+              employees={pickerEmployees}
               selectedEmployeeId={values.employeeId}
               onSelect={(employeeId) => setField("employeeId", employeeId)}
               emptyLabel="Keine Mitarbeiter verfügbar."

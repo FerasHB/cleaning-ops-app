@@ -38,6 +38,13 @@ export default function EmployeesScreen() {
 
   const { employees, loading, error, refreshEmployees } = useJobs();
 
+  // Liste zeigt alle Mitarbeiter (inkl. inaktiver, mit Badge); der Zähler
+  // bezieht sich bewusst nur auf aktive.
+  const activeCount = useMemo(
+    () => employees.filter((e) => e.isActive !== false).length,
+    [employees],
+  );
+
   const [modalVisible, setModalVisible] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -140,7 +147,7 @@ export default function EmployeesScreen() {
               <View style={styles.headerText}>
                 <Text style={styles.title}>Mitarbeiter</Text>
                 <Text style={styles.subtitle}>
-                  Übersicht aller aktiven Mitarbeiter deiner Firma
+                  Übersicht aller Mitarbeiter deiner Firma
                 </Text>
               </View>
 
@@ -158,7 +165,7 @@ export default function EmployeesScreen() {
             </View>
 
             <View style={styles.countCard}>
-              <Text style={styles.countNumber}>{employees.length}</Text>
+              <Text style={styles.countNumber}>{activeCount}</Text>
               <Text style={styles.countLabel}>aktive Mitarbeiter</Text>
             </View>
 
