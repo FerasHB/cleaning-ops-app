@@ -27,7 +27,7 @@ import type { Job } from "@/types/job";
 import { isJobToday } from "@/utils/jobSchedule";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const COMPANY_NAME = "Dashboard";
@@ -78,7 +78,13 @@ export default function AdminDashboardScreen() {
   const { profile } = useAuth();
   const { jobs, employees, loading } = useJobs();
 
-  const now = useMemo(() => new Date(), []);
+  // Aktuelle Zeit, die sich minütlich aktualisiert (Datum/Uhrzeit-Label im Header).
+  // Kein Sekunden-Ticker; 60s reichen. Timer wird beim Unmount aufgeräumt.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const adminName = profile?.full_name?.trim() || "Admin";
 
