@@ -5,7 +5,7 @@
 // Start/Complete laufen unverändert über die bestehende JobCard (JobContext).
 // Admin nutzt weiterhin JobsListScreen — dieser Screen ist Employee-only.
 
-import { EmptyState, LoadingScreen, OfflineBanner } from "@/components/ui";
+import { EmptyState, ErrorBanner, LoadingScreen, OfflineBanner } from "@/components/ui";
 import JobCard from "@/components/JobCard";
 import { MonthCalendar } from "@/features/jobs/components/MonthCalendar";
 import { useJobs } from "@/context/JobContext";
@@ -58,6 +58,7 @@ export default function EmployeeJobsCalendarScreen() {
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
   const [selectedKey, setSelectedKey] = useState<string>(todayKey);
   const [refreshing, setRefreshing] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   // Einzige Quelle der Wahrheit ist selectedKey — der angezeigte Monat
   // wird daraus abgeleitet. So können Kalender-Monat und Tagesliste
@@ -146,6 +147,34 @@ export default function EmployeeJobsCalendarScreen() {
     return keys[0] ?? null;
   }, [overdueJobs]);
 
+  const handleStart = useCallback(
+    async (jobId: string) => {
+      setActionError("");
+      try {
+        await startJob(jobId);
+      } catch (err: unknown) {
+        setActionError(
+          err instanceof Error ? err.message : "Job konnte nicht gestartet werden.",
+        );
+      }
+    },
+    [startJob],
+  );
+
+  const handleComplete = useCallback(
+    async (jobId: string) => {
+      setActionError("");
+      try {
+        await completeJob(jobId);
+      } catch (err: unknown) {
+        setActionError(
+          err instanceof Error ? err.message : "Job konnte nicht abgeschlossen werden.",
+        );
+      }
+    },
+    [completeJob],
+  );
+
   // Ersten überfälligen Tag auswählen — der Kalender springt automatisch
   // mit, weil visibleMonth aus selectedKey abgeleitet ist.
   const handleOverduePress = useCallback(() => {
@@ -230,6 +259,14 @@ export default function EmployeeJobsCalendarScreen() {
               </TouchableOpacity>
             ) : null}
 
+            {/* ── Aktionsfehler (Start/Complete) ── */}
+            {actionError ? (
+              <ErrorBanner
+                message={actionError}
+                onDismiss={() => setActionError("")}
+              />
+            ) : null}
+
             {/* ── Titel: ausgewähltes Datum ── */}
             <Text style={styles.dayTitle}>{selectedLabel}</Text>
           </View>
@@ -250,8 +287,8 @@ export default function EmployeeJobsCalendarScreen() {
             job={item}
             // Start/Fertig sind Employee-Aktionen (RPCs start_own_job/
             // complete_own_job). JobCard zeigt je Status genau eine Action.
-            onStart={() => startJob(item.id)}
-            onComplete={() => completeJob(item.id)}
+            onStart={() => handleStart(item.id)}
+            onComplete={() => handleComplete(item.id)}
             onPress={() => router.push(`/jobs/${item.id}`)}
           />
         )}
