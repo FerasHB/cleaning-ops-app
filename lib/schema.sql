@@ -362,7 +362,8 @@ begin
     and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
-    and job_type = 'single';   -- Parent-Recurring-Regeln dürfen nicht gestartet werden
+    and job_type = 'single'   -- Parent-Recurring-Regeln dürfen nicht gestartet werden
+    and is_active = true;      -- deaktivierte Occurrences nicht startbar
 
   if not found then
     raise exception 'Job not found or not allowed';
@@ -400,7 +401,8 @@ begin
     and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
-    and job_type = 'single';   -- Parent-Recurring-Regeln dürfen nicht abgeschlossen werden
+    and job_type = 'single'   -- Parent-Recurring-Regeln dürfen nicht abgeschlossen werden
+    and is_active = true;      -- deaktivierte Occurrences nicht abschließbar
 
   if not found then
     raise exception 'Job not found or not allowed';
@@ -585,10 +587,11 @@ using (
   and company_id = public.current_user_company_id()
 );
 
--- Employees sehen nur job_type = 'single' (konkrete Termine).
+-- Employees sehen nur AKTIVE job_type = 'single' (konkrete Termine).
 -- Das schließt Parent-Recurring-Regeln (job_type = 'recurring') aus.
 -- Gilt für normale Single-Jobs (parent_job_id IS NULL) und
 -- generierte Occurrences (parent_job_id IS NOT NULL) gleichermaßen.
+-- is_active = true: deaktivierte Serien-Occurrences sind für Employees unsichtbar.
 create policy "employee read own assigned jobs"
 on public.jobs
 for select
@@ -596,6 +599,7 @@ to authenticated
 using (
   public.current_user_role() = 'employee'
   and job_type = 'single'
+  and is_active = true
   and assigned_to = auth.uid()
   and company_id = public.current_user_company_id()
 );
@@ -951,84 +955,55 @@ using (
 );
 
 -- =========================================================
--- RPC: GENERATE JOB OCCURRENCES
+-- RPC: KERN-GENERIERUNG + GENERATE / UPDATE JOB OCCURRENCES + CRON
 -- =========================================================
--- Erzeugt konkrete Single-Job-Einträge für einen Recurring-Parent.
--- Zeitraum aus recurrence_start_date / recurrence_end_date des Parents.
--- Hartes Maximum: 730 Tage. Idempotent via Unique Index.
+-- _generate_occurrences_core: gemeinsame Logik (rollierender 90-Tage-Horizont,
+-- is_active-Guard, Tages-Dedup). Wird von generate_/update_job_occurrences und
+-- dem Cron geteilt — eine Quelle der Wahrheit.
 
-create or replace function public.generate_job_occurrences(
-  parent_job_id_input uuid
-)
+create or replace function public._generate_occurrences_core(parent public.jobs)
 returns int
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  parent           public.jobs%rowtype;
   generation_start date;
   generation_end   date;
-  hard_limit       date;
   check_date       date;
   day_code         text;
   inserted_count   int := 0;
   rows_affected    int;
 begin
-  if auth.uid() is null then
-    raise exception 'Not authenticated';
+  -- Deaktivierte Serien erzeugen keine Occurrences
+  if parent.is_active is not true then
+    return 0;
   end if;
 
-  if public.current_user_role() != 'admin' then
-    raise exception 'Only admins can generate occurrences';
-  end if;
+  -- Startpunkt: frühestens heute (keine Alttermine)
+  generation_start := greatest(coalesce(parent.recurrence_start_date, current_date), current_date);
 
-  select * into parent
-  from public.jobs
-  where id          = parent_job_id_input
-    and company_id  = public.current_user_company_id()
-    and job_type    = 'recurring'
-    and parent_job_id is null;
-
-  if not found then
-    raise exception 'Recurring parent job not found or not accessible';
-  end if;
-
-  -- Startpunkt: frühestens heute, damit keine Alttermine entstehen
-  generation_start := greatest(
-    coalesce(parent.recurrence_start_date, current_date),
-    current_date
-  );
-
-  -- Hartes Maximum: 730 Tage ab Startpunkt
-  hard_limit := generation_start + interval '730 days';
-
-  -- Endpunkt: Enddatum des Parents (begrenzt durch hard_limit)
-  -- Kein Enddatum → 3 Monate voraus
+  -- Endpunkt: rollierende 90 Tage, gedeckelt durch Enddatum und hartes Maximum (730 Tage)
   generation_end := least(
-    case
-      when parent.recurrence_end_date is not null
-        then parent.recurrence_end_date
-      else generation_start + interval '3 months'
-    end,
-    hard_limit
+    coalesce(parent.recurrence_end_date, current_date + 90),
+    current_date + 90,
+    generation_start + 730
   );
 
   check_date := generation_start;
   while check_date <= generation_end loop
-
-    -- extract(isodow) ist locale-unabhängig: 1=Mo, 2=Di, ..., 7=So
+    -- extract(isodow) ist locale-unabhängig: 1=Mo … 7=So
     day_code := case extract(isodow from check_date)::int
-      when 1 then 'mon'
-      when 2 then 'tue'
-      when 3 then 'wed'
-      when 4 then 'thu'
-      when 5 then 'fri'
-      when 6 then 'sat'
-      when 7 then 'sun'
+      when 1 then 'mon' when 2 then 'tue' when 3 then 'wed' when 4 then 'thu'
+      when 5 then 'fri' when 6 then 'sat' when 7 then 'sun'
     end;
 
-    if parent.recurring_days @> array[day_code] then
+    if parent.recurring_days @> array[day_code]
+       and not exists (
+         select 1 from public.jobs o
+         where o.parent_job_id = parent.id and o.date = check_date
+       )
+    then
       insert into public.jobs (
         company_id, parent_job_id, customer_name, service_name,
         location_address, notes, status, assigned_to,
@@ -1038,15 +1013,12 @@ begin
         parent.company_id, parent.id, parent.customer_name, parent.service_name,
         parent.location_address, parent.notes, 'open', parent.assigned_to,
         'single', check_date, parent.start_time,
-        case
-          when parent.start_time is not null
-          then (check_date::text || ' ' || parent.start_time::text)::timestamptz
-          else null
-        end,
+        case when parent.start_time is not null
+             then (check_date::text || ' ' || parent.start_time::text)::timestamptz
+             else null end,
         parent.is_active, parent.created_by
       )
-      on conflict (parent_job_id, date, start_time)
-        where parent_job_id is not null
+      on conflict (parent_job_id, date, start_time) where parent_job_id is not null
       do nothing;
 
       get diagnostics rows_affected = row_count;
@@ -1060,44 +1032,73 @@ begin
 end;
 $$;
 
-grant execute on function public.generate_job_occurrences(uuid) to authenticated;
+revoke all on function public._generate_occurrences_core(public.jobs) from public;
 
-comment on function public.generate_job_occurrences(uuid) is
-'Erzeugt konkrete Single-Jobs aus Recurring-Regel. Zeitraum aus recurrence_start/end_date. '
-'Hartes Maximum: 730 Tage. Idempotent.';
+comment on function public._generate_occurrences_core(public.jobs) is
+'Interne Kern-Generierung (rollierender 90-Tage-Horizont, is_active-Guard, Tages-Dedup).';
 
 
--- =========================================================
--- RPC: UPDATE JOB OCCURRENCES
--- =========================================================
--- Löscht zukünftige offene Occurrences, regeneriert auf Basis der aktuellen Regel.
--- Abgeschlossene / laufende Occurrences bleiben erhalten.
-
-create or replace function public.update_job_occurrences(
-  parent_job_id_input uuid
-)
+-- generate_job_occurrences: Admin-RPC, prüft Rolle/Firma, delegiert an Kern.
+create or replace function public.generate_job_occurrences(parent_job_id_input uuid)
 returns int
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  parent    public.jobs%rowtype;
-  new_count int;
+  parent public.jobs%rowtype;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
   end if;
+  if public.current_user_role() != 'admin' then
+    raise exception 'Only admins can generate occurrences';
+  end if;
 
+  select * into parent
+  from public.jobs
+  where id = parent_job_id_input
+    and company_id = public.current_user_company_id()
+    and job_type = 'recurring'
+    and parent_job_id is null;
+
+  if not found then
+    raise exception 'Recurring parent job not found or not accessible';
+  end if;
+
+  return public._generate_occurrences_core(parent);
+end;
+$$;
+
+grant execute on function public.generate_job_occurrences(uuid) to authenticated;
+
+comment on function public.generate_job_occurrences(uuid) is
+'Erzeugt Occurrences einer Recurring-Regel (Admin, eigene Firma). Idempotent.';
+
+
+-- update_job_occurrences: löscht zukünftige OFFENE Occurrences, regeneriert.
+-- Abgeschlossene / laufende bleiben erhalten. Deaktivierte Regel → keine Neuerzeugung.
+create or replace function public.update_job_occurrences(parent_job_id_input uuid)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  parent public.jobs%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
   if public.current_user_role() != 'admin' then
     raise exception 'Only admins can update occurrences';
   end if;
 
   select * into parent
   from public.jobs
-  where id         = parent_job_id_input
+  where id = parent_job_id_input
     and company_id = public.current_user_company_id()
-    and job_type   = 'recurring'
+    and job_type = 'recurring'
     and parent_job_id is null;
 
   if not found then
@@ -1106,20 +1107,69 @@ begin
 
   delete from public.jobs
   where parent_job_id = parent_job_id_input
-    and status        = 'open'
-    and date          >= current_date;
+    and status = 'open'
+    and date >= current_date;
 
-  select public.generate_job_occurrences(parent_job_id_input)
-  into new_count;
-
-  return new_count;
+  return public._generate_occurrences_core(parent);
 end;
 $$;
 
 grant execute on function public.update_job_occurrences(uuid) to authenticated;
 
 comment on function public.update_job_occurrences(uuid) is
-'Löscht zukünftige offene Occurrences und regeneriert auf Basis der aktuellen Regel.';
+'Löscht zukünftige offene Occurrences und regeneriert. Deaktivierte Regel erzeugt keine neuen.';
+
+
+-- cron_generate_due_occurrences: täglicher pg_cron-Lauf (ohne Auth-Kontext),
+-- füllt den rollierenden Horizont aller aktiven Serien firmenübergreifend auf.
+create or replace function public.cron_generate_due_occurrences()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  parent public.jobs%rowtype;
+  total  int := 0;
+begin
+  for parent in
+    select * from public.jobs
+    where job_type = 'recurring'
+      and parent_job_id is null
+      and is_active = true
+      and (recurrence_end_date is null or recurrence_end_date >= current_date)
+  loop
+    total := total + public._generate_occurrences_core(parent);
+  end loop;
+  return total;
+end;
+$$;
+
+revoke all on function public.cron_generate_due_occurrences() from public;
+
+comment on function public.cron_generate_due_occurrences() is
+'Täglicher pg_cron-Lauf: füllt den rollierenden Horizont aller aktiven Serien auf.';
+
+
+-- pg_cron-Scheduling (konditional, damit Setup auch ohne pg_cron durchläuft).
+-- Auf Supabase muss pg_cron aktiviert sein (Dashboard → Database → Extensions).
+do $$
+begin
+  if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
+    create extension if not exists pg_cron;
+    begin
+      perform cron.unschedule('generate-recurring-occurrences');
+    exception when others then null;
+    end;
+    perform cron.schedule(
+      'generate-recurring-occurrences',
+      '0 2 * * *',
+      'select public.cron_generate_due_occurrences();'
+    );
+  else
+    raise notice 'pg_cron nicht verfügbar — Scheduling übersprungen.';
+  end if;
+end $$;
 
 
 -- =========================================================

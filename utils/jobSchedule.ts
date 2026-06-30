@@ -3,13 +3,12 @@
 // Werden von EmployeeOverviewScreen, AdminDashboardScreen und JobCard genutzt,
 // damit die "Heute fällig"- und Anzeige-Logik nur an EINER Stelle lebt.
 //
-// TODO (bewusst noch KEIN Occurrence-System):
-// Wiederkehrende Jobs sind aktuell Templates/Regeln (eine Zeile in der DB),
-// nicht pro Tag materialisierte Vorkommen. Status (open/in_progress/completed)
-// sowie started_at/completed_at gelten daher global pro Regel, nicht pro Tag.
-// Für sauberes Tages-Status-Tracking (z.B. "heute erledigt" je Wochentag)
-// brauchen wir später echte Job-Occurrences. Bis dahin beantwortet isJobToday()
-// nur "ist heute fällig?" ohne tagesgenauen Status.
+// Hinweis: Wiederkehrende Jobs werden serverseitig in konkrete Occurrences
+// (job_type='single', parent_job_id gesetzt) materialisiert — siehe
+// generate_job_occurrences / cron_generate_due_occurrences (lib/schema.sql).
+// Jede Occurrence trägt ihren eigenen Status/started_at/completed_at pro Tag.
+// Die Recurring-Parent-Regel selbst (job_type='recurring') ist kein ausführbarer
+// Termin; isJobToday() beantwortet für sie weiterhin nur "ist heute fällig?".
 
 import type { Job } from "@/types/job";
 import { isSameLocalDate, normalizeTime } from "@/utils/date";

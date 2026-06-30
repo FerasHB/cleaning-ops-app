@@ -143,10 +143,18 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   Tastatur sichtbar bleiben.
 - Lokale Dateien gehören nicht ins Repo: `.claude/` und `supabase/.temp/` sind in `.gitignore`.
 
-## Bekannte technische Schuld
+## Recurring-Job-Occurrences (materialisiert)
 
-- **Keine Job-Occurrences (bewusst, MVP-Scope).** Recurring Jobs sind Regeln/Templates — eine Zeile in der
-  DB, kein pro-Tag materialisiertes Vorkommen. `status`, `started_at`, `completed_at` gelten daher **global
-  pro Regel, nicht pro konkretem Tag** (z. B. „Montag abgeschlossen" markiert fälschlich auch Donnerstag).
-  Sauber wäre später ein Occurrence-System: *recurring job = Regel*, *job occurrence = Ausführung an einem
-  Tag*. Noch nicht gebaut, weil für das MVP zu groß. `isJobToday()` beantwortet nur „heute fällig?".
+- **Recurring Jobs werden in konkrete Occurrences materialisiert.** Ein *recurring job* ist die Regel/Template
+  (`job_type='recurring'`, `parent_job_id IS NULL`); pro fälligem Tag entsteht eine *Occurrence*
+  (`job_type='single'`, `parent_job_id` gesetzt) mit **eigenem** `status`/`started_at`/`completed_at`.
+- **Generierung:** RPC `generate_job_occurrences(uuid)` (Admin) bei Create, `update_job_occurrences(uuid)`
+  bei Edit (löscht nur **zukünftige offene** Occurrences und regeneriert; laufende/erledigte bleiben). Beide
+  delegieren an die interne Kernfunktion `_generate_occurrences_core(jobs)` (siehe `lib/schema.sql`).
+- **Rollierender Horizont:** heute … +90 Tage (gedeckelt durch `recurrence_end_date`, hartes Max 730 Tage).
+  Der tägliche **pg_cron**-Lauf `cron_generate_due_occurrences()` (02:00 UTC) füllt den Horizont automatisch
+  nach, damit Serien ohne Enddatum nie „versiegen". **pg_cron muss in Supabase aktiviert sein.**
+- **is_active:** serverseitig durchgesetzt — inaktive Serien erzeugen keine Occurrences, die Employee-RLS und
+  `start_own_job`/`complete_own_job` filtern auf `is_active = true`. Screens filtern zusätzlich (Defense-in-Depth).
+- **Hinweis Schema:** `lib/schema.sql` ist die kanonische Referenz; Migrationen unter `supabase/migrations/`
+  konvergieren zum selben Stand (Funktions-Overloads sind in `20260701_…` bereinigt).

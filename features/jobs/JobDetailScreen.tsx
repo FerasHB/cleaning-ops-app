@@ -220,8 +220,15 @@ export default function JobDetailScreen() {
     role === "employee" && job.employeeId === profile?.id;
   // Parent-Recurring-Regeln dürfen niemals gestartet/abgeschlossen werden —
   // nur konkrete Occurrences (job_type='single') sind ausführbare Termine.
-  const canStart = !isParentRule && isAssignedEmployee && job.status === "open";
-  const canComplete = !isParentRule && isAssignedEmployee && job.status === "in_progress";
+  // Zusätzlich: deaktivierte Occurrences (isActive === false) sind nicht
+  // ausführbar — die RLS blendet sie für Employees ohnehin aus, dieser Guard
+  // ist Defense-in-Depth für den Offline-Cache-Fall (RPC würde sonst mit
+  // "Job not found or not allowed" antworten).
+  const isActiveJob = job.isActive !== false;
+  const canStart =
+    !isParentRule && isActiveJob && isAssignedEmployee && job.status === "open";
+  const canComplete =
+    !isParentRule && isActiveJob && isAssignedEmployee && job.status === "in_progress";
   const isDone = job.status === "completed";
 
   // Foto-Upload: Admin immer; Employee nur wenn diesem Job zugewiesen.

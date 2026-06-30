@@ -92,8 +92,11 @@ export default function EmployeeJobsCalendarScreen() {
   // Nur konkrete Einzel-Jobs (Occurrences + echte Single-Jobs).
   // Parent-Recurring-Regeln (jobType 'recurring') fallen hier raus —
   // zusätzlich zur server-seitigen RLS als Client-Schutz.
+  // Deaktivierte Occurrences (isActive === false) werden ebenfalls ausgeblendet
+  // (Defense-in-Depth zum is_active-Filter der Employee-RLS, greift auch im
+  // Offline-Cache).
   const singleJobs = useMemo(
-    () => jobs.filter((j) => j.jobType === "single"),
+    () => jobs.filter((j) => j.jobType === "single" && j.isActive !== false),
     [jobs],
   );
 

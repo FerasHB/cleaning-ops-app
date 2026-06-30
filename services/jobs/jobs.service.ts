@@ -427,7 +427,9 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
     throw new Error("Job wurde angelegt, aber kein Datensatz zurückgegeben.");
   }
 
-  // Bei Recurring Jobs: konkrete Einzel-Termine für die nächsten 8 Wochen erzeugen.
+  // Bei Recurring Jobs: konkrete Einzel-Termine im rollierenden Horizont erzeugen
+  // (heute … +90 Tage, gedeckelt durch recurrence_end_date). Den Horizont hält
+  // danach der tägliche pg_cron-Lauf (cron_generate_due_occurrences) automatisch nach.
   // Fehler hier brechen den Job-Create nicht ab — der Parent existiert bereits.
   if (__DEV__) {
     console.log(
