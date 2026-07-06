@@ -274,10 +274,14 @@ export default function JobsListScreen() {
             )}
 
             {/* ── Ergebniszähler ── */}
-            <Text style={styles.resultCount}>
-              {filteredJobs.length}{" "}
-              {filteredJobs.length === 1 ? "Job" : "Jobs"}
-            </Text>
+            {/* Nur anzeigen, wenn es Treffer gibt — bei 0 Treffern übernimmt
+                der EmptyState die Meldung, "0 Jobs" wäre doppelt gemoppelt. */}
+            {filteredJobs.length > 0 && (
+              <Text style={styles.resultCount}>
+                {filteredJobs.length}{" "}
+                {filteredJobs.length === 1 ? "Job" : "Jobs"}
+              </Text>
+            )}
           </View>
         }
         ListEmptyComponent={
