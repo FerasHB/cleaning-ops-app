@@ -18,6 +18,7 @@ import { router } from "expo-router";
 import React, { useMemo } from "react";
 import {
   Alert,
+  Linking,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -52,6 +53,39 @@ export default function ProfileScreen({
   const fullName = profile?.full_name?.trim() || email;
   const isAdmin = role === "admin";
   const hasCompany = !!profile?.company_id;
+
+  // ── Account- und Datenlöschung: öffnet die Mail-App mit vorausgefüllter
+  // Vorlage (kein echtes Löschsystem — nur mailto-Link, siehe Datenschutz-
+  // /Account-Löschungs-Text: Anfrage per E-Mail an info@novaflowdigital.de).
+  const handleRequestDeletion = () => {
+    const subject = "Account- und Datenlöschung – TaskOps Manager";
+    const body = `Hallo,
+
+ich möchte die Löschung meines Nutzerkontos und meiner personenbezogenen Daten in TaskOps Manager beantragen.
+
+Name:
+${profile?.full_name?.trim() || "[bitte ergänzen]"}
+
+Registrierte E-Mail:
+${user?.email || "[bitte ergänzen]"}
+
+Unternehmen / Company:
+[bitte ergänzen]
+
+Technische Company-ID:
+${profile?.company_id || "[bitte ergänzen]"}
+
+Vielen Dank.`;
+
+    const url = `mailto:info@novaflowdigital.de?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    Linking.openURL(url).catch(() => {
+      Alert.alert(
+        "Keine Mail-App gefunden",
+        "Bitte sende eine E-Mail an info@novaflowdigital.de.",
+      );
+    });
+  };
 
   // ── Logout mit Bestätigung (signOut-Logik unverändert)
   const handleLogout = () => {
@@ -258,6 +292,13 @@ export default function ProfileScreen({
             label="Datenschutz"
             comingSoon
             onPress={showComingSoon}
+            styles={styles}
+            theme={theme}
+          />
+          <SettingsRow
+            icon="trash-outline"
+            label="Account- und Datenlöschung beantragen"
+            onPress={handleRequestDeletion}
             styles={styles}
             theme={theme}
           />
