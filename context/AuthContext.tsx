@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const syncPushToken = useCallback(async (userId: string) => {
+  const syncPushToken = useCallback(async () => {
     try {
       const expoPushToken = await registerForPushNotifications();
 
@@ -68,10 +68,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { error } = await supabase
-        .from("profiles")
-        .update({ expo_push_token: expoPushToken })
-        .eq("id", userId);
+      // Über die RPC speichern (SECURITY DEFINER, setzt nur die eigene Zeile
+      // per auth.uid()). Employees haben KEINE direkte UPDATE-Policy auf
+      // profiles — ein direktes .update() würde für sie still fehlschlagen und
+      // der Push-Token bliebe leer. Die RPC umgeht das sicher.
+      const { error } = await supabase.rpc("update_my_push_token", {
+        new_token: expoPushToken,
+      });
 
       if (error) {
         // Offline ist erwartbar — Push-Token wird beim nächsten Login/Online
@@ -121,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       lastHandledUserIdRef.current = nextUserId;
 
       if (syncToken) {
-        await syncPushToken(nextUserId);
+        await syncPushToken();
       }
     },
     [syncPushToken],

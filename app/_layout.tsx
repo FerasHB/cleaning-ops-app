@@ -15,7 +15,8 @@ import {
 } from "@expo-google-fonts/inter";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useRef } from "react";
+import { Component, type ReactNode, useEffect, useRef } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 // Splash Screen bleibt sichtbar, bis Fonts fertig geladen sind
 SplashScreen.preventAutoHideAsync();
@@ -24,6 +25,85 @@ SplashScreen.preventAutoHideAsync();
 // -Toast. Nur Entwicklung, echte Fehler bleiben sichtbar. Modul-Scope, damit der
 // Guard aktiv ist, bevor Provider-Effekte erste Requests starten.
 installNetworkErrorGuard();
+
+// Einfacher globaler Error-Boundary: fängt unerwartete Render-Fehler im
+// gesamten App-Baum ab, damit die App nicht komplett weiß/rot einfriert.
+// Bewusst minimal (kein Crash-Reporting, kein Theme) — nur ein deutscher
+// Fallback mit "Erneut versuchen".
+type AppErrorBoundaryState = { hasError: boolean };
+
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  AppErrorBoundaryState
+> {
+  state: AppErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): AppErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    // Nur loggen (im Expo-Log sichtbar) — kein Crash-Reporting im MVP.
+    console.error("Unerwarteter Render-Fehler:", error);
+  }
+
+  private handleReset = () => {
+    this.setState({ hasError: false });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Etwas ist schiefgelaufen</Text>
+          <Text style={styles.errorMessage}>
+            Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es
+            erneut.
+          </Text>
+          <Pressable style={styles.errorButton} onPress={this.handleReset}>
+            <Text style={styles.errorButtonText}>Erneut versuchen</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const styles = StyleSheet.create({
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "#FFFFFF",
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorMessage: {
+    fontSize: 15,
+    color: "#4B5563",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  errorButton: {
+    backgroundColor: "#2563EB",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  errorButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+});
 
 function RootNavigator() {
   const { session, profile } = useAuth();
@@ -111,8 +191,10 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <RootNavigator />
-    </AuthProvider>
+    <AppErrorBoundary>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
+    </AppErrorBoundary>
   );
 }
