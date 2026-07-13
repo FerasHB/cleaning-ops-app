@@ -369,3 +369,78 @@ execute function public.enforce_active_assignee();
 
 comment on function public.enforce_active_assignee() is
 'BEFORE INSERT/UPDATE Guard auf jobs: verhindert (Neu-)Zuweisung an einen inaktiven Mitarbeiter, unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
+
+-- =========================================================
+-- 5) Trigger: Push-Token beim Deaktivieren serverseitig löschen
+-- =========================================================
+-- Der Client (setEmployeeActive) setzt is_active + expo_push_token bereits
+-- in EINEM UPDATE (atomar auf Statement-Ebene). Dieser Trigger ist die
+-- serverseitige Garantie, damit der Client NICHT die einzige Stelle ist,
+-- die den Token löscht: egal über welchen Pfad ein Profil deaktiviert wird
+-- (Admin-Client, künftige RPC, direkter SQL-Zugriff im Dashboard), sobald
+-- is_active von true auf false wechselt, wird expo_push_token genullt.
+--
+-- Läuft BEWUSST NICHT als SECURITY DEFINER — die Funktion mutiert nur NEW
+-- und läuft im Rechte-Kontext des Aufrufers (kein Zugriff auf andere Zeilen).
+-- Reaktivierung (false→true) und Token-Updates bei aktivem Profil
+-- (update_my_push_token) sind nicht betroffen, da die Bedingung dort nicht
+-- greift.
+create or replace function public.clear_push_token_on_deactivate()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.is_active = false and coalesce(old.is_active, true) = true then
+    new.expo_push_token := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists clear_push_token_on_deactivate_trg on public.profiles;
+create trigger clear_push_token_on_deactivate_trg
+before update on public.profiles
+for each row
+execute function public.clear_push_token_on_deactivate();
+
+comment on function public.clear_push_token_on_deactivate() is
+'BEFORE UPDATE Guard auf profiles: nullt expo_push_token, sobald is_active true->false wechselt — serverseitige Garantie, unabhängig vom schreibenden Pfad.';
+
+-- =========================================================
+-- 6) Realtime: profiles in die supabase_realtime-Publication aufnehmen
+-- =========================================================
+-- Der Live-Deaktivierungs-Kanal in context/AuthContext.tsx abonniert
+-- UPDATE-Events der EIGENEN profiles-Zeile (filter id=eq.<uid>), um eine
+-- bereits offene App sofort zu sperren. Das funktioniert NUR, wenn die
+-- Tabelle Teil der supabase_realtime-Publication ist. jobs wurde (per
+-- Dashboard → Database → Replication) hinzugefügt; profiles bisher NICHT —
+-- ohne diesen Schritt käme das UPDATE-Event nie beim Client an und der
+-- Live-Logout griffe gar nicht (der AppState-Foreground-Recheck im
+-- AuthContext ist der realtime-UNABHÄNGIGE Fallback, siehe dort).
+--
+-- REPLICA IDENTITY FULL: damit der Change-Payload (payload.new) die
+-- is_active-Spalte enthält und die RLS-Prüfung für Realtime die Zeile
+-- korrekt bewerten kann. RLS: die SELECT-Policy "employee read own profile"
+-- (id = auth.uid()) ist is_active-UNABHÄNGIG — der deaktivierte Nutzer darf
+-- seine eigene Zeile also weiterhin lesen und bekommt das Event zugestellt.
+-- current_user_role()/current_user_company_id() (jetzt NULL für Inaktive)
+-- werden von dieser Policy NICHT verwendet, beeinflussen die Zustellung also
+-- nicht.
+alter table public.profiles replica identity full;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'profiles'
+    ) then
+      alter publication supabase_realtime add table public.profiles;
+    end if;
+  else
+    raise notice 'Publication supabase_realtime nicht vorhanden — profiles-Realtime übersprungen (lokale/Test-DB ohne Realtime).';
+  end if;
+end $$;

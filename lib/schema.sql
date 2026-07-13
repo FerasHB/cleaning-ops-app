@@ -572,6 +572,39 @@ before insert or update on public.jobs
 for each row
 execute function public.enforce_active_assignee();
 
+-- Serverseitige Garantie, dass ein deaktiviertes Profil keinen Push-Token
+-- behält — unabhängig vom schreibenden Pfad (Admin-Client, RPC, direktes
+-- SQL). Der Client (setEmployeeActive) setzt beides bereits in EINEM UPDATE;
+-- dieser Trigger stellt sicher, dass der Client nicht die einzige Stelle ist.
+-- Nicht SECURITY DEFINER: mutiert nur NEW im Kontext des Aufrufers.
+create or replace function public.clear_push_token_on_deactivate()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.is_active = false and coalesce(old.is_active, true) = true then
+    new.expo_push_token := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists clear_push_token_on_deactivate_trg on public.profiles;
+create trigger clear_push_token_on_deactivate_trg
+before update on public.profiles
+for each row
+execute function public.clear_push_token_on_deactivate();
+
+-- Realtime: profiles muss Teil der supabase_realtime-Publication sein, damit
+-- der Live-Deaktivierungs-Kanal (context/AuthContext.tsx) UPDATE-Events der
+-- eigenen Profilzeile empfängt. jobs wurde per Dashboard hinzugefügt; profiles
+-- ergänzt die Migration 20260713_enforce_inactive_employee_access.sql
+-- (idempotent + guarded). REPLICA IDENTITY FULL, damit der Payload is_active
+-- enthält. Der AppState-Foreground-Recheck im AuthContext ist der
+-- realtime-UNABHÄNGIGE Fallback, falls Realtime nicht konfiguriert ist.
+alter table public.profiles replica identity full;
+
 -- =========================================================
 -- ENABLE RLS
 -- =========================================================
@@ -1269,3 +1302,6 @@ comment on function public.complete_own_job(uuid, timestamptz) is
 
 comment on function public.enforce_active_assignee() is
 'BEFORE INSERT/UPDATE Guard auf jobs: verhindert (Neu-)Zuweisung an einen inaktiven Mitarbeiter, unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
+
+comment on function public.clear_push_token_on_deactivate() is
+'BEFORE UPDATE Guard auf profiles: nullt expo_push_token, sobald is_active true->false wechselt — serverseitige Garantie, unabhängig vom schreibenden Pfad.';
