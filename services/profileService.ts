@@ -11,9 +11,19 @@ export type AuthProfile = {
   is_active: boolean;
 };
 
+// Unterscheidet "kein Netz" (erwartbar, retryt sich von selbst beim
+// nächsten Reconnect) von einem echten Server-/RLS-/Datenfehler (sollte
+// dem Nutzer sichtbar gemacht werden, statt endlos zu laden).
+export type ProfileFetchErrorKind = "network" | "server" | null;
+
+export type ProfileFetchResult = {
+  profile: AuthProfile | null;
+  errorKind: ProfileFetchErrorKind;
+};
+
 export async function getProfileByUserId(
   userId: string,
-): Promise<AuthProfile | null> {
+): Promise<ProfileFetchResult> {
   // try/catch, weil der Supabase-Aufruf offline auch ROH werfen kann (nicht nur
   // { error }). Diese Funktion läuft u. a. bei Auth-Events (z. B. Token-Refresh-
   // Versuche beim WLAN-Umschalten) — ein roher Throw würde sonst zu einer
@@ -26,19 +36,19 @@ export async function getProfileByUserId(
       .single();
 
     if (error) {
-      // Offline-/Netzwerkfehler ruhig behandeln (kein Redbox); nur echte Fehler
-      // loggen. In beiden Fällen null zurückgeben (kein Profil verfügbar).
-      if (!isNetworkError(error)) {
-        console.error("Failed to load profile:", error);
+      if (isNetworkError(error)) {
+        return { profile: null, errorKind: "network" };
       }
-      return null;
+      console.error("Failed to load profile:", error);
+      return { profile: null, errorKind: "server" };
     }
 
-    return data as AuthProfile;
+    return { profile: data as AuthProfile, errorKind: null };
   } catch (err) {
-    if (!isNetworkError(err)) {
-      console.error("Failed to load profile:", err);
+    if (isNetworkError(err)) {
+      return { profile: null, errorKind: "network" };
     }
-    return null;
+    console.error("Failed to load profile:", err);
+    return { profile: null, errorKind: "server" };
   }
 }

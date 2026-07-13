@@ -36,15 +36,24 @@ export function EmployeeSelector({
       {employees.length === 0 ? (
         <Text style={styles.emptyText}>{emptyLabel}</Text>
       ) : (
-        employees.map((emp) => (
-          <EmployeeOptionRow
-            key={emp.id}
-            label={emp.fullName}
-            sublabel={emp.isActive === false ? "Inaktiv" : "Mitarbeiter"}
-            isSelected={selectedEmployeeId === emp.id}
-            onPress={() => onSelect(emp.id)}
-          />
-        ))
+        employees.map((emp) => {
+          const isInactive = emp.isActive === false;
+          return (
+            <EmployeeOptionRow
+              key={emp.id}
+              label={emp.fullName}
+              sublabel={
+                isInactive ? "Inaktiv – kann nicht zugewiesen werden" : "Mitarbeiter"
+              }
+              isSelected={selectedEmployeeId === emp.id}
+              disabled={isInactive}
+              onPress={() => {
+                if (isInactive) return;
+                onSelect(emp.id);
+              }}
+            />
+          );
+        })
       )}
     </View>
   );
@@ -54,6 +63,7 @@ type EmployeeOptionRowProps = {
   label: string;
   sublabel?: string;
   isSelected: boolean;
+  disabled?: boolean;
   onPress: () => void;
 };
 
@@ -61,6 +71,7 @@ function EmployeeOptionRow({
   label,
   sublabel,
   isSelected,
+  disabled = false,
   onPress,
 }: EmployeeOptionRowProps) {
   const theme = useAppTheme();
@@ -69,17 +80,32 @@ function EmployeeOptionRow({
   return (
     <TouchableOpacity
       onPress={onPress}
-      style={[styles.row, isSelected && styles.rowSelected]}
-      activeOpacity={0.7}
+      disabled={disabled}
+      style={[
+        styles.row,
+        isSelected && styles.rowSelected,
+        disabled && styles.rowDisabled,
+      ]}
+      activeOpacity={disabled ? 1 : 0.7}
     >
       <View
-        style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}
+        style={[
+          styles.radioOuter,
+          isSelected && styles.radioOuterSelected,
+          disabled && styles.radioOuterDisabled,
+        ]}
       >
         {isSelected && <View style={styles.radioInner} />}
       </View>
 
       <View style={styles.info}>
-        <Text style={[styles.name, isSelected && styles.nameSelected]}>
+        <Text
+          style={[
+            styles.name,
+            isSelected && styles.nameSelected,
+            disabled && styles.nameDisabled,
+          ]}
+        >
           {label}
         </Text>
         {sublabel ? <Text style={styles.sublabel}>{sublabel}</Text> : null}
@@ -114,6 +140,9 @@ function createStyles(theme: AppTheme) {
       backgroundColor: theme.colors.statusInProgressBg,
       borderColor: theme.colors.statusInProgressBorder,
     },
+    rowDisabled: {
+      opacity: 0.5,
+    },
     radioOuter: {
       width: 20,
       height: 20,
@@ -125,6 +154,9 @@ function createStyles(theme: AppTheme) {
     },
     radioOuterSelected: {
       borderColor: theme.colors.primary,
+    },
+    radioOuterDisabled: {
+      borderColor: theme.colors.outlineVariant,
     },
     radioInner: {
       width: 10,
@@ -141,6 +173,9 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.medium,
       fontWeight: theme.typography.weight.medium,
       color: theme.colors.onSurface,
+    },
+    nameDisabled: {
+      color: theme.colors.onSurfaceVariant,
     },
     nameSelected: {
       color: theme.colors.primary,
