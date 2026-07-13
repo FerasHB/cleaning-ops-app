@@ -235,14 +235,20 @@ $$;
 -- WHERE/USING/WITH CHECK-Klauseln und sperrt einen deaktivierten Nutzer
 -- damit zentral, ohne jede einzelne Policy separat ändern zu müssen
 -- (siehe supabase/migrations/20260714000000_enforce_inactive_employee_access.sql).
+--
+-- Rückgabetyp text (nicht public.app_role): entspricht dem tatsächlichen
+-- Remote-Stand. "create or replace" kann den Rückgabetyp einer bestehenden
+-- Funktion nicht ändern — die Signatur muss text bleiben. Alle Vergleiche
+-- laufen gegen Text-Literale ('admin'/'employee') und funktionieren mit
+-- text unverändert.
 create or replace function public.current_user_role()
-returns public.app_role
+returns text
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select role
+  select role::text
   from public.profiles
   where id = auth.uid()
     and is_active = true

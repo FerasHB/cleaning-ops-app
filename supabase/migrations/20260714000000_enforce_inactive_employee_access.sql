@@ -34,15 +34,24 @@
 -- 1) current_user_role() / current_user_company_id()
 --    → NULL für inaktive Profile
 -- =========================================================
-
+--
+-- WICHTIG (Remote-Stand): current_user_role() gibt auf der Remote-DB
+-- RETURNS text zurück (nicht public.app_role) und selektiert role::text.
+-- "create or replace" kann den Rückgabetyp einer bestehenden Funktion
+-- NICHT ändern (Postgres-Fehler "cannot change return type of existing
+-- function"). Diese Migration muss den vorhandenen text-Rückgabetyp
+-- also beibehalten — sonst schlägt bereits das erste Statement fehl.
+-- Alle Vergleiche laufen gegen Text-Literale ('admin'/'employee'),
+-- funktionieren mit text unverändert; PL/pgSQL-Guards nutzen
+-- IS DISTINCT FROM (NULL-sicher).
 create or replace function public.current_user_role()
-returns public.app_role
+returns text
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select role
+  select role::text
   from public.profiles
   where id = auth.uid()
     and is_active = true
