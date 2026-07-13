@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
 });
 
 function RootNavigator() {
-  const { session, profile } = useAuth();
+  const { session, profile, role } = useAuth();
 
   // ── Auth-Gates für den Back-Stack ──────────────────────────────────────
   // Entscheidet, welche Routen-Gruppen überhaupt im Navigations-State liegen.
@@ -119,6 +119,14 @@ function RootNavigator() {
   const needsSetup = hasSession && !!profile && !hasCompany;
   // Voll eingeloggt (Session + Unternehmen) → App/Tabs.
   const isAuthed = hasSession && hasCompany;
+
+  // Rollen-Guards (zusätzlich zu RLS, das die eigentliche Sicherheitsgrenze
+  // bleibt): verhindert, dass ein Employee die Admin-Tab-Gruppe oder
+  // Admin-only-Formulare per Deep-Link/manueller Navigation überhaupt öffnen
+  // kann. RLS würde die dahinterliegenden Daten zwar ohnehin sperren, aber
+  // ohne diesen Guard bliebe die Admin-UI-Shell selbst erreichbar.
+  const isAuthedAdmin = isAuthed && role === "admin";
+  const isAuthedEmployee = isAuthed && role === "employee";
 
   return (
     <JobProvider>
@@ -138,20 +146,37 @@ function RootNavigator() {
           <Stack.Screen name="forgot-password" />
         </Stack.Protected>
 
+        {/* Passwort-Reset: immer erreichbar (auch ohne bestehende App-Session,
+            der Recovery-Link stellt selbst eine temporäre Session her — siehe
+            features/auth/ResetPasswordScreen.tsx). Bewusst außerhalb der
+            !hasSession-Gruppe, sonst würde die Recovery-Session den Screen
+            sofort wieder aus dem Stack entfernen, bevor das neue Passwort
+            gesetzt werden kann. */}
+        <Stack.Screen name="reset-password" />
+
         {/* Setup: eingeloggt, aber noch kein Unternehmen. */}
         <Stack.Protected guard={needsSetup}>
           <Stack.Screen name="setup-company" />
         </Stack.Protected>
 
-        {/* App: eingeloggt mit Unternehmen → Tabs + Detail-/Form-Routen. */}
-        <Stack.Protected guard={isAuthed}>
+        {/* Admin-Bereich: Tabs + Admin-only Detail-/Form-Routen. */}
+        <Stack.Protected guard={isAuthedAdmin}>
           <Stack.Screen name="(admin-tabs)" />
-          <Stack.Screen name="(employee-tabs)" />
           <Stack.Screen name="jobs/create" />
-          <Stack.Screen name="jobs/[id]/index" />
           <Stack.Screen name="jobs/[id]/edit" />
           <Stack.Screen name="employees/[id]/index" />
           <Stack.Screen name="timesheets/index" />
+        </Stack.Protected>
+
+        {/* Employee-Bereich: nur die eigenen Tabs. */}
+        <Stack.Protected guard={isAuthedEmployee}>
+          <Stack.Screen name="(employee-tabs)" />
+        </Stack.Protected>
+
+        {/* Von beiden Rollen genutzt: Job-Detail (rollenabhängige UI innerhalb
+            des Screens) und Passwort ändern. */}
+        <Stack.Protected guard={isAuthed}>
+          <Stack.Screen name="jobs/[id]/index" />
           <Stack.Screen name="change-password" />
         </Stack.Protected>
       </Stack>
