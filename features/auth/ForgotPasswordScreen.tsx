@@ -6,6 +6,7 @@ import { ErrorBanner, Input } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
@@ -43,10 +44,18 @@ export default function ForgotPasswordScreen() {
 
     try {
       setLoading(true);
+
+      // Linking.createURL baut automatisch die passende Deep-Link-URL für die
+      // aktuelle Umgebung (taskopsmanager://reset-password im Standalone-/
+      // Dev-Client-Build, die passende exp://-Proxy-URL unter Expo Go/Dev).
+      // WICHTIG: Diese URL muss in Supabase unter Authentication → URL
+      // Configuration → Redirect URLs eingetragen sein, sonst leitet Supabase
+      // NICHT dorthin um (siehe Abschlussbericht für den exakten Wert).
+      const redirectTo = Linking.createURL("reset-password");
+
       const { error } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
-        // redirectTo kann gesetzt werden, wenn eine Deep-Link-URL konfiguriert ist
-        // { redirectTo: 'cleanops://reset-password' }
+        { redirectTo },
       );
 
       if (error) {
