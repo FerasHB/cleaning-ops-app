@@ -228,6 +228,13 @@ begin
 end;
 $$;
 
+-- WICHTIG: liefert für ein inaktives Profil (is_active = false) bewusst
+-- NULL statt der echten Rolle. Praktisch jede RLS-Policy und jede
+-- SECURITY DEFINER-RPC in diesem Schema läuft über current_user_role()/
+-- current_user_company_id() — NULL propagiert automatisch durch alle
+-- WHERE/USING/WITH CHECK-Klauseln und sperrt einen deaktivierten Nutzer
+-- damit zentral, ohne jede einzelne Policy separat ändern zu müssen
+-- (siehe supabase/migrations/20260713_enforce_inactive_employee_access.sql).
 create or replace function public.current_user_role()
 returns public.app_role
 language sql
@@ -238,6 +245,7 @@ as $$
   select role
   from public.profiles
   where id = auth.uid()
+    and is_active = true
   limit 1;
 $$;
 
@@ -251,6 +259,7 @@ as $$
   select company_id
   from public.profiles
   where id = auth.uid()
+    and is_active = true
   limit 1;
 $$;
 
@@ -316,6 +325,9 @@ grant execute on function public.setup_company_for_admin(text) to authenticated;
 -- RPC: UPDATE OWN PUSH TOKEN
 -- =========================================================
 
+-- Schlägt bewusst fehl, wenn das aufrufende Profil inaktiv ist — ein
+-- deaktivierter Mitarbeiter darf sich nicht durch einen App-Neustart
+-- erneut einen gültigen Push-Token registrieren.
 create or replace function public.update_my_push_token(new_token text)
 returns void
 language plpgsql
@@ -329,11 +341,38 @@ begin
 
   update public.profiles
   set expo_push_token = new_token
-  where id = auth.uid();
+  where id = auth.uid()
+    and is_active = true;
+
+  if not found then
+    raise exception 'Account is inactive or not found';
+  end if;
 end;
 $$;
 
 grant execute on function public.update_my_push_token(text) to authenticated;
+
+-- Löscht den eigenen Push-Token IMMER, unabhängig von is_active — läuft
+-- beim Logout (siehe context/AuthContext.tsx). Muss best effort sein
+-- (kein raise bei fehlender Session), damit Logout nie blockiert wird.
+create or replace function public.clear_my_push_token()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    return;
+  end if;
+
+  update public.profiles
+  set expo_push_token = null
+  where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.clear_my_push_token() to authenticated;
 
 -- =========================================================
 -- RPC: START OWN JOB
@@ -481,6 +520,57 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row
 execute function public.handle_new_user();
+
+-- Verhindert (Neu-)Zuweisung eines Jobs an einen inaktiven Mitarbeiter —
+-- weder neu (INSERT) noch durch nachträgliche Umzuweisung (UPDATE, nur
+-- wenn assigned_to sich tatsächlich ändert). Läuft als Tabellen-Trigger,
+-- greift also unabhängig davon, ob der Schreibzugriff über RLS
+-- (Admin-Client) oder über eine SECURITY DEFINER-RPC erfolgt
+-- (z. B. generate_job_occurrences, das zusätzlich selbst schon auf
+-- effective_assigned_to reduziert, siehe oben).
+create or replace function public.enforce_active_assignee()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- INSERT und UPDATE getrennt behandelt: OLD existiert bei INSERT
+  -- schlicht nicht, ein separater Zweig vermeidet jeden Zugriff auf OLD
+  -- in diesem Fall (statt einer kombinierten "TG_OP = 'INSERT' OR
+  -- NEW.x IS DISTINCT FROM OLD.x"-Bedingung).
+  if tg_op = 'INSERT' then
+    if new.assigned_to is not null and not exists (
+      select 1 from public.profiles p
+      where p.id = new.assigned_to
+        and p.is_active = true
+    ) then
+      raise exception 'Employee is inactive and cannot be assigned to a job';
+    end if;
+
+    return new;
+  end if;
+
+  if new.assigned_to is not null
+     and new.assigned_to is distinct from old.assigned_to
+     and not exists (
+       select 1 from public.profiles p
+       where p.id = new.assigned_to
+         and p.is_active = true
+     )
+  then
+    raise exception 'Employee is inactive and cannot be assigned to a job';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_active_assignee_on_jobs on public.jobs;
+create trigger enforce_active_assignee_on_jobs
+before insert or update on public.jobs
+for each row
+execute function public.enforce_active_assignee();
 
 -- =========================================================
 -- ENABLE RLS
@@ -956,6 +1046,19 @@ using (
 -- Erzeugt konkrete Single-Job-Einträge für einen Recurring-Parent.
 -- Zeitraum aus recurrence_start_date / recurrence_end_date des Parents.
 -- Hartes Maximum: 730 Tage. Idempotent via Unique Index.
+--
+-- ACHTUNG Operativ: frühere Migrationen (20260624_fix_generate_occurrences_
+-- conflict.sql, 20260624_recurrence_date_range.sql) haben je nach
+-- Ausführungsreihenfolge im SQL Editor potenziell einen zweiten Overload
+-- generate_job_occurrences(uuid, int) hinterlassen. Prüfen mit:
+--   select p.proname, pg_get_function_identity_arguments(p.oid)
+--   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--   where n.nspname = 'public'
+--     and p.proname in ('generate_job_occurrences', 'update_job_occurrences');
+-- Liefert das mehr als eine Zeile pro Funktionsname, existiert der Overload
+-- noch live und macht Aufrufe mit einem Argument mehrdeutig (SQLSTATE 42725)
+-- — dann supabase/migrations/20260713_enforce_inactive_employee_access.sql
+-- (enthält den defensiven DROP) im SQL Editor ausführen.
 
 create or replace function public.generate_job_occurrences(
   parent_job_id_input uuid
@@ -966,20 +1069,25 @@ security definer
 set search_path = public
 as $$
 declare
-  parent           public.jobs%rowtype;
-  generation_start date;
-  generation_end   date;
-  hard_limit       date;
-  check_date       date;
-  day_code         text;
-  inserted_count   int := 0;
-  rows_affected    int;
+  parent                public.jobs%rowtype;
+  generation_start      date;
+  generation_end        date;
+  hard_limit            date;
+  check_date            date;
+  day_code              text;
+  inserted_count        int := 0;
+  rows_affected         int;
+  effective_assigned_to uuid;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
   end if;
 
-  if public.current_user_role() != 'admin' then
+  -- IS DISTINCT FROM statt !=: current_user_role() liefert für ein
+  -- inaktives/fehlendes Profil NULL. "NULL != 'admin'" ist NULL, und
+  -- "IF NULL THEN" löst in PL/pgSQL NICHT aus — der Guard würde sonst
+  -- für einen deaktivierten Admin still übersprungen.
+  if public.current_user_role() is distinct from 'admin' then
     raise exception 'Only admins can generate occurrences';
   end if;
 
@@ -993,6 +1101,20 @@ begin
   if not found then
     raise exception 'Recurring parent job not found or not accessible';
   end if;
+
+  -- Ist der zugewiesene Mitarbeiter inzwischen deaktiviert, werden neue
+  -- Occurrences offen (unassigned) statt an ihn gebunden erzeugt.
+  select case
+    when parent.assigned_to is not null
+      and exists (
+        select 1 from public.profiles p
+        where p.id = parent.assigned_to
+          and p.is_active = true
+      )
+    then parent.assigned_to
+    else null
+  end
+  into effective_assigned_to;
 
   -- Startpunkt: frühestens heute, damit keine Alttermine entstehen
   generation_start := greatest(
@@ -1036,7 +1158,7 @@ begin
       )
       values (
         parent.company_id, parent.id, parent.customer_name, parent.service_name,
-        parent.location_address, parent.notes, 'open', parent.assigned_to,
+        parent.location_address, parent.notes, 'open', effective_assigned_to,
         'single', check_date, parent.start_time,
         case
           when parent.start_time is not null
@@ -1064,7 +1186,7 @@ grant execute on function public.generate_job_occurrences(uuid) to authenticated
 
 comment on function public.generate_job_occurrences(uuid) is
 'Erzeugt konkrete Single-Jobs aus Recurring-Regel. Zeitraum aus recurrence_start/end_date. '
-'Hartes Maximum: 730 Tage. Idempotent.';
+'Hartes Maximum: 730 Tage. Idempotent. Weist keine Occurrence einem inaktiven Mitarbeiter zu.';
 
 
 -- =========================================================
@@ -1089,7 +1211,8 @@ begin
     raise exception 'Not authenticated';
   end if;
 
-  if public.current_user_role() != 'admin' then
+  -- IS DISTINCT FROM: siehe Kommentar in generate_job_occurrences oben.
+  if public.current_user_role() is distinct from 'admin' then
     raise exception 'Only admins can update occurrences';
   end if;
 
@@ -1133,10 +1256,16 @@ comment on function public.setup_company_for_admin(text) is
 'Creates a company for the current user, assigns company_id and promotes the user to admin.';
 
 comment on function public.update_my_push_token(text) is
-'Updates only the current user expo push token safely via RPC.';
+'Updates only the current user expo push token safely via RPC. Fails if the caller profile is inactive.';
+
+comment on function public.clear_my_push_token() is
+'Clears only the current user expo push token. Always succeeds for any authenticated caller (active or not) — used on logout so a shared device never keeps a stale token bound to the previous user.';
 
 comment on function public.start_own_job(uuid, timestamptz) is
 'Employee can start only own assigned job inside own company.';
 
 comment on function public.complete_own_job(uuid, timestamptz) is
 'Employee can complete only own assigned job inside own company.';
+
+comment on function public.enforce_active_assignee() is
+'BEFORE INSERT/UPDATE Guard auf jobs: verhindert (Neu-)Zuweisung an einen inaktiven Mitarbeiter, unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
