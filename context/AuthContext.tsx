@@ -18,7 +18,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert } from "react-native";
+import { Alert, AppState } from "react-native";
 
 type AuthContextType = {
   session: Session | null;
@@ -107,9 +107,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [clearOwnPushTokenBestEffort]);
 
   const refreshProfile = useCallback(async () => {
-    const {
-      data: { user: currentUser },
-    } = await supabase.auth.getUser();
+    // supabase.auth.getUser() macht selbst einen Netzwerk-Call und kann offline
+    // ROH werfen. Da refreshProfile jetzt auch aus dem AppState-Foreground-
+    // Recheck und dem NetInfo-Retry aufgerufen wird, darf es niemals werfen —
+    // sonst gäbe es unbehandelte Promise-Rejections. Netzwerkfehler werden wie
+    // errorKind "network" behandelt (Offline-Wartezustand in app/index.tsx).
+    let currentUser: User | null;
+    try {
+      const { data } = await supabase.auth.getUser();
+      currentUser = data.user;
+    } catch (err) {
+      if (!isMountedRef.current) {
+        return;
+      }
+      setProfileError(isNetworkError(err) ? "network" : "server");
+      return;
+    }
 
     if (!currentUser) {
       setProfile(null);
@@ -310,11 +323,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, [session, profile, loading, refreshProfile]);
 
-  // Live-Deaktivierung: reagiert sofort, wenn is_active für das eigene
-  // Profil auf false wechselt, während die App bereits offen ist (nicht
-  // erst beim nächsten Login). "employee read own profile" erlaubt das
-  // Lesen der eigenen Zeile unabhängig von is_active, das Abo funktioniert
-  // also auch für das UPDATE, das die Deaktivierung selbst auslöst.
+  // Live-Deaktivierung — REALTIME-Pfad (schnelle Reaktion, aber nur wirksam,
+  // wenn profiles in der supabase_realtime-Publication liegt; das richtet die
+  // Migration 20260713_… ein). "employee read own profile" (id = auth.uid())
+  // ist is_active-unabhängig → der deaktivierte Nutzer darf seine eigene Zeile
+  // weiter lesen und bekommt das UPDATE-Event zugestellt. Dieser Pfad ist eine
+  // Optimierung; die VERLÄSSLICHE Absicherung ist der AppState-Recheck unten,
+  // der ohne Realtime/Publication auskommt.
   useEffect(() => {
     const uid = session?.user?.id;
 
@@ -345,6 +360,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(channel);
     };
   }, [session?.user?.id, forceSignOutDueToDeactivation]);
+
+  // Live-Deaktivierung — VERLÄSSLICHER, realtime-UNABHÄNGIGER Pfad.
+  // Bei jedem Wechsel der App in den Vordergrund wird das eigene Profil neu
+  // geladen; ist es inzwischen deaktiviert, greift forceSignOutDueToDeactivation
+  // (über refreshProfile). Das funktioniert auch dann, wenn Realtime nicht
+  // konfiguriert ist oder die Verbindung im Hintergrund abgerissen ist — der
+  // Nutzer wird spätestens beim nächsten Antippen der App gesperrt.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && session) {
+        refreshProfile().catch(() => {
+          // Fehler landen über profileError in der UI; hier bewusst schlucken,
+          // damit ein Foreground-Wechsel nie zu einer unbehandelten Rejection wird.
+        });
+      }
+    });
+
+    return () => subscription.remove();
+  }, [session, refreshProfile]);
 
   const signOut = useCallback(async () => {
     // Push-Token IMMER zuerst best effort löschen — auch wenn signOut() selbst
