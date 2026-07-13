@@ -315,12 +315,14 @@ comment on function public.clear_my_push_token() is
 'Clears only the current user expo push token. Always succeeds for any authenticated caller (active or not) — used on logout so a shared device never keeps a stale token bound to the previous user.';
 
 -- =========================================================
--- 4) Trigger: inaktive Mitarbeiter können keinem Job (mehr) zugewiesen
---    werden — weder neu (INSERT) noch durch nachträgliche Umzuweisung
---    (UPDATE, nur wenn assigned_to sich tatsächlich ändert). Läuft auf
---    Tabellenebene, greift also unabhängig davon, ob der Schreibzugriff
---    über RLS (Admin-Client) oder über eine SECURITY DEFINER-RPC
---    (z. B. generate_job_occurrences) erfolgt.
+-- 4) Trigger: ein Job darf nur einem GÜLTIGEN Mitarbeiter zugewiesen
+--    werden — Profil existiert, is_active = true, role = 'employee' und
+--    gehört zur gleichen company_id wie der Job. Läuft auf Tabellenebene,
+--    greift also unabhängig vom schreibenden Pfad (RLS-Admin-Client oder
+--    SECURITY DEFINER-RPC wie generate_job_occurrences).
+--    Geprüft wird bei INSERT immer und bei UPDATE, sobald sich assigned_to
+--    ODER company_id ändert (ein Firmenwechsel des Jobs muss die bestehende
+--    Zuweisung erneut gegen die neue Firma validieren).
 -- =========================================================
 
 create or replace function public.enforce_active_assignee()
@@ -329,32 +331,37 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  must_check boolean := false;
 begin
-  -- INSERT und UPDATE getrennt behandelt (statt einer kombinierten
-  -- Bedingung mit "TG_OP = 'INSERT' OR NEW.x IS DISTINCT FROM OLD.x"):
-  -- OLD existiert bei INSERT schlicht nicht — ein separater Zweig
-  -- vermeidet jeden Zugriff auf OLD in diesem Fall.
-  if tg_op = 'INSERT' then
-    if new.assigned_to is not null and not exists (
-      select 1 from public.profiles p
-      where p.id = new.assigned_to
-        and p.is_active = true
-    ) then
-      raise exception 'Employee is inactive and cannot be assigned to a job';
-    end if;
-
+  -- Ohne Zuweisung gibt es nichts zu prüfen (offener Job ist erlaubt).
+  if new.assigned_to is null then
     return new;
   end if;
 
-  if new.assigned_to is not null
-     and new.assigned_to is distinct from old.assigned_to
-     and not exists (
-       select 1 from public.profiles p
-       where p.id = new.assigned_to
-         and p.is_active = true
-     )
-  then
-    raise exception 'Employee is inactive and cannot be assigned to a job';
+  -- OLD wird bewusst NUR im UPDATE-Zweig gelesen (bei INSERT existiert es
+  -- nicht). Bei UPDATE ist eine Re-Validierung nötig, wenn sich der
+  -- Zuweisungs-relevante Zustand ändert: assigned_to oder company_id.
+  if tg_op = 'INSERT' then
+    must_check := true;
+  else
+    must_check :=
+      new.assigned_to is distinct from old.assigned_to
+      or new.company_id is distinct from old.company_id;
+  end if;
+
+  if not must_check then
+    return new;
+  end if;
+
+  if not exists (
+    select 1 from public.profiles p
+    where p.id         = new.assigned_to
+      and p.is_active  = true
+      and p.role       = 'employee'
+      and p.company_id = new.company_id
+  ) then
+    raise exception 'Assignee must be an active employee of the same company';
   end if;
 
   return new;
@@ -368,7 +375,7 @@ for each row
 execute function public.enforce_active_assignee();
 
 comment on function public.enforce_active_assignee() is
-'BEFORE INSERT/UPDATE Guard auf jobs: verhindert (Neu-)Zuweisung an einen inaktiven Mitarbeiter, unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
+'BEFORE INSERT/UPDATE Guard auf jobs: Zuweisung nur an ein aktives Profil mit role=employee derselben company_id. Prüft bei INSERT und bei UPDATE mit geändertem assigned_to oder company_id. Unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
 
 -- =========================================================
 -- 5) Trigger: Push-Token beim Deaktivieren serverseitig löschen

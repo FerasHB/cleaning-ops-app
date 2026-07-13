@@ -522,44 +522,51 @@ for each row
 execute function public.handle_new_user();
 
 -- Verhindert (Neu-)Zuweisung eines Jobs an einen inaktiven Mitarbeiter —
--- weder neu (INSERT) noch durch nachträgliche Umzuweisung (UPDATE, nur
--- wenn assigned_to sich tatsächlich ändert). Läuft als Tabellen-Trigger,
--- greift also unabhängig davon, ob der Schreibzugriff über RLS
--- (Admin-Client) oder über eine SECURITY DEFINER-RPC erfolgt
--- (z. B. generate_job_occurrences, das zusätzlich selbst schon auf
--- effective_assigned_to reduziert, siehe oben).
+-- Ein Job darf nur einem GÜLTIGEN Mitarbeiter zugewiesen werden: Profil
+-- existiert, is_active = true, role = 'employee', gleiche company_id wie
+-- der Job. Läuft als Tabellen-Trigger, greift also unabhängig davon, ob
+-- der Schreibzugriff über RLS (Admin-Client) oder eine SECURITY DEFINER-RPC
+-- erfolgt (z. B. generate_job_occurrences, das zusätzlich selbst schon auf
+-- effective_assigned_to reduziert, siehe oben). Geprüft bei INSERT immer,
+-- bei UPDATE sobald sich assigned_to ODER company_id ändert.
 create or replace function public.enforce_active_assignee()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  must_check boolean := false;
 begin
-  -- INSERT und UPDATE getrennt behandelt: OLD existiert bei INSERT
-  -- schlicht nicht, ein separater Zweig vermeidet jeden Zugriff auf OLD
-  -- in diesem Fall (statt einer kombinierten "TG_OP = 'INSERT' OR
-  -- NEW.x IS DISTINCT FROM OLD.x"-Bedingung).
-  if tg_op = 'INSERT' then
-    if new.assigned_to is not null and not exists (
-      select 1 from public.profiles p
-      where p.id = new.assigned_to
-        and p.is_active = true
-    ) then
-      raise exception 'Employee is inactive and cannot be assigned to a job';
-    end if;
-
+  -- Ohne Zuweisung gibt es nichts zu prüfen (offener Job ist erlaubt).
+  if new.assigned_to is null then
     return new;
   end if;
 
-  if new.assigned_to is not null
-     and new.assigned_to is distinct from old.assigned_to
-     and not exists (
-       select 1 from public.profiles p
-       where p.id = new.assigned_to
-         and p.is_active = true
-     )
-  then
-    raise exception 'Employee is inactive and cannot be assigned to a job';
+  -- OLD wird bewusst NUR im UPDATE-Zweig gelesen (bei INSERT existiert es
+  -- nicht). Re-Validierung bei UPDATE, wenn sich assigned_to oder
+  -- company_id ändert (Firmenwechsel des Jobs muss die bestehende
+  -- Zuweisung erneut gegen die neue Firma prüfen).
+  if tg_op = 'INSERT' then
+    must_check := true;
+  else
+    must_check :=
+      new.assigned_to is distinct from old.assigned_to
+      or new.company_id is distinct from old.company_id;
+  end if;
+
+  if not must_check then
+    return new;
+  end if;
+
+  if not exists (
+    select 1 from public.profiles p
+    where p.id         = new.assigned_to
+      and p.is_active  = true
+      and p.role       = 'employee'
+      and p.company_id = new.company_id
+  ) then
+    raise exception 'Assignee must be an active employee of the same company';
   end if;
 
   return new;
@@ -1301,7 +1308,7 @@ comment on function public.complete_own_job(uuid, timestamptz) is
 'Employee can complete only own assigned job inside own company.';
 
 comment on function public.enforce_active_assignee() is
-'BEFORE INSERT/UPDATE Guard auf jobs: verhindert (Neu-)Zuweisung an einen inaktiven Mitarbeiter, unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
+'BEFORE INSERT/UPDATE Guard auf jobs: Zuweisung nur an ein aktives Profil mit role=employee derselben company_id. Prüft bei INSERT und bei UPDATE mit geändertem assigned_to oder company_id. Unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
 
 comment on function public.clear_push_token_on_deactivate() is
 'BEFORE UPDATE Guard auf profiles: nullt expo_push_token, sobald is_active true->false wechselt — serverseitige Garantie, unabhängig vom schreibenden Pfad.';
