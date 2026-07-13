@@ -234,7 +234,7 @@ $$;
 -- current_user_company_id() — NULL propagiert automatisch durch alle
 -- WHERE/USING/WITH CHECK-Klauseln und sperrt einen deaktivierten Nutzer
 -- damit zentral, ohne jede einzelne Policy separat ändern zu müssen
--- (siehe supabase/migrations/20260713_enforce_inactive_employee_access.sql).
+-- (siehe supabase/migrations/20260714000000_enforce_inactive_employee_access.sql).
 create or replace function public.current_user_role()
 returns public.app_role
 language sql
@@ -606,7 +606,7 @@ execute function public.clear_push_token_on_deactivate();
 -- Realtime: profiles muss Teil der supabase_realtime-Publication sein, damit
 -- der Live-Deaktivierungs-Kanal (context/AuthContext.tsx) UPDATE-Events der
 -- eigenen Profilzeile empfängt. jobs wurde per Dashboard hinzugefügt; profiles
--- ergänzt die Migration 20260713_enforce_inactive_employee_access.sql
+-- ergänzt die Migration 20260714000000_enforce_inactive_employee_access.sql
 -- (idempotent + guarded). REPLICA IDENTITY FULL, damit der Payload is_active
 -- enthält. Der AppState-Foreground-Recheck im AuthContext ist der
 -- realtime-UNABHÄNGIGE Fallback, falls Realtime nicht konfiguriert ist.
@@ -1097,7 +1097,7 @@ using (
 --     and p.proname in ('generate_job_occurrences', 'update_job_occurrences');
 -- Liefert das mehr als eine Zeile pro Funktionsname, existiert der Overload
 -- noch live und macht Aufrufe mit einem Argument mehrdeutig (SQLSTATE 42725)
--- — dann supabase/migrations/20260713_enforce_inactive_employee_access.sql
+-- — dann supabase/migrations/20260714000000_enforce_inactive_employee_access.sql
 -- (enthält den defensiven DROP) im SQL Editor ausführen.
 
 create or replace function public.generate_job_occurrences(

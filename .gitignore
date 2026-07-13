@@ -47,3 +47,5 @@ app-example
 supabase/.temp/
 
 backups/
+
+supabase/baseline/
