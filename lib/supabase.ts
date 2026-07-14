@@ -23,5 +23,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
     // Für Web: erkennt Session aus URL (z.B. nach Redirect/Login)
     detectSessionInUrl: Platform.OS === "web",
+
+    // PKCE-Flow für native Deep-Links (z.B. Passwort-Reset).
+    // Damit hängt resetPasswordForEmail einen code_challenge an und speichert
+    // den zugehörigen code_verifier lokal. Der Recovery-Link kommt dann als
+    // taskopsmanager://reset-password?code=... zurück und wird über
+    // supabase.auth.exchangeCodeForSession(code) eingelöst
+    // (siehe features/auth/ResetPasswordScreen.tsx). Ohne pkce würde kein
+    // Verifier gespeichert und der Code-Tausch schlüge fehl.
+    flowType: "pkce",
   },
 });
