@@ -147,6 +147,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
     syncInProgressRef.current = true;
     setIsSyncing(true);
+    if (__DEV__) {
+      console.log("[Jobs] Queue-Sync gestartet");
+    }
 
     try {
       const result = await syncPendingJobActions();
@@ -155,6 +158,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       syncInProgressRef.current = false;
       setIsSyncing(false);
       await refreshPendingState();
+      if (__DEV__) {
+        console.log("[Jobs] Queue-Sync beendet");
+      }
     }
   }, [refreshPendingState]);
 
@@ -171,6 +177,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const online = await isOnline();
 
       if (online) {
+        if (__DEV__) {
+          console.log("[Jobs] Quelle: remote");
+        }
         const serverJobs = await getJobs();
         await saveCachedJobs(serverJobs);
 
@@ -196,6 +205,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (__DEV__) {
+        console.log("[Jobs] Quelle: cache (offline)");
+      }
       const cachedJobs = await getCachedJobs();
       const pendingActions = await getPendingJobActions();
       const mergedJobs = applyPendingActionsToJobs(cachedJobs, pendingActions);

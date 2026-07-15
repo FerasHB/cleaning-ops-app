@@ -113,22 +113,52 @@ export default function IndexScreen() {
     );
   }
 
-  // ── Offline: kein Fehler, sondern erwartbarer Zustand ──
-  // Automatischer Retry läuft im AuthContext bei Reconnect (begrenzt).
+  // ── Offline UND kein lokaler Cache → expliziter Fehlerzustand ──
+  // Gibt es ein gecachtes Profil, wird es im AuthContext gesetzt und wir landen
+  // gar nicht hier — die App startet dann direkt (mit Offline-Banner). Nur wenn
+  // weder Verbindung NOCH lokale Daten vorhanden sind, zeigen wir diesen
+  // Bildschirm (kein endloser Spinner). Retry lädt neu, sobald wieder online.
   if (!loading && session && !profile && profileError === "network") {
     return (
       <View
         style={[styles.center, { backgroundColor: theme.colors.background }]}
       >
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text
-          style={[
-            styles.offlineHint,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
-        >
-          Warte auf Internetverbindung …
-        </Text>
+        <View style={styles.errorBox}>
+          <Text style={[styles.errorTitle, { color: theme.colors.onSurface }]}>
+            Keine Verbindung
+          </Text>
+          <Text
+            style={[styles.errorMessage, { color: theme.colors.onSurfaceVariant }]}
+          >
+            Keine Verbindung und keine lokalen Daten verfügbar. Sobald du wieder
+            online bist, kannst du es erneut versuchen.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: theme.colors.primary }]}
+            onPress={handleRetry}
+            disabled={retrying}
+            activeOpacity={0.8}
+          >
+            {retrying ? (
+              <ActivityIndicator size="small" color={theme.colors.onPrimary} />
+            ) : (
+              <Text style={[styles.retryBtnText, { color: theme.colors.onPrimary }]}>
+                Erneut versuchen
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.logoutBtn}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.logoutBtnText, { color: theme.colors.error }]}>
+              Abmelden
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -184,10 +214,5 @@ const styles = StyleSheet.create({
   logoutBtnText: {
     fontSize: 14,
     fontWeight: "600",
-  },
-  offlineHint: {
-    marginTop: 12,
-    fontSize: 14,
-    textAlign: "center",
   },
 });

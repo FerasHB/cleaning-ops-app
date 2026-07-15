@@ -1,6 +1,11 @@
 import { supabase } from "@/lib/supabase";
 import { registerForPushNotifications } from "@/services/notificationService";
 import {
+  clearCachedProfile,
+  getCachedProfile,
+  saveCachedProfile,
+} from "@/services/offline/profile.storage";
+import {
   getProfileByUserId,
   type AppRole,
   type AuthProfile,
@@ -44,6 +49,16 @@ function authDebug(...args: unknown[]) {
   }
 }
 
+// Ergebnis eines Profil-Ladevorgangs — steuert Folgeaktionen (z. B. Push-Token
+// nur bei frischem Remote-Profil, kein Sync nach erzwungenem Sign-out).
+type ProfileApplyOutcome =
+  | "remote"
+  | "cache"
+  | "offline-no-cache"
+  | "server-error"
+  | "signed-out"
+  | "unmounted";
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -54,6 +69,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isMountedRef = useRef(true);
   const lastHandledUserIdRef = useRef<string | null>(null);
   const isBootstrappingRef = useRef(true);
+  // true, wenn das aktuell gesetzte Profil aus dem lokalen Cache stammt
+  // (Offline-Start). Bei Reconnect wird dann bewusst neu geladen — auch als
+  // Sicherheits-Recheck für is_active (siehe loadAndApplyProfile / NetInfo-Effect).
+  const isOfflineProfileRef = useRef(false);
   // Verhindert doppelte Alerts/Sign-outs, falls sowohl der Realtime-Kanal
   // als auch ein nachfolgender applySession-Durchlauf die Deaktivierung
   // gleichzeitig bemerken.
@@ -94,6 +113,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     await clearOwnPushTokenBestEffort();
 
+    // Lokalen Profil-Cache leeren, damit ein deaktivierter Nutzer nicht beim
+    // nächsten Offline-Start über den Cache wieder „aktiv" erscheint.
+    await clearCachedProfile();
+
     try {
       await supabase.auth.signOut();
     } catch (err) {
@@ -110,17 +133,92 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     lastHandledUserIdRef.current = null;
     autoRetryCountRef.current = 0;
+    isOfflineProfileRef.current = false;
 
     // Zurücksetzen, damit ein späterer, neuer Login wieder normal geprüft wird.
     deactivationHandledRef.current = false;
   }, [clearOwnPushTokenBestEffort]);
 
+  // Lädt das Profil remote, fällt bei Netzwerkfehler auf den lokalen Cache
+  // zurück und setzt den State. Zentralisiert die Offline-Logik UND die
+  // is_active-Sicherheitsprüfung — auch für gecachte Profile. Wirft nie.
+  const loadAndApplyProfile = useCallback(
+    async (userId: string): Promise<ProfileApplyOutcome> => {
+      const result = await getProfileByUserId(userId);
+
+      if (!isMountedRef.current) {
+        return "unmounted";
+      }
+
+      // ── Frisches Remote-Profil ──
+      if (result.profile) {
+        if (result.profile.is_active === false) {
+          authDebug("Profil deaktiviert (remote) → Sign-out");
+          await forceSignOutDueToDeactivation();
+          return "signed-out";
+        }
+
+        authDebug("Profilquelle: remote");
+        autoRetryCountRef.current = 0;
+        isOfflineProfileRef.current = false;
+        setProfile(result.profile);
+        setProfileError(null);
+        lastHandledUserIdRef.current = userId;
+        await saveCachedProfile(result.profile);
+        return "remote";
+      }
+
+      // ── Kein Remote-Profil, Netzwerkfehler → lokalen Cache versuchen ──
+      if (result.errorKind === "network") {
+        const cached = await getCachedProfile(userId);
+
+        if (!isMountedRef.current) {
+          return "unmounted";
+        }
+
+        if (cached) {
+          // SICHERHEIT: Ein zuletzt als deaktiviert bekanntes Profil wird NICHT
+          // durch einen alten Cache reaktiviert — sofort abmelden.
+          if (cached.is_active === false) {
+            authDebug("Cache-Profil deaktiviert → Sign-out");
+            await forceSignOutDueToDeactivation();
+            return "signed-out";
+          }
+
+          authDebug("Profilquelle: cache (offline)");
+          isOfflineProfileRef.current = true;
+          setProfile(cached);
+          // profile ist gesetzt → App startet; der Offline-Hinweis läuft über
+          // den OfflineBanner (NetInfo). KEIN profileError.
+          setProfileError(null);
+          lastHandledUserIdRef.current = userId;
+          return "cache";
+        }
+
+        // Offline UND kein Cache → expliziter Offline-Fehlerzustand
+        // (app/index.tsx zeigt Fehlerbildschirm mit Retry/Logout).
+        authDebug("Profilquelle: keine (offline, kein Cache)");
+        isOfflineProfileRef.current = false;
+        setProfile(null);
+        setProfileError("network");
+        return "offline-no-cache";
+      }
+
+      // ── Echter Server-/RLS-Fehler ──
+      authDebug("Profil: Server-/RLS-Fehler");
+      isOfflineProfileRef.current = false;
+      setProfile(null);
+      setProfileError("server");
+      return "server-error";
+    },
+    [forceSignOutDueToDeactivation],
+  );
+
   const refreshProfile = useCallback(async () => {
     // supabase.auth.getUser() macht selbst einen Netzwerk-Call und kann offline
-    // ROH werfen. Da refreshProfile jetzt auch aus dem AppState-Foreground-
-    // Recheck und dem NetInfo-Retry aufgerufen wird, darf es niemals werfen —
-    // sonst gäbe es unbehandelte Promise-Rejections. Netzwerkfehler werden wie
-    // errorKind "network" behandelt (Offline-Wartezustand in app/index.tsx).
+    // ROH werfen. refreshProfile wird u. a. aus dem AppState-Foreground-Recheck,
+    // dem NetInfo-Reconnect und dem manuellen Retry aufgerufen und darf niemals
+    // werfen — sonst unbehandelte Promise-Rejections.
     let currentUser: User | null;
     try {
       const { data } = await supabase.auth.getUser();
@@ -129,34 +227,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!isMountedRef.current) {
         return;
       }
-      setProfileError(isNetworkError(err) ? "network" : "server");
+      // Offline: getUser wirft. Ein bereits gesetztes (Cache-)Profil NICHT
+      // verwerfen — beim nächsten Reconnect wird erneut versucht.
+      if (isNetworkError(err)) {
+        authDebug("refreshProfile: getUser offline — bestehenden Stand behalten");
+        return;
+      }
+      setProfileError("server");
       return;
     }
 
     if (!currentUser) {
       setProfile(null);
       setProfileError(null);
+      isOfflineProfileRef.current = false;
       return;
     }
 
-    const result = await getProfileByUserId(currentUser.id);
-
-    if (!isMountedRef.current) {
-      return;
-    }
-
-    if (result.profile && result.profile.is_active === false) {
-      await forceSignOutDueToDeactivation();
-      return;
-    }
-
-    if (result.profile) {
-      autoRetryCountRef.current = 0;
-    }
-
-    setProfile(result.profile);
-    setProfileError(result.errorKind);
-  }, [forceSignOutDueToDeactivation]);
+    await loadAndApplyProfile(currentUser.id);
+  }, [loadAndApplyProfile]);
 
   const syncPushToken = useCallback(async () => {
     try {
@@ -212,34 +301,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!nextUserId) {
         setProfile(null);
         setProfileError(null);
+        isOfflineProfileRef.current = false;
         lastHandledUserIdRef.current = null;
         return;
       }
 
-      const result = await getProfileByUserId(nextUserId);
+      const outcome = await loadAndApplyProfile(nextUserId);
 
       if (!isMountedRef.current) {
         return;
       }
 
-      if (result.profile && result.profile.is_active === false) {
-        await forceSignOutDueToDeactivation();
-        return;
-      }
-
-      if (result.profile) {
-        autoRetryCountRef.current = 0;
-      }
-
-      setProfile(result.profile);
-      setProfileError(result.errorKind);
-      lastHandledUserIdRef.current = nextUserId;
-
-      if (syncToken) {
+      // Push-Token nur bei frischem Remote-Profil synchronisieren: offline
+      // (cache) gibt es kein Netz, und nach erzwungenem Sign-out keine Session.
+      if (syncToken && outcome === "remote") {
         await syncPushToken();
       }
     },
-    [syncPushToken, forceSignOutDueToDeactivation],
+    [syncPushToken, loadAndApplyProfile],
   );
 
   useEffect(() => {
@@ -253,6 +332,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (error && !isNetworkError(error)) {
           console.error("Failed to get session:", error);
+        }
+
+        if (__DEV__) {
+          const netState = await NetInfo.fetch();
+          authDebug("Bootstrap:", netState.isConnected ? "online" : "offline");
         }
 
         await applySession(data.session ?? null, { syncToken: true });
@@ -345,6 +429,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!state.isConnected) {
         return;
       }
+
+      // Fall 1: Session, aber (noch) KEIN Profil (Offline-Start ohne Cache) →
+      // begrenzte Auto-Retries. Die Obergrenze verhindert Dauerfeuer bei einem
+      // echten Serverfehler; refreshProfile hält loading NICHT auf true.
       if (
         session &&
         !profile &&
@@ -352,9 +440,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         autoRetryCountRef.current < MAX_AUTO_RETRIES
       ) {
         autoRetryCountRef.current += 1;
+        authDebug("Reconnect: Profil-Retry (kein Profil)");
         refreshProfile().catch(() => {
           // Fehler wird bereits über profileError sichtbar gemacht.
         });
+        return;
+      }
+
+      // Fall 2: Wir zeigen ein OFFLINE-gecachtes Profil → bei Reconnect frisch
+      // laden. Holt aktuelle Daten UND prüft is_active erneut (Sicherheits-
+      // Recheck: ein zwischenzeitlich deaktivierter Nutzer wird jetzt gesperrt).
+      // Kein Dauer-Loop: loadAndApplyProfile setzt isOfflineProfileRef bei Erfolg
+      // auf false und refreshProfile hält loading nicht auf true.
+      if (session && isOfflineProfileRef.current) {
+        authDebug("Reconnect: Offline-Profil aktualisieren");
+        refreshProfile().catch(() => {});
       }
     });
 
@@ -424,6 +524,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Nutzers stehen bleiben. Fehler hier blockieren den Logout nicht.
     await clearOwnPushTokenBestEffort();
 
+    // Profil-Cache leeren, damit auf einem geteilten Gerät kein Profil des
+    // vorherigen Nutzers offline wiederhergestellt werden kann.
+    await clearCachedProfile();
+
     const { error } = await supabase.auth.signOut();
 
     if (error) {
@@ -436,6 +540,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfileError(null);
     lastHandledUserIdRef.current = null;
     autoRetryCountRef.current = 0;
+    isOfflineProfileRef.current = false;
   }, [clearOwnPushTokenBestEffort]);
 
   const value = useMemo(
