@@ -140,9 +140,17 @@ export default function ResetPasswordScreen() {
   // Verhindert doppelte Verarbeitung, wenn mehrere Quellen dieselbe URL liefern.
   const attemptedRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Spiegelt den aktuellen Status synchron — der Watchdog-Timeout darf NICHT
+  // von attemptedRef abhängen: Hinge exchangeCodeForSession trotz allem (z.B.
+  // erneuter Auth-Deadlock), bliebe attemptedRef zwar true, der Kontrollfluss
+  // erreichte aber nie einen Endzustand. Der Watchdog prüft daher unabhängig,
+  // ob der Screen noch bei "checking" steht.
+  const statusRef = useRef<ScreenStatus>("checking");
 
   const finish = useCallback((next: ScreenStatus, message?: string) => {
     if (!mountedRef.current) return;
+    statusRef.current = next;
+    devLog("Statuswechsel:", next);
     if (message) setInvalidMessage(message);
     setStatus(next);
   }, []);
@@ -194,11 +202,15 @@ export default function ResetPasswordScreen() {
       try {
         if (hasCode) {
           devLog(`Erkannter Flow: pkce (Quelle: ${source})`);
+          devLog("exchangeCodeForSession gestartet");
           const { data, error } = await supabase.auth.exchangeCodeForSession(
             recovery.code!,
           );
+          devLog(
+            "exchangeCodeForSession beendet",
+            error ? `Fehler: ${error.message}` : "erfolgreich",
+          );
           if (error) {
-            devLog("exchangeCodeForSession Fehler:", error.message);
             await readySessionOrInvalid();
             return;
           }
@@ -239,11 +251,14 @@ export default function ResetPasswordScreen() {
     [finish, readySessionOrInvalid],
   );
 
+  // Unabhängiger Watchdog: steht der Screen nach RECHECK_TIMEOUT_MS immer noch
+  // bei "checking" (egal ob ein Tausch läuft, hängt oder nie etwas ankam) →
+  // klarer Fehlerzustand statt Endlos-Spinner.
   const armTimeout = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      if (!attemptedRef.current) {
-        devLog("Timeout: kein gültiger Recovery-Parameter empfangen.");
+      if (statusRef.current === "checking") {
+        devLog("Watchdog-Timeout: noch bei 'checking' → invalid.");
         finish("invalid", DEFAULT_INVALID_MESSAGE);
       }
     }, RECHECK_TIMEOUT_MS);
@@ -313,6 +328,7 @@ export default function ResetPasswordScreen() {
   // invalid, das ist gewollt.
   const handleRecheck = useCallback(() => {
     attemptedRef.current = false;
+    statusRef.current = "checking";
     setStatus("checking");
     (async () => {
       try {

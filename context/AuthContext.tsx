@@ -35,6 +35,15 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Nur in Entwicklung loggen — ausschließlich Event-Name/Phase, niemals Tokens
+// oder Session-Inhalte. Dient dazu, den Auth-/Deadlock-Fluss nachzuvollziehen.
+function authDebug(...args: unknown[]) {
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log("[Auth]", ...args);
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -258,9 +267,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     bootstrap();
 
+    // WICHTIG — Deadlock-Vermeidung: Der onAuthStateChange-Callback MUSS
+    // synchron und kurz bleiben. Supabase ruft ihn auf, WÄHREND intern ein
+    // Auth-Lock gehalten wird (lockAcquired/pendingInLock im GoTrueClient).
+    // Jeder awaited Supabase-Aufruf im Callback — direkt oder indirekt über
+    // applySession → getProfileByUserId → supabase.from(...) → _getAccessToken
+    // → auth.getSession() → _acquireLock — fordert denselben Lock erneut an,
+    // wird in pendingInLock eingereiht und erst NACH der auslösenden
+    // Auth-Operation abgearbeitet. Da diese Operation ihrerseits auf die
+    // Rückkehr des Callbacks wartet, entsteht ein Deadlock. Konkret löste
+    // exchangeCodeForSession() im Passwort-Reset dann nie auf ("Link wird
+    // geprüft …" hing dauerhaft). Deshalb: hier nur die schnellen, synchronen
+    // Guards ausführen und die eigentliche Profil-/Push-Token-Arbeit per
+    // setTimeout(…, 0) NACH Freigabe des Locks starten.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+    } = supabase.auth.onAuthStateChange((event, newSession) => {
+      authDebug("Auth-Event empfangen", event);
+
       // INITIAL_SESSION ignorieren, weil bootstrap das schon übernimmt
       if (event === "INITIAL_SESSION") {
         return;
@@ -280,14 +304,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      try {
-        setLoading(true);
-        await applySession(newSession, { syncToken: !!nextUserId });
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
+      // Folgearbeit AUSSERHALB des Auth-Locks ausführen (siehe Kommentar oben).
+      // setTimeout(…, 0) sorgt dafür, dass der Callback zuerst zurückkehrt und
+      // Supabase den Lock freigibt, bevor applySession weitere Supabase-Aufrufe
+      // macht.
+      authDebug("Folgearbeit geplant", event);
+      setTimeout(() => {
+        if (!isMountedRef.current) {
+          return;
         }
-      }
+        void (async () => {
+          authDebug("Folgearbeit gestartet", event);
+          try {
+            setLoading(true);
+            await applySession(newSession, { syncToken: !!nextUserId });
+          } finally {
+            if (isMountedRef.current) {
+              setLoading(false);
+            }
+            authDebug("Folgearbeit beendet", event);
+          }
+        })();
+      }, 0);
     });
 
     return () => {
