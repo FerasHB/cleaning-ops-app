@@ -159,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         authDebug("Profilquelle: remote");
+        console.log("[Bootstrap] Profile remote loaded");
         autoRetryCountRef.current = 0;
         isOfflineProfileRef.current = false;
         setProfile(result.profile);
@@ -186,6 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           authDebug("Profilquelle: cache (offline)");
+          console.log("[Bootstrap] Profile cache loaded");
           isOfflineProfileRef.current = true;
           setProfile(cached);
           // profile ist gesetzt → App startet; der Offline-Hinweis läuft über
@@ -328,16 +330,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setLoading(true);
 
+        // TEMP Diagnose (Offline-Bootstrap) — nach Verifikation entfernbar.
+        const netState = await NetInfo.fetch();
+        console.log(
+          "[Bootstrap] NetInfo status:",
+          netState.isConnected ? "online" : "offline",
+        );
+
         const { data, error } = await supabase.auth.getSession();
 
         if (error && !isNetworkError(error)) {
           console.error("Failed to get session:", error);
         }
-
-        if (__DEV__) {
-          const netState = await NetInfo.fetch();
-          authDebug("Bootstrap:", netState.isConnected ? "online" : "offline");
-        }
+        console.log("[Bootstrap] Session cache loaded:", !!data.session);
 
         await applySession(data.session ?? null, { syncToken: true });
       } finally {
@@ -346,6 +351,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isMountedRef.current) {
           setLoading(false);
         }
+        console.log("[Bootstrap] authLoading false");
       }
     };
 

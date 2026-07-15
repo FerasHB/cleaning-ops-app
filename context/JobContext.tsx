@@ -313,15 +313,52 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     didInitialLoadRef.current = true;
 
     const loadAll = async () => {
+      // 1) SOFORT aus dem lokalen Cache rendern. loading wird ausschließlich vom
+      //    lokalen Cache-Laden gesteuert — NICHT vom Netzwerk. Damit kann ein
+      //    (offline) hängender Remote-Request den Tab-/Root-Render niemals
+      //    blockieren. Genau hier lag der Offline-Kaltstart-Spinner: loadAll
+      //    wartete auf refreshJobs()/refreshEmployees(), deren Remote-Call bei
+      //    schlechtem/erstem NetInfo-Status hängen blieb, bevor loading=false lief.
+      setError(null);
       try {
-        setLoading(true);
-        setError(null);
-
-        setOnline(await isOnline());
-        await runPendingSyncSafely();
-        await Promise.all([refreshJobs(), refreshEmployees()]);
+        const [cachedJobs, pending] = await Promise.all([
+          getCachedJobs(),
+          getPendingJobActions(),
+        ]);
+        // TEMP Diagnose (Offline-Bootstrap) — nach Verifikation entfernbar.
+        console.log("[Bootstrap] Jobs cache loaded:", cachedJobs.length);
+        setJobs(applyPendingActionsToJobs(cachedJobs, pending));
+        setPendingActions(pending);
+        setPendingCount(pending.length);
+      } catch (err) {
+        console.error("Failed to load cached jobs on init:", err);
       } finally {
         setLoading(false);
+        console.log("[Bootstrap] jobsLoading false");
+      }
+
+      // 2) Danach im HINTERGRUND: Online-Status ermitteln und – nur wenn online –
+      //    synchronisieren + frische Daten laden. KEIN loading-Gate mehr; ein
+      //    hängender Remote-Request betrifft nur die Aktualisierung, nie den Render.
+      const online = await isOnline();
+      setOnline(online);
+      console.log(
+        "[Bootstrap] NetInfo status (jobs):",
+        online ? "online" : "offline",
+      );
+
+      if (!online) {
+        // Offline: der Cache genügt. Der NetInfo-Listener synchronisiert bei
+        // Reconnect automatisch (siehe Effect unten).
+        return;
+      }
+
+      console.log("[Bootstrap] remote refresh started");
+      try {
+        await runPendingSyncSafely();
+        await Promise.all([refreshJobs(), refreshEmployees()]);
+      } catch (err) {
+        console.log("[Bootstrap] remote refresh failed:", err);
       }
     };
 

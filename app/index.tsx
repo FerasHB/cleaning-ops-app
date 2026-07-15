@@ -42,6 +42,8 @@ export default function IndexScreen() {
     }
 
     // Alles passt → rollenabhängig in die jeweiligen Bottom-Tabs
+    // TEMP Diagnose (Offline-Bootstrap) — nach Verifikation entfernbar.
+    console.log("[Bootstrap] rendering cached app, role:", role);
     if (role === "admin") {
       router.replace("/(admin-tabs)/dashboard");
     } else {
@@ -163,7 +165,16 @@ export default function IndexScreen() {
     );
   }
 
-  // Spinner – sichtbar solange Auth-Zustand ermittelt wird
+  // Spinner – sichtbar solange der Auth-Bootstrap läuft.
+  // TEMP Diagnose (Offline-Bootstrap) — zeigt, welcher State den Root-Spinner
+  // hält; nach Verifikation entfernbar. jobsLoading blockiert den Root NICHT
+  // (die Tab-Screens rendern gecachte Jobs, siehe JobContext.loadAll).
+  console.log("[Root Loading State]", {
+    authLoading: loading,
+    hasSession: !!session,
+    hasProfile: !!profile,
+    profileError,
+  });
   return (
     <View
       style={[styles.center, { backgroundColor: theme.colors.background }]}
