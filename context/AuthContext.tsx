@@ -12,6 +12,8 @@ import {
   type ProfileFetchErrorKind,
 } from "@/services/profileService";
 import { isNetworkError } from "@/utils/networkError";
+// TEMP Diagnose (offline-debug-3) — nach Verifikation entfernbar.
+import { noteDiagError, setDiag } from "@/utils/bootstrapDiag";
 import NetInfo from "@react-native-community/netinfo";
 import { Session, User } from "@supabase/supabase-js";
 import React, {
@@ -160,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         authDebug("Profilquelle: remote");
         console.log("[Bootstrap] Profile remote loaded");
+        setDiag({ hasProfile: true, lastBootstrapStep: "auth:profile-remote" });
         autoRetryCountRef.current = 0;
         isOfflineProfileRef.current = false;
         setProfile(result.profile);
@@ -188,6 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           authDebug("Profilquelle: cache (offline)");
           console.log("[Bootstrap] Profile cache loaded");
+          setDiag({ hasProfile: true, lastBootstrapStep: "auth:profile-cache" });
           isOfflineProfileRef.current = true;
           setProfile(cached);
           // profile ist gesetzt → App startet; der Offline-Hinweis läuft über
@@ -200,6 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Offline UND kein Cache → expliziter Offline-Fehlerzustand
         // (app/index.tsx zeigt Fehlerbildschirm mit Retry/Logout).
         authDebug("Profilquelle: keine (offline, kein Cache)");
+        setDiag({ hasProfile: false, lastBootstrapStep: "auth:profile-none" });
         isOfflineProfileRef.current = false;
         setProfile(null);
         setProfileError("network");
@@ -329,6 +334,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const bootstrap = async () => {
       try {
         setLoading(true);
+        setDiag({ authLoading: true, lastBootstrapStep: "auth:bootstrap-start" });
 
         // TEMP Diagnose (Offline-Bootstrap) — nach Verifikation entfernbar.
         const netState = await NetInfo.fetch();
@@ -336,6 +342,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           "[Bootstrap] NetInfo status:",
           netState.isConnected ? "online" : "offline",
         );
+        setDiag({
+          online: netState.isConnected,
+          lastBootstrapStep: `auth:netinfo=${netState.isConnected}`,
+        });
 
         const { data, error } = await supabase.auth.getSession();
 
@@ -343,8 +353,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("Failed to get session:", error);
         }
         console.log("[Bootstrap] Session cache loaded:", !!data.session);
+        setDiag({ lastBootstrapStep: `auth:session-loaded=${!!data.session}` });
 
         await applySession(data.session ?? null, { syncToken: true });
+      } catch (err) {
+        noteDiagError("auth:bootstrap-error", err);
+        throw err;
       } finally {
         isBootstrappingRef.current = false;
 
@@ -352,6 +366,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
         }
         console.log("[Bootstrap] authLoading false");
+        setDiag({ authLoading: false, lastBootstrapStep: "auth:done" });
       }
     };
 

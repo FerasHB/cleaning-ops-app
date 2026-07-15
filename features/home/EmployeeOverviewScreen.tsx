@@ -157,7 +157,7 @@ export default function EmployeeOverviewScreen() {
   const monthOpen = monthJobs.filter((j) => j.status === "open").length;
   const monthTotal = monthJobs.length;
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen debugName="EmployeeOverview" />;
 
   return (
     <ScreenContainer>

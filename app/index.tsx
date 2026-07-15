@@ -4,6 +4,7 @@
 // Ausnahme: ein echter Profil-Ladefehler (nicht "offline") wird hier direkt
 // mit Retry-/Logout-Optionen angezeigt, damit die App nie endlos lädt.
 
+import { LoadingScreen } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { router } from "expo-router";
@@ -175,13 +176,7 @@ export default function IndexScreen() {
     hasProfile: !!profile,
     profileError,
   });
-  return (
-    <View
-      style={[styles.center, { backgroundColor: theme.colors.background }]}
-    >
-      <ActivityIndicator size="large" color={theme.colors.primary} />
-    </View>
-  );
+  return <LoadingScreen debugName="app/index (root)" />;
 }
 
 const styles = StyleSheet.create({

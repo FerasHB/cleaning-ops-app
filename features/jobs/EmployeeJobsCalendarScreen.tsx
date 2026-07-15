@@ -193,7 +193,7 @@ export default function EmployeeJobsCalendarScreen() {
     [selectedKey],
   );
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen debugName="EmployeeJobsCalendar" />;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>

@@ -8,9 +8,10 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { useAppTheme } from "@/hooks/useAppTheme";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -22,6 +23,9 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { AppTheme } from "@/constants/theme";
+// TEMP Diagnose (offline-debug-3) — nach Verifikation entfernbar.
+import NetInfo from "@react-native-community/netinfo";
+import { BUILD_MARKER, useBootstrapDiag } from "@/utils/bootstrapDiag";
 
 // ─────────────────────────────────────────────
 // Re-Exports: Neue Komponenten aus eigenen Dateien
@@ -578,9 +582,54 @@ function createEmptyStateStyles(theme: AppTheme) {
 
 // ─────────────────────────────────────────────
 // LoadingScreen (Vollbild-Spinner)
+// TEMP Diagnose (offline-debug-3): rendert einen SICHTBAREN Debug-Block, damit
+// wir auch im Preview-Build (ohne Metro/Console) sehen, welcher State den
+// Spinner hält. Nach der Diagnose: `debugName`-Prop + Debug-Block + Store
+// wieder entfernen, dann bleibt nur der Spinner.
 // ─────────────────────────────────────────────
-export function LoadingScreen() {
+export function LoadingScreen({ debugName }: { debugName?: string }) {
   const theme = useAppTheme();
+  const diag = useBootstrapDiag();
+
+  const [netConnected, setNetConnected] = useState<boolean | null>(null);
+  const [netReachable, setNetReachable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // Live-NetInfo direkt im Spinner — zeigt den echten Zustand im Moment des Hängens.
+    NetInfo.fetch().then((s) => {
+      setNetConnected(s.isConnected);
+      setNetReachable(s.isInternetReachable);
+    });
+    const unsub = NetInfo.addEventListener((s) => {
+      setNetConnected(s.isConnected);
+      setNetReachable(s.isInternetReachable);
+    });
+    return () => unsub();
+  }, []);
+
+  const rows: [string, string][] = [
+    ["Screen", debugName ?? "(unbenannt)"],
+    ["AuthContext.loading", String(diag.authLoading)],
+    ["profile vorhanden", diag.hasProfile ? "ja" : "nein"],
+    ["JobContext.loading", String(diag.jobsLoading)],
+    ["lokaler loading-State", "kein eigener (== JobContext.loading)"],
+    ["jobs.length", String(diag.jobsCount)],
+    ["employees.length", String(diag.employeesCount)],
+    ["online (JobContext)", String(diag.online)],
+    ["NetInfo.isConnected", String(netConnected)],
+    ["NetInfo.isInternetReachable", String(netReachable)],
+    ["cacheLoadStarted", String(diag.cacheLoadStarted)],
+    ["cacheLoadFinished", String(diag.cacheLoadFinished)],
+    ["loadingFalseCalled", String(diag.loadingFalseCalled)],
+    ["remoteRefreshStarted", String(diag.remoteRefreshStarted)],
+    ["letzter Bootstrap-Schritt", diag.lastBootstrapStep],
+    [
+      "letzter Fehler",
+      diag.lastErrorName
+        ? `${diag.lastErrorName}: ${diag.lastErrorMessage}`
+        : "(keiner)",
+    ],
+  ];
 
   return (
     <View
@@ -589,9 +638,48 @@ export function LoadingScreen() {
         backgroundColor: theme.colors.background,
         alignItems: "center",
         justifyContent: "center",
+        padding: 16,
       }}
     >
       <ActivityIndicator size="large" color={theme.colors.primary} />
+
+      {/* ── TEMP Debug-Block (offline-debug-3) ── */}
+      <ScrollView
+        style={{
+          marginTop: 20,
+          maxHeight: 360,
+          alignSelf: "stretch",
+          borderWidth: 2,
+          borderColor: "#e11d48",
+          borderRadius: 10,
+          backgroundColor: "#111827",
+        }}
+        contentContainerStyle={{ padding: 12 }}
+      >
+        <Text
+          style={{
+            color: "#f43f5e",
+            fontWeight: "700",
+            fontSize: 14,
+            marginBottom: 8,
+          }}
+        >
+          BUILD_MARKER: {BUILD_MARKER}
+        </Text>
+        {rows.map(([label, value]) => (
+          <View
+            key={label}
+            style={{ flexDirection: "row", marginBottom: 3, flexWrap: "wrap" }}
+          >
+            <Text style={{ color: "#93c5fd", fontSize: 12 }}>{label}: </Text>
+            <Text
+              style={{ color: "#f9fafb", fontSize: 12, fontWeight: "600", flexShrink: 1 }}
+            >
+              {value}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
     </View>
   );
 }

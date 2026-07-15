@@ -24,6 +24,8 @@ import { getCachedJobs, saveCachedJobs } from "@/services/offline/jobs.storage";
 import { syncPendingJobActions } from "@/services/offline/jobs.sync";
 import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
 import { isNetworkError } from "@/utils/networkError";
+// TEMP Diagnose (offline-debug-3) — nach Verifikation entfernbar.
+import { noteDiagError, setDiag } from "@/utils/bootstrapDiag";
 import NetInfo from "@react-native-community/netinfo";
 import React, {
   createContext,
@@ -263,6 +265,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       const data = await getEmployeesService();
       setEmployees(data);
+      setDiag({ employeesCount: data.length });
     } catch (err: any) {
       // Netzwerkfehler (Verbindung mitten im Request verloren) ist erwartbar —
       // kein Redbox, kein Fehler-State. Nur echte Fehler sichtbar machen.
@@ -303,16 +306,27 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       syncInProgressRef.current = false;
       refreshJobsInProgressRef.current = false;
 
+      setDiag({
+        jobsLoading: false,
+        loadingFalseCalled: true,
+        lastBootstrapStep: "jobs:reset-no-session",
+      });
       return;
     }
 
     if (didInitialLoadRef.current) {
+      setDiag({ lastBootstrapStep: "jobs:effect-skipped-didInitialLoad" });
       return;
     }
 
     didInitialLoadRef.current = true;
 
     const loadAll = async () => {
+      setDiag({
+        jobsLoading: true,
+        cacheLoadStarted: true,
+        lastBootstrapStep: "jobs:loadAll-start",
+      });
       // 1) SOFORT aus dem lokalen Cache rendern. loading wird ausschließlich vom
       //    lokalen Cache-Laden gesteuert — NICHT vom Netzwerk. Damit kann ein
       //    (offline) hängender Remote-Request den Tab-/Root-Render niemals
@@ -330,11 +344,22 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         setJobs(applyPendingActionsToJobs(cachedJobs, pending));
         setPendingActions(pending);
         setPendingCount(pending.length);
+        setDiag({
+          jobsCount: cachedJobs.length,
+          cacheLoadFinished: true,
+          lastBootstrapStep: "jobs:cache-done",
+        });
       } catch (err) {
         console.error("Failed to load cached jobs on init:", err);
+        noteDiagError("jobs:cache-error", err);
       } finally {
         setLoading(false);
         console.log("[Bootstrap] jobsLoading false");
+        setDiag({
+          jobsLoading: false,
+          loadingFalseCalled: true,
+          lastBootstrapStep: "jobs:loading-false",
+        });
       }
 
       // 2) Danach im HINTERGRUND: Online-Status ermitteln und – nur wenn online –
@@ -346,6 +371,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         "[Bootstrap] NetInfo status (jobs):",
         online ? "online" : "offline",
       );
+      setDiag({ online, lastBootstrapStep: `jobs:netinfo=${online}` });
 
       if (!online) {
         // Offline: der Cache genügt. Der NetInfo-Listener synchronisiert bei
@@ -354,11 +380,14 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       }
 
       console.log("[Bootstrap] remote refresh started");
+      setDiag({ remoteRefreshStarted: true, lastBootstrapStep: "jobs:remote-start" });
       try {
         await runPendingSyncSafely();
         await Promise.all([refreshJobs(), refreshEmployees()]);
+        setDiag({ lastBootstrapStep: "jobs:remote-done" });
       } catch (err) {
         console.log("[Bootstrap] remote refresh failed:", err);
+        noteDiagError("jobs:remote-error", err);
       }
     };
 

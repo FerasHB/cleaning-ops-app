@@ -136,7 +136,7 @@ export default function AdminDashboardScreen() {
     return unique;
   }, [jobs]);
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen debugName="AdminDashboard" />;
 
   return (
     <ScreenContainer>

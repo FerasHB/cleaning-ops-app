@@ -139,7 +139,7 @@ export default function JobsListScreen() {
     });
   }, [jobs, filter, search, employeeId, isAdmin, sortKey]);
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen debugName="JobsList" />;
 
   const hasActiveQuery =
     !!search.trim() || filter !== "all" || (isAdmin && employeeId !== "all");
