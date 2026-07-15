@@ -3,6 +3,8 @@ import { registerForPushNotifications } from "@/services/notificationService";
 import {
   clearCachedProfile,
   getCachedProfile,
+  peekCachedProfileRaw,
+  PROFILE_STORAGE_KEY,
   saveCachedProfile,
 } from "@/services/offline/profile.storage";
 import {
@@ -146,6 +148,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // is_active-Sicherheitsprüfung — auch für gecachte Profile. Wirft nie.
   const loadAndApplyProfile = useCallback(
     async (userId: string): Promise<ProfileApplyOutcome> => {
+      // TEMP Diagnose (offline-debug-5): zeigt, WAS im Profil-Cache steht.
+      const rawCache = await peekCachedProfileRaw();
+      setDiag({
+        cacheKey: PROFILE_STORAGE_KEY,
+        cacheVersion: String(rawCache?.version ?? "(kein Cache)"),
+        cachedRole: String(rawCache?.role ?? "(none)"),
+        cachedCompany: String(rawCache?.companyId ?? "(none)"),
+      });
+
       const result = await getProfileByUserId(userId);
 
       if (!isMountedRef.current) {
@@ -162,7 +173,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         authDebug("Profilquelle: remote");
         console.log("[Bootstrap] Profile remote loaded");
-        setDiag({ hasProfile: true, lastBootstrapStep: "auth:profile-remote" });
+        setDiag({
+          hasProfile: true,
+          lastBootstrapStep: "auth:profile-remote",
+          remoteRole: String(result.profile.role ?? "(none)"),
+          remoteCompany: String(result.profile.company_id ?? "(none)"),
+        });
         autoRetryCountRef.current = 0;
         isOfflineProfileRef.current = false;
         setProfile(result.profile);
