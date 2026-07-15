@@ -7,7 +7,7 @@
 import { LoadingScreen } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +16,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+// TEMP Diagnose (offline-debug-4) — nach Verifikation entfernbar.
+import { setDiag } from "@/utils/bootstrapDiag";
 
 export default function IndexScreen() {
   const { loading, session, profile, role, profileError, refreshProfile, signOut } =
@@ -23,34 +25,38 @@ export default function IndexScreen() {
   const theme = useAppTheme();
   const [retrying, setRetrying] = useState(false);
 
-  useEffect(() => {
-    // Solange geladen wird → keine Entscheidung treffen
-    if (loading) return;
-
-    // Nicht eingeloggt → Welcome Screen
+  // ── Ziel der Weiterleitung EINMAL bestimmen (rein aus dem Auth-Zustand) ──
+  let redirectTo: string | null = null;
+  if (!loading) {
     if (!session) {
-      router.replace("/welcome");
-      return;
+      redirectTo = "/welcome";
+    } else if (profile) {
+      if (!profile.company_id) redirectTo = "/setup-company";
+      else if (role === "admin") redirectTo = "/(admin-tabs)/dashboard";
+      else if (role === "employee") redirectTo = "/(employee-tabs)/overview";
     }
+  }
 
-    // Profil noch nicht da → warten (Spinner oder Fehlerzustand, siehe unten)
-    if (!profile) return;
+  // Diagnose NACH dem Render setzen (nicht während), um Cross-Component-Updates
+  // zu vermeiden. TEMP (offline-debug-4).
+  useEffect(() => {
+    setDiag({
+      role: role ?? "(null)",
+      hasCompany: !!profile?.company_id,
+      indexRedirectTarget: redirectTo ?? "(kein Redirect)",
+      lastBootstrapStep: redirectTo ? `index:redirect ${redirectTo}` : "index:no-redirect",
+    });
+  }, [role, profile?.company_id, redirectTo]);
 
-    // Eingeloggt, aber kein Unternehmen → Setup starten
-    if (!profile.company_id) {
-      router.replace("/setup-company");
-      return;
-    }
-
-    // Alles passt → rollenabhängig in die jeweiligen Bottom-Tabs
-    // TEMP Diagnose (Offline-Bootstrap) — nach Verifikation entfernbar.
-    console.log("[Bootstrap] rendering cached app, role:", role);
-    if (role === "admin") {
-      router.replace("/(admin-tabs)/dashboard");
-    } else {
-      router.replace("/(employee-tabs)/overview");
-    }
-  }, [loading, session, profile, role]);
+  // ── Deklarative Weiterleitung statt router.replace() im useEffect ──
+  // Ursache des Offline-Kaltstart-Spinners: ein imperatives router.replace() in
+  // einem useEffect konnte beim Cold-Start verworfen werden (Navigator/Guard
+  // noch nicht bereit) — die App blieb dann auf app/index hängen, obwohl
+  // loading=false und das Profil vorhanden war. <Redirect> wird bei JEDEM Render
+  // neu bewertet und ist damit race-frei.
+  if (redirectTo) {
+    return <Redirect href={redirectTo as never} />;
+  }
 
   const handleRetry = async () => {
     setRetrying(true);
