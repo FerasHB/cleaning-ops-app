@@ -4,8 +4,6 @@ import {
   clearCachedProfile,
   getCachedProfile,
   isCompleteProfile,
-  peekCachedProfileRaw,
-  PROFILE_STORAGE_KEY,
   saveCachedProfile,
 } from "@/services/offline/profile.storage";
 import {
@@ -15,8 +13,6 @@ import {
   type ProfileFetchErrorKind,
 } from "@/services/profileService";
 import { isNetworkError } from "@/utils/networkError";
-// TEMP Diagnose (offline-debug-3) — nach Verifikation entfernbar.
-import { noteDiagError, setDiag } from "@/utils/bootstrapDiag";
 import NetInfo from "@react-native-community/netinfo";
 import { Session, User } from "@supabase/supabase-js";
 import React, {
@@ -100,9 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const autoRetryCountRef = useRef(0);
   const MAX_AUTO_RETRIES = 3;
 
-  // Fortlaufende Sequenznummer + Merker, ob aktuell ein VOLLSTÄNDIGES Profil
-  // gesetzt ist. Grundlage für die Overwrite-Schutzregel in setProfileSafe.
-  const profileSeqRef = useRef(0);
+  // Merker, ob aktuell ein VOLLSTÄNDIGES Profil gesetzt ist.
+  // Grundlage für die Overwrite-Schutzregel in setProfileSafe.
   const hasCompleteProfileRef = useRef(false);
 
   // EINZIGER Weg, profile zu setzen. Erzwingt zwei Invarianten:
@@ -113,29 +108,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   //     autoritativen Sign-out-Quellen (Session wird dort mitgelöscht). Ein
   //     transienter null-Wert (z. B. refreshProfile → getUser() lieferte offline
   //     kurzzeitig keinen User) darf das gute Profil NICHT wegräumen.
-  // Zusätzlich Diagnose-Instrumentierung (offline-debug-6).
   const setProfileSafe = useCallback(
     (source: string, next: AuthProfile | null) => {
-      profileSeqRef.current += 1;
-      const seq = profileSeqRef.current;
-      const role = next?.role ?? null;
-      const companyId = next?.company_id ?? null;
-
-      console.log(
-        `[ProfileState] #${seq} source=${source} role=${role ?? "null"} company_id=${companyId ?? "null"}`,
-      );
-      setDiag({
-        lastSetProfileSource: source,
-        lastSetProfileRole: String(role ?? "null"),
-        lastSetProfileCompanyId: String(companyId ?? "null"),
-        setProfileSequence: seq,
-      });
-
       // (1) Non-null, aber unvollständig → niemals setzen.
       if (next && !isCompleteProfile(next)) {
-        console.warn(
-          `[ProfileState] #${seq} BLOCKED unvollständiges Profil (source=${source})`,
-        );
+        if (__DEV__) {
+          console.warn(
+            `[ProfileState] BLOCKED unvollständiges Profil (source=${source})`,
+          );
+        }
         return;
       }
 
@@ -145,9 +126,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hasCompleteProfileRef.current &&
         !AUTHORITATIVE_PROFILE_CLEAR_SOURCES.has(source)
       ) {
-        console.warn(
-          `[ProfileState] #${seq} BLOCKED null-Overwrite eines vollständigen Profils (source=${source})`,
-        );
+        if (__DEV__) {
+          console.warn(
+            `[ProfileState] BLOCKED null-Overwrite eines vollständigen Profils (source=${source})`,
+          );
+        }
         return;
       }
 
@@ -217,15 +200,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // is_active-Sicherheitsprüfung — auch für gecachte Profile. Wirft nie.
   const loadAndApplyProfile = useCallback(
     async (userId: string): Promise<ProfileApplyOutcome> => {
-      // TEMP Diagnose (offline-debug-5): zeigt, WAS im Profil-Cache steht.
-      const rawCache = await peekCachedProfileRaw();
-      setDiag({
-        cacheKey: PROFILE_STORAGE_KEY,
-        cacheVersion: String(rawCache?.version ?? "(kein Cache)"),
-        cachedRole: String(rawCache?.role ?? "(none)"),
-        cachedCompany: String(rawCache?.companyId ?? "(none)"),
-      });
-
       const result = await getProfileByUserId(userId);
 
       if (!isMountedRef.current) {
@@ -241,13 +215,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         authDebug("Profilquelle: remote");
-        console.log("[Bootstrap] Profile remote loaded");
-        setDiag({
-          hasProfile: true,
-          lastBootstrapStep: "auth:profile-remote",
-          remoteRole: String(result.profile.role ?? "(none)"),
-          remoteCompany: String(result.profile.company_id ?? "(none)"),
-        });
         autoRetryCountRef.current = 0;
         isOfflineProfileRef.current = false;
         setProfileSafe("remote", result.profile);
@@ -275,8 +242,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           authDebug("Profilquelle: cache (offline)");
-          console.log("[Bootstrap] Profile cache loaded");
-          setDiag({ hasProfile: true, lastBootstrapStep: "auth:profile-cache" });
           isOfflineProfileRef.current = true;
           setProfileSafe("cache", cached);
           // profile ist gesetzt → App startet; der Offline-Hinweis läuft über
@@ -289,7 +254,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Offline UND kein Cache → expliziter Offline-Fehlerzustand
         // (app/index.tsx zeigt Fehlerbildschirm mit Retry/Logout).
         authDebug("Profilquelle: keine (offline, kein Cache)");
-        setDiag({ hasProfile: false, lastBootstrapStep: "auth:profile-none" });
         isOfflineProfileRef.current = false;
         setProfileSafe("offline-no-cache", null);
         setProfileError("network");
@@ -419,39 +383,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const bootstrap = async () => {
       try {
         setLoading(true);
-        setDiag({ authLoading: true, lastBootstrapStep: "auth:bootstrap-start" });
-
-        // TEMP Diagnose (Offline-Bootstrap) — nach Verifikation entfernbar.
-        const netState = await NetInfo.fetch();
-        console.log(
-          "[Bootstrap] NetInfo status:",
-          netState.isConnected ? "online" : "offline",
-        );
-        setDiag({
-          online: netState.isConnected,
-          lastBootstrapStep: `auth:netinfo=${netState.isConnected}`,
-        });
 
         const { data, error } = await supabase.auth.getSession();
 
         if (error && !isNetworkError(error)) {
           console.error("Failed to get session:", error);
         }
-        console.log("[Bootstrap] Session cache loaded:", !!data.session);
-        setDiag({ lastBootstrapStep: `auth:session-loaded=${!!data.session}` });
 
         await applySession(data.session ?? null, { syncToken: true });
-      } catch (err) {
-        noteDiagError("auth:bootstrap-error", err);
-        throw err;
       } finally {
         isBootstrappingRef.current = false;
 
         if (isMountedRef.current) {
           setLoading(false);
         }
-        console.log("[Bootstrap] authLoading false");
-        setDiag({ authLoading: false, lastBootstrapStep: "auth:done" });
       }
     };
 

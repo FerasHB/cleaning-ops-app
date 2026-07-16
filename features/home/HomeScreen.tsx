@@ -65,7 +65,7 @@ export default function HomeScreen() {
   const statsAnim = useFadeIn(80);
   const listAnim = useFadeIn(160);
 
-  if (loading) return <LoadingScreen debugName="HomeScreen" />;
+  if (loading) return <LoadingScreen />;
 
   const displayName = user?.email?.split("@")[0] ?? "Hey";
   const firstName = displayName.charAt(0).toUpperCase() + displayName.slice(1);

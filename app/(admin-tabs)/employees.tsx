@@ -118,7 +118,7 @@ export default function EmployeesScreen() {
   };
 
   if (loading) {
-    return <LoadingScreen debugName="AdminEmployees" />;
+    return <LoadingScreen />;
   }
 
   return (

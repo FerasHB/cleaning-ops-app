@@ -8,7 +8,7 @@ import { LoadingScreen } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Redirect, router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -16,8 +16,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-// TEMP Diagnose (offline-debug-4) — nach Verifikation entfernbar.
-import { setDiag } from "@/utils/bootstrapDiag";
 
 export default function IndexScreen() {
   const { loading, session, profile, role, profileError, refreshProfile, signOut } =
@@ -36,17 +34,6 @@ export default function IndexScreen() {
       else if (role === "employee") redirectTo = "/(employee-tabs)/overview";
     }
   }
-
-  // Diagnose NACH dem Render setzen (nicht während), um Cross-Component-Updates
-  // zu vermeiden. TEMP (offline-debug-4).
-  useEffect(() => {
-    setDiag({
-      role: role ?? "(null)",
-      hasCompany: !!profile?.company_id,
-      indexRedirectTarget: redirectTo ?? "(kein Redirect)",
-      lastBootstrapStep: redirectTo ? `index:redirect ${redirectTo}` : "index:no-redirect",
-    });
-  }, [role, profile?.company_id, redirectTo]);
 
   // ── Deklarative Weiterleitung statt router.replace() im useEffect ──
   // Ursache des Offline-Kaltstart-Spinners: ein imperatives router.replace() in
@@ -172,17 +159,10 @@ export default function IndexScreen() {
     );
   }
 
-  // Spinner – sichtbar solange der Auth-Bootstrap läuft.
-  // TEMP Diagnose (Offline-Bootstrap) — zeigt, welcher State den Root-Spinner
-  // hält; nach Verifikation entfernbar. jobsLoading blockiert den Root NICHT
-  // (die Tab-Screens rendern gecachte Jobs, siehe JobContext.loadAll).
-  console.log("[Root Loading State]", {
-    authLoading: loading,
-    hasSession: !!session,
-    hasProfile: !!profile,
-    profileError,
-  });
-  return <LoadingScreen debugName="app/index (root)" />;
+  // Spinner – sichtbar solange der Auth-Bootstrap läuft. jobsLoading blockiert
+  // den Root NICHT (die Tab-Screens rendern gecachte Jobs, siehe
+  // JobContext.loadAll).
+  return <LoadingScreen />;
 }
 
 const styles = StyleSheet.create({
