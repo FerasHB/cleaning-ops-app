@@ -8,7 +8,7 @@
     "scheme": "taskopsmanager",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "buildNumber": "3",
+    "buildNumber": "5",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ferash.taskopsmanager",
