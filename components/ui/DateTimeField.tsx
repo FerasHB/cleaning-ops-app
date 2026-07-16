@@ -1,17 +1,32 @@
 // components/ui/DateTimeField.tsx
-// Datum-/Uhrzeit-Auswahl mit Modal-Picker.
+// Datum-/Uhrzeit-Auswahl mit Picker.
 // Vollständig theme-aware (Light + Dark Mode).
-// Native Picker passt sich über themeVariant automatisch an.
+//
+// Plattform-Aufteilung:
+// - iOS: Inline-Spinner in einem eigenen Modal. Nur hier greifen textColor/themeVariant,
+//   deshalb ist die Bestätigen/Abbrechen-Logik in JS gebaut.
+// - Android: Der native Dialog wird imperativ über DateTimePickerAndroid.open() geöffnet
+//   (display="default", Material-Dialog). textColor/themeVariant sind auf Android wirkungslos
+//   und der Spinner-Dialog rendert Zahlen je nach OS-Theme unsichtbar — der Material-Dialog
+//   thematisiert sich dagegen korrekt (Light + Dark). Kein eigenes Modal nötig.
 
 import { Input } from "@/components/ui/index";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { formatDateISO, formatForDisplay, formatTimeHHmm } from "@/utils/date";
 import DateTimePicker, {
+  DateTimePickerAndroid,
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import type { AppTheme } from "@/constants/theme";
 
 export interface DateTimeFieldProps {
@@ -46,9 +61,74 @@ export function DateTimeField({
   const [tempDate, setTempDate] = useState<Date>(new Date());
 
   const openPicker = () => {
-    setTempDate(value ?? new Date());
+    const base = value ?? new Date();
+
+    // Android: nativen Material-Dialog imperativ öffnen (thematisiert sich korrekt),
+    // statt den Inline-Spinner in ein eigenes Modal zu packen.
+    if (Platform.OS === "android") {
+      openAndroidPicker(base);
+      return;
+    }
+
+    setTempDate(base);
     setPickerStep(isTimeOnly ? "time" : "date");
     setShowPickerModal(true);
+  };
+
+  // Android: display="default" liefert den Material-Dialog (Kalender/Uhr), der Zahlen in
+  // Light- und Dark-Mode lesbar rendert. Für "datetime" wird Datum → Uhrzeit verkettet.
+  const openAndroidPicker = (base: Date) => {
+    if (isTimeOnly) {
+      DateTimePickerAndroid.open({
+        value: base,
+        mode: "time",
+        is24Hour: true,
+        display: "default",
+        onChange: (event, selected) => {
+          if (event.type === "set" && selected) onChange(selected);
+        },
+      });
+      return;
+    }
+
+    if (isDateOnly) {
+      DateTimePickerAndroid.open({
+        value: base,
+        mode: "date",
+        display: "default",
+        onChange: (event, selected) => {
+          if (event.type === "set" && selected) onChange(selected);
+        },
+      });
+      return;
+    }
+
+    // mode="datetime": erst Datum, dann Uhrzeit wählen und zusammenführen.
+    DateTimePickerAndroid.open({
+      value: base,
+      mode: "date",
+      display: "default",
+      onChange: (dateEvent, pickedDate) => {
+        if (dateEvent.type !== "set" || !pickedDate) return;
+        DateTimePickerAndroid.open({
+          value: pickedDate,
+          mode: "time",
+          is24Hour: true,
+          display: "default",
+          onChange: (timeEvent, pickedTime) => {
+            if (timeEvent.type !== "set" || !pickedTime) return;
+            const combined = new Date(pickedDate);
+            combined.setHours(
+              pickedTime.getHours(),
+              pickedTime.getMinutes(),
+              0,
+              0,
+            );
+            onChange(combined);
+          },
+        });
+      },
+    });
   };
 
   const displayValue = value
