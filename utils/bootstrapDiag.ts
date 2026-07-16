@@ -8,7 +8,7 @@
 
 import { useSyncExternalStore } from "react";
 
-export const BUILD_MARKER = "offline-debug-5";
+export const BUILD_MARKER = "offline-debug-6";
 
 export type BootstrapDiag = {
   authLoading: boolean;
@@ -22,6 +22,10 @@ export type BootstrapDiag = {
   cachedCompany: string;
   remoteRole: string;
   remoteCompany: string;
+  lastSetProfileSource: string;
+  lastSetProfileRole: string;
+  lastSetProfileCompanyId: string;
+  setProfileSequence: number;
   jobsLoading: boolean;
   jobsCount: number;
   employeesCount: number;
@@ -47,6 +51,10 @@ let diag: BootstrapDiag = {
   cachedCompany: "(none)",
   remoteRole: "(none)",
   remoteCompany: "(none)",
+  lastSetProfileSource: "(none)",
+  lastSetProfileRole: "(none)",
+  lastSetProfileCompanyId: "(none)",
+  setProfileSequence: 0,
   jobsLoading: true,
   jobsCount: 0,
   employeesCount: 0,

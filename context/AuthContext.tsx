@@ -3,6 +3,7 @@ import { registerForPushNotifications } from "@/services/notificationService";
 import {
   clearCachedProfile,
   getCachedProfile,
+  isCompleteProfile,
   peekCachedProfileRaw,
   PROFILE_STORAGE_KEY,
   saveCachedProfile,
@@ -63,6 +64,17 @@ type ProfileApplyOutcome =
   | "signed-out"
   | "unmounted";
 
+// Quellen, die profile AUTORITATIV auf null setzen dürfen — hier wird die
+// Session ohnehin mitgelöscht (echter Sign-out / keine Session). Nur aus diesen
+// Quellen darf ein VOLLSTÄNDIGES Profil durch null überschrieben werden. Andere
+// Quellen (z. B. ein transienter refresh:no-user) dürfen ein gutes Profil NICHT
+// wegräumen — sonst landet die App mit session, aber ohne profile im Spinner.
+const AUTHORITATIVE_PROFILE_CLEAR_SOURCES = new Set<string>([
+  "applySession:no-session",
+  "signout",
+  "deactivation",
+]);
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -87,6 +99,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // unbegrenzt möglich.
   const autoRetryCountRef = useRef(0);
   const MAX_AUTO_RETRIES = 3;
+
+  // Fortlaufende Sequenznummer + Merker, ob aktuell ein VOLLSTÄNDIGES Profil
+  // gesetzt ist. Grundlage für die Overwrite-Schutzregel in setProfileSafe.
+  const profileSeqRef = useRef(0);
+  const hasCompleteProfileRef = useRef(false);
+
+  // EINZIGER Weg, profile zu setzen. Erzwingt zwei Invarianten:
+  //  1. Ein non-null profile MUSS ein vollständiges AuthProfile sein
+  //     (gültige role) — session.user / user_metadata / Teilobjekte werden nie
+  //     als profile übernommen.
+  //  2. null überschreibt ein bereits gesetztes vollständiges Profil nur aus
+  //     autoritativen Sign-out-Quellen (Session wird dort mitgelöscht). Ein
+  //     transienter null-Wert (z. B. refreshProfile → getUser() lieferte offline
+  //     kurzzeitig keinen User) darf das gute Profil NICHT wegräumen.
+  // Zusätzlich Diagnose-Instrumentierung (offline-debug-6).
+  const setProfileSafe = useCallback(
+    (source: string, next: AuthProfile | null) => {
+      profileSeqRef.current += 1;
+      const seq = profileSeqRef.current;
+      const role = next?.role ?? null;
+      const companyId = next?.company_id ?? null;
+
+      console.log(
+        `[ProfileState] #${seq} source=${source} role=${role ?? "null"} company_id=${companyId ?? "null"}`,
+      );
+      setDiag({
+        lastSetProfileSource: source,
+        lastSetProfileRole: String(role ?? "null"),
+        lastSetProfileCompanyId: String(companyId ?? "null"),
+        setProfileSequence: seq,
+      });
+
+      // (1) Non-null, aber unvollständig → niemals setzen.
+      if (next && !isCompleteProfile(next)) {
+        console.warn(
+          `[ProfileState] #${seq} BLOCKED unvollständiges Profil (source=${source})`,
+        );
+        return;
+      }
+
+      // (2) null darf ein vollständiges Profil nur autoritativ überschreiben.
+      if (
+        next === null &&
+        hasCompleteProfileRef.current &&
+        !AUTHORITATIVE_PROFILE_CLEAR_SOURCES.has(source)
+      ) {
+        console.warn(
+          `[ProfileState] #${seq} BLOCKED null-Overwrite eines vollständigen Profils (source=${source})`,
+        );
+        return;
+      }
+
+      hasCompleteProfileRef.current = next !== null;
+      setProfile(next);
+    },
+    [],
+  );
 
   // Löscht den eigenen Push-Token best effort — darf Logout/Deaktivierung
   // nie blockieren, egal was schiefgeht.
@@ -132,7 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isMountedRef.current) {
       setSession(null);
       setUser(null);
-      setProfile(null);
+      setProfileSafe("deactivation", null);
       setProfileError(null);
     }
     lastHandledUserIdRef.current = null;
@@ -181,7 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         autoRetryCountRef.current = 0;
         isOfflineProfileRef.current = false;
-        setProfile(result.profile);
+        setProfileSafe("remote", result.profile);
         setProfileError(null);
         lastHandledUserIdRef.current = userId;
         await saveCachedProfile(result.profile);
@@ -209,7 +278,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("[Bootstrap] Profile cache loaded");
           setDiag({ hasProfile: true, lastBootstrapStep: "auth:profile-cache" });
           isOfflineProfileRef.current = true;
-          setProfile(cached);
+          setProfileSafe("cache", cached);
           // profile ist gesetzt → App startet; der Offline-Hinweis läuft über
           // den OfflineBanner (NetInfo). KEIN profileError.
           setProfileError(null);
@@ -222,7 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authDebug("Profilquelle: keine (offline, kein Cache)");
         setDiag({ hasProfile: false, lastBootstrapStep: "auth:profile-none" });
         isOfflineProfileRef.current = false;
-        setProfile(null);
+        setProfileSafe("offline-no-cache", null);
         setProfileError("network");
         return "offline-no-cache";
       }
@@ -230,7 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // ── Echter Server-/RLS-Fehler ──
       authDebug("Profil: Server-/RLS-Fehler");
       isOfflineProfileRef.current = false;
-      setProfile(null);
+      setProfileSafe("server-error", null);
       setProfileError("server");
       return "server-error";
     },
@@ -261,7 +330,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (!currentUser) {
-      setProfile(null);
+      setProfileSafe("refresh:no-user", null);
       setProfileError(null);
       isOfflineProfileRef.current = false;
       return;
@@ -322,7 +391,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const nextUserId = nextSession?.user?.id ?? null;
 
       if (!nextUserId) {
-        setProfile(null);
+        setProfileSafe("applySession:no-session", null);
         setProfileError(null);
         isOfflineProfileRef.current = false;
         lastHandledUserIdRef.current = null;
@@ -573,7 +642,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setSession(null);
     setUser(null);
-    setProfile(null);
+    setProfileSafe("signout", null);
     setProfileError(null);
     lastHandledUserIdRef.current = null;
     autoRetryCountRef.current = 0;
