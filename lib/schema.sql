@@ -167,6 +167,47 @@ create table if not exists public.job_photos (
   created_at timestamptz not null default now()
 );
 
+-- Admin-Push bei Job-Statuswechsel — Event-Log + Pro-Empfänger-Zustandsmaschine.
+-- notification_outbox: EIN Event pro echtem Statusübergang (transaktional von
+--   start_own_job/complete_own_job geschrieben). fanned_out_at markiert die
+--   Auffächerung in notification_deliveries.
+-- notification_deliveries: EINE Zeile pro Admin-Empfänger mit eigener
+--   Zustandsmaschine (pending|processing|sent|failed) -> Teilerfolg wird nicht
+--   erneut an bereits erreichte Admins gesendet. sent_at ERST nach Erfolg.
+-- Beide RLS an, KEINE Policies → kein direkter Client-Zugriff (nur DEFINER-RPC
+-- + Service Role). Siehe supabase/migrations/20260717000000_admin_status_notifications.sql.
+create table if not exists public.notification_outbox (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  job_id uuid not null references public.jobs(id) on delete cascade,
+  event_type text not null,                 -- 'job_started' | 'job_completed'
+  job_status text not null,                 -- 'in_progress' | 'completed'
+  employee_id uuid references public.profiles(id) on delete set null,
+  employee_name text,
+  customer_name text,
+  service_name text,
+  created_at timestamptz not null default now(),
+  fanned_out_at timestamptz,                -- NULL = noch nicht aufgefächert
+  constraint uq_notification_outbox_job_event unique (job_id, event_type)
+);
+
+create table if not exists public.notification_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  outbox_id uuid not null references public.notification_outbox(id) on delete cascade,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'pending',   -- pending | processing | sent | failed
+  attempts int not null default 0,
+  claimed_at timestamptz,
+  sent_at timestamptz,                       -- NUR nach erfolgreichem Versand
+  next_attempt_at timestamptz not null default now(),
+  last_error text,
+  created_at timestamptz not null default now(),
+  constraint uq_notification_deliveries_recipient unique (outbox_id, recipient_id),
+  constraint chk_notification_deliveries_status
+    check (status in ('pending', 'processing', 'sent', 'failed'))
+);
+
 -- =========================================================
 -- INDEXES
 -- =========================================================
@@ -195,6 +236,18 @@ create index if not exists idx_job_comment_reads_user_id on public.job_comment_r
 create index if not exists idx_job_photos_job_id on public.job_photos(job_id);
 create index if not exists idx_job_photos_company_id on public.job_photos(company_id);
 create index if not exists idx_job_photos_created_at on public.job_photos(created_at);
+
+create index if not exists idx_notif_outbox_unfanned
+  on public.notification_outbox(created_at) where fanned_out_at is null;
+create index if not exists idx_notif_outbox_job
+  on public.notification_outbox(job_id);
+create index if not exists idx_notif_deliveries_due
+  on public.notification_deliveries(next_attempt_at)
+  where status in ('pending', 'processing');
+create index if not exists idx_notif_deliveries_outbox
+  on public.notification_deliveries(outbox_id);
+create index if not exists idx_notif_deliveries_company_status
+  on public.notification_deliveries(company_id, status);
 
 -- =========================================================
 -- FUNCTIONS
@@ -384,6 +437,11 @@ grant execute on function public.clear_my_push_token() to authenticated;
 -- RPC: START OWN JOB
 -- =========================================================
 
+-- Schreibt beim ECHTEN Übergang open -> in_progress zusätzlich transaktional
+-- eine notification_outbox-Zeile (Admin-Push). Bereits gestartet/abgeschlossen
+-- = idempotenter No-Op (kein Fehler, kein zweites Event) — wichtig, damit ein
+-- Offline-Retry/Doppel-Tap nicht scheitert oder doppelt benachrichtigt.
+-- Siehe supabase/migrations/20260717000000_admin_status_notifications.sql.
 create or replace function public.start_own_job(
   job_id_input uuid,
   started_at_input timestamptz default now()
@@ -393,6 +451,10 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  updated_row  public.jobs%rowtype;
+  existing_row public.jobs%rowtype;
+  emp_name     text;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -407,13 +469,41 @@ begin
     and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
-    and job_type = 'single';   -- Parent-Recurring-Regeln dürfen nicht gestartet werden
+    and job_type = 'single'   -- Parent-Recurring-Regeln dürfen nicht gestartet werden
+    and status = 'open'       -- NUR der echte Übergang open -> in_progress
+  returning * into updated_row;
 
-  if not found then
-    raise exception 'Job not found or not allowed';
+  if found then
+    select full_name into emp_name from public.profiles where id = auth.uid();
+
+    insert into public.notification_outbox (
+      company_id, job_id, event_type, job_status,
+      employee_id, employee_name, customer_name, service_name
+    )
+    values (
+      updated_row.company_id, updated_row.id, 'job_started', 'in_progress',
+      auth.uid(), emp_name, updated_row.customer_name, updated_row.service_name
+    )
+    on conflict (job_id, event_type) do nothing;
+
+    return started_at_input;
   end if;
 
-  return started_at_input;
+  -- Kein Übergang: idempotenter No-Op (eigener Job, aber nicht mehr 'open')
+  -- vs. nicht erlaubt (fremder/nicht gefundener Job) unterscheiden.
+  select * into existing_row
+  from public.jobs
+  where id = job_id_input
+    and assigned_to = auth.uid()
+    and company_id = public.current_user_company_id()
+    and public.current_user_role() = 'employee'
+    and job_type = 'single';
+
+  if found then
+    return coalesce(existing_row.started_at, started_at_input);
+  end if;
+
+  raise exception 'Job not found or not allowed';
 end;
 $$;
 
@@ -423,6 +513,10 @@ grant execute on function public.start_own_job(uuid, timestamptz) to authenticat
 -- RPC: COMPLETE OWN JOB
 -- =========================================================
 
+-- Analog zu start_own_job: schreibt beim ECHTEN Übergang in_progress ->
+-- completed eine notification_outbox-Zeile; bereits abgeschlossen = No-Op.
+-- Abschluss eines nicht gestarteten (open) Jobs wirft bewusst (kein falscher
+-- Erfolg) — die UI erlaubt „Abschließen" ohnehin nur bei in_progress.
 create or replace function public.complete_own_job(
   job_id_input uuid,
   completed_at_input timestamptz default now()
@@ -432,6 +526,10 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  updated_row  public.jobs%rowtype;
+  existing_row public.jobs%rowtype;
+  emp_name     text;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -445,17 +543,209 @@ begin
     and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
-    and job_type = 'single';   -- Parent-Recurring-Regeln dürfen nicht abgeschlossen werden
+    and job_type = 'single'          -- Parent-Recurring-Regeln nicht abschließbar
+    and status = 'in_progress'       -- NUR der echte Übergang in_progress -> completed
+  returning * into updated_row;
+
+  if found then
+    select full_name into emp_name from public.profiles where id = auth.uid();
+
+    insert into public.notification_outbox (
+      company_id, job_id, event_type, job_status,
+      employee_id, employee_name, customer_name, service_name
+    )
+    values (
+      updated_row.company_id, updated_row.id, 'job_completed', 'completed',
+      auth.uid(), emp_name, updated_row.customer_name, updated_row.service_name
+    )
+    on conflict (job_id, event_type) do nothing;
+
+    return completed_at_input;
+  end if;
+
+  select * into existing_row
+  from public.jobs
+  where id = job_id_input
+    and assigned_to = auth.uid()
+    and company_id = public.current_user_company_id()
+    and public.current_user_role() = 'employee'
+    and job_type = 'single';
 
   if not found then
     raise exception 'Job not found or not allowed';
   end if;
 
-  return completed_at_input;
+  -- Bereits abgeschlossen -> idempotenter No-Op (retry-sicher), kein Event.
+  if existing_row.status = 'completed' then
+    return coalesce(existing_row.completed_at, completed_at_input);
+  end if;
+
+  -- Eigener Job, aber (noch) nicht in_progress (z. B. 'open') -> nicht als
+  -- Erfolg vortäuschen, sichtbar scheitern.
+  raise exception 'Job not in progress (cannot complete)';
 end;
 $$;
 
 grant execute on function public.complete_own_job(uuid, timestamptz) to authenticated;
+
+-- =========================================================
+-- RPC: DISPATCHER (Fan-out / Claim / Complete) — nur Service Role
+-- =========================================================
+-- Vollständige Definitionen + Kommentare siehe
+-- supabase/migrations/20260717000000_admin_status_notifications.sql. Hier als
+-- Referenz gespiegelt, damit dieses Schema den echten Stand widerspiegelt.
+
+-- Fächert offene Outbox-Events pro aktivem Admin in Deliveries auf (idempotent).
+create or replace function public.fanout_notification_events(
+  company_id_filter uuid default null,
+  max_events int default 100
+)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  evt record;
+  n int := 0;
+begin
+  for evt in
+    select o.id, o.company_id, o.employee_id
+    from public.notification_outbox o
+    where o.fanned_out_at is null
+      and (company_id_filter is null or o.company_id = company_id_filter)
+    order by o.created_at
+    for update skip locked
+    limit max_events
+  loop
+    insert into public.notification_deliveries (
+      outbox_id, company_id, recipient_id, next_attempt_at
+    )
+    select evt.id, evt.company_id, p.id, now()
+    from public.profiles p
+    where p.company_id = evt.company_id
+      and p.role = 'admin'
+      and p.is_active = true
+      and p.expo_push_token is not null
+      and (evt.employee_id is null or p.id <> evt.employee_id)
+    on conflict (outbox_id, recipient_id) do nothing;
+
+    update public.notification_outbox set fanned_out_at = now() where id = evt.id;
+    n := n + 1;
+  end loop;
+  return n;
+end;
+$$;
+
+-- Nimmt fällige/hängende Deliveries atomar (FOR UPDATE SKIP LOCKED) und liefert
+-- aktuellen Empfänger-Token/Status zum Versand.
+create or replace function public.claim_notification_deliveries(
+  company_id_filter uuid default null,
+  max_rows int default 50,
+  processing_timeout_seconds int default 120
+)
+returns table (
+  delivery_id uuid, outbox_id uuid, recipient_id uuid, attempts int,
+  event_type text, job_id uuid, company_id uuid, job_status text,
+  employee_id uuid, employee_name text, customer_name text, service_name text,
+  expo_push_token text, recipient_active boolean, recipient_role text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  with due as (
+    select d.id
+    from public.notification_deliveries d
+    where (company_id_filter is null or d.company_id = company_id_filter)
+      and (
+        (d.status = 'pending' and d.next_attempt_at <= now())
+        or (d.status = 'processing'
+            and d.claimed_at < now() - make_interval(secs => processing_timeout_seconds))
+      )
+    order by d.next_attempt_at
+    for update skip locked
+    limit max_rows
+  ),
+  claimed as (
+    update public.notification_deliveries d
+    set status = 'processing', claimed_at = now(), attempts = d.attempts + 1
+    from due
+    where d.id = due.id
+    returning d.id, d.outbox_id, d.recipient_id, d.attempts
+  )
+  select
+    c.id, c.outbox_id, c.recipient_id, c.attempts,
+    o.event_type, o.job_id, o.company_id, o.job_status,
+    o.employee_id, o.employee_name, o.customer_name, o.service_name,
+    p.expo_push_token, p.is_active, p.role::text
+  from claimed c
+  join public.notification_outbox o on o.id = c.outbox_id
+  left join public.profiles p on p.id = c.recipient_id;
+end;
+$$;
+
+-- Zustandsübergang nach Sendeversuch: sent | permanent_fail | retry(Backoff/max).
+-- sent_at wird NUR bei outcome='sent' gesetzt.
+create or replace function public.complete_notification_delivery(
+  delivery_id_input uuid,
+  outcome text,
+  error_input text default null,
+  max_attempts int default 5
+)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_attempts int;
+begin
+  select attempts into v_attempts
+  from public.notification_deliveries where id = delivery_id_input;
+  if not found then
+    return null;
+  end if;
+
+  if outcome = 'sent' then
+    update public.notification_deliveries
+      set status = 'sent', sent_at = now(), last_error = null
+      where id = delivery_id_input;
+    return 'sent';
+  elsif outcome = 'permanent_fail' then
+    update public.notification_deliveries
+      set status = 'failed', last_error = error_input
+      where id = delivery_id_input;
+    return 'failed';
+  elsif outcome = 'retry' then
+    if v_attempts >= max_attempts then
+      update public.notification_deliveries
+        set status = 'failed', last_error = coalesce(error_input, 'max attempts reached')
+        where id = delivery_id_input;
+      return 'failed';
+    end if;
+    update public.notification_deliveries
+      set status = 'pending', last_error = error_input,
+          next_attempt_at = now()
+            + make_interval(secs => least(3600, (60 * power(2, greatest(v_attempts - 1, 0)))::int))
+      where id = delivery_id_input;
+    return 'pending';
+  else
+    raise exception 'Unknown outcome: %', outcome;
+  end if;
+end;
+$$;
+
+-- Explizit auch von anon/authenticated (Supabase-Default-Privileges vergeben
+-- EXECUTE sonst direkt an diese Rollen; "revoke from public" allein genügt nicht).
+revoke all on function public.fanout_notification_events(uuid, int) from public, anon, authenticated;
+revoke all on function public.claim_notification_deliveries(uuid, int, int) from public, anon, authenticated;
+revoke all on function public.complete_notification_delivery(uuid, text, text, int) from public, anon, authenticated;
+grant execute on function public.fanout_notification_events(uuid, int) to service_role;
+grant execute on function public.claim_notification_deliveries(uuid, int, int) to service_role;
+grant execute on function public.complete_notification_delivery(uuid, text, text, int) to service_role;
 
 -- =========================================================
 -- RPC: UNGELESENE KOMMENTAR-JOB-IDS
@@ -628,6 +918,13 @@ alter table public.jobs enable row level security;
 alter table public.job_comments enable row level security;
 alter table public.job_comment_reads enable row level security;
 alter table public.job_photos enable row level security;
+
+-- Notifications: RLS an, KEINE Policies + Grants entzogen → nur SECURITY
+-- DEFINER-RPCs und der Service-Role-Key der Edge Function kommen daran vorbei.
+alter table public.notification_outbox enable row level security;
+alter table public.notification_deliveries enable row level security;
+revoke all on public.notification_outbox from anon, authenticated;
+revoke all on public.notification_deliveries from anon, authenticated;
 
 -- =========================================================
 -- DROP OLD POLICIES

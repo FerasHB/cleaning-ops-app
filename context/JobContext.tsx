@@ -14,6 +14,7 @@ import {
   getUnreadCommentJobIds,
   markJobCommentsAsRead as markJobCommentsAsReadService,
 } from "@/services/comments/comments.service";
+import { dispatchAdminNotifications } from "@/services/notifications/adminNotifications";
 import { applyPendingActionsToJobs } from "@/services/offline/jobs.merge";
 import {
   addPendingJobAction,
@@ -535,6 +536,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           return nextJobs;
         });
 
+        // Admin-Push serverseitig anstoßen (best effort — kein await, kein
+        // Einfluss auf den bereits erfolgten Statuswechsel).
+        void dispatchAdminNotifications();
+
         return;
       }
 
@@ -585,6 +590,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
           return nextJobs;
         });
+
+        // Admin-Push serverseitig anstoßen (best effort — kein await, kein
+        // Einfluss auf den bereits erfolgten Statuswechsel).
+        void dispatchAdminNotifications();
 
         return;
       }

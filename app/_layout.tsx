@@ -4,6 +4,7 @@
 
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { JobProvider } from "@/context/JobContext";
+import { useNotificationNavigation } from "@/hooks/useNotificationNavigation";
 import { setupNotifications } from "@/services/notificationService";
 import { installNetworkErrorGuard } from "@/utils/networkError";
 import {
@@ -107,6 +108,10 @@ const styles = StyleSheet.create({
 
 function RootNavigator() {
   const { session, profile, role } = useAuth();
+
+  // Tippt der Nutzer auf eine Push-Benachrichtigung, wird direkt der
+  // betroffene Job geöffnet (auch beim Cold Start).
+  useNotificationNavigation();
 
   // ── Auth-Gates für den Back-Stack ──────────────────────────────────────
   // Entscheidet, welche Routen-Gruppen überhaupt im Navigations-State liegen.
