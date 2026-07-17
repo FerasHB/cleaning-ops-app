@@ -95,10 +95,23 @@ export function diffInMinutes(
   return minutes > 0 ? minutes : 0;
 }
 
-/** Formatiert Minuten als "H:mm" (z.B. 150 → "2:30"). */
+/** Formatiert Minuten als "H:mm" (z.B. 150 → "2:30"). Für den PDF-Stundenzettel. */
 export function formatDurationHm(totalMinutes: number): string {
   const safe = totalMinutes > 0 ? totalMinutes : 0;
   const hours = Math.floor(safe / 60);
   const minutes = safe % 60;
   return `${hours}:${String(minutes).padStart(2, "0")}`;
+}
+
+/**
+ * Formatiert Minuten als Langform (z.B. 15 → "15 min", 65 → "1h 05min").
+ * Für Job-Karten/Detail-Ansicht — lesbarer als formatDurationHm, das dem
+ * klassischen Stundenzettel-Format vorbehalten bleibt.
+ */
+export function formatDurationLong(totalMinutes: number): string {
+  const safe = totalMinutes > 0 ? totalMinutes : 0;
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+  if (hours === 0) return `${minutes} min`;
+  return `${hours}h ${String(minutes).padStart(2, "0")}min`;
 }

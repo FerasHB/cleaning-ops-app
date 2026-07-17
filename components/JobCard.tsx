@@ -14,6 +14,7 @@
 // - Tap auf Quick-Action-Button → onStart/onComplete (Inner-Touch gewinnt in RN)
 
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
 import { Ionicons } from "@expo/vector-icons";
 import { Job } from "@/types/job";
 import { getJobDisplayTime, getRecurringDaysLabel } from "@/utils/jobSchedule";
@@ -126,6 +127,9 @@ export default function JobCard({
 
   // Anzeige-Uhrzeit (zentral): start_time mit Fallback auf scheduledStart.
   const startTime = getJobDisplayTime(job);
+
+  // Arbeitszeit — nur bei gestarteten/laufenden/abgeschlossenen Jobs vorhanden.
+  const { label: workedLabel } = useJobWorkedTime(job);
 
   // Zeit-Zeile je nach Auftragstyp
   let scheduleText: string | null = null;
@@ -258,6 +262,20 @@ export default function JobCard({
           />
           <Text style={styles.metaText} numberOfLines={1}>
             {scheduleText}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* ── Arbeitszeit (live während in_progress, final bei completed) ── */}
+      {workedLabel ? (
+        <View style={styles.metaRow}>
+          <Ionicons
+            name="hourglass-outline"
+            size={14}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <Text style={styles.metaText} numberOfLines={1}>
+            {workedLabel}
           </Text>
         </View>
       ) : null}
