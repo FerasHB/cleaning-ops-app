@@ -9,6 +9,7 @@ import {
     completeJob as completeJobService,
     startJob as startJobService,
 } from "@/services/jobs/jobs.service";
+import { dispatchAdminNotifications } from "@/services/notifications/adminNotifications";
 
 /**
  * Prüft ob Internet vorhanden ist
@@ -87,6 +88,16 @@ export async function syncPendingJobActions(): Promise<{
       // Wichtig: NICHT löschen → später nochmal versuchen
       failed++;
     }
+  }
+
+  // Nach dem Abarbeiten der Queue den serverseitigen Admin-Push BESCHLEUNIGEN.
+  // Die RPCs haben beim echten Statusübergang (open->in_progress bzw.
+  // in_progress->completed) bereits Outbox-Events geschrieben; der serverseitige
+  // Dispatcher (Webhook/Cron) liefert diese ohnehin aus. Dieser Kick verkürzt nur
+  // die Latenz für den Offline->Reconnect->Sync-Fall. Doppelte Auslieferung ist
+  // ausgeschlossen (pro-Empfänger-Delivery-Status, siehe Edge Function).
+  if (success > 0) {
+    await dispatchAdminNotifications();
   }
 
   if (__DEV__) {

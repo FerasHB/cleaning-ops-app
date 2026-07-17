@@ -167,6 +167,47 @@ create table if not exists public.job_photos (
   created_at timestamptz not null default now()
 );
 
+-- Admin-Push bei Job-Statuswechsel — Event-Log + Pro-Empfänger-Zustandsmaschine.
+-- notification_outbox: EIN Event pro echtem Statusübergang (transaktional von
+--   start_own_job/complete_own_job geschrieben). fanned_out_at markiert die
+--   Auffächerung in notification_deliveries.
+-- notification_deliveries: EINE Zeile pro Admin-Empfänger mit eigener
+--   Zustandsmaschine (pending|processing|sent|failed) -> Teilerfolg wird nicht
+--   erneut an bereits erreichte Admins gesendet. sent_at ERST nach Erfolg.
+-- Beide RLS an, KEINE Policies → kein direkter Client-Zugriff (nur DEFINER-RPC
+-- + Service Role). Siehe supabase/migrations/20260717000000_admin_status_notifications.sql.
+create table if not exists public.notification_outbox (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  job_id uuid not null references public.jobs(id) on delete cascade,
+  event_type text not null,                 -- 'job_started' | 'job_completed'
+  job_status text not null,                 -- 'in_progress' | 'completed'
+  employee_id uuid references public.profiles(id) on delete set null,
+  employee_name text,
+  customer_name text,
+  service_name text,
+  created_at timestamptz not null default now(),
+  fanned_out_at timestamptz,                -- NULL = noch nicht aufgefächert
+  constraint uq_notification_outbox_job_event unique (job_id, event_type)
+);
+
+create table if not exists public.notification_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  outbox_id uuid not null references public.notification_outbox(id) on delete cascade,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'pending',   -- pending | processing | sent | failed
+  attempts int not null default 0,
+  claimed_at timestamptz,
+  sent_at timestamptz,                       -- NUR nach erfolgreichem Versand
+  next_attempt_at timestamptz not null default now(),
+  last_error text,
+  created_at timestamptz not null default now(),
+  constraint uq_notification_deliveries_recipient unique (outbox_id, recipient_id),
+  constraint chk_notification_deliveries_status
+    check (status in ('pending', 'processing', 'sent', 'failed'))
+);
+
 -- =========================================================
 -- INDEXES
 -- =========================================================
@@ -195,6 +236,18 @@ create index if not exists idx_job_comment_reads_user_id on public.job_comment_r
 create index if not exists idx_job_photos_job_id on public.job_photos(job_id);
 create index if not exists idx_job_photos_company_id on public.job_photos(company_id);
 create index if not exists idx_job_photos_created_at on public.job_photos(created_at);
+
+create index if not exists idx_notif_outbox_unfanned
+  on public.notification_outbox(created_at) where fanned_out_at is null;
+create index if not exists idx_notif_outbox_job
+  on public.notification_outbox(job_id);
+create index if not exists idx_notif_deliveries_due
+  on public.notification_deliveries(next_attempt_at)
+  where status in ('pending', 'processing');
+create index if not exists idx_notif_deliveries_outbox
+  on public.notification_deliveries(outbox_id);
+create index if not exists idx_notif_deliveries_company_status
+  on public.notification_deliveries(company_id, status);
 
 -- =========================================================
 -- FUNCTIONS
@@ -228,16 +281,30 @@ begin
 end;
 $$;
 
+-- WICHTIG: liefert für ein inaktives Profil (is_active = false) bewusst
+-- NULL statt der echten Rolle. Praktisch jede RLS-Policy und jede
+-- SECURITY DEFINER-RPC in diesem Schema läuft über current_user_role()/
+-- current_user_company_id() — NULL propagiert automatisch durch alle
+-- WHERE/USING/WITH CHECK-Klauseln und sperrt einen deaktivierten Nutzer
+-- damit zentral, ohne jede einzelne Policy separat ändern zu müssen
+-- (siehe supabase/migrations/20260714000000_enforce_inactive_employee_access.sql).
+--
+-- Rückgabetyp text (nicht public.app_role): entspricht dem tatsächlichen
+-- Remote-Stand. "create or replace" kann den Rückgabetyp einer bestehenden
+-- Funktion nicht ändern — die Signatur muss text bleiben. Alle Vergleiche
+-- laufen gegen Text-Literale ('admin'/'employee') und funktionieren mit
+-- text unverändert.
 create or replace function public.current_user_role()
-returns public.app_role
+returns text
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select role
+  select role::text
   from public.profiles
   where id = auth.uid()
+    and is_active = true
   limit 1;
 $$;
 
@@ -251,6 +318,7 @@ as $$
   select company_id
   from public.profiles
   where id = auth.uid()
+    and is_active = true
   limit 1;
 $$;
 
@@ -316,6 +384,9 @@ grant execute on function public.setup_company_for_admin(text) to authenticated;
 -- RPC: UPDATE OWN PUSH TOKEN
 -- =========================================================
 
+-- Schlägt bewusst fehl, wenn das aufrufende Profil inaktiv ist — ein
+-- deaktivierter Mitarbeiter darf sich nicht durch einen App-Neustart
+-- erneut einen gültigen Push-Token registrieren.
 create or replace function public.update_my_push_token(new_token text)
 returns void
 language plpgsql
@@ -329,16 +400,48 @@ begin
 
   update public.profiles
   set expo_push_token = new_token
-  where id = auth.uid();
+  where id = auth.uid()
+    and is_active = true;
+
+  if not found then
+    raise exception 'Account is inactive or not found';
+  end if;
 end;
 $$;
 
 grant execute on function public.update_my_push_token(text) to authenticated;
 
+-- Löscht den eigenen Push-Token IMMER, unabhängig von is_active — läuft
+-- beim Logout (siehe context/AuthContext.tsx). Muss best effort sein
+-- (kein raise bei fehlender Session), damit Logout nie blockiert wird.
+create or replace function public.clear_my_push_token()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    return;
+  end if;
+
+  update public.profiles
+  set expo_push_token = null
+  where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.clear_my_push_token() to authenticated;
+
 -- =========================================================
 -- RPC: START OWN JOB
 -- =========================================================
 
+-- Schreibt beim ECHTEN Übergang open -> in_progress zusätzlich transaktional
+-- eine notification_outbox-Zeile (Admin-Push). Bereits gestartet/abgeschlossen
+-- = idempotenter No-Op (kein Fehler, kein zweites Event) — wichtig, damit ein
+-- Offline-Retry/Doppel-Tap nicht scheitert oder doppelt benachrichtigt.
+-- Siehe supabase/migrations/20260717000000_admin_status_notifications.sql.
 create or replace function public.start_own_job(
   job_id_input uuid,
   started_at_input timestamptz default now()
@@ -348,6 +451,10 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  updated_row  public.jobs%rowtype;
+  existing_row public.jobs%rowtype;
+  emp_name     text;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -362,13 +469,41 @@ begin
     and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
-    and job_type = 'single';   -- Parent-Recurring-Regeln dürfen nicht gestartet werden
+    and job_type = 'single'   -- Parent-Recurring-Regeln dürfen nicht gestartet werden
+    and status = 'open'       -- NUR der echte Übergang open -> in_progress
+  returning * into updated_row;
 
-  if not found then
-    raise exception 'Job not found or not allowed';
+  if found then
+    select full_name into emp_name from public.profiles where id = auth.uid();
+
+    insert into public.notification_outbox (
+      company_id, job_id, event_type, job_status,
+      employee_id, employee_name, customer_name, service_name
+    )
+    values (
+      updated_row.company_id, updated_row.id, 'job_started', 'in_progress',
+      auth.uid(), emp_name, updated_row.customer_name, updated_row.service_name
+    )
+    on conflict (job_id, event_type) do nothing;
+
+    return started_at_input;
   end if;
 
-  return started_at_input;
+  -- Kein Übergang: idempotenter No-Op (eigener Job, aber nicht mehr 'open')
+  -- vs. nicht erlaubt (fremder/nicht gefundener Job) unterscheiden.
+  select * into existing_row
+  from public.jobs
+  where id = job_id_input
+    and assigned_to = auth.uid()
+    and company_id = public.current_user_company_id()
+    and public.current_user_role() = 'employee'
+    and job_type = 'single';
+
+  if found then
+    return coalesce(existing_row.started_at, started_at_input);
+  end if;
+
+  raise exception 'Job not found or not allowed';
 end;
 $$;
 
@@ -378,6 +513,10 @@ grant execute on function public.start_own_job(uuid, timestamptz) to authenticat
 -- RPC: COMPLETE OWN JOB
 -- =========================================================
 
+-- Analog zu start_own_job: schreibt beim ECHTEN Übergang in_progress ->
+-- completed eine notification_outbox-Zeile; bereits abgeschlossen = No-Op.
+-- Abschluss eines nicht gestarteten (open) Jobs wirft bewusst (kein falscher
+-- Erfolg) — die UI erlaubt „Abschließen" ohnehin nur bei in_progress.
 create or replace function public.complete_own_job(
   job_id_input uuid,
   completed_at_input timestamptz default now()
@@ -387,6 +526,10 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  updated_row  public.jobs%rowtype;
+  existing_row public.jobs%rowtype;
+  emp_name     text;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -400,17 +543,235 @@ begin
     and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
-    and job_type = 'single';   -- Parent-Recurring-Regeln dürfen nicht abgeschlossen werden
+    and job_type = 'single'          -- Parent-Recurring-Regeln nicht abschließbar
+    and status = 'in_progress'       -- NUR der echte Übergang in_progress -> completed
+  returning * into updated_row;
+
+  if found then
+    select full_name into emp_name from public.profiles where id = auth.uid();
+
+    insert into public.notification_outbox (
+      company_id, job_id, event_type, job_status,
+      employee_id, employee_name, customer_name, service_name
+    )
+    values (
+      updated_row.company_id, updated_row.id, 'job_completed', 'completed',
+      auth.uid(), emp_name, updated_row.customer_name, updated_row.service_name
+    )
+    on conflict (job_id, event_type) do nothing;
+
+    return completed_at_input;
+  end if;
+
+  select * into existing_row
+  from public.jobs
+  where id = job_id_input
+    and assigned_to = auth.uid()
+    and company_id = public.current_user_company_id()
+    and public.current_user_role() = 'employee'
+    and job_type = 'single';
 
   if not found then
     raise exception 'Job not found or not allowed';
   end if;
 
-  return completed_at_input;
+  -- Bereits abgeschlossen -> idempotenter No-Op (retry-sicher), kein Event.
+  if existing_row.status = 'completed' then
+    return coalesce(existing_row.completed_at, completed_at_input);
+  end if;
+
+  -- Eigener Job, aber (noch) nicht in_progress (z. B. 'open') -> nicht als
+  -- Erfolg vortäuschen, sichtbar scheitern.
+  raise exception 'Job not in progress (cannot complete)';
 end;
 $$;
 
 grant execute on function public.complete_own_job(uuid, timestamptz) to authenticated;
+
+-- =========================================================
+-- RPC: DISPATCHER (Fan-out / Claim / Complete) — nur Service Role
+-- =========================================================
+-- Vollständige Definitionen + Kommentare siehe
+-- supabase/migrations/20260717000000_admin_status_notifications.sql. Hier als
+-- Referenz gespiegelt, damit dieses Schema den echten Stand widerspiegelt.
+
+-- Fächert offene Outbox-Events pro aktivem Admin in Deliveries auf (idempotent).
+-- KEIN Push-Token-Filter (der Token wird erst beim Dispatch geprüft); fanned_out_at
+-- erst, wenn jeder aktive Admin eine Delivery hat. Siehe Migration 20260717000002.
+create or replace function public.fanout_notification_events(
+  company_id_filter uuid default null,
+  max_events int default 100
+)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  evt record;
+  n int := 0;
+  expected_recipients int;
+  actual_deliveries int;
+begin
+  for evt in
+    select o.id, o.company_id, o.employee_id
+    from public.notification_outbox o
+    where o.fanned_out_at is null
+      and (company_id_filter is null or o.company_id = company_id_filter)
+    order by o.created_at
+    for update skip locked
+    limit max_events
+  loop
+    insert into public.notification_deliveries (
+      outbox_id, company_id, recipient_id, next_attempt_at
+    )
+    select evt.id, evt.company_id, p.id, now()
+    from public.profiles p
+    where p.company_id = evt.company_id
+      and p.role = 'admin'
+      and p.is_active = true
+      and (evt.employee_id is null or p.id <> evt.employee_id)
+    on conflict (outbox_id, recipient_id) do nothing;
+
+    -- Fan-out-Sicherheit: nur markieren, wenn jeder aktive Admin eine Delivery hat.
+    select count(*) into expected_recipients
+    from public.profiles p
+    where p.company_id = evt.company_id
+      and p.role = 'admin'
+      and p.is_active = true
+      and (evt.employee_id is null or p.id <> evt.employee_id);
+
+    select count(*) into actual_deliveries
+    from public.notification_deliveries d
+    where d.outbox_id = evt.id;
+
+    if actual_deliveries >= expected_recipients then
+      update public.notification_outbox set fanned_out_at = now() where id = evt.id;
+      n := n + 1;
+    end if;
+  end loop;
+  return n;
+end;
+$$;
+
+-- Nimmt fällige/hängende Deliveries atomar (FOR UPDATE SKIP LOCKED) und liefert
+-- aktuellen Empfänger-Token/Status zum Versand.
+create or replace function public.claim_notification_deliveries(
+  company_id_filter uuid default null,
+  max_rows int default 50,
+  processing_timeout_seconds int default 120
+)
+returns table (
+  delivery_id uuid, outbox_id uuid, recipient_id uuid, attempts int,
+  event_type text, job_id uuid, company_id uuid, job_status text,
+  employee_id uuid, employee_name text, customer_name text, service_name text,
+  expo_push_token text, recipient_active boolean, recipient_role text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  with due as (
+    select d.id
+    from public.notification_deliveries d
+    where (company_id_filter is null or d.company_id = company_id_filter)
+      and (
+        (d.status = 'pending' and d.next_attempt_at <= now())
+        or (d.status = 'processing'
+            and d.claimed_at < now() - make_interval(secs => processing_timeout_seconds))
+      )
+    order by d.next_attempt_at
+    for update skip locked
+    limit max_rows
+  ),
+  claimed as (
+    update public.notification_deliveries d
+    set status = 'processing', claimed_at = now(), attempts = d.attempts + 1
+    from due
+    where d.id = due.id
+    returning d.id, d.outbox_id, d.recipient_id, d.attempts
+  )
+  select
+    c.id, c.outbox_id, c.recipient_id, c.attempts,
+    o.event_type, o.job_id, o.company_id, o.job_status,
+    o.employee_id, o.employee_name, o.customer_name, o.service_name,
+    p.expo_push_token, p.is_active, p.role::text
+  from claimed c
+  join public.notification_outbox o on o.id = c.outbox_id
+  left join public.profiles p on p.id = c.recipient_id;
+end;
+$$;
+
+-- Zustandsübergang nach Sendeversuch: sent | permanent_fail | retry(Backoff/max).
+-- sent_at wird NUR bei outcome='sent' gesetzt.
+create or replace function public.complete_notification_delivery(
+  delivery_id_input uuid,
+  outcome text,
+  error_input text default null,
+  max_attempts int default 5
+)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_attempts int;
+begin
+  select attempts into v_attempts
+  from public.notification_deliveries where id = delivery_id_input;
+  if not found then
+    return null;
+  end if;
+
+  if outcome = 'sent' then
+    update public.notification_deliveries
+      set status = 'sent', sent_at = now(), last_error = null
+      where id = delivery_id_input;
+    return 'sent';
+  elsif outcome = 'permanent_fail' then
+    update public.notification_deliveries
+      set status = 'failed', last_error = error_input
+      where id = delivery_id_input;
+    return 'failed';
+  elsif outcome = 'missing_token' then
+    -- Aktiver Admin ohne Push-Token: pending mit fixem Backoff, NIE failed;
+    -- Claim-Increment auf attempts zurücknehmen (echtes Retry-Budget bleibt).
+    update public.notification_deliveries
+      set status = 'pending', last_error = 'missing_push_token',
+          attempts = greatest(v_attempts - 1, 0),
+          next_attempt_at = now() + make_interval(secs => 300)
+      where id = delivery_id_input;
+    return 'pending';
+  elsif outcome = 'retry' then
+    if v_attempts >= max_attempts then
+      update public.notification_deliveries
+        set status = 'failed', last_error = coalesce(error_input, 'max attempts reached')
+        where id = delivery_id_input;
+      return 'failed';
+    end if;
+    update public.notification_deliveries
+      set status = 'pending', last_error = error_input,
+          next_attempt_at = now()
+            + make_interval(secs => least(3600, (60 * power(2, greatest(v_attempts - 1, 0)))::int))
+      where id = delivery_id_input;
+    return 'pending';
+  else
+    raise exception 'Unknown outcome: %', outcome;
+  end if;
+end;
+$$;
+
+-- Explizit auch von anon/authenticated (Supabase-Default-Privileges vergeben
+-- EXECUTE sonst direkt an diese Rollen; "revoke from public" allein genügt nicht).
+revoke all on function public.fanout_notification_events(uuid, int) from public, anon, authenticated;
+revoke all on function public.claim_notification_deliveries(uuid, int, int) from public, anon, authenticated;
+revoke all on function public.complete_notification_delivery(uuid, text, text, int) from public, anon, authenticated;
+grant execute on function public.fanout_notification_events(uuid, int) to service_role;
+grant execute on function public.claim_notification_deliveries(uuid, int, int) to service_role;
+grant execute on function public.complete_notification_delivery(uuid, text, text, int) to service_role;
 
 -- =========================================================
 -- RPC: UNGELESENE KOMMENTAR-JOB-IDS
@@ -482,6 +843,97 @@ after insert on auth.users
 for each row
 execute function public.handle_new_user();
 
+-- Verhindert (Neu-)Zuweisung eines Jobs an einen inaktiven Mitarbeiter —
+-- Ein Job darf nur einem GÜLTIGEN Mitarbeiter zugewiesen werden: Profil
+-- existiert, is_active = true, role = 'employee', gleiche company_id wie
+-- der Job. Läuft als Tabellen-Trigger, greift also unabhängig davon, ob
+-- der Schreibzugriff über RLS (Admin-Client) oder eine SECURITY DEFINER-RPC
+-- erfolgt (z. B. generate_job_occurrences, das zusätzlich selbst schon auf
+-- effective_assigned_to reduziert, siehe oben). Geprüft bei INSERT immer,
+-- bei UPDATE sobald sich assigned_to ODER company_id ändert.
+create or replace function public.enforce_active_assignee()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  must_check boolean := false;
+begin
+  -- Ohne Zuweisung gibt es nichts zu prüfen (offener Job ist erlaubt).
+  if new.assigned_to is null then
+    return new;
+  end if;
+
+  -- OLD wird bewusst NUR im UPDATE-Zweig gelesen (bei INSERT existiert es
+  -- nicht). Re-Validierung bei UPDATE, wenn sich assigned_to oder
+  -- company_id ändert (Firmenwechsel des Jobs muss die bestehende
+  -- Zuweisung erneut gegen die neue Firma prüfen).
+  if tg_op = 'INSERT' then
+    must_check := true;
+  else
+    must_check :=
+      new.assigned_to is distinct from old.assigned_to
+      or new.company_id is distinct from old.company_id;
+  end if;
+
+  if not must_check then
+    return new;
+  end if;
+
+  if not exists (
+    select 1 from public.profiles p
+    where p.id         = new.assigned_to
+      and p.is_active  = true
+      and p.role       = 'employee'
+      and p.company_id = new.company_id
+  ) then
+    raise exception 'Assignee must be an active employee of the same company';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_active_assignee_on_jobs on public.jobs;
+create trigger enforce_active_assignee_on_jobs
+before insert or update on public.jobs
+for each row
+execute function public.enforce_active_assignee();
+
+-- Serverseitige Garantie, dass ein deaktiviertes Profil keinen Push-Token
+-- behält — unabhängig vom schreibenden Pfad (Admin-Client, RPC, direktes
+-- SQL). Der Client (setEmployeeActive) setzt beides bereits in EINEM UPDATE;
+-- dieser Trigger stellt sicher, dass der Client nicht die einzige Stelle ist.
+-- Nicht SECURITY DEFINER: mutiert nur NEW im Kontext des Aufrufers.
+create or replace function public.clear_push_token_on_deactivate()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.is_active = false and coalesce(old.is_active, true) = true then
+    new.expo_push_token := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists clear_push_token_on_deactivate_trg on public.profiles;
+create trigger clear_push_token_on_deactivate_trg
+before update on public.profiles
+for each row
+execute function public.clear_push_token_on_deactivate();
+
+-- Realtime: profiles muss Teil der supabase_realtime-Publication sein, damit
+-- der Live-Deaktivierungs-Kanal (context/AuthContext.tsx) UPDATE-Events der
+-- eigenen Profilzeile empfängt. jobs wurde per Dashboard hinzugefügt; profiles
+-- ergänzt die Migration 20260714000000_enforce_inactive_employee_access.sql
+-- (idempotent + guarded). REPLICA IDENTITY FULL, damit der Payload is_active
+-- enthält. Der AppState-Foreground-Recheck im AuthContext ist der
+-- realtime-UNABHÄNGIGE Fallback, falls Realtime nicht konfiguriert ist.
+alter table public.profiles replica identity full;
+
 -- =========================================================
 -- ENABLE RLS
 -- =========================================================
@@ -492,6 +944,13 @@ alter table public.jobs enable row level security;
 alter table public.job_comments enable row level security;
 alter table public.job_comment_reads enable row level security;
 alter table public.job_photos enable row level security;
+
+-- Notifications: RLS an, KEINE Policies + Grants entzogen → nur SECURITY
+-- DEFINER-RPCs und der Service-Role-Key der Edge Function kommen daran vorbei.
+alter table public.notification_outbox enable row level security;
+alter table public.notification_deliveries enable row level security;
+revoke all on public.notification_outbox from anon, authenticated;
+revoke all on public.notification_deliveries from anon, authenticated;
 
 -- =========================================================
 -- DROP OLD POLICIES
@@ -956,6 +1415,19 @@ using (
 -- Erzeugt konkrete Single-Job-Einträge für einen Recurring-Parent.
 -- Zeitraum aus recurrence_start_date / recurrence_end_date des Parents.
 -- Hartes Maximum: 730 Tage. Idempotent via Unique Index.
+--
+-- ACHTUNG Operativ: frühere Migrationen (20260624_fix_generate_occurrences_
+-- conflict.sql, 20260624_recurrence_date_range.sql) haben je nach
+-- Ausführungsreihenfolge im SQL Editor potenziell einen zweiten Overload
+-- generate_job_occurrences(uuid, int) hinterlassen. Prüfen mit:
+--   select p.proname, pg_get_function_identity_arguments(p.oid)
+--   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--   where n.nspname = 'public'
+--     and p.proname in ('generate_job_occurrences', 'update_job_occurrences');
+-- Liefert das mehr als eine Zeile pro Funktionsname, existiert der Overload
+-- noch live und macht Aufrufe mit einem Argument mehrdeutig (SQLSTATE 42725)
+-- — dann supabase/migrations/20260714000000_enforce_inactive_employee_access.sql
+-- (enthält den defensiven DROP) im SQL Editor ausführen.
 
 create or replace function public.generate_job_occurrences(
   parent_job_id_input uuid
@@ -966,20 +1438,25 @@ security definer
 set search_path = public
 as $$
 declare
-  parent           public.jobs%rowtype;
-  generation_start date;
-  generation_end   date;
-  hard_limit       date;
-  check_date       date;
-  day_code         text;
-  inserted_count   int := 0;
-  rows_affected    int;
+  parent                public.jobs%rowtype;
+  generation_start      date;
+  generation_end        date;
+  hard_limit            date;
+  check_date            date;
+  day_code              text;
+  inserted_count        int := 0;
+  rows_affected         int;
+  effective_assigned_to uuid;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
   end if;
 
-  if public.current_user_role() != 'admin' then
+  -- IS DISTINCT FROM statt !=: current_user_role() liefert für ein
+  -- inaktives/fehlendes Profil NULL. "NULL != 'admin'" ist NULL, und
+  -- "IF NULL THEN" löst in PL/pgSQL NICHT aus — der Guard würde sonst
+  -- für einen deaktivierten Admin still übersprungen.
+  if public.current_user_role() is distinct from 'admin' then
     raise exception 'Only admins can generate occurrences';
   end if;
 
@@ -993,6 +1470,20 @@ begin
   if not found then
     raise exception 'Recurring parent job not found or not accessible';
   end if;
+
+  -- Ist der zugewiesene Mitarbeiter inzwischen deaktiviert, werden neue
+  -- Occurrences offen (unassigned) statt an ihn gebunden erzeugt.
+  select case
+    when parent.assigned_to is not null
+      and exists (
+        select 1 from public.profiles p
+        where p.id = parent.assigned_to
+          and p.is_active = true
+      )
+    then parent.assigned_to
+    else null
+  end
+  into effective_assigned_to;
 
   -- Startpunkt: frühestens heute, damit keine Alttermine entstehen
   generation_start := greatest(
@@ -1036,7 +1527,7 @@ begin
       )
       values (
         parent.company_id, parent.id, parent.customer_name, parent.service_name,
-        parent.location_address, parent.notes, 'open', parent.assigned_to,
+        parent.location_address, parent.notes, 'open', effective_assigned_to,
         'single', check_date, parent.start_time,
         case
           when parent.start_time is not null
@@ -1064,7 +1555,7 @@ grant execute on function public.generate_job_occurrences(uuid) to authenticated
 
 comment on function public.generate_job_occurrences(uuid) is
 'Erzeugt konkrete Single-Jobs aus Recurring-Regel. Zeitraum aus recurrence_start/end_date. '
-'Hartes Maximum: 730 Tage. Idempotent.';
+'Hartes Maximum: 730 Tage. Idempotent. Weist keine Occurrence einem inaktiven Mitarbeiter zu.';
 
 
 -- =========================================================
@@ -1089,7 +1580,8 @@ begin
     raise exception 'Not authenticated';
   end if;
 
-  if public.current_user_role() != 'admin' then
+  -- IS DISTINCT FROM: siehe Kommentar in generate_job_occurrences oben.
+  if public.current_user_role() is distinct from 'admin' then
     raise exception 'Only admins can update occurrences';
   end if;
 
@@ -1133,10 +1625,19 @@ comment on function public.setup_company_for_admin(text) is
 'Creates a company for the current user, assigns company_id and promotes the user to admin.';
 
 comment on function public.update_my_push_token(text) is
-'Updates only the current user expo push token safely via RPC.';
+'Updates only the current user expo push token safely via RPC. Fails if the caller profile is inactive.';
+
+comment on function public.clear_my_push_token() is
+'Clears only the current user expo push token. Always succeeds for any authenticated caller (active or not) — used on logout so a shared device never keeps a stale token bound to the previous user.';
 
 comment on function public.start_own_job(uuid, timestamptz) is
 'Employee can start only own assigned job inside own company.';
 
 comment on function public.complete_own_job(uuid, timestamptz) is
 'Employee can complete only own assigned job inside own company.';
+
+comment on function public.enforce_active_assignee() is
+'BEFORE INSERT/UPDATE Guard auf jobs: Zuweisung nur an ein aktives Profil mit role=employee derselben company_id. Prüft bei INSERT und bei UPDATE mit geändertem assigned_to oder company_id. Unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
+
+comment on function public.clear_push_token_on_deactivate() is
+'BEFORE UPDATE Guard auf profiles: nullt expo_push_token, sobald is_active true->false wechselt — serverseitige Garantie, unabhängig vom schreibenden Pfad.';

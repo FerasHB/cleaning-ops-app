@@ -14,6 +14,7 @@ import {
   getUnreadCommentJobIds,
   markJobCommentsAsRead as markJobCommentsAsReadService,
 } from "@/services/comments/comments.service";
+import { dispatchAdminNotifications } from "@/services/notifications/adminNotifications";
 import { applyPendingActionsToJobs } from "@/services/offline/jobs.merge";
 import {
   addPendingJobAction,
@@ -147,6 +148,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
     syncInProgressRef.current = true;
     setIsSyncing(true);
+    if (__DEV__) {
+      console.log("[Jobs] Queue-Sync gestartet");
+    }
 
     try {
       const result = await syncPendingJobActions();
@@ -155,6 +159,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       syncInProgressRef.current = false;
       setIsSyncing(false);
       await refreshPendingState();
+      if (__DEV__) {
+        console.log("[Jobs] Queue-Sync beendet");
+      }
     }
   }, [refreshPendingState]);
 
@@ -171,6 +178,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const online = await isOnline();
 
       if (online) {
+        if (__DEV__) {
+          console.log("[Jobs] Quelle: remote");
+        }
         const serverJobs = await getJobs();
         await saveCachedJobs(serverJobs);
 
@@ -196,6 +206,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (__DEV__) {
+        console.log("[Jobs] Quelle: cache (offline)");
+      }
       const cachedJobs = await getCachedJobs();
       const pendingActions = await getPendingJobActions();
       const mergedJobs = applyPendingActionsToJobs(cachedJobs, pendingActions);
@@ -290,7 +303,6 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       hasHandledFirstNetInfoEventRef.current = false;
       syncInProgressRef.current = false;
       refreshJobsInProgressRef.current = false;
-
       return;
     }
 
@@ -301,15 +313,46 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     didInitialLoadRef.current = true;
 
     const loadAll = async () => {
+      // 1) SOFORT aus dem lokalen Cache rendern. loading wird ausschließlich vom
+      //    lokalen Cache-Laden gesteuert — NICHT vom Netzwerk. Damit kann ein
+      //    (offline) hängender Remote-Request den Tab-/Root-Render niemals
+      //    blockieren. Genau hier lag der Offline-Kaltstart-Spinner: loadAll
+      //    wartete auf refreshJobs()/refreshEmployees(), deren Remote-Call bei
+      //    schlechtem/erstem NetInfo-Status hängen blieb, bevor loading=false lief.
+      setError(null);
       try {
-        setLoading(true);
-        setError(null);
-
-        setOnline(await isOnline());
-        await runPendingSyncSafely();
-        await Promise.all([refreshJobs(), refreshEmployees()]);
+        const [cachedJobs, pending] = await Promise.all([
+          getCachedJobs(),
+          getPendingJobActions(),
+        ]);
+        setJobs(applyPendingActionsToJobs(cachedJobs, pending));
+        setPendingActions(pending);
+        setPendingCount(pending.length);
+      } catch (err) {
+        console.error("Failed to load cached jobs on init:", err);
       } finally {
         setLoading(false);
+      }
+
+      // 2) Danach im HINTERGRUND: Online-Status ermitteln und – nur wenn online –
+      //    synchronisieren + frische Daten laden. KEIN loading-Gate mehr; ein
+      //    hängender Remote-Request betrifft nur die Aktualisierung, nie den Render.
+      const online = await isOnline();
+      setOnline(online);
+
+      if (!online) {
+        // Offline: der Cache genügt. Der NetInfo-Listener synchronisiert bei
+        // Reconnect automatisch (siehe Effect unten).
+        return;
+      }
+
+      try {
+        await runPendingSyncSafely();
+        await Promise.all([refreshJobs(), refreshEmployees()]);
+      } catch (err) {
+        if (__DEV__) {
+          console.warn("[Jobs] Hintergrund-Refresh fehlgeschlagen:", err);
+        }
       }
     };
 
@@ -493,6 +536,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           return nextJobs;
         });
 
+        // Admin-Push serverseitig anstoßen (best effort — kein await, kein
+        // Einfluss auf den bereits erfolgten Statuswechsel).
+        void dispatchAdminNotifications();
+
         return;
       }
 
@@ -543,6 +590,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
           return nextJobs;
         });
+
+        // Admin-Push serverseitig anstoßen (best effort — kein await, kein
+        // Einfluss auf den bereits erfolgten Statuswechsel).
+        void dispatchAdminNotifications();
 
         return;
       }

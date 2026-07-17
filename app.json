@@ -1,16 +1,17 @@
 {
   "expo": {
-    "name": "cleaning-employee-app-2",
+    "name": "TaskOps Manager",
     "slug": "cleaning-employee-app-2",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "cleaningemployeeapp2",
+    "scheme": "taskopsmanager",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "buildNumber": "5",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ferash.cleaningemployeeapp2",
+      "bundleIdentifier": "com.ferash.taskopsmanager",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -24,11 +25,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.RECORD_AUDIO"
-      ],
-      "package": "com.ferash.cleaningemployeeapp2"
+      "permissions": ["android.permission.RECORD_AUDIO"],
+      "package": "com.ferash.taskopsmanager"
     },
     "web": {
       "output": "static",
@@ -55,11 +53,12 @@
           "photosPermission": "Die App benötigt Zugriff auf deine Fotos, um Fotos zu einem Auftrag hinzuzufügen.",
           "cameraPermission": "Die App benötigt Zugriff auf die Kamera, um Fotos zu einem Auftrag aufzunehmen."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     },
     "extra": {
       "router": {},

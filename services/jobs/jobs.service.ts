@@ -287,13 +287,25 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
 // Läuft unter der RLS-Policy "admin update profiles in own company" — daher
 // keine RPC nötig. Der Guard .eq("role", "employee") verhindert versehentliche
 // Updates an Admin-Profilen; die Firmen-Zugehörigkeit erzwingt die RLS.
+// Beim Deaktivieren wird zusätzlich der gespeicherte Push-Token gelöscht,
+// damit auf einem geteilten Gerät keine Benachrichtigung mehr beim
+// deaktivierten Mitarbeiter ankommen kann (serverseitige Durchsetzung des
+// Zugriffs erfolgt separat über RLS/RPCs, siehe lib/schema.sql).
 export async function setEmployeeActive(
   employeeId: string,
   active: boolean,
 ): Promise<void> {
+  const payload: { is_active: boolean; expo_push_token?: null } = {
+    is_active: active,
+  };
+
+  if (!active) {
+    payload.expo_push_token = null;
+  }
+
   const { error } = await supabase
     .from("profiles")
-    .update({ is_active: active })
+    .update(payload)
     .eq("id", employeeId)
     .eq("role", "employee");
 
@@ -454,21 +466,33 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
     }
   }
 
-  // Wenn ein Mitarbeiter direkt zugewiesen wurde,
-  // versuchen wir eine Push-Nachricht zu schicken
+  // Wenn ein Mitarbeiter direkt zugewiesen wurde, versuchen wir eine
+  // Push-Nachricht zu schicken. WICHTIG: Der Job ist nach dem erfolgreichen
+  // Insert oben bereits vollständig angelegt — ein Fehler beim Push-Versand
+  // (Netzwerk, Expo-Service down, etc.) darf createJob NICHT fehlschlagen
+  // lassen, sonst zeigt die UI "Fehler" bei einem in Wahrheit bereits
+  // erfolgreich erstellten Job an (Risiko: Admin tippt erneut → Duplikat).
+  // Daher: eigenes try/catch, nur loggen, niemals werfen.
   if (payload.assigned_to) {
-    const { data: employee } = await supabase
-      .from("profiles")
-      .select("expo_push_token, full_name")
-      .eq("id", payload.assigned_to)
-      .single();
+    try {
+      const { data: employee } = await supabase
+        .from("profiles")
+        .select("expo_push_token, full_name")
+        .eq("id", payload.assigned_to)
+        .single();
 
-    // Nur senden, wenn wirklich ein Push-Token vorhanden ist
-    if (employee?.expo_push_token) {
-      await sendPushNotification(
-        employee.expo_push_token,
-        "Neuer Auftrag",
-        `Du hast einen neuen Job: ${payload.service_name}`
+      // Nur senden, wenn wirklich ein Push-Token vorhanden ist
+      if (employee?.expo_push_token) {
+        await sendPushNotification(
+          employee.expo_push_token,
+          "Neuer Auftrag",
+          `Du hast einen neuen Job: ${payload.service_name}`
+        );
+      }
+    } catch (pushError) {
+      console.error(
+        "[createJob] Push-Benachrichtigung fehlgeschlagen (Job wurde trotzdem erstellt):",
+        pushError
       );
     }
   }

@@ -589,6 +589,7 @@ export function LoadingScreen() {
         backgroundColor: theme.colors.background,
         alignItems: "center",
         justifyContent: "center",
+        padding: 16,
       }}
     >
       <ActivityIndicator size="large" color={theme.colors.primary} />
