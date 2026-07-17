@@ -18,9 +18,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 //      bis kein fälliger Batch mehr übrig ist (oder MAX_BATCHES erreicht).
 //
 // Aufrufmodi:
-//   * SERVER  (Database Webhook / pg_cron): Authorization = Bearer <service_role>
-//     -> verarbeitet ALLE Firmen (company_id_filter = null). Das ist der
-//        verlässliche, geräteunabhängige Pfad. Einrichtung: siehe DEPLOY.md.
+//   * SERVER  (pg_cron-Sweeper): Header x-sweeper-secret = DISPATCH_SWEEPER_SECRET
+//     (dediziertes Secret, entkoppelt vom Service-Role-Key/JWT — funktioniert auch
+//     bei neuen sb_secret_-Keys). Alternativ rückwärtskompat Authorization =
+//     Bearer <service_role>. -> verarbeitet ALLE Firmen (company_id_filter = null),
+//     ohne eingeloggten Nutzer. Verlässlicher, geräteunabhängiger Pfad.
 //   * CLIENT  (optionaler Kick zur Beschleunigung): normales User-JWT
 //     -> verarbeitet nur die Firma des aktiven Aufrufers (company-gescopt).
 //
@@ -61,6 +63,17 @@ type ExpoTicket =
   | { status: "ok"; id?: string }
   | { status: "error"; message?: string; details?: { error?: string } };
 
+// Konstantzeit-Vergleich zweier Secrets (kein Timing-Orakel). Der Längen-Early-Out
+// verrät nur die Länge, was für ein zufälliges Sweeper-Secret unkritisch ist.
+function timingSafeEqual(a: string, b: string): boolean {
+  const ea = new TextEncoder().encode(a);
+  const eb = new TextEncoder().encode(b);
+  if (ea.length !== eb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ea.length; i++) diff |= ea[i] ^ eb[i];
+  return diff === 0;
+}
+
 function jobTitle(row: ClaimedDelivery): string {
   return row.service_name?.trim() || row.customer_name?.trim() || "Auftrag";
 }
@@ -89,20 +102,29 @@ Deno.serve(async (req) => {
     }
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return Response.json({ error: "Nicht eingeloggt." }, { status: 401, headers: corsHeaders });
-    }
+    // Dediziertes Sweeper-Secret (pg_cron -> pg_net). Entkoppelt den Server-Sweep
+    // vom Service-Role-Key/JWT: funktioniert auch dann, wenn das Projekt neue
+    // sb_secret_-Keys nutzt und der Legacy-JWT nicht dem injizierten
+    // SUPABASE_SERVICE_ROLE_KEY entspricht. Der Header wird konstantzeit-verglichen.
+    const sweeperSecret = Deno.env.get("DISPATCH_SWEEPER_SECRET");
+    const sweeperHeader = req.headers.get("x-sweeper-secret");
+    const isSweeperCall =
+      !!sweeperSecret && !!sweeperHeader && timingSafeEqual(sweeperSecret, sweeperHeader);
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     // ── Modus bestimmen ──────────────────────────────────────────────
-    // SERVER: aufgerufen mit dem Service-Role-Key (Webhook/Cron) -> alle Firmen.
+    // SERVER: dedizierter Sweeper-Secret-Header (pg_cron) ODER — rückwärtskompat —
+    //         Aufruf mit dem Service-Role-Key -> ALLE Firmen, KEIN eingeloggter Nutzer.
     // CLIENT: normales User-JWT -> nur die Firma des aktiven Aufrufers.
     let companyFilter: string | null = null;
 
-    if (authHeader === `Bearer ${serviceRoleKey}`) {
+    if (isSweeperCall || (authHeader && authHeader === `Bearer ${serviceRoleKey}`)) {
       companyFilter = null; // Server-Sweep über alle Firmen
     } else {
+      if (!authHeader) {
+        return Response.json({ error: "Nicht eingeloggt." }, { status: 401, headers: corsHeaders });
+      }
       const userClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: authHeader } },
       });

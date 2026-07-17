@@ -79,37 +79,48 @@ for each row execute function public.tg_dispatch_notifications();
 
 Fängt alles ab, was der Webhook verpasst (temporäre Fehler → Backoff-Retries,
 hängende `processing`-Zeilen nach Crash, Webhook-Ausfall). **Nicht öfter als
-1×/Minute.**
+1×/Minute.** Eingerichtet durch Migration
+`20260717000003_notification_sweeper_cron.sql` (Job `notification-dispatch-sweeper`).
 
-Falls `pg_cron`/`pg_net` auf der Instanz **verfügbar und erlaubt** sind:
+**Authentifizierung — dediziertes Sweeper-Secret (nicht der Service-Role-Key).**
+Dieses Projekt nutzt neue `sb_secret_`-Keys: der Legacy-JWT wird von der Edge
+Function **nicht** als injizierter `SUPABASE_SERVICE_ROLE_KEY` erkannt, und das
+Functions-Gateway lehnt `sb_secret_` im `Authorization`-Header ab. Daher gibt es
+den Header `x-sweeper-secret`, den die Function konstantzeit gegen ihr
+Function-Secret `DISPATCH_SWEEPER_SECRET` prüft (Server-Modus, kein JWT, kein
+eingeloggter Nutzer). Das Secret ist ein reines Trigger-Token ohne DB-Rechte und
+jederzeit rotierbar. Das Function-Gateway ist für diese Function deaktiviert
+(`verify_jwt=false`), daher braucht der Aufruf **keinen** zusätzlichen API-Key.
+
+**Einmalige Einrichtung (Werte NICHT im Repo/Client ablegen; identischer Wert an
+beiden Stellen):**
+
+```bash
+# 1. Function-Secret setzen (Wert = ein starkes Zufalls-Token):
+supabase secrets set DISPATCH_SWEEPER_SECRET='<TOKEN>' --project-ref <PROJECT_REF>
+```
 
 ```sql
--- Extensions (Dashboard → Database → Extensions, oder als Superuser):
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
-
--- Secrets in Vault (Werte einsetzen; NICHT im Client/Repo ablegen):
-select vault.create_secret('https://<PROJECT_REF>.supabase.co', 'project_url');
-select vault.create_secret('<SERVICE_ROLE_KEY>',                'service_role_key');
-
--- Sweeper: jede Minute die Function im Server-Modus anstoßen.
-select cron.schedule(
-  'dispatch-admin-notifications',
-  '* * * * *',
-  $$
-    select net.http_post(
-      url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')
-             || '/functions/v1/dispatch-notifications',
-      headers := jsonb_build_object(
-        'Content-Type', 'application/json',
-        'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key')
-      ),
-      body := '{}'::jsonb
-    );
-  $$
+-- 2. Denselben Wert in Vault ablegen (SQL Editor). Der Cron-Job liest ihn per Name:
+select vault.create_secret(
+  '<TOKEN>', 'dispatch_sweeper_secret',
+  'Trigger-Secret fuer den Notification-Sweeper (pg_cron -> Edge Function)'
 );
+-- Rotation: neuen Wert an BEIDEN Stellen setzen
+--   (supabase secrets set … + select vault.update_secret(id,'<NEU>')).
+```
 
--- Entfernen: select cron.unschedule('dispatch-admin-notifications');
+Danach plant die Migration den Job automatisch; der Sweeper-Aufruf enthält keinen
+Klartext-Secret. Fehlt der Vault-Eintrag beim ersten Lauf, antwortet die Function
+`401` und die Deliveries bleiben `pending` (kein Verlust) — sobald der Eintrag
+existiert, greift der nächste Minutenlauf.
+
+```sql
+-- Entfernen: select cron.unschedule('notification-dispatch-sweeper');
+-- Läufe/Fehler prüfen:
+--   select * from cron.job_run_details where jobid=(select jobid from cron.job
+--     where jobname='notification-dispatch-sweeper') order by start_time desc limit 10;
+--   select id, status_code, content from net._http_response order by created desc limit 10;
 ```
 
 Ist `pg_cron` **nicht** erlaubt: allein der Webhook (3a) deckt den Normalfall ab;
