@@ -142,6 +142,7 @@ Deno.serve(async (req) => {
     let sent = 0;
     let retried = 0;
     let failed = 0;
+    let deferred = 0;
     let claimedTotal = 0;
 
     // ── 2. Deliveries in Batches abarbeiten ──
@@ -164,15 +165,20 @@ Deno.serve(async (req) => {
       }
       claimedTotal += claimed.length;
 
-      // Empfänger, die zwischenzeitlich ungültig wurden (deaktiviert / kein
-      // Token / nicht mehr Admin), sind endgültig nicht zustellbar.
+      // Empfänger einordnen:
+      //  - inaktiv / kein Admin mehr  -> endgültig nicht zustellbar (permanent_fail)
+      //  - aktiver Admin OHNE Token   -> NICHT failen, zurückstellen (missing_token);
+      //    nach Token-Registrierung wird die Delivery später normal zustellbar
+      //  - aktiver Admin MIT Token    -> senden
       const sendable: ClaimedDelivery[] = [];
       for (const d of claimed) {
-        const eligible =
-          !!d.expo_push_token && d.recipient_active === true && d.recipient_role === "admin";
-        if (!eligible) {
-          await markDelivery(adminClient, d.delivery_id, "permanent_fail", "recipient not eligible (inactive/no token)");
+        const isActiveAdmin = d.recipient_active === true && d.recipient_role === "admin";
+        if (!isActiveAdmin) {
+          await markDelivery(adminClient, d.delivery_id, "permanent_fail", "recipient not eligible (inactive/not admin)");
           failed++;
+        } else if (!d.expo_push_token) {
+          await markDelivery(adminClient, d.delivery_id, "missing_token", "missing_push_token");
+          deferred++;
         } else {
           sendable.push(d);
         }
@@ -262,7 +268,7 @@ Deno.serve(async (req) => {
     }
 
     return Response.json(
-      { mode: companyFilter ? "client" : "server", claimed: claimedTotal, sent, retried, failed },
+      { mode: companyFilter ? "client" : "server", claimed: claimedTotal, sent, retried, failed, deferred },
       { headers: corsHeaders },
     );
   } catch (error) {
@@ -277,7 +283,7 @@ Deno.serve(async (req) => {
 async function markDelivery(
   adminClient: ReturnType<typeof createClient>,
   deliveryId: string,
-  outcome: "sent" | "retry" | "permanent_fail",
+  outcome: "sent" | "retry" | "permanent_fail" | "missing_token",
   error?: string,
 ): Promise<string | null> {
   try {

@@ -39,14 +39,25 @@ insert into auth.users (instance_id, id, aud, role, email, raw_user_meta_data) v
  ('00000000-0000-0000-0000-000000000000','a5400000-0000-0000-0000-000000000001','authenticated','authenticated','n-m-a1@x.test','{}'),
  ('00000000-0000-0000-0000-000000000000','e5400000-0000-0000-0000-000000000001','authenticated','authenticated','n-m-e1@x.test','{}'),
  ('00000000-0000-0000-0000-000000000000','a5500000-0000-0000-0000-000000000001','authenticated','authenticated','n-d-a1@x.test','{}'),
- ('00000000-0000-0000-0000-000000000000','e5500000-0000-0000-0000-000000000001','authenticated','authenticated','n-d-e1@x.test','{}');
+ ('00000000-0000-0000-0000-000000000000','e5500000-0000-0000-0000-000000000001','authenticated','authenticated','n-d-e1@x.test','{}'),
+ -- Firma T (Token-Resilienz): Admin T1 mit Token, Admin T2 OHNE Token
+ ('00000000-0000-0000-0000-000000000000','a5600000-0000-0000-0000-000000000001','authenticated','authenticated','n-t-a1@x.test','{}'),
+ ('00000000-0000-0000-0000-000000000000','a5600000-0000-0000-0000-000000000002','authenticated','authenticated','n-t-a2@x.test','{}'),
+ ('00000000-0000-0000-0000-000000000000','e5600000-0000-0000-0000-000000000001','authenticated','authenticated','n-t-e1@x.test','{}'),
+ -- Firma X (Backfill): X1/X2 aktiv, X3 inaktiv
+ ('00000000-0000-0000-0000-000000000000','a5700000-0000-0000-0000-000000000001','authenticated','authenticated','n-x-a1@x.test','{}'),
+ ('00000000-0000-0000-0000-000000000000','a5700000-0000-0000-0000-000000000002','authenticated','authenticated','n-x-a2@x.test','{}'),
+ ('00000000-0000-0000-0000-000000000000','a5700000-0000-0000-0000-000000000003','authenticated','authenticated','n-x-a3@x.test','{}'),
+ ('00000000-0000-0000-0000-000000000000','e5700000-0000-0000-0000-000000000001','authenticated','authenticated','n-x-e1@x.test','{}');
 
 insert into public.companies (id,name,slug) values
  ('51111111-1111-1111-1111-111111111111','Firma S','n-firma-s'),
  ('52222222-2222-2222-2222-222222222222','Firma P','n-firma-p'),
  ('53333333-3333-3333-3333-333333333333','Firma K','n-firma-k'),
  ('54444444-4444-4444-4444-444444444444','Firma M','n-firma-m'),
- ('55555555-5555-5555-5555-555555555555','Firma D','n-firma-d');
+ ('55555555-5555-5555-5555-555555555555','Firma D','n-firma-d'),
+ ('56666666-6666-6666-6666-666666666666','Firma T','n-firma-t'),
+ ('57777777-7777-7777-7777-777777777777','Firma X','n-firma-x');
 
 -- adminSde ist bewusst inaktiv MIT Token -> muss trotzdem ausgeschlossen werden.
 insert into public.profiles (id,role,company_id,is_active,expo_push_token,full_name) values
@@ -63,7 +74,16 @@ insert into public.profiles (id,role,company_id,is_active,expo_push_token,full_n
  ('a5400000-0000-0000-0000-000000000001','admin',   '54444444-4444-4444-4444-444444444444',true, 'Tok-M1','Admin M1'),
  ('e5400000-0000-0000-0000-000000000001','employee','54444444-4444-4444-4444-444444444444',true, null,   'Mitarbeiter M1'),
  ('a5500000-0000-0000-0000-000000000001','admin',   '55555555-5555-5555-5555-555555555555',true, 'Tok-D1','Admin D1'),
- ('e5500000-0000-0000-0000-000000000001','employee','55555555-5555-5555-5555-555555555555',true, null,   'Mitarbeiter D1')
+ ('e5500000-0000-0000-0000-000000000001','employee','55555555-5555-5555-5555-555555555555',true, null,   'Mitarbeiter D1'),
+ -- Firma T: T1 hat Token, T2 hat (noch) KEINEN Token -> muss trotzdem Delivery bekommen.
+ ('a5600000-0000-0000-0000-000000000001','admin',   '56666666-6666-6666-6666-666666666666',true, 'Tok-T1','Admin T1'),
+ ('a5600000-0000-0000-0000-000000000002','admin',   '56666666-6666-6666-6666-666666666666',true, null,    'Admin T2'),
+ ('e5600000-0000-0000-0000-000000000001','employee','56666666-6666-6666-6666-666666666666',true, null,    'Mitarbeiter T1'),
+ -- Firma X: X1/X2 aktiv, X3 inaktiv (Backfill darf X3 nicht bedienen).
+ ('a5700000-0000-0000-0000-000000000001','admin',   '57777777-7777-7777-7777-777777777777',true, 'Tok-X1','Admin X1'),
+ ('a5700000-0000-0000-0000-000000000002','admin',   '57777777-7777-7777-7777-777777777777',true, 'Tok-X2','Admin X2'),
+ ('a5700000-0000-0000-0000-000000000003','admin',   '57777777-7777-7777-7777-777777777777',false,'Tok-X3','Admin X3 inaktiv'),
+ ('e5700000-0000-0000-0000-000000000001','employee','57777777-7777-7777-7777-777777777777',true, null,   'Mitarbeiter X1')
 on conflict (id) do update set
   role=excluded.role, company_id=excluded.company_id, is_active=excluded.is_active,
   expo_push_token=excluded.expo_push_token, full_name=excluded.full_name;
@@ -75,7 +95,9 @@ insert into public.jobs (id,company_id,customer_name,service_name,location_addre
  ('15000000-0000-0000-0000-0000000000b1','52222222-2222-2222-2222-222222222222','Kunde P','Reinigung P','Weg 4','open','e5200000-0000-0000-0000-000000000001','single',true),
  ('15000000-0000-0000-0000-0000000000c1','53333333-3333-3333-3333-333333333333','Kunde K','Reinigung K','Weg 5','open','e5300000-0000-0000-0000-000000000001','single',true),
  ('15000000-0000-0000-0000-0000000000d1','54444444-4444-4444-4444-444444444444','Kunde M','Reinigung M','Weg 6','open','e5400000-0000-0000-0000-000000000001','single',true),
- ('15000000-0000-0000-0000-0000000000e1','55555555-5555-5555-5555-555555555555','Kunde D','Reinigung D','Weg 7','open','e5500000-0000-0000-0000-000000000001','single',true);
+ ('15000000-0000-0000-0000-0000000000e1','55555555-5555-5555-5555-555555555555','Kunde D','Reinigung D','Weg 7','open','e5500000-0000-0000-0000-000000000001','single',true),
+ ('15000000-0000-0000-0000-0000000000f1','56666666-6666-6666-6666-666666666666','Kunde T','Reinigung T','Weg 8','open','e5600000-0000-0000-0000-000000000001','single',true),
+ ('15000000-0000-0000-0000-0000000000f2','57777777-7777-7777-7777-777777777777','Kunde X','Reinigung X','Weg 9','open','e5700000-0000-0000-0000-000000000001','single',true);
 
 create temp table _r (case_no int, beschreibung text, erwartet text, ergebnis text) on commit drop;
 
@@ -294,6 +316,134 @@ begin
 
   insert into _r values (11,'DeviceNotRegistered: failed, Token=null, kein Reclaim','failed|NULL|0', st||'|'||coalesce(tok,'NULL')||'|'||reclaim_cnt);
   raise notice 'SECTION D -> st=% tok=% reclaim=%', st, coalesce(tok,'NULL'), reclaim_cnt;
+end $$;
+
+-- =========================================================
+-- SECTION T — Token-Resilienz: Admin ohne Token beim Event bekommt trotzdem
+-- eine Delivery; nach Token-Registrierung wird sie zustellbar. Kein Duplikat bei
+-- wiederholtem Fan-out.
+-- =========================================================
+do $$
+declare
+  ev uuid;
+  fanned int; fo2 int;
+  del_total int; del_t2 int;
+  d_t2 uuid; claim_token text; t2_status text; t2_err text; t2_att int; t2_future boolean;
+  reclaim_after_token boolean; final_status text;
+begin
+  perform set_config('request.jwt.claims','{"sub":"e5600000-0000-0000-0000-000000000001","role":"authenticated"}',true);
+  execute 'set local role authenticated';
+  perform public.start_own_job('15000000-0000-0000-0000-0000000000f1');
+  execute 'reset role';
+
+  -- Fan-out OHNE Token-Filter -> beide Admins (auch der tokenlose T2) bekommen Delivery.
+  select public.fanout_notification_events('56666666-6666-6666-6666-666666666666') into fanned;
+  select o.id into ev from public.notification_outbox o where o.job_id='15000000-0000-0000-0000-0000000000f1';
+  select count(*),
+         count(*) filter (where recipient_id='a5600000-0000-0000-0000-000000000002')
+    into del_total, del_t2
+  from public.notification_deliveries where outbox_id=ev;
+
+  -- Wiederholter Fan-out erzeugt KEINE Duplikate.
+  select public.fanout_notification_events('56666666-6666-6666-6666-666666666666') into fo2;
+  select count(*) into del_total from public.notification_deliveries where outbox_id=ev;
+
+  insert into _r values (12,'Tokenloser Admin bekommt Delivery; Fan-out idempotent','2|1|2', del_total||'|'||del_t2||'|'||del_total);
+  raise notice 'SECTION T fanout -> total=% t2=% (nach 2. fanout total=%)', del_total, del_t2, del_total;
+
+  -- Claim: T2 kommt mit expo_push_token = NULL zurück. Dispatcher -> 'missing_token'.
+  select id into d_t2 from public.notification_deliveries where outbox_id=ev and recipient_id='a5600000-0000-0000-0000-000000000002';
+  select expo_push_token into claim_token
+  from public.claim_notification_deliveries('56666666-6666-6666-6666-666666666666',50,120)
+  where recipient_id='a5600000-0000-0000-0000-000000000002';
+
+  perform public.complete_notification_delivery(d_t2,'missing_token');
+  select status, last_error, attempts, next_attempt_at > now()
+    into t2_status, t2_err, t2_att, t2_future
+  from public.notification_deliveries where id=d_t2;
+
+  insert into _r values (13,'missing_token: pending, last_error, attempts zurueckgesetzt, Backoff',
+    'pending|missing_push_token|0|true', t2_status||'|'||t2_err||'|'||t2_att||'|'||t2_future);
+  raise notice 'SECTION T defer -> claimTok=% status=% err=% att=% future=%', coalesce(claim_token,'NULL'), t2_status, t2_err, t2_att, t2_future;
+
+  -- Token wird registriert + Backoff abgelaufen -> Delivery wird beim naechsten
+  -- faelligen Claim geliefert und kann gesendet werden.
+  update public.profiles set expo_push_token='Tok-T2-neu' where id='a5600000-0000-0000-0000-000000000002';
+  update public.notification_deliveries set next_attempt_at=now() where id=d_t2;
+  select bool_and(expo_push_token='Tok-T2-neu') into reclaim_after_token
+  from public.claim_notification_deliveries('56666666-6666-6666-6666-666666666666',50,120)
+  where recipient_id='a5600000-0000-0000-0000-000000000002';
+  perform public.complete_notification_delivery(d_t2,'sent');
+  select status into final_status from public.notification_deliveries where id=d_t2;
+
+  insert into _r values (14,'Nach Token-Registrierung: Claim liefert Token, Versand -> sent','true|sent', reclaim_after_token||'|'||final_status);
+  raise notice 'SECTION T retry -> reclaimWithToken=% final=%', reclaim_after_token, final_status;
+end $$;
+
+-- =========================================================
+-- SECTION X — Backfill: verlorenes Event (fanned_out gesetzt, KEINE Deliveries)
+-- bekommt Deliveries fuer aktive Admins nacherzeugt; idempotent (genau einmal);
+-- inaktiver Admin ausgeschlossen.
+-- =========================================================
+do $$
+declare
+  ev uuid;
+  created_x1 int; created_x2 int; created_x3 int; created_total int;
+  total_after_2nd int;
+begin
+  -- Verlorenes Event simulieren: Outbox-Zeile MIT fanned_out_at, aber OHNE Delivery.
+  insert into public.notification_outbox (
+    company_id, job_id, event_type, job_status, employee_id, employee_name,
+    customer_name, service_name, fanned_out_at
+  )
+  values (
+    '57777777-7777-7777-7777-777777777777', '15000000-0000-0000-0000-0000000000f2',
+    'job_started', 'in_progress', 'e5700000-0000-0000-0000-000000000001', 'Mitarbeiter X1',
+    'Kunde X', 'Reinigung X', now()
+  )
+  returning id into ev;
+
+  -- Exakt die Backfill-Anweisung aus Migration 20260717000002 (global, idempotent).
+  insert into public.notification_deliveries (outbox_id, company_id, recipient_id, next_attempt_at)
+  select o.id, o.company_id, p.id, now()
+  from public.notification_outbox o
+  join public.profiles p
+    on p.company_id = o.company_id
+   and p.role = 'admin'
+   and p.is_active = true
+   and (o.employee_id is null or p.id <> o.employee_id)
+  where o.fanned_out_at is not null
+    and not exists (select 1 from public.notification_deliveries d where d.outbox_id = o.id)
+  on conflict (outbox_id, recipient_id) do nothing;
+
+  select
+    count(*) filter (where recipient_id='a5700000-0000-0000-0000-000000000001'),
+    count(*) filter (where recipient_id='a5700000-0000-0000-0000-000000000002'),
+    count(*) filter (where recipient_id='a5700000-0000-0000-0000-000000000003'),
+    count(*)
+  into created_x1, created_x2, created_x3, created_total
+  from public.notification_deliveries where outbox_id=ev;
+
+  insert into _r values (15,'Backfill: X1+X2 je 1 Delivery, X3 inaktiv=0, gesamt 2','1|1|0|2',
+    created_x1||'|'||created_x2||'|'||created_x3||'|'||created_total);
+  raise notice 'SECTION X backfill -> x1=% x2=% x3=% total=%', created_x1, created_x2, created_x3, created_total;
+
+  -- Zweiter Lauf -> keine Duplikate (Idempotenz ueber UNIQUE(outbox_id,recipient_id)).
+  insert into public.notification_deliveries (outbox_id, company_id, recipient_id, next_attempt_at)
+  select o.id, o.company_id, p.id, now()
+  from public.notification_outbox o
+  join public.profiles p
+    on p.company_id = o.company_id
+   and p.role = 'admin'
+   and p.is_active = true
+   and (o.employee_id is null or p.id <> o.employee_id)
+  where o.fanned_out_at is not null
+    and not exists (select 1 from public.notification_deliveries d where d.outbox_id = o.id)
+  on conflict (outbox_id, recipient_id) do nothing;
+
+  select count(*) into total_after_2nd from public.notification_deliveries where outbox_id=ev;
+  insert into _r values (16,'Backfill idempotent: 2. Lauf erzeugt keine Duplikate','2', total_after_2nd::text);
+  raise notice 'SECTION X idempotent -> total_after_2nd=%', total_after_2nd;
 end $$;
 
 -- =========================================================

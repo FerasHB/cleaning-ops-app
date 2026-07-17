@@ -596,6 +596,8 @@ grant execute on function public.complete_own_job(uuid, timestamptz) to authenti
 -- Referenz gespiegelt, damit dieses Schema den echten Stand widerspiegelt.
 
 -- Fächert offene Outbox-Events pro aktivem Admin in Deliveries auf (idempotent).
+-- KEIN Push-Token-Filter (der Token wird erst beim Dispatch geprüft); fanned_out_at
+-- erst, wenn jeder aktive Admin eine Delivery hat. Siehe Migration 20260717000002.
 create or replace function public.fanout_notification_events(
   company_id_filter uuid default null,
   max_events int default 100
@@ -608,6 +610,8 @@ as $$
 declare
   evt record;
   n int := 0;
+  expected_recipients int;
+  actual_deliveries int;
 begin
   for evt in
     select o.id, o.company_id, o.employee_id
@@ -626,12 +630,25 @@ begin
     where p.company_id = evt.company_id
       and p.role = 'admin'
       and p.is_active = true
-      and p.expo_push_token is not null
       and (evt.employee_id is null or p.id <> evt.employee_id)
     on conflict (outbox_id, recipient_id) do nothing;
 
-    update public.notification_outbox set fanned_out_at = now() where id = evt.id;
-    n := n + 1;
+    -- Fan-out-Sicherheit: nur markieren, wenn jeder aktive Admin eine Delivery hat.
+    select count(*) into expected_recipients
+    from public.profiles p
+    where p.company_id = evt.company_id
+      and p.role = 'admin'
+      and p.is_active = true
+      and (evt.employee_id is null or p.id <> evt.employee_id);
+
+    select count(*) into actual_deliveries
+    from public.notification_deliveries d
+    where d.outbox_id = evt.id;
+
+    if actual_deliveries >= expected_recipients then
+      update public.notification_outbox set fanned_out_at = now() where id = evt.id;
+      n := n + 1;
+    end if;
   end loop;
   return n;
 end;
@@ -719,6 +736,15 @@ begin
       set status = 'failed', last_error = error_input
       where id = delivery_id_input;
     return 'failed';
+  elsif outcome = 'missing_token' then
+    -- Aktiver Admin ohne Push-Token: pending mit fixem Backoff, NIE failed;
+    -- Claim-Increment auf attempts zurücknehmen (echtes Retry-Budget bleibt).
+    update public.notification_deliveries
+      set status = 'pending', last_error = 'missing_push_token',
+          attempts = greatest(v_attempts - 1, 0),
+          next_attempt_at = now() + make_interval(secs => 300)
+      where id = delivery_id_input;
+    return 'pending';
   elsif outcome = 'retry' then
     if v_attempts >= max_attempts then
       update public.notification_deliveries
