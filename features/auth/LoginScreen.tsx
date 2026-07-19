@@ -6,6 +6,7 @@ import { ErrorBanner, PasswordInput, Input } from "@/components/ui";
 import { AuthBrand } from "@/features/auth/components/AuthBrand";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { router } from "expo-router";
 import React, { useMemo, useRef, useState } from "react";
 import {
@@ -73,13 +74,13 @@ export default function LoginScreen() {
         password,
       });
       if (error) {
-        setFormError("E-Mail oder Passwort ist falsch.");
+        setFormError(toFriendlyAuthErrorMessage(error, "E-Mail oder Passwort ist falsch."));
         return;
       }
       // Erfolgreich → index.tsx übernimmt die Weiterleitung
       router.replace("/");
-    } catch {
-      setFormError("Login fehlgeschlagen. Bitte erneut versuchen.");
+    } catch (err) {
+      setFormError(toFriendlyAuthErrorMessage(err, "Login fehlgeschlagen. Bitte erneut versuchen."));
     } finally {
       setLoading(false);
     }

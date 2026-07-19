@@ -5,6 +5,7 @@
 import { ErrorBanner, Input } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { router } from "expo-router";
@@ -59,13 +60,15 @@ export default function ForgotPasswordScreen() {
       );
 
       if (error) {
-        setFormError(error.message || "Reset fehlgeschlagen. Bitte versuche es erneut.");
+        setFormError(
+          toFriendlyAuthErrorMessage(error, "Reset fehlgeschlagen. Bitte versuche es erneut."),
+        );
         return;
       }
 
       setSuccess(true);
-    } catch {
-      setFormError("Ein unbekannter Fehler ist aufgetreten.");
+    } catch (err) {
+      setFormError(toFriendlyAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
