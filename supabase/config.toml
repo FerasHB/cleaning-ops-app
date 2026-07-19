@@ -415,6 +415,12 @@ import_map = "./functions/create-employee/deno.json"
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/create-employee/index.ts"
 
+[functions.resend-invite]
+enabled = true
+verify_jwt = false
+import_map = "./functions/resend-invite/deno.json"
+entrypoint = "./functions/resend-invite/index.ts"
+
 [functions.dispatch-notifications]
 enabled = true
 verify_jwt = false

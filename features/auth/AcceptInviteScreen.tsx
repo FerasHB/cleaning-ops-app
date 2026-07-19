@@ -1,8 +1,9 @@
-// features/auth/ResetPasswordScreen.tsx
-// Ziel des Passwort-Reset-Deep-Links (taskopsmanager://reset-password).
-// Die eigentliche Link-Einlösung (PKCE/Implicit, Mehrfachquellen, Watchdog)
-// steckt in useAuthLinkSession — dieser Screen kümmert sich nur noch um das
-// "neues Passwort setzen"-Formular und die reset-spezifische Copy/CTA.
+// features/auth/AcceptInviteScreen.tsx
+// Ziel des Einladungs-Deep-Links (taskopsmanager://accept-invite), verschickt
+// von der create-employee/resend-invite Edge Function (admin.inviteUserByEmail).
+// Nutzt dieselbe Link-Einlösung wie der Passwort-Reset (useAuthLinkSession) —
+// eigene Copy/CTA, weil eine abgelaufene Einladung nicht selbstständig erneut
+// angefordert werden kann (nur ein Admin kann erneut einladen).
 
 import { ErrorBanner, PasswordInput } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
@@ -13,6 +14,7 @@ import { validateNewPassword } from "@/utils/passwordValidation";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -27,12 +29,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const DEFAULT_INVALID_MESSAGE =
-  "Der Link ist ungültig oder abgelaufen. Bitte fordere einen neuen Link an.";
+  "Diese Einladung ist ungültig oder abgelaufen. Bitte wende dich an deinen Administrator für eine neue Einladung.";
 
-export default function ResetPasswordScreen() {
+export default function AcceptInviteScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-
   const { status, invalidMessage, recheck } = useAuthLinkSession(
     DEFAULT_INVALID_MESSAGE,
   );
@@ -63,9 +64,18 @@ export default function ResetPasswordScreen() {
         return;
       }
 
-      // Recovery-Session beenden — der Nutzer soll sich bewusst mit dem
-      // neuen Passwort neu anmelden, keine automatische App-Sitzung aus
-      // dem Reset-Link heraus.
+      // Markiert die Einladung als abgeschlossen (Admin-Anzeige "Eingeladen"
+      // → "Aktiv"). Best effort: schlägt die RPC fehl, ist das Passwort
+      // trotzdem gesetzt und der Login funktioniert — nicht blockierend.
+      const { error: acceptError } = await supabase.rpc("accept_own_invite");
+      if (acceptError && __DEV__) {
+        // eslint-disable-next-line no-console
+        console.warn("accept_own_invite fehlgeschlagen:", acceptError.message);
+      }
+
+      // Session beenden — bewusste Neuanmeldung mit dem neuen Passwort statt
+      // einer automatischen App-Sitzung direkt aus dem Einladungs-Link heraus
+      // (konsistent mit dem Passwort-Reset-Flow).
       await supabase.auth.signOut().catch(() => {});
 
       setFormSuccess(true);
@@ -84,13 +94,13 @@ export default function ResetPasswordScreen() {
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.centerHint}>Link wird geprüft …</Text>
+          <Text style={styles.centerHint}>Einladung wird geprüft …</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // ── Ungültiger/abgelaufener Link ──
+  // ── Ungültige/abgelaufene Einladung ──
   if (status === "invalid") {
     return (
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
@@ -100,18 +110,15 @@ export default function ResetPasswordScreen() {
         />
         <View style={styles.centerState}>
           <View style={styles.errorIconWrap}>
-            <Ionicons name="alert-circle" size={44} color={theme.colors.error} />
+            <Ionicons
+              name="alert-circle"
+              size={44}
+              color={theme.colors.error}
+            />
           </View>
-          <Text style={styles.centerTitle}>Link ungültig</Text>
+          <Text style={styles.centerTitle}>Einladung ungültig</Text>
           <Text style={styles.centerText}>{invalidMessage}</Text>
 
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={() => router.replace("/forgot-password")}
-            activeOpacity={0.82}
-          >
-            <Text style={styles.primaryBtnText}>Neuen Link anfordern</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.linkBtn}
             onPress={recheck}
@@ -120,18 +127,18 @@ export default function ResetPasswordScreen() {
             <Text style={styles.linkBtnText}>Link erneut prüfen</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.linkBtn}
+            style={styles.primaryBtn}
             onPress={() => router.replace("/login")}
-            activeOpacity={0.75}
+            activeOpacity={0.82}
           >
-            <Text style={styles.linkBtnText}>Zurück zum Login</Text>
+            <Text style={styles.primaryBtnText}>Zurück zum Login</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // ── Erfolgreich gesetzt ──
+  // ── Passwort erfolgreich gesetzt ──
   if (formSuccess) {
     return (
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
@@ -143,9 +150,9 @@ export default function ResetPasswordScreen() {
               color={theme.colors.statusCompleted}
             />
           </View>
-          <Text style={styles.centerTitle}>Passwort gesetzt</Text>
+          <Text style={styles.centerTitle}>Konto eingerichtet</Text>
           <Text style={styles.centerText}>
-            Dein neues Passwort wurde gespeichert. Bitte melde dich damit an.
+            Dein Passwort wurde gespeichert. Bitte melde dich jetzt an.
           </Text>
 
           <TouchableOpacity
@@ -160,7 +167,7 @@ export default function ResetPasswordScreen() {
     );
   }
 
-  // ── Neues Passwort setzen ──
+  // ── Eigenes Passwort festlegen ──
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <StatusBar
@@ -179,24 +186,27 @@ export default function ResetPasswordScreen() {
           <View style={styles.heroArea}>
             <View style={styles.iconWrap}>
               <Ionicons
-                name="key-outline"
+                name="person-add-outline"
                 size={30}
                 color={theme.colors.onPrimaryContainer}
               />
             </View>
-            <Text style={styles.title}>Neues Passwort festlegen</Text>
+            <Text style={styles.title}>Willkommen bei TaskOps Manager</Text>
             <Text style={styles.subtitle}>
-              Vergib ein neues Passwort für dein Konto.
+              Lege dein Passwort fest, um dein Konto zu aktivieren.
             </Text>
           </View>
 
           <View style={styles.card}>
             {formError ? (
-              <ErrorBanner message={formError} onDismiss={() => setFormError("")} />
+              <ErrorBanner
+                message={formError}
+                onDismiss={() => setFormError("")}
+              />
             ) : null}
 
             <PasswordInput
-              label="Neues Passwort"
+              label="Passwort"
               placeholder="Mindestens 6 Zeichen"
               value={newPassword}
               onChangeText={(text) => {
@@ -225,15 +235,21 @@ export default function ResetPasswordScreen() {
             />
 
             <TouchableOpacity
-              style={[styles.primaryBtn, submitting && styles.primaryBtnDisabled]}
+              style={[
+                styles.primaryBtn,
+                submitting && styles.primaryBtnDisabled,
+              ]}
               onPress={handleSubmit}
               disabled={submitting}
               activeOpacity={0.82}
             >
               {submitting ? (
-                <ActivityIndicator size="small" color={theme.colors.onPrimary} />
+                <ActivityIndicator
+                  size="small"
+                  color={theme.colors.onPrimary}
+                />
               ) : (
-                <Text style={styles.primaryBtnText}>Passwort speichern</Text>
+                <Text style={styles.primaryBtnText}>Konto aktivieren</Text>
               )}
             </TouchableOpacity>
           </View>

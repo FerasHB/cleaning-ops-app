@@ -26,6 +26,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
+import { getEmployeeStatus } from "@/utils/employeeStatus";
 
 function roleLabel(role?: string | null): string {
   if (role === "admin") return "Admin";
@@ -48,7 +49,6 @@ export default function EmployeesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -63,14 +63,15 @@ export default function EmployeesScreen() {
     setModalVisible(false);
     setFullName("");
     setEmail("");
-    setPassword("");
   };
 
-  // ── Mitarbeiter erstellen (unveränderte Logik)
+  // ── Mitarbeiter einladen: legt das Konto unbestätigt an und verschickt eine
+  // Einladungs-Mail (create-employee Edge Function → admin.inviteUserByEmail).
+  // Kein Passwort wird hier vergeben — der Mitarbeiter setzt es selbst über
+  // den Einladungs-Link (siehe features/auth/AcceptInviteScreen.tsx).
   const handleCreateEmployee = async () => {
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim().toLowerCase();
-    const trimmedPassword = password.trim();
 
     if (creating) {
       return;
@@ -86,30 +87,27 @@ export default function EmployeesScreen() {
       return;
     }
 
-    if (trimmedPassword.length < 6) {
-      Alert.alert("Fehler", "Das Passwort muss mindestens 6 Zeichen haben.");
-      return;
-    }
-
     try {
       setCreating(true);
 
       await createEmployee({
         fullName: trimmedName,
         email: trimmedEmail,
-        password: trimmedPassword,
       });
 
       await refreshEmployees();
 
-      Alert.alert("Erfolg", "Mitarbeiter wurde erfolgreich erstellt.");
+      Alert.alert(
+        "Einladung verschickt",
+        `${trimmedName} erhält in Kürze eine E-Mail, um das eigene Passwort festzulegen.`,
+      );
 
       handleCloseModal();
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Mitarbeiter konnte nicht erstellt werden.";
+          : "Einladung konnte nicht verschickt werden.";
 
       Alert.alert("Fehler", message);
     } finally {
@@ -181,52 +179,57 @@ export default function EmployeesScreen() {
             onCta={handleOpenModal}
           />
         }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.employeeCard}
-            activeOpacity={0.7}
-            onPress={() => router.push(`/employees/${item.id}`)}
-          >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {item.fullName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-
-            <View style={styles.employeeInfo}>
-              <Text style={styles.employeeName} numberOfLines={1}>
-                {item.fullName}
-              </Text>
-              <Text style={styles.employeeEmail} numberOfLines={1}>
-                {item.email?.trim() ? item.email : "Nicht hinterlegt"}
-              </Text>
-              <Text style={styles.employeeRole}>{roleLabel(item.role)}</Text>
-            </View>
-
-            <View
-              style={[
-                styles.statusBadge,
-                item.isActive === false && styles.statusBadgeInactive,
-              ]}
+        renderItem={({ item }) => {
+          const status = getEmployeeStatus(item);
+          return (
+            <TouchableOpacity
+              style={styles.employeeCard}
+              activeOpacity={0.7}
+              onPress={() => router.push(`/employees/${item.id}`)}
             >
-              <Text
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {item.fullName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+
+              <View style={styles.employeeInfo}>
+                <Text style={styles.employeeName} numberOfLines={1}>
+                  {item.fullName}
+                </Text>
+                <Text style={styles.employeeEmail} numberOfLines={1}>
+                  {item.email?.trim() ? item.email : "Nicht hinterlegt"}
+                </Text>
+                <Text style={styles.employeeRole}>{roleLabel(item.role)}</Text>
+              </View>
+
+              <View
                 style={[
-                  styles.statusText,
-                  item.isActive === false && styles.statusTextInactive,
+                  styles.statusBadge,
+                  status.variant === "inactive" && styles.statusBadgeInactive,
+                  status.variant === "pending" && styles.statusBadgePending,
                 ]}
               >
-                {item.isActive === false ? "Inaktiv" : "Aktiv"}
-              </Text>
-            </View>
+                <Text
+                  style={[
+                    styles.statusText,
+                    status.variant === "inactive" && styles.statusTextInactive,
+                    status.variant === "pending" && styles.statusTextPending,
+                  ]}
+                >
+                  {status.label}
+                </Text>
+              </View>
 
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={theme.colors.outline}
-              style={styles.chevron}
-            />
-          </TouchableOpacity>
-        )}
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={theme.colors.outline}
+                style={styles.chevron}
+              />
+            </TouchableOpacity>
+          );
+        }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
 
@@ -245,9 +248,9 @@ export default function EmployeesScreen() {
             {/* Drag-Handle (visuelles Detail) */}
             <View style={styles.modalHandle} />
 
-            <Text style={styles.modalTitle}>Mitarbeiter hinzufügen</Text>
+            <Text style={styles.modalTitle}>Mitarbeiter einladen</Text>
             <Text style={styles.modalSubtitle}>
-              Lege einen neuen Mitarbeiter für deine Firma an.
+              Der Mitarbeiter erhält eine E-Mail und legt sein Passwort selbst fest.
             </Text>
 
             <View style={styles.formGroup}>
@@ -276,19 +279,6 @@ export default function EmployeesScreen() {
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Temporäres Passwort</Text>
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Mindestens 6 Zeichen"
-                placeholderTextColor={theme.colors.outline}
-                secureTextEntry
-                style={styles.input}
-                editable={!creating}
-              />
-            </View>
-
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.cancelButton}
@@ -309,7 +299,7 @@ export default function EmployeesScreen() {
                 disabled={creating}
               >
                 <Text style={styles.createButtonText}>
-                  {creating ? "Wird erstellt…" : "Erstellen"}
+                  {creating ? "Wird eingeladen…" : "Einladen"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -465,6 +455,12 @@ function createStyles(theme: AppTheme) {
       backgroundColor: theme.colors.surfaceContainerHigh,
       borderColor: theme.colors.outlineVariant,
     },
+    // "Eingeladen" — dieselbe Amber-Semantik wie der "Offen"-Jobstatus
+    // (noch nicht abgeschlossen), statt eine neue Farbe einzuführen.
+    statusBadgePending: {
+      backgroundColor: theme.colors.statusOpenBg,
+      borderColor: theme.colors.statusOpenBorder,
+    },
     statusText: {
       fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.semibold,
@@ -473,6 +469,9 @@ function createStyles(theme: AppTheme) {
     },
     statusTextInactive: {
       color: theme.colors.onSurfaceVariant,
+    },
+    statusTextPending: {
+      color: theme.colors.statusOpen,
     },
     chevron: {
       marginLeft: theme.spacing.sm,

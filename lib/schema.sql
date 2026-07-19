@@ -60,6 +60,12 @@ create table if not exists public.profiles (
   phone text,
   is_active boolean not null default true,
   expo_push_token text,
+  -- Einladungs-Flow (siehe 20260718000000_employee_invitations.sql):
+  -- invited_at = zuletzt eingeladen, invite_accepted_at = eigenes Passwort
+  -- gesetzt (null = Einladung noch offen). Bestehende Zeilen sind per
+  -- Migrations-Backfill bereits als akzeptiert markiert.
+  invited_at timestamptz,
+  invite_accepted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -432,6 +438,35 @@ end;
 $$;
 
 grant execute on function public.clear_my_push_token() to authenticated;
+
+-- Markiert die eigene Einladung als abgeschlossen (einmalig, null -> now()).
+-- Wird vom accept-invite-Screen aufgerufen, nachdem updateUser({password})
+-- erfolgreich war. security definer, weil Mitarbeiter keine UPDATE-Policy auf
+-- profiles haben — exakt dasselbe Muster wie update_my_push_token oben.
+create or replace function public.accept_own_invite()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  update public.profiles
+  set invite_accepted_at = now()
+  where id = auth.uid()
+    and is_active = true
+    and invite_accepted_at is null;
+
+  -- Kein raise bei "not found": erneuter Aufruf nach bereits erfolgter
+  -- Annahme (Doppel-Tap, Retry) oder bei deaktiviertem Konto ist kein
+  -- harter Fehler — der Aufrufer zeigt Erfolg bereits nach updateUser().
+end;
+$$;
+
+grant execute on function public.accept_own_invite() to authenticated;
 
 -- =========================================================
 -- RPC: START OWN JOB

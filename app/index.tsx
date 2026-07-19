@@ -31,7 +31,15 @@ export default function IndexScreen() {
     } else if (profile) {
       if (!profile.company_id) redirectTo = "/setup-company";
       else if (role === "admin") redirectTo = "/(admin-tabs)/dashboard";
-      else if (role === "employee") redirectTo = "/(employee-tabs)/overview";
+      else if (role === "employee") {
+        // Einladung noch nicht abgeschlossen (kein eigenes Passwort gesetzt) →
+        // zurück zum accept-invite-Screen, statt in die Employee-Tabs. Siehe
+        // 20260718000000_employee_invitations.sql (Backfill sorgt dafür, dass
+        // bestehende Mitarbeiter hier nie landen).
+        redirectTo = profile.invite_accepted_at
+          ? "/(employee-tabs)/overview"
+          : "/accept-invite";
+      }
     }
   }
 

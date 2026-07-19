@@ -4,6 +4,7 @@
 
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { JobProvider } from "@/context/JobContext";
+import { AuthLinkUrlProvider } from "@/features/auth/AuthLinkUrlProvider";
 import { useNotificationNavigation } from "@/hooks/useNotificationNavigation";
 import { setupNotifications } from "@/services/notificationService";
 import { installNetworkErrorGuard } from "@/utils/networkError";
@@ -159,6 +160,12 @@ function RootNavigator() {
             gesetzt werden kann. */}
         <Stack.Screen name="reset-password" />
 
+        {/* Einladungs-Annahme: aus demselben Grund wie reset-password immer
+            erreichbar — der Einladungs-Link (admin.inviteUserByEmail) stellt
+            ebenfalls eine temporäre Session her (siehe
+            features/auth/AcceptInviteScreen.tsx / useAuthLinkSession). */}
+        <Stack.Screen name="accept-invite" />
+
         {/* Setup: eingeloggt, aber noch kein Unternehmen. */}
         <Stack.Protected guard={needsSetup}>
           <Stack.Screen name="setup-company" />
@@ -222,9 +229,16 @@ export default function RootLayout() {
 
   return (
     <AppErrorBoundary>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
+      {/* Muss oberhalb von AuthProvider/<Stack> leben und für die gesamte
+          App-Lebensdauer gemountet bleiben — siehe
+          features/auth/AuthLinkUrlProvider.tsx für den Grund (Race zwischen
+          expo-routers eigenem Linking-Listener und dem erst nach der
+          Navigation gemounteten Auth-Screen). */}
+      <AuthLinkUrlProvider>
+        <AuthProvider>
+          <RootNavigator />
+        </AuthProvider>
+      </AuthLinkUrlProvider>
     </AppErrorBoundary>
   );
 }

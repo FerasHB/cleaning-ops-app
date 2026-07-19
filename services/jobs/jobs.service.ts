@@ -43,6 +43,8 @@ type EmployeeRow = {
   full_name: string | null;
   role: "admin" | "employee" | null;
   is_active: boolean | null;
+  invited_at: string | null;
+  invite_accepted_at: string | null;
 };
 type UpdateJobInput = {
   jobId: string;
@@ -263,7 +265,7 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
   // hier in der Datenquelle.
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role, is_active")
+    .select("id, full_name, role, is_active, invited_at, invite_accepted_at")
     .eq("company_id", profile.company_id)
     .eq("role", "employee")
     .order("is_active", { ascending: false }) // aktive zuerst
@@ -280,6 +282,8 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
     email: null,
     role: item.role ?? "employee",
     isActive: item.is_active ?? null,
+    invitedAt: item.invited_at ?? null,
+    inviteAcceptedAt: item.invite_accepted_at ?? null,
   }));
 }
 

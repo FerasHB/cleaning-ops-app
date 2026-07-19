@@ -9,6 +9,10 @@ export type AuthProfile = {
   company_id: string | null;
   role: AppRole;
   is_active: boolean;
+  // Null = Einladung noch nicht abgeschlossen (kein eigenes Passwort gesetzt).
+  // Bei bestehenden Profilen (vor diesem Feature) per Migrations-Backfill
+  // bereits gesetzt — siehe 20260718000000_employee_invitations.sql.
+  invite_accepted_at: string | null;
 };
 
 // Unterscheidet "kein Netz" (erwartbar, retryt sich von selbst beim
@@ -31,7 +35,7 @@ export async function getProfileByUserId(
   try {
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, company_id, role, is_active")
+      .select("id, full_name, company_id, role, is_active, invite_accepted_at")
       .eq("id", userId)
       .single();
 
