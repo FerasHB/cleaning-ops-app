@@ -35,6 +35,7 @@ export { ErrorBanner } from "./ErrorBanner";
 export { InitialsAvatar } from "./InitialsAvatar";
 export { InfoRow } from "./InfoRow";
 export { KPICard } from "./KPICard";
+export { AnimatedSplash } from "./AnimatedSplash";
 export type { JobStatus } from "./StatusBadge";
 
 // ─────────────────────────────────────────────

@@ -4,7 +4,6 @@
 // Ausnahme: ein echter Profil-Ladefehler (nicht "offline") wird hier direkt
 // mit Retry-/Logout-Optionen angezeigt, damit die App nie endlos lädt.
 
-import { LoadingScreen } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Redirect, router } from "expo-router";
@@ -167,10 +166,13 @@ export default function IndexScreen() {
     );
   }
 
-  // Spinner – sichtbar solange der Auth-Bootstrap läuft. jobsLoading blockiert
-  // den Root NICHT (die Tab-Screens rendern gecachte Jobs, siehe
+  // Während des Auth-Bootstraps liegt der animierte Splash (SplashGate in
+  // app/_layout.tsx) als Overlay darüber und verdeckt diesen Platzhalter
+  // vollständig. Nur ein dunkler Grund in Marken-Hintergrundfarbe, damit selbst
+  // in der kurzen Exit-Überblendung kein heller Frame durchblitzt. jobsLoading
+  // blockiert den Root NICHT (Tab-Screens rendern gecachte Jobs, siehe
   // JobContext.loadAll).
-  return <LoadingScreen />;
+  return <View style={[styles.center, styles.bootBackground]} />;
 }
 
 const styles = StyleSheet.create({
@@ -178,6 +180,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  // Marken-Hintergrundfarbe (Splash) — bewusst fix, unabhängig vom Theme.
+  bootBackground: {
+    backgroundColor: "#0B1220",
   },
   errorBox: {
     paddingHorizontal: 32,

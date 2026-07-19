@@ -2,6 +2,7 @@
 // Root Layout — lädt Inter-Font und stellt Auth + Job Context bereit.
 // Der Splash Screen bleibt sichtbar, bis die Fonts geladen sind.
 
+import { AnimatedSplash } from "@/components/ui";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { JobProvider } from "@/context/JobContext";
 import { AuthLinkUrlProvider } from "@/features/auth/AuthLinkUrlProvider";
@@ -17,7 +18,14 @@ import {
 } from "@expo-google-fonts/inter";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { Component, type ReactNode, useEffect, useRef } from "react";
+import {
+  Component,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 // Splash Screen bleibt sichtbar, bis Fonts fertig geladen sind
@@ -196,6 +204,86 @@ function RootNavigator() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────
+// SplashGate — Bootstrap-Schicht des Launch-Ablaufs.
+//
+// Legt den animierten Splash als OVERLAY über den bereits rendernden
+// Navigations-Baum: die App bootet unsichtbar darunter, der Splash blendet
+// erst aus, wenn ALLES bereit ist → keine Navigations-Race, kein leerer Frame.
+//
+// Ablauf: Native Splash → (fonts fertig, dieser Gate montiert) animierter
+// Splash → Auth-/Profil-Bootstrap läuft darunter → Mindestdauer + Bootstrap
+// fertig → sanfter Exit (Fade + Scale) → darunter liegende Zielroute sichtbar.
+//
+// Enthält bewusst KEINE Auth-Logik: `loading` ist exakt das Signal, das
+// app/index.tsx zur Zielbestimmung nutzt (Session wiederhergestellt, Profil/
+// Company aufgelöst, Route bestimmbar). Fonts sind beim Mount garantiert (siehe
+// RootLayout, das SplashGate erst nach dem Font-Loading rendert).
+// ─────────────────────────────────────────────────────────────────
+const SPLASH_MIN_DURATION_MS = 1500;
+
+function SplashGate({ children }: { children: ReactNode }) {
+  const { loading } = useAuth();
+
+  // Vorwärtsgerichtete Phasen: visible → exiting → gone. Ein Rückweg ist
+  // unmöglich, damit der Splash nach dem Ausblenden NIE wieder erscheint
+  // (auch nicht, wenn `loading` später erneut true wird, z. B. nach Login).
+  const [phase, setPhase] = useState<"visible" | "exiting" | "gone">("visible");
+  const [minElapsed, setMinElapsed] = useState(false);
+
+  // Hinweis: Das Ausblenden des NATIVEN Splash liegt bewusst in RootLayout
+  // (oberhalb der AppErrorBoundary), nicht hier. Würfe der Provider-/Navigator-
+  // Baum beim ersten Render einen Fehler, liefe der Effekt hier nie — der native
+  // Splash bliebe für immer über dem Fehler-Fallback stehen. RootLayouts Effekt
+  // läuft dagegen auch dann und ist ebenso lückenlos (der animierte Splash wird
+  // im selben RootLayout-Render committed).
+
+  // Mindest-Anzeigedauer ab Mount. Timer wird bei Unmount sauber aufgeräumt.
+  useEffect(() => {
+    const t = setTimeout(() => setMinElapsed(true), SPLASH_MIN_DURATION_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Bereit = Bootstrap abgeschlossen (Fonts schon geladen). Erst wenn zusätzlich
+  // die Mindestdauer verstrichen ist, wird der Exit angestoßen — ohne die App
+  // bei längerem Bootstrap künstlich zu verzögern.
+  const ready = !loading;
+
+  useEffect(() => {
+    if (phase === "visible" && minElapsed && ready) {
+      setPhase("exiting");
+    }
+  }, [phase, minElapsed, ready]);
+
+  // Wird vom Splash GENAU EINMAL nach der Exit-Animation gerufen.
+  const handleExitComplete = useCallback(() => {
+    setPhase((p) => (p === "gone" ? p : "gone"));
+  }, []);
+
+  return (
+    <View style={splashGateStyles.host}>
+      {children}
+      {phase !== "gone" && (
+        <View
+          style={StyleSheet.absoluteFill}
+          // Während sichtbar: blockiert Eingaben auf die noch bootende App.
+          // Beim Ausblenden: Eingaben dürfen zur enthüllten App durchgehen.
+          pointerEvents={phase === "visible" ? "auto" : "none"}
+        >
+          <AnimatedSplash
+            exiting={phase === "exiting"}
+            onExitComplete={handleExitComplete}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const splashGateStyles = StyleSheet.create({
+  host: { flex: 1 },
+});
+
 export default function RootLayout() {
   const didSetupNotificationsRef = useRef(false);
 
@@ -207,11 +295,20 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
-  // Splash Screen ausblenden sobald Fonts geladen (oder fehlgeschlagen)
+  // Nativen Splash ausblenden, sobald Fonts geladen (oder fehlgeschlagen) sind.
+  // Bewusst HIER (oberhalb der AppErrorBoundary): Der animierte Splash wird im
+  // selben Render committed → lückenloser Übergang; UND der Effekt läuft auch,
+  // falls der Provider-/Navigator-Baum beim ersten Render wirft, sodass die App
+  // nie hinter einem eingefrorenen nativen Splash hängen bleibt.
+  // preventAutoHideAsync() läuft weiter im Modul-Scope.
+  const nativeSplashHiddenRef = useRef(false);
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
+    if (nativeSplashHiddenRef.current) return;
+    if (!fontsLoaded && !fontError) return;
+    nativeSplashHiddenRef.current = true;
+    SplashScreen.hideAsync().catch(() => {
+      // Bereits ausgeblendet / nicht verfügbar — unkritisch.
+    });
   }, [fontsLoaded, fontError]);
 
   // Push Notifications einmalig einrichten
@@ -236,7 +333,9 @@ export default function RootLayout() {
           Navigation gemounteten Auth-Screen). */}
       <AuthLinkUrlProvider>
         <AuthProvider>
-          <RootNavigator />
+          <SplashGate>
+            <RootNavigator />
+          </SplashGate>
         </AuthProvider>
       </AuthLinkUrlProvider>
     </AppErrorBoundary>
