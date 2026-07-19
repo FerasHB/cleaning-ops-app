@@ -20,6 +20,7 @@ import { useJobs } from "@/context/JobContext";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { JobPhotos } from "@/features/jobs/components/JobPhotos";
 import { getJobOccurrences } from "@/services/jobs/jobs.service";
+import { WorkedTimeCard } from "@/features/jobs/components/WorkedTimeCard";
 import { formatRecurringDays } from "@/utils/recurrence";
 import type { Job } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
@@ -208,8 +209,6 @@ export default function JobDetailScreen() {
   const timeText = job.startTime ? `${job.startTime} Uhr` : "—";
   const scheduledStartText =
     formatDateTime(job.scheduledStart) ?? "Kein Termin geplant";
-  const startedAtText = formatDateTime(job.startedAt);
-  const completedAtText = formatDateTime(job.completedAt);
   const employeeText = job.employeeName ?? "Nicht zugewiesen";
 
   // Start/Abschluss laufen über die RPCs start_own_job/complete_own_job, die
@@ -279,6 +278,9 @@ export default function JobDetailScreen() {
           />
         ) : null}
 
+        {/* ── Arbeitszeit — prominent, direkt nach dem Hero ── */}
+        <WorkedTimeCard job={job} />
+
         {/* ── Details-Karte ── */}
         <Card padding={theme.spacing.lg} style={styles.card}>
           <InfoRow label="Service" value={job.service} icon="construct-outline" />
@@ -343,29 +345,6 @@ export default function JobDetailScreen() {
             value={employeeText}
             icon="person-outline"
           />
-
-          {/* Optionale Zeitstempel — nur wenn vorhanden */}
-          {startedAtText ? (
-            <>
-              <View style={styles.rowDivider} />
-              <InfoRow
-                label="Gestartet"
-                value={startedAtText}
-                icon="play-circle-outline"
-              />
-            </>
-          ) : null}
-
-          {completedAtText ? (
-            <>
-              <View style={styles.rowDivider} />
-              <InfoRow
-                label="Erledigt"
-                value={completedAtText}
-                icon="checkmark-circle-outline"
-              />
-            </>
-          ) : null}
         </Card>
 
         {/* ── Notizen ── */}

@@ -79,4 +79,8 @@ export type EmployeeOption = {
   email?: string | null;
   role?: "admin" | "employee" | string | null;
   isActive?: boolean | null;
+  /** Wann (zuletzt) eine Einladung verschickt wurde, falls vorhanden. */
+  invitedAt?: string | null;
+  /** Wann der Mitarbeiter sein eigenes Passwort gesetzt hat. Null = Einladung noch offen. */
+  inviteAcceptedAt?: string | null;
 };

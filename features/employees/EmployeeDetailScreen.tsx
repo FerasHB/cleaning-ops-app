@@ -20,8 +20,11 @@ import {
 import JobCard from "@/components/JobCard";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { resendInvite } from "@/services/employees/resendInvite";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
+import { formatForDisplay } from "@/utils/date";
+import { getEmployeeStatus } from "@/utils/employeeStatus";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -67,6 +70,8 @@ export default function EmployeeDetailScreen() {
 
   // Loading-State für Deaktivieren/Reaktivieren.
   const [updatingActive, setUpdatingActive] = useState(false);
+  // Loading-State für "Einladung erneut senden".
+  const [resendingInvite, setResendingInvite] = useState(false);
 
   const employee = useMemo(
     () => employees.find((e) => e.id === id),
@@ -149,7 +154,55 @@ export default function EmployeeDetailScreen() {
   const accountActive = employee.isActive !== false;
   const emailDisplay = employee.email?.trim() ? employee.email : "Nicht hinterlegt";
 
+  // Einladungs-Status (Eingeladen/Aktiv/Inaktiv) — dieselbe Ableitung wie in
+  // der Mitarbeiter-Liste, siehe utils/employeeStatus.ts.
+  const status = getEmployeeStatus(employee);
+  const invitePending = status.variant === "pending";
+  const invitedAtText = formatForDisplay(employee.invitedAt);
+
+  const statusPillColors =
+    status.variant === "pending"
+      ? {
+          bg: theme.colors.statusOpenBg,
+          border: theme.colors.statusOpenBorder,
+          text: theme.colors.statusOpen,
+        }
+      : status.variant === "active"
+        ? {
+            bg: theme.colors.statusCompletedBg,
+            border: theme.colors.statusCompletedBorder,
+            text: theme.colors.statusCompleted,
+          }
+        : {
+            bg: theme.colors.surfaceContainerHigh,
+            border: theme.colors.outlineVariant,
+            text: theme.colors.onSurfaceVariant,
+          };
+
   const handleAssignJob = () => router.push("/jobs/create");
+
+  // Einladung erneut senden — nur relevant, solange sie noch nicht
+  // angenommen wurde (server-seitig ohnehin abgesichert, siehe
+  // resend-invite/index.ts).
+  const handleResendInvite = async () => {
+    if (!employee || resendingInvite) return;
+    try {
+      setResendingInvite(true);
+      await resendInvite(employee.id);
+      Alert.alert(
+        "Einladung verschickt",
+        `${employee.fullName} hat eine neue Einladungs-E-Mail erhalten.`,
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Einladung konnte nicht erneut verschickt werden.";
+      Alert.alert("Fehler", message);
+    } finally {
+      setResendingInvite(false);
+    }
+  };
 
   // Deaktivieren/Reaktivieren mit Sicherheitsabfrage. Schreibt is_active und
   // lädt die Mitarbeiterliste neu (passiert in setEmployeeActive).
@@ -227,36 +280,14 @@ export default function EmployeeDetailScreen() {
             style={[
               styles.statusPill,
               {
-                backgroundColor: accountActive
-                  ? theme.colors.statusCompletedBg
-                  : theme.colors.surfaceContainerHigh,
-                borderColor: accountActive
-                  ? theme.colors.statusCompletedBorder
-                  : theme.colors.outlineVariant,
+                backgroundColor: statusPillColors.bg,
+                borderColor: statusPillColors.border,
               },
             ]}
           >
-            <View
-              style={[
-                styles.statusDot,
-                {
-                  backgroundColor: accountActive
-                    ? theme.colors.statusCompleted
-                    : theme.colors.onSurfaceVariant,
-                },
-              ]}
-            />
-            <Text
-              style={[
-                styles.statusText,
-                {
-                  color: accountActive
-                    ? theme.colors.statusCompleted
-                    : theme.colors.onSurfaceVariant,
-                },
-              ]}
-            >
-              {accountActive ? "Aktiv" : "Inaktiv"}
+            <View style={[styles.statusDot, { backgroundColor: statusPillColors.text }]} />
+            <Text style={[styles.statusText, { color: statusPillColors.text }]}>
+              {status.label}
             </Text>
           </View>
         </Card>
@@ -271,11 +302,17 @@ export default function EmployeeDetailScreen() {
           <View style={styles.rowDivider} />
           <InfoRow label="E-Mail" value={emailDisplay} icon="mail-outline" />
           <View style={styles.rowDivider} />
-          <InfoRow
-            label="Konto-Status"
-            value={accountActive ? "Aktiv" : "Inaktiv"}
-            icon="pulse-outline"
-          />
+          <InfoRow label="Konto-Status" value={status.label} icon="pulse-outline" />
+          {invitePending && invitedAtText ? (
+            <>
+              <View style={styles.rowDivider} />
+              <InfoRow
+                label="Eingeladen am"
+                value={invitedAtText}
+                icon="mail-unread-outline"
+              />
+            </>
+          ) : null}
         </Card>
 
         {/* ── Aktueller Job ── */}
@@ -375,6 +412,15 @@ export default function EmployeeDetailScreen() {
             icon="add"
             onPress={handleAssignJob}
           />
+          {invitePending ? (
+            <Button
+              label="Einladung erneut senden"
+              variant="secondary"
+              icon="mail-outline"
+              loading={resendingInvite}
+              onPress={handleResendInvite}
+            />
+          ) : null}
           <Button
             label={
               accountActive

@@ -7,18 +7,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-type CreateEmployeeBody = {
-  fullName?: string;
-  email?: string;
+type ResendInviteBody = {
+  employeeId?: string;
 };
 
-// Deep-Link-Ziel der Einladungs-Mail — muss unter Supabase Dashboard →
-// Authentication → URL Configuration → Redirect URLs eingetragen sein, sonst
-// leitet Supabase NICHT dorthin um (siehe DEPLOY.md in diesem Ordner).
-// Statisch, weil inviteUserByEmail server-seitig läuft (kein Linking.createURL
-// möglich wie beim client-seitig ausgelösten Passwort-Reset) — funktioniert
-// daher nur in Dev-Client-/Standalone-Builds mit dem "taskopsmanager"-Scheme,
-// nicht in Expo Go.
+// Muss identisch zum Wert in create-employee/index.ts sein (siehe dortiger
+// Kommentar + DEPLOY.md).
 const INVITE_REDIRECT_TO = "taskopsmanager://accept-invite";
 
 Deno.serve(async (req) => {
@@ -81,91 +75,104 @@ Deno.serve(async (req) => {
 
     if (adminProfile.role !== "admin") {
       return Response.json(
-        { error: "Nur Admins dürfen Mitarbeiter erstellen." },
+        { error: "Nur Admins dürfen Einladungen erneut senden." },
         { status: 403, headers: corsHeaders },
       );
     }
 
-    if (!adminProfile.company_id) {
+    const body = (await req.json()) as ResendInviteBody;
+    const employeeId = body.employeeId?.trim();
+
+    if (!employeeId) {
       return Response.json(
-        { error: "Admin hat keine company_id." },
+        { error: "Mitarbeiter-ID fehlt." },
         { status: 400, headers: corsHeaders },
       );
     }
 
-    const body = (await req.json()) as CreateEmployeeBody;
+    // Ziel-Profil laden — nur Mitarbeiter der EIGENEN Firma dürfen erneut
+    // eingeladen werden (verhindert firmenübergreifenden Zugriff über eine
+    // erratene ID).
+    const { data: targetProfile, error: targetError } = await adminClient
+      .from("profiles")
+      .select("id, role, company_id, full_name, invite_accepted_at")
+      .eq("id", employeeId)
+      .single();
 
-    const fullName = body.fullName?.trim();
-    const email = body.email?.trim().toLowerCase();
-
-    if (!fullName) {
+    if (targetError || !targetProfile) {
       return Response.json(
-        { error: "Name fehlt." },
+        { error: "Mitarbeiter nicht gefunden." },
+        { status: 404, headers: corsHeaders },
+      );
+    }
+
+    if (
+      targetProfile.company_id !== adminProfile.company_id ||
+      targetProfile.role !== "employee"
+    ) {
+      return Response.json(
+        { error: "Nicht erlaubt." },
+        { status: 403, headers: corsHeaders },
+      );
+    }
+
+    if (targetProfile.invite_accepted_at) {
+      return Response.json(
+        {
+          error:
+            "Dieser Mitarbeiter hat seine Einladung bereits angenommen und hat ein eigenes Passwort.",
+        },
         { status: 400, headers: corsHeaders },
       );
     }
 
-    if (!email || !email.includes("@")) {
+    // profiles hat keine email-Spalte — die E-Mail kommt aus auth.users.
+    const { data: authUser, error: authUserError } =
+      await adminClient.auth.admin.getUserById(employeeId);
+
+    if (authUserError || !authUser.user?.email) {
       return Response.json(
-        { error: "Gültige E-Mail fehlt." },
-        { status: 400, headers: corsHeaders },
+        { error: "E-Mail-Adresse konnte nicht ermittelt werden." },
+        { status: 404, headers: corsHeaders },
       );
     }
 
-    // Einladung statt admin-vergebenem Passwort: legt den Nutzer unbestätigt
-    // an und verschickt Supabase's Invite-Mail mit einem einmalig gültigen
-    // Link. Der Mitarbeiter setzt sein Passwort selbst (accept-invite-Screen,
-    // supabase.auth.updateUser). Kein Passwort verlässt je den Admin-Client
-    // oder diese Function.
-    const { data: invitedUser, error: inviteError } =
-      await adminClient.auth.admin.inviteUserByEmail(email, {
+    // inviteUserByEmail auf einen bereits (unbestätigt) existierenden Nutzer
+    // regeneriert den Einladungs-Link und verschickt die Mail erneut.
+    const { error: inviteError } = await adminClient.auth.admin
+      .inviteUserByEmail(authUser.user.email, {
         data: {
-          full_name: fullName,
+          full_name: targetProfile.full_name,
         },
         redirectTo: INVITE_REDIRECT_TO,
       });
 
-    if (inviteError || !invitedUser.user) {
+    if (inviteError) {
       return Response.json(
         {
           error:
-            inviteError?.message ?? "Einladung konnte nicht verschickt werden.",
+            inviteError.message ?? "Einladung konnte nicht erneut verschickt werden.",
         },
         { status: 400, headers: corsHeaders },
       );
     }
 
-    const employeeId = invitedUser.user.id;
     const invitedAt = new Date().toISOString();
 
-    const { error: upsertProfileError } = await adminClient
+    const { error: updateError } = await adminClient
       .from("profiles")
-      .upsert({
-        id: employeeId,
-        full_name: fullName,
-        role: "employee",
-        company_id: adminProfile.company_id,
-        is_active: true,
-        invited_at: invitedAt,
-      });
+      .update({ invited_at: invitedAt })
+      .eq("id", employeeId);
 
-    if (upsertProfileError) {
+    if (updateError) {
       return Response.json(
-        { error: "Mitarbeiter-Profil konnte nicht erstellt werden." },
+        { error: "Einladungs-Zeitstempel konnte nicht aktualisiert werden." },
         { status: 500, headers: corsHeaders },
       );
     }
 
     return Response.json(
-      {
-        success: true,
-        employee: {
-          id: employeeId,
-          fullName,
-          email,
-          invitedAt,
-        },
-      },
+      { success: true, invitedAt },
       { headers: corsHeaders },
     );
   } catch (error) {

@@ -21,8 +21,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const PROFILE_STORAGE_KEY = "offline_profile_cache";
 // v2: vollständiges Profil (inkl. role/company_id) + Validierung beim Lesen.
-// Bump invalidiert automatisch jeden älteren/teilweisen Cache.
-export const PROFILE_CACHE_VERSION = 2;
+// v3: Profil enthält invite_accepted_at (Einladungs-Flow). Bump nötig, damit
+// ein älterer Cache ohne dieses Feld nicht fälschlich als "Einladung offen"
+// gelesen wird (app/index.tsx leitet sonst bereits aktive Mitarbeiter
+// fälschlich auf accept-invite um). Bump invalidiert automatisch jeden
+// älteren/teilweisen Cache — beim nächsten Online-Start wird frisch geladen.
+export const PROFILE_CACHE_VERSION = 3;
 
 type StoredProfilePayload = {
   version: number;
