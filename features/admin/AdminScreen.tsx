@@ -101,6 +101,11 @@ export default function AdminScreen() {
   const { createJob, employees, loading } = useJobs();
   const { signOut, role, loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
+  // Synchrone Re-Entrancy-Sperre gegen Doppel-Absendung. setSubmitting(true)
+  // wirkt erst beim nächsten Render — zwei sehr schnelle Taps könnten daher
+  // beide den submitting-Check passieren, bevor der State aktualisiert ist.
+  // Der Ref flippt synchron und schließt dieses Zeitfenster sofort.
+  const submittingRef = useRef(false);
 
   // Beim Job-Erstellen nur aktive Mitarbeiter zur Auswahl anbieten.
   const activeEmployees = useMemo(
@@ -148,10 +153,15 @@ export default function AdminScreen() {
     ]);
   };
 
-  // ── Job erstellen (unveränderte Logik)
+  // ── Job erstellen
   const handleCreateJob = async () => {
+    // Doppel-Absendung verhindern: synchroner Ref-Lock (sofort wirksam) UND
+    // der submitting-State (steuert disabled-Button / Beschriftung). Der Ref
+    // fängt sehr schnelle Doppel-Taps ab, bevor der State greift.
+    if (submittingRef.current || submitting) return;
     if (!validate()) return;
 
+    submittingRef.current = true;
     try {
       setSubmitting(true);
 
@@ -187,17 +197,42 @@ export default function AdminScreen() {
               scheduledStart: null,
             };
 
-      await createJob(input);
+      const { recurringOccurrencesFailed } = await createJob(input);
 
+      // Formular vor dem Erfolgshinweis zurücksetzen.
       reset();
-      Alert.alert("✓ Erstellt", "Der Job wurde erfolgreich angelegt.");
+
+      // Nach Bestätigung des Hinweises zur Jobs-Übersicht navigieren. Der Job
+      // ist bereits angelegt — deshalb navigieren wir auch bei fehlgeschlagener
+      // Occurrence-Generierung; wir zeigen dann aber KEINEN vollen Erfolg,
+      // sondern einen Teil-Erfolg-Hinweis (Termine bitte prüfen).
+      const goToJobs = () => router.replace("/(admin-tabs)/jobs");
+
+      if (recurringOccurrencesFailed) {
+        Alert.alert(
+          "Job angelegt",
+          "Der Job wurde angelegt, aber die Termine konnten nicht vollständig erzeugt werden. Bitte prüfe die Terminierung.",
+          [{ text: "OK", onPress: goToJobs }],
+          { cancelable: false },
+        );
+      } else {
+        Alert.alert(
+          "✓ Erstellt",
+          "Der Job wurde erfolgreich angelegt.",
+          [{ text: "OK", onPress: goToJobs }],
+          { cancelable: false },
+        );
+      }
     } catch (err: unknown) {
+      // Bei einem Fehler wird NICHT navigiert — der Admin bleibt im Formular.
       const msg =
         err instanceof Error
           ? err.message
           : "Job konnte nicht erstellt werden.";
       Alert.alert("Fehler", msg);
     } finally {
+      // Sperre in beiden Fällen wieder freigeben (Erfolg wie Fehler).
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
