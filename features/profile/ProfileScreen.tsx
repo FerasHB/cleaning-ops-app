@@ -97,7 +97,10 @@ Vielen Dank.`;
         onPress: async () => {
           try {
             await signOut();
-            router.replace("/");
+            // Nach dem Abmelden immer zur Anmeldung (Login). router.replace
+            // ersetzt die aktuelle Route und die geschützten Gruppen werden
+            // durch die Auth-Gates entfernt → kein Zurück in geschützte Screens.
+            router.replace("/login");
           } catch {
             Alert.alert("Fehler", "Logout fehlgeschlagen.");
           }

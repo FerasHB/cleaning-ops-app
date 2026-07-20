@@ -26,7 +26,10 @@ export default function IndexScreen() {
   let redirectTo: string | null = null;
   if (!loading) {
     if (!session) {
-      redirectTo = "/welcome";
+      // Abgemeldete Nutzer landen immer auf der Anmeldung (Login), nicht auf
+      // Welcome/Register. Die Registrierung ist von dort nur über eine
+      // explizite Nutzeraktion erreichbar (Link "Firma registrieren").
+      redirectTo = "/login";
     } else if (profile) {
       if (!profile.company_id) redirectTo = "/setup-company";
       else if (role === "admin") redirectTo = "/(admin-tabs)/dashboard";
@@ -65,7 +68,9 @@ export default function IndexScreen() {
     try {
       await signOut();
     } catch {
-      router.replace("/welcome");
+      // Fallback bei fehlgeschlagenem Sign-out: ebenfalls zur Anmeldung, nicht
+      // zu Welcome/Register.
+      router.replace("/login");
     }
   };
 

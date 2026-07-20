@@ -138,6 +138,10 @@ export default function AdminScreen() {
         onPress: async () => {
           try {
             await signOut();
+            // Explizit zur Anmeldung navigieren, statt uns auf das Neu-Mounten
+            // der Auth-Gruppe durch die Auth-Gates zu verlassen (das konnte den
+            // zuletzt sichtbaren Auth-Screen — Register — wieder aufdecken).
+            router.replace("/login");
           } catch (err: unknown) {
             const msg =
               err instanceof Error ? err.message : "Abmeldung fehlgeschlagen.";
