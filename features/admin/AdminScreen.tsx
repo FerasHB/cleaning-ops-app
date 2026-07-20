@@ -101,6 +101,11 @@ export default function AdminScreen() {
   const { createJob, employees, loading } = useJobs();
   const { signOut, role, loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
+  // Synchrone Re-Entrancy-Sperre gegen Doppel-Absendung. setSubmitting(true)
+  // wirkt erst beim nächsten Render — zwei sehr schnelle Taps könnten daher
+  // beide den submitting-Check passieren, bevor der State aktualisiert ist.
+  // Der Ref flippt synchron und schließt dieses Zeitfenster sofort.
+  const submittingRef = useRef(false);
 
   // Beim Job-Erstellen nur aktive Mitarbeiter zur Auswahl anbieten.
   const activeEmployees = useMemo(
@@ -150,11 +155,13 @@ export default function AdminScreen() {
 
   // ── Job erstellen
   const handleCreateJob = async () => {
-    // Doppel-Absendung verhindern — zusätzlich zum disabled-Button auch eine
-    // Re-Entrancy-Sperre, falls handleCreateJob doch mehrfach ausgelöst wird.
-    if (submitting) return;
+    // Doppel-Absendung verhindern: synchroner Ref-Lock (sofort wirksam) UND
+    // der submitting-State (steuert disabled-Button / Beschriftung). Der Ref
+    // fängt sehr schnelle Doppel-Taps ab, bevor der State greift.
+    if (submittingRef.current || submitting) return;
     if (!validate()) return;
 
+    submittingRef.current = true;
     try {
       setSubmitting(true);
 
@@ -224,6 +231,8 @@ export default function AdminScreen() {
           : "Job konnte nicht erstellt werden.";
       Alert.alert("Fehler", msg);
     } finally {
+      // Sperre in beiden Fällen wieder freigeben (Erfolg wie Fehler).
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
