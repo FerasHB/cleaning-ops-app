@@ -1,0 +1,39 @@
+name: CI
+
+# Läuft bei jedem Pull Request gegen main: installiert die Abhängigkeiten aus
+# dem vorhandenen Lockfile, prüft die Typen und lintet. Kein Zugriff auf
+# Supabase/SQL — reine statische Checks.
+on:
+  pull_request:
+    branches: [main]
+
+# Nur der neueste Lauf pro PR-Branch; ältere laufende Checks werden abgebrochen.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck-lint:
+    name: Typecheck & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies (from lockfile)
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Expo lint
+        run: npm run lint
