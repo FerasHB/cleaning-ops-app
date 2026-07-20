@@ -148,8 +148,11 @@ export default function AdminScreen() {
     ]);
   };
 
-  // ── Job erstellen (unveränderte Logik)
+  // ── Job erstellen
   const handleCreateJob = async () => {
+    // Doppel-Absendung verhindern — zusätzlich zum disabled-Button auch eine
+    // Re-Entrancy-Sperre, falls handleCreateJob doch mehrfach ausgelöst wird.
+    if (submitting) return;
     if (!validate()) return;
 
     try {
@@ -187,11 +190,34 @@ export default function AdminScreen() {
               scheduledStart: null,
             };
 
-      await createJob(input);
+      const { recurringOccurrencesFailed } = await createJob(input);
 
+      // Formular vor dem Erfolgshinweis zurücksetzen.
       reset();
-      Alert.alert("✓ Erstellt", "Der Job wurde erfolgreich angelegt.");
+
+      // Nach Bestätigung des Hinweises zur Jobs-Übersicht navigieren. Der Job
+      // ist bereits angelegt — deshalb navigieren wir auch bei fehlgeschlagener
+      // Occurrence-Generierung; wir zeigen dann aber KEINEN vollen Erfolg,
+      // sondern einen Teil-Erfolg-Hinweis (Termine bitte prüfen).
+      const goToJobs = () => router.replace("/(admin-tabs)/jobs");
+
+      if (recurringOccurrencesFailed) {
+        Alert.alert(
+          "Job angelegt",
+          "Der Job wurde angelegt, aber die Termine konnten nicht vollständig erzeugt werden. Bitte prüfe die Terminierung.",
+          [{ text: "OK", onPress: goToJobs }],
+          { cancelable: false },
+        );
+      } else {
+        Alert.alert(
+          "✓ Erstellt",
+          "Der Job wurde erfolgreich angelegt.",
+          [{ text: "OK", onPress: goToJobs }],
+          { cancelable: false },
+        );
+      }
     } catch (err: unknown) {
+      // Bei einem Fehler wird NICHT navigiert — der Admin bleibt im Formular.
       const msg =
         err instanceof Error
           ? err.message

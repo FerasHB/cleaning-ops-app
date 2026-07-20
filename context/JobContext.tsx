@@ -45,7 +45,12 @@ type JobContextType = {
   refreshEmployees: () => Promise<void>;
   // Setzt den Aktiv-Status eines Mitarbeiters und lädt die Liste neu.
   setEmployeeActive: (employeeId: string, active: boolean) => Promise<void>;
-  createJob: (input: CreateJobInput) => Promise<void>;
+  // Gibt zurück, ob die Recurring-Occurrence-Generierung fehlschlug, damit die
+  // UI zwischen vollem Erfolg und Teil-Erfolg (Job angelegt, Termine fehlen)
+  // unterscheiden kann.
+  createJob: (
+    input: CreateJobInput,
+  ) => Promise<{ recurringOccurrencesFailed: boolean }>;
   updateJob: (input: {
     jobId: string;
     customerName: string;
@@ -437,7 +442,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
   const createJob = useCallback(async (input: CreateJobInput) => {
     try {
-      const createdJob = await createJobService(input);
+      const { job: createdJob, recurringOccurrencesFailed } =
+        await createJobService(input);
 
       setJobs((prevJobs) => {
         const exists = prevJobs.some((job) => job.id === createdJob.id);
@@ -453,6 +459,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       if (__DEV__) {
         console.log("Creating job with employeeId:", input.employeeId);
       }
+
+      return { recurringOccurrencesFailed };
     } catch (err) {
       console.error("Failed to create job:", err);
       throw err;

@@ -318,8 +318,18 @@ export async function setEmployeeActive(
   }
 }
 
+// Ergebnis von createJob: der angelegte Job plus ein Hinweis, ob die
+// Generierung der Recurring-Occurrences fehlgeschlagen ist. So kann die UI einen
+// vollen Erfolg von einem Teil-Erfolg unterscheiden (Job angelegt, aber Termine
+// noch nicht erzeugt), ohne den bereits erstellten Job als Fehler zu behandeln.
+export type CreateJobResult = {
+  job: Job;
+  // true nur bei recurring, wenn generate_job_occurrences fehlschlug.
+  recurringOccurrencesFailed: boolean;
+};
+
 // Erstellt einen neuen Job
-export async function createJob(input: CreateJobInput): Promise<Job> {
+export async function createJob(input: CreateJobInput): Promise<CreateJobResult> {
   // Aktuellen User holen
   const { data: authData, error: authError } = await supabase.auth.getUser();
 
@@ -453,12 +463,17 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
     );
   }
 
+  // Merkt sich, ob die Occurrence-Generierung fehlschlug — die UI zeigt dann
+  // keinen vollen Erfolg an (der Parent-Job existiert aber bereits).
+  let recurringOccurrencesFailed = false;
+
   if (schedule.job_type === "recurring") {
     const { data: rpcResult, error: occurrenceError } = await supabase.rpc(
       "generate_job_occurrences",
       { parent_job_id_input: data.id }
     );
     if (occurrenceError) {
+      recurringOccurrencesFailed = true;
       // Immer loggen (nicht nur in Dev), damit der Fehler im Expo-Log sichtbar ist.
       console.error(
         "[createJob] generate_job_occurrences fehlgeschlagen:",
@@ -502,7 +517,7 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
   }
 
   // Rückgabe im App-Format
-  return mapJob(data as JobRow);
+  return { job: mapJob(data as JobRow), recurringOccurrencesFailed };
 }
 
 // Aktualisiert einen bestehenden Job
