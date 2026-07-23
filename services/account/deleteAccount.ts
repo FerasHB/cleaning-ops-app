@@ -11,7 +11,9 @@ export type DeleteAccountErrorCode =
   | "unauthenticated"
   | "profile_not_found"
   | "last_admin"
+  | "prepare_failed"
   | "delete_failed"
+  | "rollback_failed"
   | "server_error"
   | "unknown";
 

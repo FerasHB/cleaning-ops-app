@@ -45,6 +45,15 @@ haben. Existiert ein weiterer aktiver Admin, wird nur das anfragende Konto
 gelöscht; die Firma bleibt unberührt. Mitarbeiter (`role = 'employee'`) können
 sich jederzeit selbst löschen.
 
+Die Prüfung läuft **atomar** über die RPC `public.prepare_self_account_deletion()`
+(siehe `supabase/migrations/20260723000000_last_admin_deletion_reservation.sql`)
+— ein reines SELECT-dann-`deleteUser()` ohne gemeinsame Transaktion würde
+zulassen, dass sich zwei Admins derselben Firma fast zeitgleich löschen und
+beide die Prüfung bestehen. Die RPC reserviert den Admin-Platz stattdessen
+vorab (`is_active=false`, committet vor `deleteUser()`); schlägt `deleteUser()`
+danach fehl, macht `public.rollback_self_account_deletion()` die Reservierung
+rückgängig.
+
 ## Sicherheit
 
 - Der Service-Role-Key verlässt die Function nie und liegt nur serverseitig

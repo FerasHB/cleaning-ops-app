@@ -335,6 +335,104 @@ grant execute on function public.current_user_role() to authenticated;
 grant execute on function public.current_user_company_id() to authenticated;
 
 -- =========================================================
+-- RPC: KONTOLÖSCHUNG — LAST-ADMIN-RESERVIERUNG
+-- =========================================================
+-- Siehe supabase/migrations/20260723000000_last_admin_deletion_reservation.sql
+-- für die ausführliche Begründung (Race Condition zwischen Admin-Zählung und
+-- auth.admin.deleteUser() in supabase/functions/delete-account/index.ts).
+--
+-- prepare_self_account_deletion() reserviert vor der eigentlichen Löschung
+-- den Admin-Platz, indem sie is_active=false auf das eigene Profil setzt und
+-- dabei ALLE Admin-Zeilen der Firma in einer einzigen, nach id sortierten
+-- FOR-UPDATE-Query sperrt (verhindert Deadlocks zwischen zwei gleichzeitig
+-- löschenden Admins). Ist der Aufrufer der letzte aktive Admin seiner Firma,
+-- schlägt die Funktion mit 'last_admin' fehl. Mitarbeiter (oder Admins ohne
+-- Firma) brauchen keine Reservierung und laufen ohne Sperre durch.
+create or replace function public.prepare_self_account_deletion()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_caller uuid := auth.uid();
+  v_role text;
+  v_company_id uuid;
+  v_other_active_admins int;
+begin
+  if v_caller is null then
+    raise exception 'unauthenticated';
+  end if;
+
+  select role, company_id
+    into v_role, v_company_id
+  from public.profiles
+  where id = v_caller;
+
+  if not found then
+    raise exception 'profile_not_found';
+  end if;
+
+  if v_role <> 'admin' or v_company_id is null then
+    return;
+  end if;
+
+  perform 1
+  from public.profiles
+  where company_id = v_company_id
+    and role = 'admin'
+  order by id
+  for update;
+
+  select count(*)
+    into v_other_active_admins
+  from public.profiles
+  where company_id = v_company_id
+    and role = 'admin'
+    and is_active = true
+    and id <> v_caller;
+
+  if v_other_active_admins = 0 then
+    raise exception 'last_admin';
+  end if;
+
+  update public.profiles
+     set is_active = false
+   where id = v_caller;
+end;
+$$;
+
+revoke all on function public.prepare_self_account_deletion() from public, anon;
+grant execute on function public.prepare_self_account_deletion() to authenticated;
+
+-- Macht die Reservierung rückgängig, falls auth.admin.deleteUser() in der
+-- Edge Function fehlschlägt. No-op außer für genau den reservierten Zustand
+-- (role='admin', is_active=false) der eigenen Zeile.
+create or replace function public.rollback_self_account_deletion()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_caller uuid := auth.uid();
+begin
+  if v_caller is null then
+    raise exception 'unauthenticated';
+  end if;
+
+  update public.profiles
+     set is_active = true
+   where id = v_caller
+     and role = 'admin'
+     and is_active = false;
+end;
+$$;
+
+revoke all on function public.rollback_self_account_deletion() from public, anon;
+grant execute on function public.rollback_self_account_deletion() to authenticated;
+
+-- =========================================================
 -- RPC: SETUP COMPANY FOR ADMIN
 -- =========================================================
 

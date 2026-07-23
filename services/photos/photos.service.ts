@@ -90,7 +90,7 @@ type JobPhotoRow = {
   id: string;
   job_id: string;
   company_id: string;
-  uploaded_by: string;
+  uploaded_by: string | null;
   storage_path: string;
   file_name: string;
   file_size: number | null;

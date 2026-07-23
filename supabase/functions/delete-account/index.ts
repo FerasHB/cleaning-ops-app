@@ -28,12 +28,25 @@ const corsHeaders = {
 // ist, kann sich nicht löschen (Firma würde führungslos zurückbleiben). Er muss
 // zuerst die Firma auflösen bzw. einen weiteren Admin haben. Existiert ein
 // weiterer aktiver Admin, wird nur das anfragende Konto gelöscht.
+//
+// Race-Condition-Schutz: die Last-Admin-Prüfung läuft NICHT mehr als
+// separates SELECT hier in der Function (zwei Admins derselben Firma
+// könnten sich sonst fast zeitgleich löschen und beide "es gibt ja noch
+// einen anderen Admin" sehen). Stattdessen ruft diese Function zuerst die
+// atomare RPC public.prepare_self_account_deletion() auf (auth.uid()-basiert,
+// sperrt firmenweit alle Admin-Zeilen deterministisch und committet eine
+// is_active=false-Reservierung — siehe
+// supabase/migrations/20260723000000_last_admin_deletion_reservation.sql).
+// Schlägt das anschließende auth.admin.deleteUser() fehl, macht
+// public.rollback_self_account_deletion() die Reservierung rückgängig.
 
 type DeleteAccountErrorCode =
   | "unauthenticated"
   | "profile_not_found"
   | "last_admin"
+  | "prepare_failed"
   | "delete_failed"
+  | "rollback_failed"
   | "server_error";
 
 function errorResponse(
@@ -88,17 +101,20 @@ Deno.serve(async (req) => {
       return errorResponse("unauthenticated", "Ungültige Session.", 401);
     }
 
-    // Profil des Aufrufers laden (Rolle + Firma) — über den Admin-Client, damit
-    // RLS die Prüfung nicht verfälscht.
+    // Profil-Existenz prüfen — über den Admin-Client, damit RLS die Prüfung
+    // nicht verfälscht. Rolle/Firma werden nicht mehr hier gebraucht: die
+    // Last-Admin-Logik lebt jetzt vollständig in prepare_self_account_deletion().
     const { data: profile, error: profileError } = await adminClient
       .from("profiles")
-      .select("id, role, company_id")
+      .select("id")
       .eq("id", user.id)
       .single();
 
     if (profileError || !profile) {
       // Kein Profil (z. B. bereits gelöscht/inkonsistent): das Auth-Konto
       // trotzdem entfernen, damit keine verwaiste auth.users-Zeile bleibt.
+      // Keine Last-Admin-Reservierung nötig — ohne Profil gibt es keine
+      // Firmenzugehörigkeit zu schützen.
       const { error: orphanDeleteError } =
         await adminClient.auth.admin.deleteUser(user.id);
 
@@ -113,26 +129,17 @@ Deno.serve(async (req) => {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
 
-    // ── Schutz „letzter Admin" ──
-    if (profile.role === "admin" && profile.company_id) {
-      const { count, error: countError } = await adminClient
-        .from("profiles")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", profile.company_id)
-        .eq("role", "admin")
-        .eq("is_active", true)
-        .neq("id", user.id);
+    // ── Schutz „letzter Admin" (atomar, RPC statt separates SELECT) ──
+    // Über userClient aufrufen, NICHT adminClient: auth.uid() innerhalb der
+    // RPC löst sich aus dem Authorization-Header dieses Requests auf — mit
+    // dem Service-Role-Client wäre auth.uid() NULL. Für Mitarbeiter (und
+    // Admins ohne Firma) ist dies ein no-op ohne Sperre, siehe RPC-Kommentar.
+    const { error: prepareError } = await userClient.rpc(
+      "prepare_self_account_deletion",
+    );
 
-      if (countError) {
-        return errorResponse(
-          "server_error",
-          "Firmenprüfung fehlgeschlagen.",
-          500,
-        );
-      }
-
-      // Kein weiterer aktiver Admin → Firma wäre führungslos. Löschung sperren.
-      if (!count || count === 0) {
+    if (prepareError) {
+      if (prepareError.message === "last_admin") {
         return errorResponse(
           "last_admin",
           "Als einziger Administrator kannst du dein Konto nicht löschen, " +
@@ -142,6 +149,18 @@ Deno.serve(async (req) => {
           409,
         );
       }
+
+      // Alles andere (profile_not_found, unerwarteter DB-Fehler): Details
+      // nur ins Server-Log, dem Client nur eine generische Meldung.
+      console.error("delete-account: prepare_self_account_deletion failed", {
+        userId: user.id,
+        message: prepareError.message,
+      });
+      return errorResponse(
+        "prepare_failed",
+        "Konto konnte nicht gelöscht werden.",
+        500,
+      );
     }
 
     // ── Löschung: entfernt auth.users → cascade/set-null gemäß FKs oben. ──
@@ -150,6 +169,30 @@ Deno.serve(async (req) => {
     );
 
     if (deleteError) {
+      // Reservierung (falls gesetzt) rückgängig machen — sonst bliebe ein
+      // Admin dauerhaft is_active=false, ohne dass sein Konto gelöscht wurde.
+      console.error("delete-account: deleteUser failed, rolling back", {
+        userId: user.id,
+        message: deleteError.message,
+      });
+
+      const { error: rollbackError } = await userClient.rpc(
+        "rollback_self_account_deletion",
+      );
+
+      if (rollbackError) {
+        console.error("delete-account: rollback_self_account_deletion failed", {
+          userId: user.id,
+          message: rollbackError.message,
+        });
+        return errorResponse(
+          "rollback_failed",
+          "Konto konnte nicht gelöscht werden und die Wiederherstellung ist " +
+            "fehlgeschlagen. Bitte kontaktiere den Support.",
+          500,
+        );
+      }
+
       return errorResponse(
         "delete_failed",
         "Konto konnte nicht gelöscht werden.",
