@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
 import { Platform } from "react-native";
+import { classifyClientKey } from "./supabaseKeyGuard";
 
 // Supabase URL und Key aus den Env Variablen holen
 // (!) bedeutet: wir gehen davon aus, dass sie sicher vorhanden sind
@@ -8,46 +9,33 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 // ─────────────────────────────────────────────────────────────────
-// SICHERHEITS-GUARD: Im Client darf AUSSCHLIESSLICH ein Publishable-/Anon-Key
-// stehen — niemals ein Secret-/Service-Role-Key. Ein Secret-Key im Client
-// (EXPO_PUBLIC_ landet im App-Bundle) würde RLS für alle Nutzer aushebeln.
-// Hintergrund: EXPO_PUBLIC_SUPABASE_ANON_KEY enthielt versehentlich einen
-// sb_secret_-Key. Dieser Guard erkennt den Fehler früh beim App-Start.
-// Es wird NIEMALS der Key-Wert geloggt.
+// SICHERHEITS-GUARD (FAIL CLOSED): Im Client darf AUSSCHLIESSLICH ein
+// Publishable-/Legacy-anon-Key stehen — niemals ein Secret-/Service-Role-Key.
+// Ein Secret-Key im Client (EXPO_PUBLIC_ landet im App-Bundle) würde RLS für
+// ALLE Nutzer aushebeln. Hintergrund: EXPO_PUBLIC_SUPABASE_ANON_KEY enthielt
+// versehentlich einen sb_secret_-Key.
+//
+// Verhalten (Dev UND Produktion identisch): Ist der Key kein sicher als
+// öffentlich erkannter Key, wird der Supabase-Client GAR NICHT erst erzeugt,
+// sondern ein klarer Fehler geworfen. Lieber ein App-Start-Fehler als ein
+// weltweit offengelegter Secret-Key. Der Key-Wert wird NIEMALS geloggt —
+// nur die Klassifikation (public/secret/unknown/missing).
+//
+// Die reine Klassifikationslogik liegt in ./supabaseKeyGuard (seiteneffektfrei,
+// isoliert testbar). Hier passiert nur die App-weite Konsequenz (throw).
 // ─────────────────────────────────────────────────────────────────
-function jwtRoleClaim(key: string): string | null {
-  const parts = key.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    let b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    while (b64.length % 4) b64 += "=";
-    const g = globalThis as { atob?: (s: string) => string };
-    const json = typeof g.atob === "function" ? g.atob(b64) : "";
-    const m = json.match(/"role"\s*:\s*"([^"]+)"/);
-    return m ? m[1] : null;
-  } catch {
-    return null;
-  }
+const keyVerdict = classifyClientKey(supabaseAnonKey);
+if (keyVerdict === "secret" || keyVerdict === "unknown") {
+  // Der geworfene Fehler enthält nur die Klassifikation, nie den Key-Wert.
+  throw new Error(
+    "SICHERHEIT: EXPO_PUBLIC_SUPABASE_ANON_KEY ist kein zulässiger öffentlicher " +
+      `Client-Key (erkannt als: ${keyVerdict}). Im Client sind ausschließlich ` +
+      "Publishable-Keys (sb_publishable_…) oder der Legacy-anon-Key erlaubt. " +
+      "Secret-/Service-Role-Keys gehören ausschließlich serverseitig (Edge Functions).",
+  );
 }
-
-function assertClientKeyIsPublic(key: string | undefined): void {
-  if (!key) return;
-  const looksLikeSecret =
-    key.startsWith("sb_secret_") || jwtRoleClaim(key) === "service_role";
-  if (!looksLikeSecret) return;
-
-  const message =
-    "SICHERHEIT: EXPO_PUBLIC_SUPABASE_ANON_KEY ist ein Secret-/Service-Role-Key. " +
-    "Im Client ausschließlich den Publishable-/Anon-Key verwenden (Service-Key nur serverseitig).";
-  // Dev: harter Abbruch. Produktion: fail-closed-Hinweis ohne die App komplett
-  // zu bricken (das Problem muss aber vor dem Release behoben werden).
-  if (__DEV__) {
-    throw new Error(message);
-  }
-  console.error(message);
-}
-
-assertClientKeyIsPublic(supabaseAnonKey);
+// "missing" wird bewusst nicht hier abgefangen: createClient wirft dafür
+// bereits einen eindeutigen "supabaseKey is required"-Fehler.
 
 // Supabase Client erstellen (wird in der ganzen App verwendet)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
