@@ -852,6 +852,21 @@ export async function getJobById(jobId: string): Promise<Job | null> {
   return mapJob(data as JobRow);
 }
 
+// Mitarbeiter-Filter für Zeitplan-Queries (serverseitig).
+//   - employeeId gesetzt          → assigned_to = employeeId
+//   - unassigned = true           → assigned_to IS NULL („Nicht zugewiesen")
+//   - beides leer                 → alle Mitarbeiter
+export type EmployeeFilter = { employeeId?: string; unassigned?: boolean };
+
+// Wendet den Mitarbeiter-Filter auf einen Query-Builder an (serverseitig).
+function applyEmployeeFilter<T>(query: T, filter?: EmployeeFilter): T {
+  if (!filter) return query;
+  const q = query as any;
+  if (filter.unassigned) return q.is("assigned_to", null);
+  if (filter.employeeId) return q.eq("assigned_to", filter.employeeId);
+  return query;
+}
+
 // Executable Jobs (single-Jobs UND generierte Occurrences) in einem
 // begrenzten Datumsfenster. Recurring-Parent-Regeln sind per job_type='single'
 // grundsätzlich ausgeschlossen (Parents sind die einzigen 'recurring'-Zeilen).
@@ -860,6 +875,7 @@ export type ScheduleRangeParams = {
   to: string; // "YYYY-MM-DD" inklusiv
   statuses?: ("open" | "in_progress" | "completed")[];
   limit?: number;
+  employee?: EmployeeFilter;
 };
 
 export async function getScheduleOccurrences(
@@ -875,6 +891,7 @@ export async function getScheduleOccurrences(
   if (params.statuses && params.statuses.length > 0) {
     query = query.in("status", params.statuses);
   }
+  query = applyEmployeeFilter(query, params.employee);
 
   const { data, error } = await query
     .order("date", { ascending: true })
@@ -892,14 +909,18 @@ export async function getScheduleOccurrences(
 // Nach Datum absteigend (jüngste zuerst), begrenzt.
 export async function getOverdueOccurrences(
   todayKey: string,
+  employee?: EmployeeFilter,
   limit: number = SCHEDULE_PAGE_SIZE,
 ): Promise<Job[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("jobs")
     .select(JOB_SELECT)
     .eq("job_type", "single")
     .in("status", ["open", "in_progress"])
-    .lt("date", todayKey)
+    .lt("date", todayKey);
+  query = applyEmployeeFilter(query, employee);
+
+  const { data, error } = await query
     .order("date", { ascending: false })
     .order("start_time", { ascending: true })
     .order("id", { ascending: true })
@@ -915,6 +936,7 @@ export async function getOverdueOccurrences(
 // (before = ISO-Zeitstempel; lädt ältere Seiten). Begrenzt.
 export async function getCompletedOccurrences(
   before?: string,
+  employee?: EmployeeFilter,
   limit: number = SCHEDULE_PAGE_SIZE,
 ): Promise<Job[]> {
   let query = supabase
@@ -927,6 +949,7 @@ export async function getCompletedOccurrences(
   if (before) {
     query = query.lt("completed_at", before);
   }
+  query = applyEmployeeFilter(query, employee);
 
   const { data, error } = await query
     .order("completed_at", { ascending: false })
@@ -1073,16 +1096,51 @@ export async function setRecurringRuleActive(
   }
 }
 
+// Operatives Fenster für „Offen" (Tage ab morgen) und Rückschau für „Erledigt".
+export const KPI_OPEN_WINDOW_DAYS = 30; // Offen: morgen … heute+30
+export const KPI_COMPLETED_LOOKBACK_DAYS = 30; // Erledigt: letzte 30 Tage
+
+// "YYYY-MM-DD" + n Tage → "YYYY-MM-DD" (ohne Zeitzonen-Verschiebung).
+function addDaysToKey(key: string, days: number): string {
+  const [y, m, d] = key.split("-").map((n) => parseInt(n, 10));
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+// Serverseitige, gebündelte KPI-Zähler mit klaren OPERATIVEN Fenstern.
+// Jede Kennzahl hat eine eindeutige, dokumentierte Datumsspanne. Zähler sind
+// count/head (keine Zeilen), also unabhängig vom Ladefenster / der
+// 1000-Zeilen-Grenze. Recurring-Parents sind über job_type='single' immer
+// ausgeschlossen; date-NULL-Zeilen fallen durch die Datumsvergleiche heraus.
+//
+// Fenster (todayKey = heute):
+//   • Heute fällig : date = heute                         (alle Status)
+//   • Offen        : status=open  UND  morgen ≤ date ≤ heute+30
+//                    (KEIN heute → eigene Karte; KEINE Überfälligen → eigene
+//                     Karte; KEINE Ferntermine jenseits +30 Tage)
+//   • In Arbeit    : status=in_progress                   (unbegrenzt, klein)
+//   • Erledigt     : status=completed  UND  completed_at ≥ heute−30
+//                    (letzte 30 Tage, operative Rückschau)
+//   • Überfällig   : status∈(open,in_progress)  UND  date < heute
 export async function getScheduleKpis(todayKey: string): Promise<ScheduleKpis> {
+  const tomorrowKey = addDaysToKey(todayKey, 1);
+  const openEndKey = addDaysToKey(todayKey, KPI_OPEN_WINDOW_DAYS);
+  const completedSinceKey = addDaysToKey(todayKey, -KPI_COMPLETED_LOOKBACK_DAYS);
+
   const [heute, offen, inArbeit, erledigt, ueberfaellig] = await Promise.all([
     // Heute fällig: executable Jobs mit Datum = heute
     countJobs((q) => q.eq("date", todayKey)),
-    // Offen: offene executable Jobs (heute + Zukunft, ohne überfällige Altlasten)
-    countJobs((q) => q.eq("status", "open").gte("date", todayKey)),
+    // Offen: offene executable Jobs von morgen bis heute+30 (operatives Fenster)
+    countJobs((q) =>
+      q.eq("status", "open").gte("date", tomorrowKey).lte("date", openEndKey),
+    ),
     // In Arbeit: laufende executable Jobs
     countJobs((q) => q.eq("status", "in_progress")),
-    // Erledigt: abgeschlossene executable Jobs (Gesamtzahl)
-    countJobs((q) => q.eq("status", "completed")),
+    // Erledigt: abgeschlossene executable Jobs der letzten 30 Tage (completed_at)
+    countJobs((q) =>
+      q.eq("status", "completed").gte("completed_at", completedSinceKey),
+    ),
     // Überfällig: offen/in Arbeit mit Datum vor heute
     countJobs((q) => q.in("status", ["open", "in_progress"]).lt("date", todayKey)),
   ]);

@@ -33,13 +33,15 @@ begin
   values
     ('00000000-0000-0000-0000-000000000000','c2000000-0000-0000-0000-000000000001','authenticated','authenticated','disp-adminA@example.test','{"full_name":"Admin A"}'),
     ('00000000-0000-0000-0000-000000000000','c2000000-0000-0000-0000-000000000002','authenticated','authenticated','disp-empA@example.test','{"full_name":"Employee A"}'),
-    ('00000000-0000-0000-0000-000000000000','c2000000-0000-0000-0000-000000000003','authenticated','authenticated','disp-adminB@example.test','{"full_name":"Admin B"}');
+    ('00000000-0000-0000-0000-000000000000','c2000000-0000-0000-0000-000000000003','authenticated','authenticated','disp-adminB@example.test','{"full_name":"Admin B"}'),
+    ('00000000-0000-0000-0000-000000000000','c2000000-0000-0000-0000-000000000004','authenticated','authenticated','disp-empA2@example.test','{"full_name":"Employee A2"}');
 end $$;
 
 insert into public.profiles (id, full_name) values
   ('c2000000-0000-0000-0000-000000000001','Admin A'),
   ('c2000000-0000-0000-0000-000000000002','Employee A'),
-  ('c2000000-0000-0000-0000-000000000003','Admin B')
+  ('c2000000-0000-0000-0000-000000000003','Admin B'),
+  ('c2000000-0000-0000-0000-000000000004','Employee A2')
 on conflict (id) do nothing;
 
 insert into public.companies (id, name, slug) values
@@ -49,6 +51,7 @@ insert into public.companies (id, name, slug) values
 update public.profiles set company_id='c1000000-0000-0000-0000-000000000001', role='admin',    is_active=true where id='c2000000-0000-0000-0000-000000000001';
 update public.profiles set company_id='c1000000-0000-0000-0000-000000000001', role='employee', is_active=true where id='c2000000-0000-0000-0000-000000000002';
 update public.profiles set company_id='c1000000-0000-0000-0000-000000000002', role='admin',    is_active=true where id='c2000000-0000-0000-0000-000000000003';
+update public.profiles set company_id='c1000000-0000-0000-0000-000000000001', role='employee', is_active=true where id='c2000000-0000-0000-0000-000000000004';
 
 -- Parent-Regel (Firma A): Mo/Mi 08:00, zugewiesen an Employee A
 insert into public.jobs
@@ -103,6 +106,33 @@ values
   ('c4000000-0000-0000-0000-0000000000AA','c1000000-0000-0000-0000-000000000001',
    'c2000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000002',
    'Einzelkunde','Grundreinigung','Einzelweg 9','open','single', current_date, '13:00', true);
+
+-- Zusatz-Fixtures für die KPI-Fenster + Mitarbeiter-Filter (Firma A, parent c3..1):
+insert into public.jobs
+  (id, company_id, parent_job_id, created_by, assigned_to, customer_name, service_name,
+   location_address, status, job_type, date, start_time, is_active, started_at, completed_at)
+values
+  -- FERNTERMIN: offen, +45 Tage → außerhalb Offen-Fenster [morgen..+30]
+  ('c4000000-0000-0000-0000-000000000006','c1000000-0000-0000-0000-000000000001',
+   'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
+   'c2000000-0000-0000-0000-000000000002','Regelkunde','Unterhaltsreinigung','Regelweg 1',
+   'open','single', current_date + 45, '08:00', true, null, null),
+  -- ALT erledigt: completed_at vor 40 Tagen → außerhalb Erledigt-30
+  ('c4000000-0000-0000-0000-000000000007','c1000000-0000-0000-0000-000000000001',
+   'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
+   'c2000000-0000-0000-0000-000000000002','Regelkunde','Unterhaltsreinigung','Regelweg 1',
+   'completed','single', current_date - 40, '08:00', true,
+   (current_date - 40)::timestamptz, (current_date - 40)::timestamptz),
+  -- UNZUGEWIESEN: offen, +3 Tage, assigned_to NULL
+  ('c4000000-0000-0000-0000-000000000008','c1000000-0000-0000-0000-000000000001',
+   'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
+   null,'Regelkunde','Unterhaltsreinigung','Regelweg 1',
+   'open','single', current_date + 3, '08:00', true, null, null),
+  -- Zugewiesen an Employee A2: offen, +3 Tage
+  ('c4000000-0000-0000-0000-000000000009','c1000000-0000-0000-0000-000000000001',
+   'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
+   'c2000000-0000-0000-0000-000000000004','Regelkunde','Unterhaltsreinigung','Regelweg 1',
+   'open','single', current_date + 3, '08:00', true, null, null);
 
 -- Firma B: eigener Job (für Cross-Company-Test)
 insert into public.jobs
@@ -207,6 +237,61 @@ begin
   -- CASE 13: Cross-Company: Admin A sieht Firma-B-Job NICHT
   select count(*) into n from public.jobs where id='c4000000-0000-0000-0000-0000000000B1';
   insert into _disp_results values (13,'fetch-by-id: fremde Firma unsichtbar (RLS)','0', n::text);
+
+  -- ── KPI-Fenster (neue operative Definitionen) ─────────────────────────
+  -- CASE 15: KPI „Offen" = open UND date in [morgen, heute+30]
+  --   qualifiziert: c4..1(+2), c4..8(+3, unassigned), c4..9(+3, A2) = 3
+  --   NICHT: c4..5/c4..AA (heute), c4..2 (überfällig), c4..6 (+45), c4..4 (in_progress)
+  select count(*) into n from public.jobs
+   where job_type='single' and status='open'
+     and date > today and date <= today + 30;
+  insert into _disp_results values (15,'KPI Offen: [morgen..+30], nur open','3', n::text);
+
+  -- CASE 16: Ferntermin (+45) NICHT in Offen-Fenster
+  select count(*) into n from public.jobs
+   where id='c4000000-0000-0000-0000-000000000006'
+     and status='open' and date > today and date <= today + 30;
+  insert into _disp_results values (16,'Ferntermin (+45) NICHT in Offen','0', n::text);
+
+  -- CASE 17: Heutige offene Termine NICHT in Offen (eigene Karte „Heute")
+  select count(*) into n from public.jobs
+   where job_type='single' and status='open' and date = today
+     and date > today; -- immer 0: heute ist per Definition ausgeschlossen
+  insert into _disp_results values (17,'Heutige offene NICHT in Offen','0', n::text);
+
+  -- CASE 18: Überfällige NICHT in Offen (date<heute ausgeschlossen)
+  select count(*) into n from public.jobs
+   where job_type='single' and status='open' and date < today
+     and date > today; -- immer 0
+  insert into _disp_results values (18,'Überfällige NICHT in Offen','0', n::text);
+
+  -- CASE 19: KPI „Erledigt" = completed UND completed_at >= heute-30
+  --   c4..3 (vor 8 Tagen) ja; c4..7 (vor 40 Tagen) nein → 1
+  select count(*) into n from public.jobs
+   where job_type='single' and status='completed' and completed_at >= today - 30;
+  insert into _disp_results values (19,'KPI Erledigt: letzte 30 Tage','1', n::text);
+
+  -- CASE 20: completed/in_progress NICHT in Offen
+  select count(*) into n from public.jobs
+   where job_type='single' and status in ('completed','in_progress')
+     and date > today and date <= today + 30
+     and status='open'; -- immer 0 (Statuswiderspruch)
+  insert into _disp_results values (20,'completed/in_progress NICHT in Offen','0', n::text);
+
+  -- ── Mitarbeiter-gefilterte Zeitplan-Queries (serverseitig) ────────────
+  -- CASE 21: Bevorstehend (open/in_progress, [morgen..+60]) für Employee A2 = c4..9
+  select count(*) into n from public.jobs
+   where job_type='single' and status in ('open','in_progress')
+     and date > today and date <= today + 60
+     and assigned_to='c2000000-0000-0000-0000-000000000004';
+  insert into _disp_results values (21,'Mitarbeiter-Filter (A2) bevorstehend','1', n::text);
+
+  -- CASE 22: Bevorstehend gefiltert auf „Nicht zugewiesen" = c4..8
+  select count(*) into n from public.jobs
+   where job_type='single' and status in ('open','in_progress')
+     and date > today and date <= today + 60
+     and assigned_to is null;
+  insert into _disp_results values (22,'Mitarbeiter-Filter (unassigned) bevorstehend','1', n::text);
 
   execute 'reset role';
 

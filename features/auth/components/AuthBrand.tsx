@@ -1,33 +1,31 @@
 // features/auth/components/AuthBrand.tsx
 // Gemeinsamer Logo + App-Name Block für alle Auth-Screens.
 
-import { useAppTheme } from "@/hooks/useAppTheme";
-import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
+import React, { useMemo } from "react";
+import { Image, StyleSheet, Text, View } from "react-native";
 
 interface AuthBrandProps {
   /** Optionale Unterzeile unter dem App-Namen */
   tagline?: string;
-  /** Icon-Größe im Logo-Block (Standard: 28) */
-  iconSize?: number;
 }
 
-export function AuthBrand({ tagline, iconSize = 28 }: AuthBrandProps) {
+export function AuthBrand({ tagline }: AuthBrandProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
     <View style={styles.wrapper}>
-      {/* Logo-Box */}
-      <View style={styles.logoBox}>
-        <Ionicons name="sparkles" size={iconSize} color={theme.colors.onPrimaryContainer} />
-      </View>
+      {/* App Logo */}
+      <Image
+        source={require("../../../assets/source/taskops-logo.png")}
+        style={styles.logo}
+        resizeMode="contain"
+      />
 
-      {/* Texte */}
       <View style={styles.textBlock}>
-        <Text style={styles.appName}>CleanOps</Text>
+        <Text style={styles.appName}>TaskOps Manager</Text>
         {tagline ? <Text style={styles.tagline}>{tagline}</Text> : null}
       </View>
     </View>
@@ -40,18 +38,18 @@ function createStyles(theme: AppTheme) {
       alignItems: "center",
       gap: theme.spacing.md,
     },
-    logoBox: {
-      width: 64,
-      height: 64,
-      borderRadius: theme.radius.xl,
-      backgroundColor: theme.colors.primaryContainer,
-      alignItems: "center",
-      justifyContent: "center",
+
+    logo: {
+      width: 130,
+      height: 130,
+      borderRadius: 22,
     },
+
     textBlock: {
       alignItems: "center",
       gap: 4,
     },
+
     appName: {
       fontSize: theme.typography.size.xl,
       fontWeight: theme.typography.weight.bold,
@@ -59,6 +57,7 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onSurface,
       letterSpacing: theme.typography.letterSpacing.tight,
     },
+
     tagline: {
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.regular,

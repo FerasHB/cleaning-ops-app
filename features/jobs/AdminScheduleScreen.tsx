@@ -14,6 +14,7 @@
 
 import { EmptyState, ErrorBanner } from "@/components/ui";
 import JobCard from "@/components/JobCard";
+import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +23,7 @@ import {
   getOverdueOccurrences,
   getRecurringRules,
   getScheduleOccurrences,
+  type EmployeeFilter,
 } from "@/services/jobs/jobs.service";
 import type { Job } from "@/types/job";
 import { formatDateISO } from "@/utils/date";
@@ -37,12 +39,16 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   RefreshControl,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+
+// Auswahl im Mitarbeiter-Filter: alle, unzugewiesen, oder eine Mitarbeiter-ID.
+type EmployeeSelection = "all" | "unassigned" | string;
 
 // Standard-Fenster für „Bevorstehend": ab morgen bis +60 Tage.
 const UPCOMING_DAYS = 60;
@@ -53,7 +59,16 @@ export default function AdminScheduleScreen() {
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
 
+  // Aktive Mitarbeiter für den Filter (Nicht-zugewiesen-Option zusätzlich).
+  const { employees } = useJobs();
+  const activeEmployees = useMemo(
+    () => employees.filter((e) => e.isActive !== false),
+    [employees],
+  );
+
   const [filter, setFilter] = useState<ScheduleFilter>("heute");
+  // Mitarbeiter-Auswahl bleibt über Filterwechsel/Refresh/Realtime erhalten.
+  const [employeeSel, setEmployeeSel] = useState<EmployeeSelection>("all");
   const [jobs, setJobs] = useState<Job[]>([]);
   // Regel-Terminierung je Parent-ID → für die Abweichender-Termin-Erkennung.
   const [ruleMap, setRuleMap] = useState<Map<string, RuleSchedule>>(new Map());
@@ -63,11 +78,25 @@ export default function AdminScheduleScreen() {
 
   const loadInProgress = useRef(false);
 
+  // Übersetzt die UI-Auswahl in den serverseitigen Mitarbeiter-Filter.
+  const buildEmployeeFilter = useCallback(
+    (sel: EmployeeSelection): EmployeeFilter | undefined => {
+      if (sel === "all") return undefined;
+      if (sel === "unassigned") return { unassigned: true };
+      return { employeeId: sel };
+    },
+    [],
+  );
+
   const fetchForFilter = useCallback(
-    async (f: ScheduleFilter): Promise<Job[]> => {
+    async (f: ScheduleFilter, emp?: EmployeeFilter): Promise<Job[]> => {
       switch (f) {
         case "heute":
-          return getScheduleOccurrences({ from: todayKey, to: todayKey });
+          return getScheduleOccurrences({
+            from: todayKey,
+            to: todayKey,
+            employee: emp,
+          });
         case "bevorstehend": {
           const to = new Date(todayKey);
           to.setDate(to.getDate() + UPCOMING_DAYS);
@@ -77,27 +106,29 @@ export default function AdminScheduleScreen() {
             from: formatDateISO(from) ?? todayKey,
             to: formatDateISO(to) ?? todayKey,
             statuses: ["open", "in_progress"],
+            employee: emp,
           });
         }
         case "ueberfaellig":
-          return getOverdueOccurrences(todayKey);
+          return getOverdueOccurrences(todayKey, emp);
         case "erledigt":
-          return getCompletedOccurrences();
+          return getCompletedOccurrences(undefined, emp);
       }
     },
     [todayKey],
   );
 
   const load = useCallback(
-    async (f: ScheduleFilter, isRefresh = false) => {
+    async (f: ScheduleFilter, sel: EmployeeSelection, isRefresh = false) => {
       if (loadInProgress.current) return;
       loadInProgress.current = true;
       if (!isRefresh) setLoading(true);
       setError(null);
       try {
+        const emp = buildEmployeeFilter(sel);
         // Regeln parallel laden (wenige Zeilen) für die Abweichungs-Erkennung.
         const [items, rules] = await Promise.all([
-          fetchForFilter(f),
+          fetchForFilter(f, emp),
           getRecurringRules(),
         ]);
         const map = new Map<string, RuleSchedule>();
@@ -119,16 +150,16 @@ export default function AdminScheduleScreen() {
         setRefreshing(false);
       }
     },
-    [fetchForFilter],
+    [fetchForFilter, buildEmployeeFilter],
   );
 
-  // Bei Filterwechsel neu laden.
+  // Bei Filter- ODER Mitarbeiter-Wechsel neu laden (Auswahl bleibt erhalten).
   useEffect(() => {
-    load(filter);
-  }, [filter, load]);
+    load(filter, employeeSel);
+  }, [filter, employeeSel, load]);
 
-  // Realtime: nur die aktuelle Ansicht (aktueller Filter) neu laden, keine
-  // vollständige Historie. Firmen-Scoping erfolgt über RLS auf der Query.
+  // Realtime: nur die aktuelle Ansicht (aktueller Filter + Mitarbeiter) neu
+  // laden, keine vollständige Historie. Firmen-Scoping erfolgt über RLS.
   useEffect(() => {
     const channel = supabase
       .channel("admin-schedule-realtime")
@@ -136,20 +167,20 @@ export default function AdminScheduleScreen() {
         "postgres_changes",
         { event: "*", schema: "public", table: "jobs" },
         () => {
-          // Aktuellen Filter leise neu laden (bounded).
-          load(filter, true);
+          // Aktuellen Filter + Mitarbeiter leise neu laden (bounded).
+          load(filter, employeeSel, true);
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [filter, load]);
+  }, [filter, employeeSel, load]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    load(filter, true);
-  }, [filter, load]);
+    load(filter, employeeSel, true);
+  }, [filter, employeeSel, load]);
 
   const sections = useMemo(() => {
     const direction = filter === "erledigt" ? "desc" : "asc";
@@ -176,6 +207,38 @@ export default function AdminScheduleScreen() {
           );
         })}
       </View>
+
+      {/* ── Mitarbeiter-Filter (serverseitig, bleibt über Filterwechsel) ── */}
+      {activeEmployees.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.employeeRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          <EmpChip
+            label="Alle Mitarbeiter"
+            active={employeeSel === "all"}
+            onPress={() => setEmployeeSel("all")}
+            styles={styles}
+          />
+          <EmpChip
+            label="Nicht zugewiesen"
+            active={employeeSel === "unassigned"}
+            onPress={() => setEmployeeSel("unassigned")}
+            styles={styles}
+          />
+          {activeEmployees.map((emp) => (
+            <EmpChip
+              key={emp.id}
+              label={emp.fullName}
+              active={employeeSel === emp.id}
+              onPress={() => setEmployeeSel(emp.id)}
+              styles={styles}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
 
       {error ? (
         <ErrorBanner message={error} onDismiss={() => setError(null)} />
@@ -235,6 +298,34 @@ export default function AdminScheduleScreen() {
   );
 }
 
+// Mitarbeiter-Filter-Chip (gleiches Muster wie die frühere Admin-Jobliste).
+function EmpChip({
+  label,
+  active,
+  onPress,
+  styles,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={[styles.empChip, active && styles.empChipActive]}
+    >
+      <Text
+        style={[styles.empChipText, active && styles.empChipTextActive]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function emptyMessageFor(filter: ScheduleFilter): string {
   switch (filter) {
     case "heute":
@@ -279,6 +370,37 @@ function createStyles(theme: AppTheme) {
     },
     chipTextActive: {
       color: theme.colors.onPrimaryContainer,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+    },
+    // ── Mitarbeiter-Filter
+    employeeRow: {
+      flexDirection: "row",
+      gap: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.lg,
+      paddingBottom: theme.spacing.sm,
+    },
+    empChip: {
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 7,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      backgroundColor: theme.colors.surface,
+      maxWidth: 180,
+    },
+    empChipActive: {
+      backgroundColor: theme.colors.statusInProgressBg,
+      borderColor: theme.colors.statusInProgressBorder,
+    },
+    empChipText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+    },
+    empChipTextActive: {
+      color: theme.colors.statusInProgress,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
     },
