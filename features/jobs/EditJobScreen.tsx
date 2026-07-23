@@ -17,6 +17,8 @@ import {
   timeStringToDate,
 } from "@/utils/date";
 import type { WeekdayKey } from "@/utils/recurrence";
+import { getJobById } from "@/services/jobs/jobs.service";
+import type { Job } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -43,14 +45,22 @@ export default function EditJobScreen() {
     jobs,
     employees,
     loading,
-    refreshJobs,
     refreshEmployees,
     updateJob,
     deleteJob,
   } = useJobs();
   const { signOut, role, loading: authLoading } = useAuth();
 
-  const job = useMemo(() => jobs.find((item) => item.id === id), [jobs, id]);
+  // Cache-first mit Direktabruf-Fallback: Regeln/Jobs außerhalb des (für Admins
+  // begrenzten) Ladefensters müssen dennoch bearbeitbar sein. RLS begrenzt die
+  // Sichtbarkeit serverseitig.
+  const cachedJob = useMemo(
+    () => jobs.find((item) => item.id === id),
+    [jobs, id],
+  );
+  const [fetchedJob, setFetchedJob] = useState<Job | null>(null);
+  const [fetchAttempted, setFetchAttempted] = useState(false);
+  const job = cachedJob ?? fetchedJob ?? undefined;
   const [submitting, setSubmitting] = useState(false);
 
   // Picker beim Bearbeiten: aktive Mitarbeiter + der aktuell zugewiesene,
@@ -72,14 +82,29 @@ export default function EditJobScreen() {
   const isAdmin = role === "admin";
 
   useEffect(() => {
-    if (!jobs.length) {
-      refreshJobs();
-    }
-
     if (!employees.length) {
       refreshEmployees();
     }
-  }, [jobs.length, employees.length, refreshJobs, refreshEmployees]);
+  }, [employees.length, refreshEmployees]);
+
+  // Direktabruf per ID, falls der Job nicht im (begrenzten) Context-Fenster liegt.
+  useEffect(() => {
+    if (!id || cachedJob || fetchAttempted) return;
+    let cancelled = false;
+    getJobById(id)
+      .then((j) => {
+        if (!cancelled) setFetchedJob(j);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedJob(null);
+      })
+      .finally(() => {
+        if (!cancelled) setFetchAttempted(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, cachedJob, fetchAttempted]);
 
   useEffect(() => {
     if (!job) return;
