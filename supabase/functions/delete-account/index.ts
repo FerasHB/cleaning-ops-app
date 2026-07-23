@@ -29,20 +29,34 @@ const corsHeaders = {
 // zuerst die Firma auflösen bzw. einen weiteren Admin haben. Existiert ein
 // weiterer aktiver Admin, wird nur das anfragende Konto gelöscht.
 //
-// Race-Condition-Schutz: die Last-Admin-Prüfung läuft NICHT mehr als
-// separates SELECT hier in der Function (zwei Admins derselben Firma
-// könnten sich sonst fast zeitgleich löschen und beide "es gibt ja noch
-// einen anderen Admin" sehen). Stattdessen ruft diese Function zuerst die
-// atomare RPC public.prepare_self_account_deletion() auf (auth.uid()-basiert,
-// sperrt firmenweit alle Admin-Zeilen deterministisch und committet eine
-// is_active=false-Reservierung — siehe
-// supabase/migrations/20260723000000_last_admin_deletion_reservation.sql).
-// Schlägt das anschließende auth.admin.deleteUser() fehl, macht
-// public.rollback_self_account_deletion() die Reservierung rückgängig.
+// Race-Condition-Schutz: die Last-Admin-Prüfung läuft NICHT als separates
+// SELECT hier in der Function (zwei Admins derselben Firma könnten sich
+// sonst fast zeitgleich löschen und beide "es gibt ja noch einen anderen
+// Admin" sehen). Stattdessen ruft diese Function zuerst die atomare RPC
+// public.prepare_self_account_deletion() auf (auth.uid()-basiert, sperrt
+// firmenweit alle Admin-Zeilen deterministisch) — sie gibt bei Erfolg einen
+// Reservierungs-Token zurück. Schlägt das anschließende
+// auth.admin.deleteUser() fehl, macht public.rollback_self_account_deletion()
+// die Reservierung rückgängig, aber NUR mit genau diesem Token.
+//
+// Reservierung ≠ is_active: is_active bleibt ausschließlich der
+// administrativen Deaktivierung vorbehalten (prepare/rollback fassen es nie
+// an) — die Reservierung läuft komplett über account_deletion_token /
+// account_deletion_reserved_at. Bricht diese Function irgendwo zwischen
+// erfolgreichem prepare() und deleteUser()/rollback() ab (Crash, Timeout,
+// Netzwerkfehler), bleibt eine "verwaiste" Reservierung zurück, die KEINE
+// Auswirkung auf den Login/die Nutzung des Kontos hat (is_active
+// unverändert) — sie blockiert lediglich, dass ein anderer Admin derselben
+// Firma sich zeitgleich löscht. public.recover_stale_account_deletion_
+// reservations() (nur service_role) räumt solche Reservierungen nach 15
+// Minuten automatisch ab; diese Function ruft sie best-effort vor jedem
+// neuen Löschversuch auf. Details:
+// supabase/migrations/20260723000001_account_deletion_reservation_tokens.sql
 
 type DeleteAccountErrorCode =
   | "unauthenticated"
   | "profile_not_found"
+  | "inactive_account"
   | "last_admin"
   | "prepare_failed"
   | "delete_failed"
@@ -129,14 +143,31 @@ Deno.serve(async (req) => {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
 
+    // Best effort: veraltete Reservierungen (Crash/Timeout eines früheren
+    // Löschversuchs, egal welcher Firma) vor diesem Versuch abräumen. Läuft
+    // über den Service-Role-Client, da nur service_role diese RPC ausführen
+    // darf. Ein Fehler hier ist nicht fatal für DIESEN Request — im
+    // schlimmsten Fall bleibt eine veraltete Fremd-Reservierung noch aktiv
+    // und der Aufrufer bekommt ggf. last_admin, obwohl der andere Admin
+    // eigentlich längst abgebrochen ist; das behebt der nächste Versuch.
+    const { error: recoverError } = await adminClient.rpc(
+      "recover_stale_account_deletion_reservations",
+    );
+
+    if (recoverError) {
+      console.error(
+        "delete-account: recover_stale_account_deletion_reservations failed",
+        { message: recoverError.message },
+      );
+    }
+
     // ── Schutz „letzter Admin" (atomar, RPC statt separates SELECT) ──
     // Über userClient aufrufen, NICHT adminClient: auth.uid() innerhalb der
     // RPC löst sich aus dem Authorization-Header dieses Requests auf — mit
     // dem Service-Role-Client wäre auth.uid() NULL. Für Mitarbeiter (und
     // Admins ohne Firma) ist dies ein no-op ohne Sperre, siehe RPC-Kommentar.
-    const { error: prepareError } = await userClient.rpc(
-      "prepare_self_account_deletion",
-    );
+    const { data: reservationToken, error: prepareError } =
+      await userClient.rpc("prepare_self_account_deletion");
 
     if (prepareError) {
       if (prepareError.message === "last_admin") {
@@ -147,6 +178,15 @@ Deno.serve(async (req) => {
             "Mitarbeiter und Auftragsdaten und löse die Firma auf, oder ernenne " +
             "einen weiteren Administrator.",
           409,
+        );
+      }
+
+      if (prepareError.message === "inactive_account") {
+        return errorResponse(
+          "inactive_account",
+          "Dein Konto ist deaktiviert. Bitte wende dich an deinen " +
+            "Administrator.",
+          403,
         );
       }
 
@@ -169,8 +209,11 @@ Deno.serve(async (req) => {
     );
 
     if (deleteError) {
-      // Reservierung (falls gesetzt) rückgängig machen — sonst bliebe ein
-      // Admin dauerhaft is_active=false, ohne dass sein Konto gelöscht wurde.
+      // Reservierung mit dem exakten Token rückgängig machen — sonst bliebe
+      // sie stehen, ohne dass das Konto gelöscht wurde (is_active ist davon
+      // nie betroffen, siehe Kommentar oben; recover_stale_... würde sie
+      // spätestens nach 15 Minuten ohnehin abräumen, aber der Rollback hier
+      // macht das sofort, statt auf das Zeitfenster zu warten).
       console.error("delete-account: deleteUser failed, rolling back", {
         userId: user.id,
         message: deleteError.message,
@@ -178,6 +221,7 @@ Deno.serve(async (req) => {
 
       const { error: rollbackError } = await userClient.rpc(
         "rollback_self_account_deletion",
+        { p_token: reservationToken },
       );
 
       if (rollbackError) {

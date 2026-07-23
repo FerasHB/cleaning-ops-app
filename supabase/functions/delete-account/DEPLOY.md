@@ -4,10 +4,21 @@ In-App-Kontolöschung (DSGVO / Google-Play-Account-Deletion-Policy). Der Nutzer
 löscht sein **eigenes** Konto über `Profil → Support → Konto löschen`
 (`app/delete-account.tsx` → `features/profile/DeleteAccountScreen.tsx`). Die
 Function entfernt den Auth-User mit dem Service-Role-Key; alle abhängigen Daten
-werden über die bestehenden Foreign Keys aufgelöst — es ist **keine SQL-Migration
-nötig**.
+werden über die bestehenden Foreign Keys aufgelöst.
 
-## Voraussetzung: keine Schema-Änderung
+## Migrationen (müssen vor dem Deploy angewendet sein)
+
+- `20260722000000_fix_job_photos_uploaded_by_on_delete.sql` +
+  `20260722000001_job_photos_uploaded_by_drop_not_null.sql` — FK-Drift-Fix,
+  siehe unten.
+- `20260723000001_account_deletion_reservation_tokens.sql` — legt
+  `profiles.account_deletion_token` / `account_deletion_reserved_at` an und
+  die drei RPCs für den Last-Admin-Schutz (`prepare_self_account_deletion`,
+  `rollback_self_account_deletion`, `recover_stale_account_deletion_
+  reservations`). Ohne diese Migration schlägt jeder Löschversuch fehl, da
+  die Function diese RPCs zwingend aufruft.
+
+## Foreign Keys
 
 `admin.deleteUser` löscht die `auth.users`-Zeile. Die vorhandenen FKs (siehe
 `lib/schema.sql`) erledigen den Rest:
@@ -46,13 +57,24 @@ gelöscht; die Firma bleibt unberührt. Mitarbeiter (`role = 'employee'`) könne
 sich jederzeit selbst löschen.
 
 Die Prüfung läuft **atomar** über die RPC `public.prepare_self_account_deletion()`
-(siehe `supabase/migrations/20260723000000_last_admin_deletion_reservation.sql`)
+(siehe `supabase/migrations/20260723000001_account_deletion_reservation_tokens.sql`)
 — ein reines SELECT-dann-`deleteUser()` ohne gemeinsame Transaktion würde
 zulassen, dass sich zwei Admins derselben Firma fast zeitgleich löschen und
 beide die Prüfung bestehen. Die RPC reserviert den Admin-Platz stattdessen
-vorab (`is_active=false`, committet vor `deleteUser()`); schlägt `deleteUser()`
-danach fehl, macht `public.rollback_self_account_deletion()` die Reservierung
-rückgängig.
+vorab über `account_deletion_token`/`account_deletion_reserved_at` (**nicht**
+über `is_active`, das ausschließlich der administrativen Deaktivierung
+vorbehalten bleibt) und gibt einen Reservierungs-Token zurück. Schlägt
+`deleteUser()` danach fehl, macht `public.rollback_self_account_deletion(token)`
+die Reservierung — nur mit exakt diesem Token — rückgängig. Bricht die
+Function irgendwo dazwischen ab (Crash/Timeout), bleibt eine "verwaiste"
+Reservierung ohne Auswirkung auf Login/Nutzung des Kontos zurück, die
+`public.recover_stale_account_deletion_reservations()` (nur `service_role`,
+wird best-effort vor jedem neuen Löschversuch aufgerufen) nach 15 Minuten
+automatisch abräumt.
+
+Ist der Aufrufer bereits administrativ deaktiviert (`is_active=false`), lehnt
+die RPC die Vorbereitung mit `code: "inactive_account"` ab — ein deaktiviertes
+Konto darf keine Löschung anstoßen.
 
 ## Sicherheit
 

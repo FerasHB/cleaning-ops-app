@@ -10,6 +10,7 @@ export type DeleteAccountResult =
 export type DeleteAccountErrorCode =
   | "unauthenticated"
   | "profile_not_found"
+  | "inactive_account"
   | "last_admin"
   | "prepare_failed"
   | "delete_failed"
