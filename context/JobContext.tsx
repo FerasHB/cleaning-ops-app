@@ -7,6 +7,7 @@ import {
   getEmployees as getEmployeesService,
   setEmployeeActive as setEmployeeActiveService,
   getJobs,
+  getScheduleOccurrences,
   startJob as startJobService,
   updateJob as updateJobService,
 } from "@/services/jobs/jobs.service";
@@ -74,6 +75,11 @@ type JobContextType = {
   // Markiert die Kommentare eines Jobs als gesehen (entfernt den roten Punkt).
   markJobCommentsAsRead: (jobId: string) => Promise<void>;
 
+  // Ungelesene Kommentare (gebündelt, unabhängig vom Ladefenster) — speist den
+  // Tab-Badge auch dann, wenn der betroffene Job nicht im Fenster liegt.
+  unreadJobIds: string[];
+  hasUnread: boolean;
+
   // ── Nur lesbare UI-State-Werte für die Save-Status-Anzeige ──
   // (keine neue Offline-Logik — nur sichtbar gemachte Queue-/Netz-Infos)
   online: boolean;
@@ -89,6 +95,36 @@ const JobContext = createContext<JobContextType | undefined>(undefined);
 async function isOnline(): Promise<boolean> {
   const state = await NetInfo.fetch();
   return !!state.isConnected;
+}
+
+// Admin-Ladefenster: statt der gesamten Firmen-Historie (unbeschränkt) lädt der
+// JobContext für Admins nur ein begrenztes Zeitfenster als Kompatibilitäts-Cache
+// (Tab-Badge + optimistische Mutationen). Die reichhaltigen Ansichten (Zeitplan/
+// Daueraufträge/Dashboard) laden ihre Daten selbst über eigene gebundene Queries.
+// Employees bleiben unverändert bei getJobs() (RLS begrenzt auf eigene Jobs).
+const ADMIN_WINDOW_DAYS_BACK = 30;
+const ADMIN_WINDOW_DAYS_FWD = 60;
+
+function toDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Lädt die Jobliste je nach Rolle: Admin → begrenztes Fenster (executable Jobs),
+// Employee → bestehende getJobs()-Logik (unverändert).
+async function loadJobsForRole(isAdmin: boolean): Promise<Job[]> {
+  if (!isAdmin) {
+    return getJobs();
+  }
+  const today = new Date();
+  const from = new Date(today);
+  from.setDate(from.getDate() - ADMIN_WINDOW_DAYS_BACK);
+  const to = new Date(today);
+  to.setDate(to.getDate() + ADMIN_WINDOW_DAYS_FWD);
+  return getScheduleOccurrences({
+    from: toDateKey(from),
+    to: toDateKey(to),
+    limit: 500,
+  });
 }
 
 function updateJobInList(
@@ -120,9 +156,13 @@ function mergeUnreadFlags(jobs: Job[], unreadJobIds: string[]): Job[] {
 }
 
 export function JobProvider({ children }: { children: React.ReactNode }) {
-  const { session } = useAuth();
+  const { session, role } = useAuth();
+  const isAdmin = role === "admin";
 
   const [jobs, setJobs] = useState<Job[]>([]);
+  // Ungelesene Kommentar-Job-IDs (gebündelt aus der RPC). Speist den Tab-Badge
+  // unabhängig vom (für Admins begrenzten) Ladefenster.
+  const [unreadJobIds, setUnreadJobIds] = useState<string[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -186,7 +226,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         if (__DEV__) {
           console.log("[Jobs] Quelle: remote");
         }
-        const serverJobs = await getJobs();
+        const serverJobs = await loadJobsForRole(isAdmin);
         await saveCachedJobs(serverJobs);
 
         const pendingActions = await getPendingJobActions();
@@ -197,9 +237,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
         // Ungelesene Kommentare best-effort dazumergen (online-only).
         // Schlägt das fehl, zeigen wir die Jobs trotzdem (ohne Punkt).
-        let unreadJobIds: string[] = [];
+        let freshUnreadIds: string[] = [];
         try {
-          unreadJobIds = await getUnreadCommentJobIds();
+          freshUnreadIds = await getUnreadCommentJobIds();
+          setUnreadJobIds(freshUnreadIds);
         } catch (unreadErr) {
           // Netzwerkfehler hier erwartbar (Verbindung verloren) → kein Redbox.
           if (!isNetworkError(unreadErr)) {
@@ -207,7 +248,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        setJobs(mergeUnreadFlags(mergedJobs, unreadJobIds));
+        setJobs(mergeUnreadFlags(mergedJobs, freshUnreadIds));
         return;
       }
 
@@ -252,7 +293,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       refreshJobsInProgressRef.current = false;
       await refreshPendingState();
     }
-  }, [refreshPendingState]);
+  }, [refreshPendingState, isAdmin]);
 
   const retrySync = useCallback(async () => {
     await runPendingSyncSafely();
@@ -296,6 +337,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!session) {
       setJobs([]);
+      setUnreadJobIds([]);
       setEmployees([]);
       setLoading(false);
       setError(null);
@@ -639,6 +681,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     setJobs((prevJobs) =>
       updateJobInList(prevJobs, jobId, { hasUnreadComments: false }),
     );
+    // Auch aus der gebündelten Unread-Liste entfernen (Tab-Badge).
+    setUnreadJobIds((prev) => prev.filter((id) => id !== jobId));
 
     try {
       await markJobCommentsAsReadService(jobId);
@@ -668,6 +712,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       startJob,
       completeJob,
       markJobCommentsAsRead,
+      unreadJobIds,
+      hasUnread: unreadJobIds.length > 0,
       online,
       pendingCount,
       pendingActions,
@@ -689,6 +735,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       startJob,
       completeJob,
       markJobCommentsAsRead,
+      unreadJobIds,
       online,
       pendingCount,
       pendingActions,
