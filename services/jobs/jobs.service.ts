@@ -150,6 +150,35 @@ function formatTimeRange(start: string | null, end: string | null): string {
   return `${formatDateTime(start!)} - ${formatDateTime(end!)}`;
 }
 
+// Zentrale Spaltenauswahl für Job-Abfragen (identisch zu den bestehenden
+// Inline-Selects). Wird von den neuen, gebündelten Zeitplan-/Regel-Queries
+// genutzt, damit das Mapping (mapJob) überall konsistent funktioniert.
+const JOB_SELECT = `
+  id,
+  customer_name,
+  service_name,
+  location_address,
+  scheduled_start,
+  scheduled_end,
+  status,
+  started_at,
+  completed_at,
+  notes,
+  job_type,
+  date,
+  start_time,
+  recurring_days,
+  is_active,
+  parent_job_id,
+  recurrence_start_date,
+  recurrence_end_date,
+  assigned_to,
+  profiles:assigned_to (
+    id,
+    full_name
+  )
+`;
+
 // Wandelt einen DB-Job in unser App-Job-Objekt um
 function mapJob(row: JobRow): Job {
   return {
@@ -793,4 +822,270 @@ export async function deleteJob(jobId: string): Promise<void> {
   if (error) {
     throw error;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Gebundene Abfragen für die Zeitplan-/Daueraufträge-Trennung (Admin).
+// Alle Queries laufen unter RLS (Firma/Rolle serverseitig erzwungen) und sind
+// bewusst nach oben begrenzt, damit die PostgREST-1000-Zeilen-Grenze die
+// Standard-Screens niemals abschneiden kann.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Sicherheitslimit für einzelne Zeitplan-Abfragen (deutlich unter 1000).
+const SCHEDULE_PAGE_SIZE = 200;
+
+// Direktes Laden EINES Jobs per ID (Cache-Miss-Fallback für JobDetail/Edit).
+// RLS entscheidet über Sichtbarkeit: fremde Firma oder (für Employees) fremder
+// Job → kein Datensatz → null. Kein Fehler, damit die UI sauber „nicht
+// gefunden" anzeigen kann.
+export async function getJobById(jobId: string): Promise<Job | null> {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select(JOB_SELECT)
+    .eq("id", jobId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  if (!data) return null;
+  return mapJob(data as JobRow);
+}
+
+// Executable Jobs (single-Jobs UND generierte Occurrences) in einem
+// begrenzten Datumsfenster. Recurring-Parent-Regeln sind per job_type='single'
+// grundsätzlich ausgeschlossen (Parents sind die einzigen 'recurring'-Zeilen).
+export type ScheduleRangeParams = {
+  from: string; // "YYYY-MM-DD" inklusiv
+  to: string; // "YYYY-MM-DD" inklusiv
+  statuses?: ("open" | "in_progress" | "completed")[];
+  limit?: number;
+};
+
+export async function getScheduleOccurrences(
+  params: ScheduleRangeParams,
+): Promise<Job[]> {
+  let query = supabase
+    .from("jobs")
+    .select(JOB_SELECT)
+    .eq("job_type", "single")
+    .gte("date", params.from)
+    .lte("date", params.to);
+
+  if (params.statuses && params.statuses.length > 0) {
+    query = query.in("status", params.statuses);
+  }
+
+  const { data, error } = await query
+    .order("date", { ascending: true })
+    .order("start_time", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(params.limit ?? SCHEDULE_PAGE_SIZE);
+
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((row) => mapJob(row as JobRow));
+}
+
+// Überfällige executable Jobs: offen/in Arbeit mit Datum vor heute.
+// Nach Datum absteigend (jüngste zuerst), begrenzt.
+export async function getOverdueOccurrences(
+  todayKey: string,
+  limit: number = SCHEDULE_PAGE_SIZE,
+): Promise<Job[]> {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select(JOB_SELECT)
+    .eq("job_type", "single")
+    .in("status", ["open", "in_progress"])
+    .lt("date", todayKey)
+    .order("date", { ascending: false })
+    .order("start_time", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((row) => mapJob(row as JobRow));
+}
+
+// Erledigte executable Jobs, nach Abschlusszeit absteigend, keyset-fähig
+// (before = ISO-Zeitstempel; lädt ältere Seiten). Begrenzt.
+export async function getCompletedOccurrences(
+  before?: string,
+  limit: number = SCHEDULE_PAGE_SIZE,
+): Promise<Job[]> {
+  let query = supabase
+    .from("jobs")
+    .select(JOB_SELECT)
+    .eq("job_type", "single")
+    .eq("status", "completed")
+    .not("completed_at", "is", null);
+
+  if (before) {
+    query = query.lt("completed_at", before);
+  }
+
+  const { data, error } = await query
+    .order("completed_at", { ascending: false })
+    .order("id", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((row) => mapJob(row as JobRow));
+}
+
+// Nur die Parent-Regeln (Daueraufträge): recurring UND parent_job_id IS NULL.
+// Occurrences sind hier grundsätzlich ausgeschlossen. Wenige Zeilen pro Firma.
+export async function getRecurringRules(): Promise<Job[]> {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select(JOB_SELECT)
+    .eq("job_type", "recurring")
+    .is("parent_job_id", null)
+    .order("customer_name", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(SCHEDULE_PAGE_SIZE);
+
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((row) => mapJob(row as JobRow));
+}
+
+// Zusammenfassung der Occurrences je Regel (nächster Termin + „hat Termine?")
+// für die Regel-Gesundheit. EINE gebündelte, fenster-begrenzte Query über die
+// nahe Zukunft aller übergebenen Regel-IDs (statt N Einzelabfragen).
+export type RuleOccurrenceSummaryRow = {
+  parentJobId: string;
+  nextOccurrenceDate: string | null;
+  hasOccurrences: boolean;
+};
+
+export async function getUpcomingOccurrenceSummaries(
+  ruleIds: string[],
+  todayKey: string,
+  horizonDays: number = 120,
+): Promise<Map<string, RuleOccurrenceSummaryRow>> {
+  const result = new Map<string, RuleOccurrenceSummaryRow>();
+  if (ruleIds.length === 0) return result;
+
+  // Vorbelegen: standardmäßig „keine Termine" (überschrieben, sobald gefunden).
+  for (const id of ruleIds) {
+    result.set(id, {
+      parentJobId: id,
+      nextOccurrenceDate: null,
+      hasOccurrences: false,
+    });
+  }
+
+  const to = new Date(todayKey);
+  to.setDate(to.getDate() + horizonDays);
+  const toKey = `${to.getFullYear()}-${String(to.getMonth() + 1).padStart(2, "0")}-${String(to.getDate()).padStart(2, "0")}`;
+
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("parent_job_id, date")
+    .in("parent_job_id", ruleIds)
+    .gte("date", todayKey)
+    .lte("date", toKey)
+    .order("date", { ascending: true })
+    .limit(1000);
+
+  if (error) {
+    throw error;
+  }
+
+  for (const row of (data ?? []) as { parent_job_id: string; date: string | null }[]) {
+    const pid = row.parent_job_id;
+    if (!pid) continue;
+    const entry = result.get(pid);
+    if (!entry) continue;
+    entry.hasOccurrences = true;
+    // Da nach date aufsteigend sortiert, ist der erste Treffer der nächste Termin.
+    if (entry.nextOccurrenceDate === null && row.date) {
+      entry.nextOccurrenceDate = row.date.slice(0, 10);
+    }
+  }
+
+  return result;
+}
+
+// Serverseitige, gebündelte KPI-Zähler für das Admin-Dashboard.
+// Gibt AUSSCHLIESSLICH Zahlen zurück (count/head) — es werden nie Zeilen
+// übertragen, daher unabhängig von der 1000-Zeilen-Grenze. Recurring-Parents
+// sind über job_type='single' immer ausgeschlossen.
+export type ScheduleKpis = {
+  heute: number;
+  offen: number;
+  inArbeit: number;
+  erledigt: number;
+  ueberfaellig: number;
+};
+
+async function countJobs(
+  build: (q: any) => any,
+): Promise<number> {
+  const base = supabase
+    .from("jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("job_type", "single");
+  const { count, error } = await build(base);
+  if (error) {
+    throw error;
+  }
+  return count ?? 0;
+}
+
+// Dauerauftrag (de)aktivieren: setzt is_active auf der Parent-Regel und
+// synchronisiert die zukünftigen Occurrences NICHT-destruktiv über die
+// bereits deployte update_job_occurrences (prune/sync/generate). Läuft unter
+// der Admin-RLS-Policy „admin update jobs in own company".
+export async function setRecurringRuleActive(
+  ruleId: string,
+  active: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from("jobs")
+    .update({ is_active: active })
+    .eq("id", ruleId)
+    .eq("job_type", "recurring")
+    .is("parent_job_id", null);
+
+  if (error) {
+    throw error;
+  }
+
+  // Occurrences angleichen (best-effort; die Regeländerung ist bereits
+  // gespeichert). Fehler hier blockieren den Toggle nicht.
+  const { error: rpcError } = await supabase.rpc("update_job_occurrences", {
+    parent_job_id_input: ruleId,
+  });
+  if (rpcError) {
+    console.error(
+      "[setRecurringRuleActive] update_job_occurrences fehlgeschlagen:",
+      rpcError.message,
+    );
+  }
+}
+
+export async function getScheduleKpis(todayKey: string): Promise<ScheduleKpis> {
+  const [heute, offen, inArbeit, erledigt, ueberfaellig] = await Promise.all([
+    // Heute fällig: executable Jobs mit Datum = heute
+    countJobs((q) => q.eq("date", todayKey)),
+    // Offen: offene executable Jobs (heute + Zukunft, ohne überfällige Altlasten)
+    countJobs((q) => q.eq("status", "open").gte("date", todayKey)),
+    // In Arbeit: laufende executable Jobs
+    countJobs((q) => q.eq("status", "in_progress")),
+    // Erledigt: abgeschlossene executable Jobs (Gesamtzahl)
+    countJobs((q) => q.eq("status", "completed")),
+    // Überfällig: offen/in Arbeit mit Datum vor heute
+    countJobs((q) => q.in("status", ["open", "in_progress"]).lt("date", todayKey)),
+  ]);
+
+  return { heute, offen, inArbeit, erledigt, ueberfaellig };
 }
