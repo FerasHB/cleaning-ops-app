@@ -43,6 +43,13 @@ type Props = {
    * Admin-Listen lassen das Prop weg → keine Hinweise.
    */
   dueToday?: boolean;
+  /**
+   * Abweichender Termin: diese Occurrence passt nach einer Regeländerung nicht
+   * mehr zur aktuellen Dauerauftrags-Regel, wurde aber wegen Historie bewahrt
+   * (PR #43). Zeigt ein dezentes „Abweichender Termin"-Badge. Historische
+   * Daten bleiben unverändert.
+   */
+  detached?: boolean;
 };
 
 // ─────────────────────────────────────────────
@@ -117,6 +124,7 @@ export default function JobCard({
   onComplete,
   showEmployeeName = false,
   dueToday = false,
+  detached = false,
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -244,6 +252,18 @@ export default function JobCard({
           ) : null}
         </View>
       </View>
+
+      {/* ── Abweichender Termin (dezent) ── */}
+      {detached ? (
+        <View style={styles.detachedChip}>
+          <Ionicons
+            name="git-branch-outline"
+            size={11}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <Text style={styles.detachedChipText}>Abweichender Termin</Text>
+        </View>
+      ) : null}
 
       {/* ── Service · Ort (eine Zeile) ── */}
       {subline ? (
@@ -420,6 +440,27 @@ function createStyles(theme: AppTheme) {
       fontWeight: theme.typography.weight.semibold,
       color: theme.colors.primary,
       letterSpacing: theme.typography.letterSpacing.wide,
+    },
+
+    // Abweichender Termin: bewusst dezent (neutrale Outline, kein Alarm)
+    detachedChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      gap: 4,
+      marginTop: 6,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      backgroundColor: theme.colors.surfaceContainerHigh,
+    },
+    detachedChipText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
     },
 
     // Subline: Service · Ort
