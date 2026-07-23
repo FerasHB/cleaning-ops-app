@@ -6,7 +6,11 @@ export type JobPhoto = {
   id: string;
   jobId: string;
   companyId: string;
-  uploadedBy: string;
+  // uploaded_by ist nullable + on delete set null: verlässt der Uploader
+  // die Firma / löscht sein Konto, bleibt das Foto als Nachweis erhalten,
+  // ist danach aber nicht mehr mit einem Konto verknüpft (siehe
+  // supabase/migrations/20260722000000_fix_job_photos_uploaded_by_on_delete.sql).
+  uploadedBy: string | null;
   storagePath: string;
   fileName: string;
   fileSize: number | null;

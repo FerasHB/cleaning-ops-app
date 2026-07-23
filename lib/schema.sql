@@ -66,6 +66,12 @@ create table if not exists public.profiles (
   -- Migrations-Backfill bereits als akzeptiert markiert.
   invited_at timestamptz,
   invite_accepted_at timestamptz,
+  -- Selbstlöschungs-Reservierung (siehe 20260723000001_account_deletion_
+  -- reservation_tokens.sql): NULL = keine laufende Löschung. Getrennt von
+  -- is_active, das ausschließlich der administrativen Deaktivierung
+  -- vorbehalten bleibt.
+  account_deletion_token uuid,
+  account_deletion_reserved_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -333,6 +339,161 @@ revoke all on function public.current_user_company_id() from public;
 
 grant execute on function public.current_user_role() to authenticated;
 grant execute on function public.current_user_company_id() to authenticated;
+
+-- =========================================================
+-- RPC: KONTOLÖSCHUNG — LAST-ADMIN-RESERVIERUNG (Token-basiert, v2)
+-- =========================================================
+-- Siehe supabase/migrations/20260723000001_account_deletion_reservation_tokens.sql
+-- für die ausführliche Begründung. Kurzfassung: eine frühere Version nutzte
+-- is_active=false selbst als Reservierungs-Marker — das hatte zwei Probleme:
+-- (1) kein Recovery, falls die Edge Function zwischen Reservierung und
+-- deleteUser()/Rollback abstürzt, das Konto bliebe dauerhaft is_active=false;
+-- (2) is_active hätte damit zwei Bedeutungen geteilt (administrative
+-- Deaktivierung vs. Lösch-Reservierung) — rollback_self_account_deletion()
+-- hätte so ein administrativ deaktiviertes Konto reaktivieren können.
+--
+-- Diese Version trennt beides: is_active bleibt ausschließlich der
+-- administrativen Deaktivierung vorbehalten. Die Reservierung läuft über
+-- account_deletion_token/account_deletion_reserved_at + einen von der Edge
+-- Function verwalteten Zufalls-Token; recover_stale_account_deletion_
+-- reservations() räumt veraltete Reservierungen unabhängig von is_active ab.
+create or replace function public.prepare_self_account_deletion()
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_caller uuid := auth.uid();
+  v_role text;
+  v_company_id uuid;
+  v_is_active boolean;
+  v_other_available_admins int;
+  v_token uuid;
+begin
+  if v_caller is null then
+    raise exception 'unauthenticated';
+  end if;
+
+  select role, company_id, is_active
+    into v_role, v_company_id, v_is_active
+  from public.profiles
+  where id = v_caller;
+
+  if not found then
+    raise exception 'profile_not_found';
+  end if;
+
+  if v_is_active is distinct from true then
+    raise exception 'inactive_account';
+  end if;
+
+  if v_role <> 'admin' or v_company_id is null then
+    v_token := gen_random_uuid();
+    update public.profiles
+       set account_deletion_token = v_token,
+           account_deletion_reserved_at = now()
+     where id = v_caller;
+    return v_token;
+  end if;
+
+  perform 1
+  from public.profiles
+  where company_id = v_company_id
+    and role = 'admin'
+  order by id
+  for update;
+
+  select count(*)
+    into v_other_available_admins
+  from public.profiles
+  where company_id = v_company_id
+    and role = 'admin'
+    and is_active = true
+    and account_deletion_token is null
+    and id <> v_caller;
+
+  if v_other_available_admins = 0 then
+    raise exception 'last_admin';
+  end if;
+
+  v_token := gen_random_uuid();
+  update public.profiles
+     set account_deletion_token = v_token,
+         account_deletion_reserved_at = now()
+   where id = v_caller;
+
+  return v_token;
+end;
+$$;
+
+revoke all on function public.prepare_self_account_deletion() from public, anon;
+grant execute on function public.prepare_self_account_deletion() to authenticated;
+
+-- Macht die Reservierung nur rückgängig, wenn der übergebene Token exakt
+-- passt. Fasst is_active nie an — kann daher nie ein administrativ
+-- deaktiviertes Konto reaktivieren.
+create or replace function public.rollback_self_account_deletion(p_token uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_caller uuid := auth.uid();
+  v_rows int;
+begin
+  if v_caller is null then
+    raise exception 'unauthenticated';
+  end if;
+
+  if p_token is null then
+    raise exception 'reservation_not_found';
+  end if;
+
+  update public.profiles
+     set account_deletion_token = null,
+         account_deletion_reserved_at = null
+   where id = v_caller
+     and account_deletion_token = p_token;
+
+  get diagnostics v_rows = row_count;
+
+  if v_rows = 0 then
+    raise exception 'reservation_not_found';
+  end if;
+end;
+$$;
+
+revoke all on function public.rollback_self_account_deletion(uuid) from public, anon;
+grant execute on function public.rollback_self_account_deletion(uuid) to authenticated;
+
+-- Räumt Reservierungen ab, die älter als 15 Minuten sind (Crash-/Timeout-
+-- Recovery). Nur service_role darf sie aufrufen — kein SECURITY DEFINER
+-- nötig, service_role umgeht RLS bereits über die eigene Rolle. Aktuell
+-- ausgelöst durch die Edge Function (best effort vor jedem neuen
+-- Löschversuch), kein Cron aktiv.
+create or replace function public.recover_stale_account_deletion_reservations()
+returns int
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_rows int;
+begin
+  update public.profiles
+     set account_deletion_token = null,
+         account_deletion_reserved_at = null
+   where account_deletion_reserved_at is not null
+     and account_deletion_reserved_at < now() - interval '15 minutes';
+
+  get diagnostics v_rows = row_count;
+  return v_rows;
+end;
+$$;
+
+revoke all on function public.recover_stale_account_deletion_reservations() from public, anon, authenticated;
+grant execute on function public.recover_stale_account_deletion_reservations() to service_role;
 
 -- =========================================================
 -- RPC: SETUP COMPANY FOR ADMIN
