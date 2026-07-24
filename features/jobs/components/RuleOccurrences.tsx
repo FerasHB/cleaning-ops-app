@@ -7,16 +7,21 @@
 // Die Frage „läuft die Regel und was kommt als Nächstes?" war damit unter
 // Historie begraben.
 //
-// Jetzt: kommende Termine zuerst (nächster oben), Vergangenes eingeklappt.
+// Jetzt: kommende Termine zuerst (nächster oben) in einem eigenen, in der
+// Höhe begrenzten Scrollbereich — wie in einer Kalender-App direkt sichtbar
+// und scrollbar, ohne „Mehr anzeigen"-Zwischenschritt. Vergangenes bleibt
+// eingeklappt.
 //
 // SKALIERUNG — bewusst KEINE FlatList: diese Karte hängt im vertikalen
-// ScrollView des JobDetailScreen; eine gleichachsige VirtualizedList darin
-// verliert ihre Virtualisierung (RN-Warnung „VirtualizedLists should never
-// be nested inside plain ScrollViews with the same orientation") und würde
-// zusätzlich das Keyboard-Handling der Kommentare stören. Stattdessen
-// begrenzte Seiten: initial 5 kommende Termine, Vergangenes eingeklappt,
-// danach je 10 weitere pro Tipp. Gerendert wird also immer nur, was der
-// Nutzer explizit angefordert hat — nie hunderte Zeilen auf einmal.
+// ScrollView des JobDetailScreen. Eine gleichachsige, scrollbare
+// VirtualizedList darin meldet in __DEV__ zuverlässig
+// `console.error("VirtualizedLists should never be nested inside plain
+// ScrollViews with the same orientation …")` — auch mit fester Höhe, denn
+// die Prüfung in VirtualizedList kennt nur ScrollView-Context + Orientierung
+// (react-native/…/VirtualizedList.js). Die kommenden Termine sind durch den
+// rollierenden Generierungs-Horizont ohnehin begrenzt (~90 Tage) und liegen
+// bereits vollständig im Speicher, deshalb reicht hier ein ScrollView mit
+// maxHeight. Die unbegrenzt wachsende Historie bleibt seitenweise.
 
 import { StatusBadge } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
@@ -25,11 +30,24 @@ import type { Job } from "@/types/job";
 import { formatDateISO } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-const INITIAL_UPCOMING = 5;
 const INITIAL_PAST = 5;
 const PAGE_SIZE = 10;
+
+// Höhe des Scrollbereichs für kommende Termine: gut 4 Zeilen — genug, damit
+// die Liste als eigener Bereich erkennbar ist und scrollbar wirkt, ohne die
+// darunterliegenden Abschnitte (Vergangenes, Fotos, Kommentare) zu verdrängen.
+// maxHeight statt height: kurze Listen bleiben in ihrer natürlichen Höhe und
+// zeigen dann gar keinen Scrollbalken.
+const UPCOMING_MAX_HEIGHT = 360;
 
 const WEEKDAY_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
@@ -54,7 +72,6 @@ export function RuleOccurrences({ occurrences, loading, onOpen }: Props) {
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
 
-  const [upcomingLimit, setUpcomingLimit] = useState(INITIAL_UPCOMING);
   const [pastOpen, setPastOpen] = useState(false);
   const [pastLimit, setPastLimit] = useState(INITIAL_PAST);
 
@@ -73,9 +90,7 @@ export function RuleOccurrences({ occurrences, loading, onOpen }: Props) {
     return { upcoming: up, past: old };
   }, [occurrences, todayKey]);
 
-  const visibleUpcoming = upcoming.slice(0, upcomingLimit);
   const visiblePast = pastOpen ? past.slice(0, pastLimit) : [];
-  const moreUpcoming = upcoming.length - visibleUpcoming.length;
   const morePast = past.length - visiblePast.length;
 
   return (
@@ -103,32 +118,34 @@ export function RuleOccurrences({ occurrences, loading, onOpen }: Props) {
             Kommende Termine ({upcoming.length})
           </Text>
 
-          {visibleUpcoming.length === 0 ? (
+          {upcoming.length === 0 ? (
             <Text style={styles.emptyText}>
               Keine kommenden Termine im generierten Zeitraum.
             </Text>
           ) : (
-            visibleUpcoming.map((occ) => (
-              <OccurrenceRow
-                key={occ.id}
-                occurrence={occ}
-                isToday={(occ.date?.slice(0, 10) ?? "") === todayKey}
-                past={false}
-                onPress={() => onOpen(occ)}
-                styles={styles}
-                theme={theme}
-              />
-            ))
+            // Eigener Scrollbereich: alle kommenden Termine sind sofort da,
+            // gescrollt wird direkt in der Liste. `nestedScrollEnabled` ist
+            // auf Android nötig, damit die innere Liste die Geste bekommt;
+            // iOS macht das von Haus aus. Die Seite darum scrollt weiter
+            // normal, sobald der innere Bereich am Ende ist.
+            <ScrollView
+              style={styles.upcomingScroll}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+              {upcoming.map((occ) => (
+                <OccurrenceRow
+                  key={occ.id}
+                  occurrence={occ}
+                  isToday={(occ.date?.slice(0, 10) ?? "") === todayKey}
+                  past={false}
+                  onPress={() => onOpen(occ)}
+                  styles={styles}
+                  theme={theme}
+                />
+              ))}
+            </ScrollView>
           )}
-
-          {moreUpcoming > 0 ? (
-            <MoreButton
-              label={`Mehr anzeigen (${moreUpcoming} weitere)`}
-              onPress={() => setUpcomingLimit((n) => n + PAGE_SIZE)}
-              styles={styles}
-              theme={theme}
-            />
-          ) : null}
 
           {/* ── Vergangene Termine (eingeklappt) ── */}
           {past.length > 0 ? (
@@ -304,6 +321,12 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurfaceVariant,
       paddingVertical: 4,
+    },
+    // flexGrow: 0 verhindert, dass der ScrollView bei wenigen Zeilen auf die
+    // maxHeight aufgeblasen wird — kurze Listen bleiben kompakt.
+    upcomingScroll: {
+      maxHeight: UPCOMING_MAX_HEIGHT,
+      flexGrow: 0,
     },
 
     row: {
