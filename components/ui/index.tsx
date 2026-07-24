@@ -27,6 +27,8 @@ import type { AppTheme } from "@/constants/theme";
 // Re-Exports: Neue Komponenten aus eigenen Dateien
 // ─────────────────────────────────────────────
 export { ScreenContainer } from "./ScreenContainer";
+export { ActionMenuSheet } from "./ActionMenuSheet";
+export type { ActionMenuItem } from "./ActionMenuSheet";
 export { AppHeader } from "./AppHeader";
 export { StatusBadge } from "./StatusBadge";
 export { SkeletonCard } from "./SkeletonCard";
