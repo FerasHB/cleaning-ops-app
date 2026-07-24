@@ -10,6 +10,10 @@
 // Datenquelle: eigene gebundene Queries (getRecurringRules +
 // getUpcomingOccurrenceSummaries), NICHT das volle JobContext-Array.
 //
+// Lädt bei jedem Fokussieren neu (useFocusEffect), nicht nur beim Mounten —
+// app/jobs/[id]/edit ist ein eigener Root-Stack-Screen, der diesen Screen
+// beim Zurücknavigieren NICHT neu mountet (siehe Kommentar bei `load`).
+//
 // Verwaltungsansicht statt operativer Zeitplan: bewusst KEINE permanenten
 // Status-/Mitarbeiter-Chip-Reihen (siehe Zeitplan). Stattdessen ein
 // Suchfeld + ein kompakter Filter-Button (Sliders-Icon), der ein
@@ -46,8 +50,9 @@ import {
   type RuleFilters,
 } from "@/utils/recurringRuleFilter";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -102,7 +107,14 @@ export default function AdminRecurringRulesScreen() {
     return map;
   }, [employees]);
 
+  // Verhindert überlappende Fetches (z. B. Fokus-Rückkehr UND ein noch
+  // laufender Pull-to-Refresh treffen fast gleichzeitig ein) — gleiches
+  // Muster wie loadInProgress im Zeitplan (AdminScheduleScreen).
+  const loadInProgressRef = useRef(false);
+
   const load = useCallback(async (isRefresh = false) => {
+    if (loadInProgressRef.current) return;
+    loadInProgressRef.current = true;
     if (!isRefresh) setLoading(true);
     setError(null);
     try {
@@ -116,14 +128,33 @@ export default function AdminRecurringRulesScreen() {
     } catch (err: any) {
       setError(err?.message ?? "Daueraufträge konnten nicht geladen werden.");
     } finally {
+      loadInProgressRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
   }, [todayKey]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // BUGFIX: `app/jobs/[id]/edit` ist ein eigener Root-Stack-Screen (siehe
+  // app/_layout.tsx), kein verschachtelter Tab-Screen — er wird ÜBER
+  // (admin-tabs) gepusht, ohne diesen Screen zu unmounten. Ein reiner
+  // Mount-Effect (früher: `useEffect(() => { load(); }, [load])`) feuert
+  // beim Zurücknavigieren daher NIE erneut, und ohne Realtime-Abo auf
+  // Parent-Regel-Änderungen blieb `rules` nach einer Bearbeitung dauerhaft
+  // veraltet — sichtbar wurde die bereits gespeicherte Änderung bislang nur
+  // zufällig über (De-)Aktivieren, weil das der einzige Code-Pfad war, der
+  // `load(true)` explizit erneut aufrief.
+  //
+  // Fix: `useFocusEffect` lädt bei JEDEM Fokussieren neu — beim ersten Mal
+  // mit vollem Spinner (Liste ist noch leer), danach still im Hintergrund
+  // (isRefresh=true, sichtbar über den bestehenden RefreshControl). Suche
+  // und Filter sind unabhängiger State und bleiben davon unberührt.
+  const hasLoadedOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      load(hasLoadedOnceRef.current);
+      hasLoadedOnceRef.current = true;
+    }, [load]),
+  );
 
   const handleToggleActive = useCallback(
     async (rule: Job) => {

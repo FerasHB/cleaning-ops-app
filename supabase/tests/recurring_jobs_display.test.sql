@@ -145,6 +145,50 @@ values
    'c2000000-0000-0000-0000-000000000003','Fremdkunde','Glas','Fremdweg 1',
    'open','single', current_date, '10:00', true);
 
+-- Isolierte Fixtures für die Regel-Bearbeitungs-Regression (Präfix d…) UNTER
+-- FIRMA B: damit sie unter RLS für Admin A (der Cases 1-32 ausführt) UNSICHTBAR
+-- bleiben und keine der bestehenden Zähl-Assertions (Bevorstehend/Erledigt/
+-- KPIs/Regel-Anzahl) verfälschen. Als postgres angelegt (kein RLS-Einfluss).
+-- Kein Mitarbeiter zugewiesen (Firma B hat nur einen Admin) — für diesen
+-- Test irrelevant, es geht ausschließlich um Kunde/Service-Synchronisierung.
+do $$
+declare
+  d_future date := current_date + 10;
+  wd_future text;
+begin
+  wd_future := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from d_future)::int + 1];
+
+  insert into public.jobs
+    (id, company_id, created_by, customer_name, service_name, location_address,
+     status, job_type, recurring_days, start_time, is_active)
+  values
+    ('d3000000-0000-0000-0000-000000000001','c1000000-0000-0000-0000-000000000002',
+     'c2000000-0000-0000-0000-000000000003',
+     'Bug Regel Alt','Alt Service','Bugweg 1',
+     'open','recurring', array[wd_future]::text[], '07:00', true);
+
+  insert into public.jobs
+    (id, company_id, parent_job_id, created_by, customer_name, service_name,
+     location_address, status, job_type, date, start_time, is_active, started_at, completed_at)
+  values
+    -- passende Zukunfts-Occurrence: muss vom SYNC-Schritt aktualisiert werden
+    ('d4000000-0000-0000-0000-000000000001','c1000000-0000-0000-0000-000000000002',
+     'd3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000003',
+     'Bug Regel Alt','Alt Service','Bugweg 1',
+     'open','single', d_future, '07:00', true, null, null),
+    -- geschützte, abgeschlossene Occurrence: darf NICHT verändert werden
+    ('d4000000-0000-0000-0000-000000000002','c1000000-0000-0000-0000-000000000002',
+     'd3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000003',
+     'Bug Regel Alt','Alt Service','Bugweg 1',
+     'completed','single', current_date - 5, '07:00', true,
+     timestamptz '2026-07-18 07:02:00+00', timestamptz '2026-07-18 09:00:00+00');
+
+  insert into public.job_comments (id, company_id, job_id, author_id, message)
+  values ('d5000000-0000-0000-0000-000000000001','c1000000-0000-0000-0000-000000000002',
+          'd4000000-0000-0000-0000-000000000002','c2000000-0000-0000-0000-000000000003',
+          'Vor der Regeländerung erledigt.');
+end $$;
+
 create temporary table _disp_results (case_no int, beschreibung text, erwartet text, ergebnis text) on commit drop;
 -- Der Ergebnis-Sammler muss auch beschreibbar sein, während wir per
 -- SET ROLE authenticated die RLS-Sicht eines Nutzers einnehmen.
@@ -383,6 +427,66 @@ begin
   select count(*) into n from public.jobs
    where job_type='single' and date = today;
   insert into _disp_results values (32,'Leere Suche filtert nicht (heute)','2', n::text);
+
+  -- ── Regression: Regel-Bearbeitung muss sofort sichtbar sein ──────────
+  -- Bildet exakt den Schreibpfad von services/jobs/jobs.service.ts
+  -- updateJob() nach: (1) direktes UPDATE der Parent-Zeile, (2) Aufruf der
+  -- nicht-destruktiven RPC update_job_occurrences (PR #43). Danach wird
+  -- GENAU die Query nachgestellt, die getRecurringRules() (und damit
+  -- AdminRecurringRulesScreen) ausführt — beweist, dass ein einfaches
+  -- Neu-Abfragen (kein Workaround) die aktualisierten Werte sofort liefert.
+  -- Fixtures (Präfix d…) wurden bereits oben als postgres angelegt (Firma B).
+  -- Als Admin B agieren (Regel gehört zu Firma B) — vorher noch als Admin A
+  -- aktiv (Cases 1-32), daher expliziter Rollenwechsel.
+  perform pg_temp.as_admin_b();
+  execute 'set local role authenticated';
+
+  -- Schritt 1: direktes UPDATE der Parent-Zeile (wie updateJob() Teil 1)
+  update public.jobs
+     set customer_name='Bug Regel Neu', service_name='Neu Service'
+   where id='d3000000-0000-0000-0000-000000000001';
+
+  -- CASE 33: DB-Schreibung ist SOFORT sichtbar (keine Verzögerung serverseitig
+  -- — die Verzögerung im gemeldeten Bug war rein clientseitig).
+  insert into _disp_results
+  select 33,'Parent-UPDATE sofort persistiert (kein Commit-Delay)','Bug Regel Neu',
+    (select customer_name from public.jobs where id='d3000000-0000-0000-0000-000000000001');
+
+  -- Schritt 2: nicht-destruktive Occurrence-Synchronisierung (wie updateJob() Teil 2)
+  perform public.update_job_occurrences('d3000000-0000-0000-0000-000000000001');
+
+  execute 'reset role';
+
+  -- CASE 34: exakt die Query von getRecurringRules() (job_type='recurring'
+  -- AND parent_job_id IS NULL) liefert beim einfachen Neu-Abfragen sofort
+  -- den neuen Namen — genau das, was jetzt bei jedem Fokussieren passiert.
+  insert into _disp_results
+  select 34,'getRecurringRules()-Query liefert neuen Namen ohne Workaround','Bug Regel Neu',
+    (select customer_name from public.jobs
+      where job_type='recurring' and parent_job_id is null
+        and id='d3000000-0000-0000-0000-000000000001');
+
+  -- CASE 35: passende Zukunfts-Occurrence wurde synchronisiert (SYNC-Schritt)
+  insert into _disp_results
+  select 35,'Passende Zukunfts-Occurrence übernimmt neue Werte','Bug Regel Neu',
+    (select customer_name from public.jobs where id='d4000000-0000-0000-0000-000000000001');
+
+  -- CASE 36: geschützte, abgeschlossene Occurrence bleibt UNVERÄNDERT
+  insert into _disp_results
+  select 36,'Geschützte completed Occurrence bleibt bei alten Werten','Bug Regel Alt',
+    (select customer_name from public.jobs where id='d4000000-0000-0000-0000-000000000002');
+
+  -- CASE 37: kein Kommentarverlust an der geschützten Occurrence
+  insert into _disp_results values (37,'Kommentar an geschützter Occurrence erhalten','1',
+    (select count(*)::text from public.job_comments where id='d5000000-0000-0000-0000-000000000001'));
+
+  -- CASE 38: keine doppelten (parent_job_id, date, start_time)-Zeilen
+  insert into _disp_results values (38,'Keine Duplikate nach Regel-Update','0',
+    (select count(*)::text from (
+       select date, start_time from public.jobs
+        where parent_job_id='d3000000-0000-0000-0000-000000000001'
+        group by date, start_time having count(*) > 1
+     ) dup));
 
   execute 'reset role';
 
