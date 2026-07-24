@@ -13,10 +13,11 @@
 // ScrollView des JobDetailScreen; eine gleichachsige VirtualizedList darin
 // verliert ihre Virtualisierung (RN-Warnung „VirtualizedLists should never
 // be nested inside plain ScrollViews with the same orientation") und würde
-// zusätzlich das Keyboard-Handling der Kommentare stören. Stattdessen
-// begrenzte Seiten: initial 5 kommende Termine, Vergangenes eingeklappt,
-// danach je 10 weitere pro Tipp. Gerendert wird also immer nur, was der
-// Nutzer explizit angefordert hat — nie hunderte Zeilen auf einmal.
+// zusätzlich das Keyboard-Handling der Kommentare stören. Stattdessen wird
+// begrenzt gerendert: initial 5 kommende Termine (auf-/zuklappbar), das
+// Vergangene ist eingeklappt und lädt je 10 weitere pro Tipp nach. Gerendert
+// wird also immer nur, was der Nutzer angefordert hat — die dauerhaft
+// wachsende Historie nie auf einmal.
 
 import { StatusBadge } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
@@ -54,7 +55,10 @@ export function RuleOccurrences({ occurrences, loading, onOpen }: Props) {
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
 
-  const [upcomingLimit, setUpcomingLimit] = useState(INITIAL_UPCOMING);
+  // Kommende Termine: zwei Zustände (5 oder alle) statt schrittweisem
+  // Nachladen — nur so lässt sich die Liste auch wieder einklappen.
+  // Die Menge ist durch den rollierenden Generierungs-Horizont begrenzt.
+  const [upcomingExpanded, setUpcomingExpanded] = useState(false);
   const [pastOpen, setPastOpen] = useState(false);
   const [pastLimit, setPastLimit] = useState(INITIAL_PAST);
 
@@ -73,9 +77,11 @@ export function RuleOccurrences({ occurrences, loading, onOpen }: Props) {
     return { upcoming: up, past: old };
   }, [occurrences, todayKey]);
 
-  const visibleUpcoming = upcoming.slice(0, upcomingLimit);
+  const visibleUpcoming = upcomingExpanded
+    ? upcoming
+    : upcoming.slice(0, INITIAL_UPCOMING);
   const visiblePast = pastOpen ? past.slice(0, pastLimit) : [];
-  const moreUpcoming = upcoming.length - visibleUpcoming.length;
+  const moreUpcoming = upcoming.length - INITIAL_UPCOMING;
   const morePast = past.length - visiblePast.length;
 
   return (
@@ -121,10 +127,16 @@ export function RuleOccurrences({ occurrences, loading, onOpen }: Props) {
             ))
           )}
 
+          {/* Umschalter nur, wenn es überhaupt mehr als die ersten 5 gibt. */}
           {moreUpcoming > 0 ? (
             <MoreButton
-              label={`Mehr anzeigen (${moreUpcoming} weitere)`}
-              onPress={() => setUpcomingLimit((n) => n + PAGE_SIZE)}
+              label={
+                upcomingExpanded
+                  ? "Weniger anzeigen"
+                  : `Mehr anzeigen (${moreUpcoming} weitere)`
+              }
+              expanded={upcomingExpanded}
+              onPress={() => setUpcomingExpanded((open) => !open)}
               styles={styles}
               theme={theme}
             />
@@ -184,11 +196,14 @@ function MoreButton({
   onPress,
   styles,
   theme,
+  /** Aufgeklappt → Chevron nach oben (Einklappen), sonst nach unten. */
+  expanded = false,
 }: {
   label: string;
   onPress: () => void;
   styles: ReturnType<typeof createStyles>;
   theme: AppTheme;
+  expanded?: boolean;
 }) {
   return (
     <TouchableOpacity
@@ -197,8 +212,13 @@ function MoreButton({
       activeOpacity={0.75}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ expanded }}
     >
-      <Ionicons name="chevron-down" size={14} color={theme.colors.primary} />
+      <Ionicons
+        name={expanded ? "chevron-up" : "chevron-down"}
+        size={14}
+        color={theme.colors.primary}
+      />
       <Text style={styles.moreText}>{label}</Text>
     </TouchableOpacity>
   );
