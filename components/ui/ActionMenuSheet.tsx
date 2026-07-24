@@ -1,17 +1,12 @@
-// features/jobs/components/RuleActionMenu.tsx
-// Kompaktes Aktions-Menü (Drei-Punkte-Menü) für eine Dauerauftrags-Regel.
+// components/ui/ActionMenuSheet.tsx
+// ─────────────────────────────────────────────────────────────────
+// Generisches Aktions-Menü als Bottom-Sheet — die Zielansicht für
+// Drei-Punkte-Menüs (Header-Aktionen, Listenzeilen-Overflow).
 //
-// Ersetzt die frühere permanente Aktionsleiste in der Regel-Karte
-// (Bearbeiten / Deaktivieren / Löschen als drei nebeneinanderliegende
-// Buttons). Die Karte selbst ist dadurch deutlich flacher und die ganze
-// Karte bleibt für die Detail-Navigation antippbar.
-//
-// Optik/Verhalten wie RuleFilterSheet: Bottom-Sheet im Modal, Tippen auf den
-// Hintergrund schließt. „Löschen" ist visuell destruktiv (Fehlerfarbe) und
-// vom Rest durch eine Trennlinie abgesetzt.
-//
-// Bewusst KEINE Logik: die Komponente meldet nur die gewählte Aktion nach
-// oben — Bestätigungsdialog, Historie-Schutz und Laden bleiben im Screen.
+// Bewusst ohne eigene Logik: die Komponente meldet nur den gewählten
+// Eintrag nach oben. Bestätigungsdialoge, Ladezustände und Fehler
+// bleiben beim aufrufenden Screen.
+// ─────────────────────────────────────────────────────────────────
 
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -26,25 +21,31 @@ import {
   View,
 } from "react-native";
 
-export type RuleAction = "edit" | "toggleActive" | "delete";
-
-type Props = {
-  visible: boolean;
-  /** Titelzeile des Sheets (Objekt/Kunde der Regel). */
-  title: string;
-  /** Aktueller Aktiv-Zustand — bestimmt „Deaktivieren" vs. „Aktivieren". */
-  active: boolean;
-  onClose: () => void;
-  onSelect: (action: RuleAction) => void;
+export type ActionMenuItem = {
+  /** Stabiler Schlüssel, wird an onSelect zurückgegeben. */
+  key: string;
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  /** Destruktiv (Löschen): Fehlerfarbe + optisch abgesetzt. */
+  destructive?: boolean;
 };
 
-export function RuleActionMenu({
+interface ActionMenuSheetProps {
+  visible: boolean;
+  /** Titelzeile über den Aktionen (z. B. Objekt-/Kundenname). */
+  title?: string;
+  items: ActionMenuItem[];
+  onClose: () => void;
+  onSelect: (key: string) => void;
+}
+
+export function ActionMenuSheet({
   visible,
   title,
-  active,
+  items,
   onClose,
   onSelect,
-}: Props) {
+}: ActionMenuSheetProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -58,32 +59,32 @@ export function RuleActionMenu({
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.grabber} />
-          <Text style={styles.sheetTitle} numberOfLines={1}>
-            {title}
-          </Text>
+          {title ? (
+            <Text style={styles.title} numberOfLines={1}>
+              {title}
+            </Text>
+          ) : null}
 
-          <MenuItem
-            icon="create-outline"
-            label="Bearbeiten"
-            onPress={() => onSelect("edit")}
-            styles={styles}
-            theme={theme}
-          />
-          <MenuItem
-            icon={active ? "pause-outline" : "play-outline"}
-            label={active ? "Deaktivieren" : "Aktivieren"}
-            onPress={() => onSelect("toggleActive")}
-            styles={styles}
-            theme={theme}
-          />
-          <MenuItem
-            icon="trash-outline"
-            label="Löschen"
-            onPress={() => onSelect("delete")}
-            styles={styles}
-            theme={theme}
-            destructive
-          />
+          {items.map((item) => {
+            const color = item.destructive
+              ? theme.colors.error
+              : theme.colors.onSurface;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.item, item.destructive && styles.itemDestructive]}
+                onPress={() => onSelect(item.key)}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel={item.label}
+              >
+                <Ionicons name={item.icon} size={18} color={color} />
+                <Text style={[styles.itemLabel, { color }]} numberOfLines={1}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
 
           <TouchableOpacity
             style={styles.cancelBtn}
@@ -97,38 +98,6 @@ export function RuleActionMenu({
         </Pressable>
       </Pressable>
     </Modal>
-  );
-}
-
-function MenuItem({
-  icon,
-  label,
-  onPress,
-  styles,
-  theme,
-  destructive = false,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-  label: string;
-  onPress: () => void;
-  styles: ReturnType<typeof createStyles>;
-  theme: AppTheme;
-  destructive?: boolean;
-}) {
-  const color = destructive ? theme.colors.error : theme.colors.onSurface;
-  return (
-    <TouchableOpacity
-      style={[styles.item, destructive && styles.itemDestructive]}
-      onPress={onPress}
-      activeOpacity={0.75}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Ionicons name={icon} size={18} color={color} />
-      <Text style={[styles.itemLabel, { color }]} numberOfLines={1}>
-        {label}
-      </Text>
-    </TouchableOpacity>
   );
 }
 
@@ -155,7 +124,7 @@ function createStyles(theme: AppTheme) {
       backgroundColor: theme.colors.outlineVariant,
       marginBottom: theme.spacing.sm,
     },
-    sheetTitle: {
+    title: {
       fontSize: theme.typography.size.md,
       fontFamily: theme.typography.family.bold,
       fontWeight: theme.typography.weight.bold,
@@ -171,7 +140,7 @@ function createStyles(theme: AppTheme) {
       borderRadius: theme.radius.md,
       minHeight: theme.spacing.tapTarget,
     },
-    // „Löschen" optisch abgesetzt — destruktive Aktion nicht versehentlich treffen.
+    // Destruktive Aktion abgesetzt, damit sie nicht versehentlich getroffen wird.
     itemDestructive: {
       marginTop: theme.spacing.xs,
       borderTopWidth: 1,

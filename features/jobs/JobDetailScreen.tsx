@@ -4,7 +4,9 @@
 // keine Änderungen an Supabase-/Offline-Sync-Logik.
 
 import {
+  ActionMenuSheet,
   AppHeader,
+  Badge,
   Button,
   Card,
   EmptyState,
@@ -13,20 +15,29 @@ import {
   LoadingScreen,
   OfflineBanner,
   StatusBadge,
+  type ActionMenuItem,
 } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { JobPhotos } from "@/features/jobs/components/JobPhotos";
-import { getJobById, getJobOccurrences } from "@/services/jobs/jobs.service";
+import { RuleOccurrences } from "@/features/jobs/components/RuleOccurrences";
+import {
+  getJobById,
+  getJobOccurrences,
+  setRecurringRuleActive,
+} from "@/services/jobs/jobs.service";
 import { WorkedTimeCard } from "@/features/jobs/components/WorkedTimeCard";
 import { formatRecurringDays } from "@/utils/recurrence";
 import type { Job } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -34,6 +45,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import {
@@ -87,8 +99,15 @@ export default function JobDetailScreen() {
 
   const { id } = useLocalSearchParams<{ id: string }>();
   const { role, profile } = useAuth();
-  const { jobs, startJob, completeJob, loading, online, markJobCommentsAsRead } =
-    useJobs();
+  const {
+    jobs,
+    startJob,
+    completeJob,
+    deleteJob,
+    loading,
+    online,
+    markJobCommentsAsRead,
+  } = useJobs();
 
   // Cache-first: zuerst aus dem (ggf. begrenzten) Context-Fenster.
   const cachedJob = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -137,7 +156,17 @@ export default function JobDetailScreen() {
   const [occurrences, setOccurrences] = useState<Job[]>([]);
   const [occurrencesLoading, setOccurrencesLoading] = useState(false);
 
+  // Aktions-Menü im Header (Regel bearbeiten/de-aktivieren/löschen)
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [ruleBusy, setRuleBusy] = useState(false);
+
   const isAdmin = role === "admin";
+  const jobId = job?.id;
+  const hasCachedJob = !!cachedJob;
+  // Parent-Regel: job_type='recurring' ohne parentJobId — Vorlage, kein
+  // startbarer Termin. Generierte Occurrences sind job_type='single'.
+  const isParentRule =
+    !!job && job.jobType === "recurring" && !job.parentJobId;
 
   // Beim Öffnen die Kommentare dieses Jobs als gesehen markieren
   // (entfernt den roten Punkt). Online-only, optimistisch im Context.
@@ -147,16 +176,42 @@ export default function JobDetailScreen() {
     }
   }, [id, markJobCommentsAsRead]);
 
-  // Occurrences für Parent-Recurring-Regeln laden (nur Admin, online-only).
-  // job ist hier noch ggf. undefined — Prüfung erfolgt im Effect selbst.
-  useEffect(() => {
-    if (!job || !isAdmin || job.jobType !== "recurring" || job.parentJobId) return;
+  const loadOccurrences = useCallback(async () => {
+    if (!jobId || !isAdmin || !isParentRule) return;
     setOccurrencesLoading(true);
-    getJobOccurrences(job.id)
-      .then(setOccurrences)
-      .catch(() => setOccurrences([]))
-      .finally(() => setOccurrencesLoading(false));
-  }, [job?.id, isAdmin, job?.jobType, job?.parentJobId]);
+    try {
+      setOccurrences(await getJobOccurrences(jobId));
+    } catch {
+      setOccurrences([]);
+    } finally {
+      setOccurrencesLoading(false);
+    }
+  }, [jobId, isAdmin, isParentRule]);
+
+  // Occurrences bei jedem Fokussieren laden statt nur beim Mounten:
+  // `app/jobs/[id]/edit` wird ÜBER diesen Screen gepusht, ohne ihn zu
+  // unmounten — nach einer Regeländerung (andere Wochentage/Uhrzeit) wären
+  // die Termine sonst dauerhaft veraltet. Beim ersten Fokus ist das der
+  // initiale Ladevorgang.
+  useFocusEffect(
+    useCallback(() => {
+      loadOccurrences();
+      // Der Job selbst kommt aus dem Context-Cache ODER aus dem Direktabruf.
+      // Nur im zweiten Fall (Parent-Regeln liegen meist außerhalb des
+      // Context-Fensters) kann er nach dem Bearbeiten veraltet sein — dann
+      // hier neu holen. Im Cache-Fall hält Realtime den Job aktuell.
+      // Bewusst `hasCachedJob` (boolean) statt `cachedJob`: das Objekt bekommt
+      // bei jedem Context-Update eine neue Identität und würde den Effect
+      // unnötig neu auslösen.
+      if (jobId && !hasCachedJob) {
+        getJobById(jobId)
+          .then((fresh) => {
+            if (fresh) setFetchedJob(fresh);
+          })
+          .catch(() => {});
+      }
+    }, [loadOccurrences, jobId, hasCachedJob]),
+  );
 
   // ── Loading-Zustand: Context lädt, Direktabruf läuft, oder der Abruf wurde
   // noch nicht versucht (verhindert ein „nicht gefunden"-Aufblitzen).
@@ -221,6 +276,80 @@ export default function JobDetailScreen() {
     router.push(`/jobs/${job.id}/edit`);
   };
 
+  // ── Regel-Aktionen aus dem Header-Menü (nur Parent-Regeln, nur Admin)
+  const handleToggleRuleActive = async () => {
+    setActionError("");
+    setRuleBusy(true);
+    try {
+      await setRecurringRuleActive(job.id, !(job.isActive ?? true));
+      // Regel + Termine neu laden: das Deaktivieren entfernt serverseitig
+      // zukünftige offene Termine.
+      const fresh = await getJobById(job.id);
+      if (fresh) setFetchedJob(fresh);
+      await loadOccurrences();
+    } catch (err: unknown) {
+      setActionError(
+        err instanceof Error ? err.message : "Aktion fehlgeschlagen.",
+      );
+    } finally {
+      setRuleBusy(false);
+    }
+  };
+
+  const handleDeleteRule = () => {
+    Alert.alert(
+      "Dauerauftrag löschen",
+      "Regeln mit bereits gestarteten oder abgeschlossenen Terminen können aus Sicherheitsgründen nicht gelöscht werden. Fortfahren?",
+      [
+        { text: "Abbrechen", style: "cancel" },
+        {
+          text: "Löschen",
+          style: "destructive",
+          onPress: async () => {
+            setActionError("");
+            setRuleBusy(true);
+            try {
+              await deleteJob(job.id);
+              router.back();
+            } catch (err: unknown) {
+              // Der DB-Guard lehnt Löschungen mit geschützter Historie ab —
+              // Meldung sichtbar machen statt still zu scheitern.
+              setActionError(
+                err instanceof Error
+                  ? err.message
+                  : "Löschen nicht möglich (geschützte Historie).",
+              );
+            } finally {
+              setRuleBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // Aktion erst nach dem Schließen des Sheets auslösen — ein Alert oder
+  // Navigations-Push während der Modal-Animation wird auf iOS verschluckt.
+  const handleMenuSelect = (key: string) => {
+    setMenuOpen(false);
+    setTimeout(() => {
+      if (key === "edit") handleEdit();
+      else if (key === "toggle") handleToggleRuleActive();
+      else if (key === "delete") handleDeleteRule();
+    }, 250);
+  };
+
+  const ruleActive = job.isActive ?? true;
+  const menuItems: ActionMenuItem[] = [
+    { key: "edit", label: "Bearbeiten", icon: "create-outline" },
+    {
+      key: "toggle",
+      label: ruleActive ? "Deaktivieren" : "Aktivieren",
+      icon: ruleActive ? "pause-outline" : "play-outline",
+    },
+    { key: "delete", label: "Löschen", icon: "trash-outline", destructive: true },
+  ];
+
   // ── Maps öffnen (plattform-spezifischer URL-Schema)
   const handleOpenInMaps = () => {
     setActionError("");
@@ -241,9 +370,6 @@ export default function JobDetailScreen() {
 
   // ── Formatierte Werte
   const isRecurring = job.jobType === "recurring";
-  // Parent-Regel: job_type=recurring ohne parentJobId — nur Vorlage, kein startbarer Termin.
-  const isParentRule = isRecurring && !job.parentJobId;
-  const jobTypeText = isRecurring ? "Wiederkehrend" : "Einmalig";
   const recurringDaysText = formatRecurringDays(job.recurringDays);
   const timeText = job.startTime ? `${job.startTime} Uhr` : "—";
   const scheduledStartText =
@@ -276,15 +402,33 @@ export default function JobDetailScreen() {
       />
 
       {/* ── Sticky-Header ── */}
+      {/* Header-Rechts: Aktions-Menü der Regel (früher: inertes „Admin"-Badge,
+          das nur die ohnehin bekannte Rolle wiederholte). */}
       <AppHeader
         title="Job-Details"
         showBack
         right={
-          isAdmin ? (
-            <View style={styles.headerRoleBadge}>
-              <View style={styles.headerRoleDot} />
-              <Text style={styles.headerRoleText}>Admin</Text>
-            </View>
+          isAdmin && isParentRule ? (
+            <TouchableOpacity
+              style={styles.headerMenuBtn}
+              onPress={() => setMenuOpen(true)}
+              disabled={ruleBusy}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Aktionen für diesen Dauerauftrag"
+              accessibilityHint="Öffnet Bearbeiten, Aktivieren/Deaktivieren und Löschen"
+            >
+              {ruleBusy ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <Ionicons
+                  name="ellipsis-horizontal"
+                  size={20}
+                  color={theme.colors.onSurface}
+                />
+              )}
+            </TouchableOpacity>
           ) : undefined
         }
       />
@@ -300,11 +444,35 @@ export default function JobDetailScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ── Hero: Kunden-Name + Status ── */}
+        {/* ── Hero: Kunden-Name + Status ──
+            Bei Parent-Regeln ist der Job-Status bedeutungslos (er gilt global
+            für die Regel, nicht für einen konkreten Tag) — dort zählt
+            ausschließlich Aktiv/Inaktiv. Deshalb genau EIN Badge, und die
+            frühere Zeile „Status: Aktiv" in der Detail-Karte entfällt. */}
         <View style={styles.hero}>
           <Text style={styles.customerName}>{job.customerName}</Text>
-          <StatusBadge status={job.status} />
+          {isParentRule ? (
+            <Badge
+              label={job.isActive ? "Aktiv" : "Inaktiv"}
+              variant={job.isActive ? "success" : "default"}
+            />
+          ) : (
+            <StatusBadge status={job.status} />
+          )}
         </View>
+
+        {/* Kompakter Typ-Hinweis statt des früheren großen blauen
+            Erklär-Banners (ganzer Absatz „Dies ist eine Vorlage …"). */}
+        {isParentRule ? (
+          <View style={styles.ruleTypeRow}>
+            <Ionicons
+              name="repeat-outline"
+              size={14}
+              color={theme.colors.primary}
+            />
+            <Text style={styles.ruleTypeText}>Wiederkehrender Auftrag</Text>
+          </View>
+        ) : null}
 
         {/* ── Save-Status ── */}
         <OfflineBanner />
@@ -344,14 +512,10 @@ export default function JobDetailScreen() {
           ) : null}
           <View style={styles.rowDivider} />
 
-          <InfoRow
-            label="Auftragstyp"
-            value={jobTypeText}
-            icon={isRecurring ? "repeat-outline" : "calendar-outline"}
-          />
-          <View style={styles.rowDivider} />
-
           {isRecurring ? (
+            // Auftragstyp-Zeile entfällt: der Typ steht bereits als kompakter
+            // Hinweis unter dem Titel. Hier nur noch entscheidungsrelevante
+            // Terminierung.
             <>
               <InfoRow
                 label="Wochentage"
@@ -361,15 +525,15 @@ export default function JobDetailScreen() {
               <View style={styles.rowDivider} />
               <InfoRow label="Uhrzeit" value={timeText} icon="time-outline" />
               <View style={styles.rowDivider} />
-              <InfoRow
-                label="Status"
-                value={job.isActive ? "Aktiv" : "Inaktiv"}
-                icon={job.isActive ? "checkmark-circle-outline" : "pause-circle-outline"}
-              />
-              <View style={styles.rowDivider} />
             </>
           ) : (
             <>
+              <InfoRow
+                label="Auftragstyp"
+                value="Einmalig"
+                icon="calendar-outline"
+              />
+              <View style={styles.rowDivider} />
               <InfoRow
                 label="Geplanter Start"
                 value={scheduledStartText}
@@ -401,54 +565,13 @@ export default function JobDetailScreen() {
           </Card>
         ) : null}
 
-        {/* ── Regel-Hinweis + Termine (nur für Admin bei Parent-Recurring-Jobs) ── */}
+        {/* ── Generierte Termine (nur für Admin bei Parent-Recurring-Jobs) ── */}
         {isParentRule && isAdmin ? (
-          <>
-            {/* Hinweis-Banner: das ist eine Vorlage */}
-            <View style={styles.ruleInfoBanner}>
-              <Ionicons
-                name="repeat-outline"
-                size={18}
-                color={theme.colors.primary}
-              />
-              <View style={styles.ruleInfoText}>
-                <Text style={styles.ruleInfoTitle}>Wiederkehrende Regel</Text>
-                <Text style={styles.ruleInfoBody}>
-                  Dies ist eine Vorlage. Die generierten Einzeltermine werden
-                  unten angezeigt und können von Mitarbeitern gestartet werden.
-                </Text>
-              </View>
-            </View>
-
-            {/* Generierte Termine (Occurrences) */}
-            <Card padding={theme.spacing.lg} style={styles.card}>
-              <View style={styles.occurrencesHeader}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={14}
-                  color={theme.colors.primary}
-                />
-                <Text style={styles.occurrencesTitle}>GENERIERTE TERMINE</Text>
-              </View>
-
-              {occurrencesLoading ? (
-                <Text style={styles.occurrencesEmpty}>Wird geladen …</Text>
-              ) : occurrences.length === 0 ? (
-                <Text style={styles.occurrencesEmpty}>
-                  Keine Termine generiert.
-                </Text>
-              ) : (
-                occurrences.map((occ, index) => (
-                  <OccurrenceRow
-                    key={occ.id}
-                    occurrence={occ}
-                    isLast={index === occurrences.length - 1}
-                    theme={theme}
-                  />
-                ))
-              )}
-            </Card>
-          </>
+          <RuleOccurrences
+            occurrences={occurrences}
+            loading={occurrencesLoading}
+            onOpen={(occ) => router.push(`/jobs/${occ.id}`)}
+          />
         ) : null}
 
         {/* ── Fotos (Upload + Anzeige, online-only) ── */}
@@ -496,7 +619,9 @@ export default function JobDetailScreen() {
             </View>
           ) : null}
 
-          {isAdmin ? (
+          {/* Bei Parent-Regeln liegt „Bearbeiten" im Header-Menü — kein
+              zweiter Button für dieselbe Aktion. */}
+          {isAdmin && !isParentRule ? (
             <Button
               label="Bearbeiten"
               variant="secondary"
@@ -510,62 +635,15 @@ export default function JobDetailScreen() {
         <View style={{ height: theme.spacing.xl }} />
       </ScrollView>
       </KeyboardAvoidingView>
+
+      <ActionMenuSheet
+        visible={menuOpen}
+        title={job.customerName}
+        items={menuItems}
+        onClose={() => setMenuOpen(false)}
+        onSelect={handleMenuSelect}
+      />
     </SafeAreaView>
-  );
-}
-
-// ─────────────────────────────────────────────
-// Zeile in der Occurrence-Liste (Admin-Ansicht)
-// ─────────────────────────────────────────────
-function formatOccurrenceDate(dateStr?: string | null): string {
-  if (!dateStr) return "—";
-  const [y, m, d] = dateStr.slice(0, 10).split("-");
-  if (!y || !m || !d) return dateStr;
-  const weekdays = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
-  const day = weekdays[new Date(`${y}-${m}-${d}`).getDay()] ?? "";
-  return `${day} ${d}.${m}.${y}`;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  open: "Offen",
-  in_progress: "In Arbeit",
-  completed: "Erledigt",
-};
-
-function OccurrenceRow({
-  occurrence,
-  isLast,
-  theme,
-}: {
-  occurrence: Job;
-  isLast: boolean;
-  theme: AppTheme;
-}) {
-  const styles = useMemo(() => createStyles(theme), [theme]);
-  return (
-    <>
-      <View style={styles.occurrenceRow}>
-        <View style={styles.occurrenceLeft}>
-          <Text style={styles.occurrenceDate}>
-            {formatOccurrenceDate(occurrence.date)}
-          </Text>
-          {occurrence.startTime ? (
-            <Text style={styles.occurrenceTime}>{occurrence.startTime} Uhr</Text>
-          ) : null}
-        </View>
-        <View style={styles.occurrenceRight}>
-          <Text style={styles.occurrenceStatus}>
-            {STATUS_LABELS[occurrence.status] ?? occurrence.status}
-          </Text>
-          {occurrence.employeeName ? (
-            <Text style={styles.occurrenceEmployee} numberOfLines={1}>
-              {occurrence.employeeName}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-      {!isLast ? <View style={styles.rowDivider} /> : null}
-    </>
   );
 }
 
@@ -595,29 +673,17 @@ function createStyles(theme: AppTheme) {
       gap: theme.spacing.md,
     },
 
-    // Header rechts: Role-Pill
-    headerRoleBadge: {
-      flexDirection: "row",
+    // Header rechts: Aktions-Menü — sichtbarer runder Hintergrund, damit der
+    // Button als Bedienelement lesbar ist und nicht wie ein Meta-Icon wirkt.
+    headerMenuBtn: {
+      width: 36,
+      height: 36,
       alignItems: "center",
-      gap: 4,
-      backgroundColor: theme.colors.statusInProgressBg,
+      justifyContent: "center",
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.surfaceContainerHigh,
       borderWidth: 1,
-      borderColor: theme.colors.statusInProgressBorder,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: theme.radius.full,
-    },
-    headerRoleDot: {
-      width: 5,
-      height: 5,
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.statusInProgress,
-    },
-    headerRoleText: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.statusInProgress,
+      borderColor: theme.colors.outlineVariant,
     },
 
     // Hero-Bereich
@@ -692,89 +758,18 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.statusCompleted,
     },
 
-    // Regel-Hinweis-Banner (Parent-Recurring)
-    ruleInfoBanner: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: theme.spacing.sm,
-      backgroundColor: theme.colors.primaryContainer,
-      borderWidth: 1,
-      borderColor: theme.colors.primary,
-      borderRadius: theme.radius.md,
-      padding: theme.spacing.md,
-    },
-    ruleInfoText: {
-      flex: 1,
-      gap: 4,
-    },
-    ruleInfoTitle: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.primary,
-    },
-    ruleInfoBody: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.onSurface,
-      lineHeight: theme.typography.lineHeight.sm,
-    },
-
-    // Occurrences-Liste
-    occurrencesHeader: {
+    // Kompakter Typ-Hinweis (ersetzt das große Erklär-Banner)
+    ruleTypeRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 4,
-      marginBottom: theme.spacing.sm,
+      gap: 6,
+      marginTop: -theme.spacing.xs,
     },
-    occurrencesTitle: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.outline,
-      letterSpacing: theme.typography.letterSpacing.wider,
-    },
-    occurrencesEmpty: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.onSurfaceVariant,
-    },
-    occurrenceRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingVertical: theme.spacing.sm,
-      gap: theme.spacing.sm,
-    },
-    occurrenceLeft: {
-      gap: 2,
-    },
-    occurrenceDate: {
+    ruleTypeText: {
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.medium,
       fontWeight: theme.typography.weight.medium,
-      color: theme.colors.onSurface,
-    },
-    occurrenceTime: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.onSurfaceVariant,
-    },
-    occurrenceRight: {
-      alignItems: "flex-end",
-      gap: 2,
-    },
-    occurrenceStatus: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onSurfaceVariant,
-    },
-    occurrenceEmployee: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.onSurfaceVariant,
-      maxWidth: 120,
+      color: theme.colors.primary,
     },
   });
 }
