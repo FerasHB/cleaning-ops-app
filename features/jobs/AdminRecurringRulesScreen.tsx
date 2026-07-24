@@ -3,9 +3,20 @@
 // (job_type='recurring', parent_job_id IS NULL). Generierte Occurrences
 // erscheinen hier NIE — die leben im Zeitplan.
 //
-// Pro Regel: Kunde/Objekt, Service, Ort, Wochentage, Uhrzeit, Zuweisung,
-// Zeitraum, Aktiv/Inaktiv, nächster generierter Termin, Gesundheitszustand
-// (Badge) sowie Aktionen Bearbeiten / (De-)Aktivieren / Löschen.
+// Kompakte Regel-Karte (bewusst schmal, damit viele Daueraufträge scanbar
+// bleiben): Objekt/Kunde + EIN Zustands-Badge, Service, Ort, Wochentage +
+// Uhrzeit, Mitarbeiter, nächster Termin. Der Gültigkeitszeitraum erscheint
+// NUR, wenn mindestens ein Datum gesetzt ist (unbegrenzte Regeln zeigten
+// vorher die nichtssagende Zeile „Zeitraum: — – —"). Eine separate Zeile
+// „Status: Aktiv" gibt es nicht mehr — das Badge sagt dasselbe.
+//
+// EIN Badge statt Health-Badge + Status-Zeile: Warnungen haben Vorrang vor
+// dem gesunden Zustand (siehe ruleBadge weiter unten); die Erklärung zur
+// Warnung steht als eine kompakte Hinweiszeile darunter.
+//
+// Aktionen (Bearbeiten / De-/Aktivieren / Löschen) liegen im Drei-Punkte-Menü
+// (RuleActionMenu), die ganze Karte öffnet die Job-Detailansicht (/jobs/[id]),
+// die Parent-Regeln inkl. generierter Termine bereits darstellt.
 //
 // Datenquelle: eigene gebundene Queries (getRecurringRules +
 // getUpcomingOccurrenceSummaries), NICHT das volle JobContext-Array.
@@ -28,6 +39,10 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import { useJobs } from "@/context/JobContext";
 import { employeeSelectionLabel } from "@/features/jobs/components/EmployeeFilterControl";
+import {
+  RuleActionMenu,
+  type RuleAction,
+} from "@/features/jobs/components/RuleActionMenu";
 import { RuleFilterSheet } from "@/features/jobs/components/RuleFilterSheet";
 import {
   getRecurringRules,
@@ -56,6 +71,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -70,6 +86,21 @@ function formatDateGerman(key: string | null): string {
   const [y, m, d] = key.split("-");
   if (!y || !m || !d) return "—";
   return `${d}.${m}.${y}`;
+}
+
+/**
+ * Kompakte Beschriftung des Gültigkeitszeitraums — oder `null`, wenn die
+ * Regel unbegrenzt läuft. Dann entfällt die Zeile ganz, statt „— – —" zu
+ * zeigen (kein Informationsgewinn, kostet aber Höhe auf jeder Karte).
+ */
+function formatRangeLabel(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): string | null {
+  if (!start && !end) return null;
+  if (start && end) return `${formatDateGerman(start)} – ${formatDateGerman(end)}`;
+  if (start) return `ab ${formatDateGerman(start)}`;
+  return `bis ${formatDateGerman(end!)}`;
 }
 
 export default function AdminRecurringRulesScreen() {
@@ -94,6 +125,9 @@ export default function AdminRecurringRulesScreen() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<RuleFilters>(DEFAULT_RULE_FILTERS);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+
+  // Regel, für die das Drei-Punkte-Menü offen ist (null = geschlossen).
+  const [menuRule, setMenuRule] = useState<Job | null>(null);
 
   const activeEmployees = useMemo(
     () => employees.filter((e) => e.isActive !== false),
@@ -202,6 +236,28 @@ export default function AdminRecurringRulesScreen() {
       );
     },
     [deleteJob, load],
+  );
+
+  // Auswahl aus dem Drei-Punkte-Menü. Das Sheet wird zuerst geschlossen und
+  // die eigentliche Aktion erst danach ausgelöst: ein Alert (Löschen) oder
+  // ein Navigations-Push, der noch während der Schließ-Animation feuert,
+  // wird auf iOS vom Modal verschluckt.
+  const handleMenuSelect = useCallback(
+    (action: RuleAction) => {
+      const rule = menuRule;
+      setMenuRule(null);
+      if (!rule) return;
+      setTimeout(() => {
+        if (action === "edit") {
+          router.push(`/jobs/${rule.id}/edit`);
+        } else if (action === "toggleActive") {
+          handleToggleActive(rule);
+        } else {
+          handleDelete(rule);
+        }
+      }, 250);
+    },
+    [menuRule, handleToggleActive, handleDelete],
   );
 
   const handleRefresh = useCallback(() => {
@@ -382,16 +438,14 @@ export default function AdminRecurringRulesScreen() {
                 health={health}
                 nextDate={summary.nextOccurrenceDate}
                 busy={busyId === rule.id}
-                onEdit={() => router.push(`/jobs/${rule.id}/edit`)}
-                onToggleActive={() => handleToggleActive(rule)}
-                onDelete={() => handleDelete(rule)}
+                onOpen={() => router.push(`/jobs/${rule.id}`)}
+                onOpenMenu={() => setMenuRule(rule)}
                 styles={styles}
                 theme={theme}
               />
             );
           })
         )}
-        <View style={{ height: theme.spacing.xl }} />
       </ScrollView>
 
       <RuleFilterSheet
@@ -401,18 +455,43 @@ export default function AdminRecurringRulesScreen() {
         onApply={setFilters}
         employees={activeEmployees}
       />
+
+      <RuleActionMenu
+        visible={menuRule !== null}
+        title={menuRule?.customerName ?? ""}
+        active={menuRule?.isActive ?? true}
+        onClose={() => setMenuRule(null)}
+        onSelect={handleMenuSelect}
+      />
     </View>
   );
 }
 
-function healthColor(theme: AppTheme, severity: RuleHealth["severity"]): string {
-  switch (severity) {
-    case "warning":
-      return theme.colors.statusOpen;
-    case "info":
-      return theme.colors.onSurfaceVariant;
-    case "ok":
-      return theme.colors.statusCompleted;
+type BadgeTone = "ok" | "neutral" | "warning";
+
+/**
+ * EIN Badge pro Karte. Warnungen haben Vorrang vor dem gesunden Zustand —
+ * ein grünes „Aktiv" neben einem Health-Badge sagte zweimal dasselbe, und
+ * ein Problem darf nicht hinter „Aktiv" verschwinden.
+ *
+ * Die Kurzlabels halten den Badge auf schmalen Screens klein; die
+ * ausführliche Erklärung steht in `health.hint` unter den Detailzeilen.
+ * Die Zustandslogik selbst bleibt unverändert in deriveRuleHealth.
+ */
+function ruleBadge(health: RuleHealth): { label: string; tone: BadgeTone } {
+  switch (health.state) {
+    case "completed_rule":
+      return { label: "Prüfen", tone: "warning" };
+    case "no_occurrences":
+      return { label: "Keine Termine", tone: "warning" };
+    case "inactive_employee":
+      return { label: "MA inaktiv", tone: "warning" };
+    case "horizon_expired":
+      return { label: "Abgelaufen", tone: "warning" };
+    case "inactive":
+      return { label: "Inaktiv", tone: "neutral" };
+    case "healthy":
+      return { label: "Aktiv", tone: "ok" };
   }
 }
 
@@ -421,9 +500,8 @@ function RuleCard({
   health,
   nextDate,
   busy,
-  onEdit,
-  onToggleActive,
-  onDelete,
+  onOpen,
+  onOpenMenu,
   styles,
   theme,
 }: {
@@ -431,147 +509,153 @@ function RuleCard({
   health: RuleHealth;
   nextDate: string | null;
   busy: boolean;
-  onEdit: () => void;
-  onToggleActive: () => void;
-  onDelete: () => void;
+  onOpen: () => void;
+  onOpenMenu: () => void;
   styles: ReturnType<typeof createStyles>;
   theme: AppTheme;
 }) {
   const days = formatRecurringDays(rule.recurringDays);
-  const active = rule.isActive ?? true;
-  const badgeColor = healthColor(theme, health.severity);
+  const scheduleText = `${days || "—"}${
+    rule.startTime ? ` · ${rule.startTime} Uhr` : ""
+  }`;
+  const rangeText = formatRangeLabel(
+    rule.recurrenceStartDate,
+    rule.recurrenceEndDate,
+  );
+  const badge = ruleBadge(health);
+  const badgeStyle = {
+    ok: styles.badgeOk,
+    neutral: styles.badgeNeutral,
+    warning: styles.badgeWarning,
+  }[badge.tone];
+  const badgeTextStyle = {
+    ok: styles.badgeTextOk,
+    neutral: styles.badgeTextNeutral,
+    warning: styles.badgeTextWarning,
+  }[badge.tone];
 
   return (
-    <Card style={styles.ruleCard}>
-      {/* Kopf: Kunde + Health-Badge */}
-      <View style={styles.ruleHead}>
-        <Text style={styles.ruleCustomer} numberOfLines={1}>
-          {rule.customerName}
-        </Text>
-        <View style={[styles.healthBadge, { borderColor: badgeColor }]}>
-          <View style={[styles.healthDot, { backgroundColor: badgeColor }]} />
-          <Text style={[styles.healthText, { color: badgeColor }]}>
-            {health.label}
+    <Pressable
+      onPress={onOpen}
+      disabled={busy}
+      accessibilityRole="button"
+      accessibilityLabel={`Dauerauftrag ${rule.customerName} öffnen`}
+      style={({ pressed }) => (pressed ? styles.cardPressed : undefined)}
+    >
+      <Card style={styles.ruleCard}>
+        {/* Kopf: Objekt/Kunde + EIN Zustands-Badge */}
+        <View style={styles.ruleHead}>
+          <Text style={styles.ruleCustomer} numberOfLines={1}>
+            {rule.customerName}
           </Text>
+          <View style={[styles.badge, badgeStyle]}>
+            <Text style={[styles.badgeText, badgeTextStyle]} numberOfLines={1}>
+              {badge.label}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      {rule.service ? (
-        <Text style={styles.ruleService} numberOfLines={1}>
-          {rule.service}
-        </Text>
-      ) : null}
-
-      {/* Detail-Zeilen */}
-      <View style={styles.detailBlock}>
-        <DetailRow icon="location-outline" text={rule.location || "—"} theme={theme} styles={styles} />
-        <DetailRow
-          icon="calendar-outline"
-          text={`${days || "—"}${rule.startTime ? ` · ${rule.startTime} Uhr` : ""}`}
-          theme={theme}
-          styles={styles}
-        />
-        <DetailRow
-          icon="person-outline"
-          text={rule.employeeName ?? "Nicht zugewiesen"}
-          theme={theme}
-          styles={styles}
-        />
-        <DetailRow
-          icon="time-outline"
-          text={`Zeitraum: ${formatDateGerman(rule.recurrenceStartDate ?? null)} – ${formatDateGerman(rule.recurrenceEndDate ?? null)}`}
-          theme={theme}
-          styles={styles}
-        />
-        <DetailRow
-          icon="play-forward-outline"
-          text={`Nächster Termin: ${formatDateGerman(nextDate)}`}
-          theme={theme}
-          styles={styles}
-        />
-        {/* Status separat von Health-Badge: eine Regel kann aktiv UND
-            zugleich „ungesund" sein (z. B. aktiv + keine Termine generiert) —
-            der Health-Badge allein würde dann die Grundinformation
-            „läuft die Regel überhaupt?" verdecken. */}
-        <DetailRow
-          icon={active ? "checkmark-circle-outline" : "pause-circle-outline"}
-          text={active ? "Status: Aktiv" : "Status: Inaktiv"}
-          theme={theme}
-          styles={styles}
-        />
-      </View>
-
-      {health.hint ? (
-        <Text style={styles.hintText}>{health.hint}</Text>
-      ) : null}
-
-      {/* Aktionen */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={onEdit}
-          disabled={busy}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="create-outline" size={16} color={theme.colors.primary} />
-          <Text style={[styles.actionText, { color: theme.colors.primary }]}>
-            Bearbeiten
+        {rule.service ? (
+          <Text style={styles.ruleService} numberOfLines={1}>
+            {rule.service}
           </Text>
-        </TouchableOpacity>
+        ) : null}
 
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={onToggleActive}
-          disabled={busy}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name={active ? "pause-outline" : "play-outline"}
-            size={16}
-            color={theme.colors.onSurfaceVariant}
+        <View style={styles.metaBlock}>
+          <MetaRow
+            icon="location-outline"
+            text={rule.location || "—"}
+            theme={theme}
+            styles={styles}
           />
-          <Text style={[styles.actionText, { color: theme.colors.onSurfaceVariant }]}>
-            {active ? "Deaktivieren" : "Aktivieren"}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={onDelete}
-          disabled={busy}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="trash-outline" size={16} color={theme.colors.error} />
-          <Text style={[styles.actionText, { color: theme.colors.error }]}>
-            Löschen
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {busy ? (
-        <View style={styles.busyOverlay}>
-          <ActivityIndicator color={theme.colors.primary} />
+          <MetaRow
+            icon="repeat-outline"
+            text={scheduleText}
+            theme={theme}
+            styles={styles}
+          />
+          <MetaRow
+            icon="person-outline"
+            text={rule.employeeName ?? "Nicht zugewiesen"}
+            theme={theme}
+            styles={styles}
+          />
+          {/* Zeitraum nur bei gesetztem Start-/Enddatum — unbegrenzte Regeln
+              zeigen die Zeile gar nicht (statt „— – —"). */}
+          {rangeText ? (
+            <MetaRow
+              icon="calendar-outline"
+              text={rangeText}
+              theme={theme}
+              styles={styles}
+            />
+          ) : null}
         </View>
-      ) : null}
-    </Card>
+
+        {/* Warnung kompakt: eine Zeile, max. zwei Zeilen Text. */}
+        {badge.tone === "warning" && health.hint ? (
+          <View style={styles.warnRow}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={14}
+              color={theme.colors.statusOpen}
+            />
+            <Text style={styles.warnText} numberOfLines={2}>
+              {health.hint}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Fuß: nächster Termin + Drei-Punkte-Menü */}
+        <View style={styles.footRow}>
+          <Text style={styles.nextText} numberOfLines={1}>
+            {nextDate
+              ? `Nächster Termin: ${formatDateGerman(nextDate)}`
+              : "Kein nächster Termin"}
+          </Text>
+          <TouchableOpacity
+            style={styles.menuBtn}
+            onPress={onOpenMenu}
+            disabled={busy}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Aktionen für ${rule.customerName}`}
+            accessibilityHint="Öffnet Bearbeiten, Aktivieren/Deaktivieren und Löschen"
+          >
+            <Ionicons
+              name="ellipsis-vertical"
+              size={18}
+              color={theme.colors.onSurfaceVariant}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {busy ? (
+          <View style={styles.busyOverlay}>
+            <ActivityIndicator color={theme.colors.primary} />
+          </View>
+        ) : null}
+      </Card>
+    </Pressable>
   );
 }
 
-function DetailRow({
+function MetaRow({
   icon,
   text,
   theme,
   styles,
 }: {
-  icon: any;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
   text: string;
   theme: AppTheme;
   styles: ReturnType<typeof createStyles>;
 }) {
   return (
-    <View style={styles.detailRow}>
+    <View style={styles.metaRow}>
       <Ionicons name={icon} size={14} color={theme.colors.onSurfaceVariant} />
-      <Text style={styles.detailText} numberOfLines={1}>
+      <Text style={styles.metaText} numberOfLines={1}>
         {text}
       </Text>
     </View>
@@ -663,8 +747,11 @@ function createStyles(theme: AppTheme) {
     content: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.sm,
-      paddingBottom: 120,
-      gap: theme.spacing.md,
+      // Freiraum unter der letzten Karte: der FAB in AdminJobsScreen ist
+      // 56 px hoch und sitzt 32 px über der Unterkante (= 88 px), dazu
+      // etwas Luft — so verdeckt weder FAB noch Tab-Leiste die letzte Karte.
+      paddingBottom: 128,
+      gap: theme.spacing.sm,
       flexGrow: 1,
     },
     centerBox: {
@@ -679,7 +766,9 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurfaceVariant,
     },
-    ruleCard: { gap: 6 },
+    // ── Kompakte Regel-Karte
+    ruleCard: { gap: 3, paddingVertical: 12 },
+    cardPressed: { opacity: 0.75 },
     ruleHead: {
       flexDirection: "row",
       alignItems: "center",
@@ -688,63 +777,90 @@ function createStyles(theme: AppTheme) {
     },
     ruleCustomer: {
       flex: 1,
-      fontSize: theme.typography.size.lg,
-      fontFamily: theme.typography.family.bold,
-      fontWeight: theme.typography.weight.bold,
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
       color: theme.colors.onSurface,
     },
-    healthBadge: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      paddingHorizontal: 9,
-      paddingVertical: 3,
+    // Badge darf auf schmalen Screens schrumpfen, damit der Objektname
+    // nicht auf wenige Zeichen zusammengedrückt wird.
+    badge: {
+      flexShrink: 1,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
       borderRadius: theme.radius.full,
       borderWidth: 1,
     },
-    healthDot: { width: 7, height: 7, borderRadius: 4 },
-    healthText: {
+    badgeText: {
       fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
     },
+    badgeOk: {
+      backgroundColor: theme.colors.statusCompletedBg,
+      borderColor: theme.colors.statusCompletedBorder,
+    },
+    badgeNeutral: {
+      backgroundColor: theme.colors.surfaceContainerHigh,
+      borderColor: theme.colors.outlineVariant,
+    },
+    badgeWarning: {
+      backgroundColor: theme.colors.statusOpenBg,
+      borderColor: theme.colors.statusOpenBorder,
+    },
+    badgeTextOk: { color: theme.colors.statusCompleted },
+    badgeTextNeutral: { color: theme.colors.onSurfaceVariant },
+    badgeTextWarning: { color: theme.colors.statusOpen },
+
     ruleService: {
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurfaceVariant,
     },
-    detailBlock: { gap: 4, marginTop: 4 },
-    detailRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-    detailText: {
+    metaBlock: { gap: 2, marginTop: 2 },
+    metaRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    metaText: {
       flex: 1,
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurface,
     },
-    hintText: {
+    warnRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 6,
       marginTop: 4,
+    },
+    warnText: {
+      flex: 1,
       fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.regular,
+      lineHeight: theme.typography.lineHeight.xs,
       color: theme.colors.statusOpen,
     },
-    actionRow: {
-      flexDirection: "row",
-      gap: theme.spacing.sm,
-      marginTop: theme.spacing.sm,
-      borderTopWidth: 1,
-      borderTopColor: theme.colors.outlineVariant,
-      paddingTop: theme.spacing.sm,
-    },
-    actionBtn: {
+    footRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 4,
-      paddingVertical: 4,
+      gap: theme.spacing.sm,
+      marginTop: 2,
     },
-    actionText: {
+    nextText: {
+      flex: 1,
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.medium,
       fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+    },
+    // 32×32 sichtbar, per hitSlop (±10) über 44 px Touch-Ziel — die Karte
+    // bleibt dadurch flach, ohne das Mindest-Touch-Target zu unterschreiten.
+    menuBtn: {
+      width: 32,
+      height: 32,
+      marginVertical: -6,
+      marginRight: -6,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: theme.radius.full,
     },
     busyOverlay: {
       ...StyleSheet.absoluteFillObject,
