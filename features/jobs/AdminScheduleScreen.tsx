@@ -31,6 +31,7 @@ import { isDetachedOccurrence, type RuleSchedule } from "@/utils/recurringRule";
 import {
   SCHEDULE_FILTERS,
   groupByDate,
+  matchesSearch,
   type ScheduleFilter,
 } from "@/utils/scheduleView";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,6 +44,7 @@ import {
   SectionList,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -60,7 +62,8 @@ export default function AdminScheduleScreen() {
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
 
   // Aktive Mitarbeiter für den Filter (Nicht-zugewiesen-Option zusätzlich).
-  const { employees } = useJobs();
+  // unreadJobIds speist die Ungelesen-Punkte auf den Karten.
+  const { employees, unreadJobIds } = useJobs();
   const activeEmployees = useMemo(
     () => employees.filter((e) => e.isActive !== false),
     [employees],
@@ -69,6 +72,9 @@ export default function AdminScheduleScreen() {
   const [filter, setFilter] = useState<ScheduleFilter>("heute");
   // Mitarbeiter-Auswahl bleibt über Filterwechsel/Refresh/Realtime erhalten.
   const [employeeSel, setEmployeeSel] = useState<EmployeeSelection>("all");
+  // Suchtext bleibt ebenfalls erhalten (eigener State, wird nirgends
+  // zurückgesetzt — weder bei Filter-/Mitarbeiterwechsel noch beim Refresh).
+  const [search, setSearch] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
   // Regel-Terminierung je Parent-ID → für die Abweichender-Termin-Erkennung.
   const [ruleMap, setRuleMap] = useState<Map<string, RuleSchedule>>(new Map());
@@ -182,33 +188,72 @@ export default function AdminScheduleScreen() {
     load(filter, employeeSel, true);
   }, [filter, employeeSel, load]);
 
+  // Ungelesene Kommentare auf die (gebundenen) Zeitplan-Zeilen mergen.
+  // Quelle ist die bereits geladene, gebündelte Unread-Liste aus dem Context —
+  // kein zusätzlicher Request. mapJob setzt hasUnreadComments bewusst nicht.
+  const jobsWithUnread = useMemo(() => {
+    if (unreadJobIds.length === 0) return jobs;
+    const unread = new Set(unreadJobIds);
+    return jobs.map((j) =>
+      unread.has(j.id) ? { ...j, hasUnreadComments: true } : j,
+    );
+  }, [jobs, unreadJobIds]);
+
+  // Suche: rein clientseitig auf dem BEREITS begrenzten Ergebnis (nie ein
+  // Voll-Fetch). ODER-Semantik über Kunde/Objekt, Service, Adresse und
+  // Mitarbeitername; kombiniert per UND mit Status- und Mitarbeiter-Filter.
+  const visibleJobs = useMemo(
+    () => jobsWithUnread.filter((job) => matchesSearch(job, search)),
+    [jobsWithUnread, search],
+  );
+
   const sections = useMemo(() => {
     const direction = filter === "erledigt" ? "desc" : "asc";
-    return groupByDate(jobs, todayKey, direction);
-  }, [jobs, todayKey, filter]);
+    return groupByDate(visibleJobs, todayKey, direction);
+  }, [visibleJobs, todayKey, filter]);
+
+  // Ist gerade irgendein Filter/Suchbegriff aktiv? (für den Empty-State)
+  const hasActiveQuery =
+    !!search.trim() || employeeSel !== "all";
 
   return (
     <View style={styles.container}>
-      {/* ── Filter-Chips ── */}
-      <View style={styles.filterRow}>
-        {SCHEDULE_FILTERS.map((f) => {
-          const active = filter === f.key;
-          return (
+      {/* ── 1. Suche ── */}
+      <View style={styles.searchWrap}>
+        <View style={styles.searchBar}>
+          <Ionicons
+            name="search"
+            size={18}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Objekt, Kunde, Adresse, Service, Mitarbeiter …"
+            placeholderTextColor={theme.colors.outline}
+            style={styles.searchInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            clearButtonMode="never"
+          />
+          {search.length > 0 ? (
             <TouchableOpacity
-              key={f.key}
-              onPress={() => setFilter(f.key)}
-              activeOpacity={0.8}
-              style={[styles.chip, active && styles.chipActive]}
+              onPress={() => setSearch("")}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Suche löschen"
             >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {f.label}
-              </Text>
+              <Ionicons
+                name="close-circle"
+                size={18}
+                color={theme.colors.outline}
+              />
             </TouchableOpacity>
-          );
-        })}
+          ) : null}
+        </View>
       </View>
 
-      {/* ── Mitarbeiter-Filter (serverseitig, bleibt über Filterwechsel) ── */}
+      {/* ── 2. Mitarbeiter-Filter (serverseitig, bleibt über Filterwechsel) ── */}
       {activeEmployees.length > 0 ? (
         <ScrollView
           horizontal
@@ -240,8 +285,34 @@ export default function AdminScheduleScreen() {
         </ScrollView>
       ) : null}
 
+      {/* ── 3. Status-/Zeit-Filter ── */}
+      <View style={styles.filterRow}>
+        {SCHEDULE_FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <TouchableOpacity
+              key={f.key}
+              onPress={() => setFilter(f.key)}
+              activeOpacity={0.8}
+              style={[styles.chip, active && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {error ? (
         <ErrorBanner message={error} onDismiss={() => setError(null)} />
+      ) : null}
+
+      {/* Ergebniszähler (nur wenn Treffer vorhanden) */}
+      {!loading && visibleJobs.length > 0 ? (
+        <Text style={styles.resultCount}>
+          {visibleJobs.length} {visibleJobs.length === 1 ? "Termin" : "Termine"}
+        </Text>
       ) : null}
 
       {loading ? (
@@ -256,6 +327,9 @@ export default function AdminScheduleScreen() {
           stickySectionHeadersEnabled={false}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          // Taps auf Karten/Chips funktionieren auch bei offener Tastatur.
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -286,11 +360,19 @@ export default function AdminScheduleScreen() {
             </View>
           )}
           ListEmptyComponent={
-            <EmptyState
-              title="Keine Termine"
-              message={emptyMessageFor(filter)}
-              icon="calendar-outline"
-            />
+            hasActiveQuery ? (
+              <EmptyState
+                title="Keine passenden Termine"
+                message="Passe Suche oder Mitarbeiter-Filter an."
+                icon="search-outline"
+              />
+            ) : (
+              <EmptyState
+                title="Keine Termine"
+                message={emptyMessageFor(filter)}
+                icon="calendar-outline"
+              />
+            )
           }
         />
       )}
@@ -342,6 +424,39 @@ function emptyMessageFor(filter: ScheduleFilter): string {
 function createStyles(theme: AppTheme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
+    // ── Suchleiste (gleiche Optik wie in der früheren Admin-Jobliste)
+    searchWrap: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.sm,
+    },
+    searchBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      minHeight: theme.spacing.tapTarget,
+    },
+    searchInput: {
+      flex: 1,
+      paddingVertical: 10,
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurface,
+    },
+    resultCount: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingBottom: theme.spacing.xs,
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+      letterSpacing: theme.typography.letterSpacing.wide,
+      textTransform: "uppercase",
+    },
     filterRow: {
       flexDirection: "row",
       flexWrap: "wrap",

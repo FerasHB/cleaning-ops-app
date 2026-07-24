@@ -16,6 +16,31 @@ export const SCHEDULE_FILTERS: { key: ScheduleFilter; label: string }[] = [
   { key: "erledigt", label: "Erledigt" },
 ];
 
+/**
+ * Freitext-Suche über einen Termin (rein, testbar).
+ *
+ * ODER-Semantik über: Kunde/Objekt, Service, Adresse/Ort und Namen des
+ * zugewiesenen Mitarbeiters. Groß-/Kleinschreibung wird ignoriert, ein leerer
+ * Suchbegriff trifft immer zu (kein Filter).
+ *
+ * Die Suche läuft bewusst auf dem bereits SERVERSEITIG begrenzten Ergebnis
+ * (Datumsfenster + Status + Mitarbeiter) — sie löst nie einen Voll-Fetch aus.
+ * Das SQL-Pendant dieser Bedingung ist in
+ * supabase/tests/recurring_jobs_display.test.sql abgesichert.
+ */
+export function matchesSearch(
+  job: Pick<Job, "customerName" | "service" | "location" | "employeeName">,
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return [job.customerName, job.service, job.location, job.employeeName]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .includes(q);
+}
+
 // Datums-Key "YYYY-MM-DD" einer Occurrence (single/Occurrence tragen `date`).
 export function scheduleDateKey(job: Job): string | null {
   if (job.date) return job.date.slice(0, 10);
