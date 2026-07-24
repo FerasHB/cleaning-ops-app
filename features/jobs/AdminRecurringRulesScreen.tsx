@@ -15,8 +15,9 @@
 // Warnung steht als eine kompakte Hinweiszeile darunter.
 //
 // Aktionen (Bearbeiten / De-/Aktivieren / Löschen) liegen im Drei-Punkte-Menü
-// (RuleActionMenu), die ganze Karte öffnet die Job-Detailansicht (/jobs/[id]),
-// die Parent-Regeln inkl. generierter Termine bereits darstellt.
+// (ActionMenuSheet — dasselbe Menü wie im JobDetailScreen), die ganze Karte
+// öffnet die Job-Detailansicht (/jobs/[id]), die Parent-Regeln inkl.
+// generierter Termine darstellt.
 //
 // Datenquelle: eigene gebundene Queries (getRecurringRules +
 // getUpcomingOccurrenceSummaries), NICHT das volle JobContext-Array.
@@ -34,15 +35,17 @@
 // über die bereits serverseitig kleine, gebundene Regel-Liste — siehe
 // utils/recurringRuleFilter.ts.
 
-import { Card, EmptyState, ErrorBanner } from "@/components/ui";
+import {
+  ActionMenuSheet,
+  Card,
+  EmptyState,
+  ErrorBanner,
+  type ActionMenuItem,
+} from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import { useJobs } from "@/context/JobContext";
 import { employeeSelectionLabel } from "@/features/jobs/components/EmployeeFilterControl";
-import {
-  RuleActionMenu,
-  type RuleAction,
-} from "@/features/jobs/components/RuleActionMenu";
 import { RuleFilterSheet } from "@/features/jobs/components/RuleFilterSheet";
 import {
   getRecurringRules,
@@ -243,14 +246,14 @@ export default function AdminRecurringRulesScreen() {
   // ein Navigations-Push, der noch während der Schließ-Animation feuert,
   // wird auf iOS vom Modal verschluckt.
   const handleMenuSelect = useCallback(
-    (action: RuleAction) => {
+    (key: string) => {
       const rule = menuRule;
       setMenuRule(null);
       if (!rule) return;
       setTimeout(() => {
-        if (action === "edit") {
+        if (key === "edit") {
           router.push(`/jobs/${rule.id}/edit`);
-        } else if (action === "toggleActive") {
+        } else if (key === "toggle") {
           handleToggleActive(rule);
         } else {
           handleDelete(rule);
@@ -259,6 +262,26 @@ export default function AdminRecurringRulesScreen() {
     },
     [menuRule, handleToggleActive, handleDelete],
   );
+
+  // Einträge des Drei-Punkte-Menüs — gleiche Aktions-Schlüssel wie im
+  // JobDetailScreen, damit beide Menüs identisch zu lesen sind.
+  const menuItems: ActionMenuItem[] = useMemo(() => {
+    const active = menuRule?.isActive ?? true;
+    return [
+      { key: "edit", label: "Bearbeiten", icon: "create-outline" },
+      {
+        key: "toggle",
+        label: active ? "Deaktivieren" : "Aktivieren",
+        icon: active ? "pause-outline" : "play-outline",
+      },
+      {
+        key: "delete",
+        label: "Löschen",
+        icon: "trash-outline",
+        destructive: true,
+      },
+    ];
+  }, [menuRule]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -456,10 +479,10 @@ export default function AdminRecurringRulesScreen() {
         employees={activeEmployees}
       />
 
-      <RuleActionMenu
+      <ActionMenuSheet
         visible={menuRule !== null}
         title={menuRule?.customerName ?? ""}
-        active={menuRule?.isActive ?? true}
+        items={menuItems}
         onClose={() => setMenuRule(null)}
         onSelect={handleMenuSelect}
       />
