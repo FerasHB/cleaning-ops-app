@@ -128,11 +128,13 @@ values
    'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
    null,'Regelkunde','Unterhaltsreinigung','Regelweg 1',
    'open','single', current_date + 3, '08:00', true, null, null),
-  -- Zugewiesen an Employee A2: offen, +3 Tage
+  -- Zugewiesen an Employee A2: offen, +3 Tage.
+  -- Abweichende Uhrzeit (09:00), weil idx_jobs_occurrence_unique
+  -- (parent_job_id, date, start_time) sonst mit c4..8 kollidiert.
   ('c4000000-0000-0000-0000-000000000009','c1000000-0000-0000-0000-000000000001',
    'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
    'c2000000-0000-0000-0000-000000000004','Regelkunde','Unterhaltsreinigung','Regelweg 1',
-   'open','single', current_date + 3, '08:00', true, null, null);
+   'open','single', current_date + 3, '09:00', true, null, null);
 
 -- Firma B: eigener Job (für Cross-Company-Test)
 insert into public.jobs
@@ -189,22 +191,30 @@ begin
   select count(*) into n from public.jobs where job_type='single' and date = today;
   insert into _disp_results values (6,'Heute-Filter zählt heutige Termine','2', n::text);
 
-  -- CASE 7: Bevorstehend (date>heute, offen/in Arbeit) → c4..1 (offen +2) und c4..4 (in_progress +4) = 2
-  select count(*) into n from public.jobs where job_type='single' and status in ('open','in_progress') and date > today;
-  insert into _disp_results values (7,'Bevorstehend-Filter','2', n::text);
+  -- CASE 7: Bevorstehend (Screen-Fenster [morgen..+60], offen/in Arbeit)
+  --   c4..1(+2 offen), c4..4(+4 in_progress), c4..8(+3 offen), c4..9(+3 offen), c4..6(+45 offen) = 5
+  select count(*) into n from public.jobs
+   where job_type='single' and status in ('open','in_progress')
+     and date > today and date <= today + 60;
+  insert into _disp_results values (7,'Bevorstehend-Filter [morgen..+60]','5', n::text);
 
   -- CASE 8: Überfällig (date<heute, offen/in Arbeit) → c4..2 = 1
   select count(*) into n from public.jobs where job_type='single' and status in ('open','in_progress') and date < today;
   insert into _disp_results values (8,'Überfällig-Filter','1', n::text);
 
-  -- CASE 9: Erledigt (completed, single) → c4..3 = 1
+  -- CASE 9: Erledigt-Filter des Zeitplans (alle completed, ohne Datumsgrenze)
+  --   c4..3 (vor 8 Tagen) + c4..7 (vor 40 Tagen) = 2
+  --   (Die Dashboard-KPI „Erledigt" ist dagegen auf 30 Tage begrenzt → Fall 19.)
   select count(*) into n from public.jobs where job_type='single' and status='completed';
-  insert into _disp_results values (9,'Erledigt-Filter','1', n::text);
+  insert into _disp_results values (9,'Erledigt-Filter (Zeitplan, unbegrenzt)','2', n::text);
 
-  -- CASE 10: KPI „Offen" zählt keine Parents (job_type='single', open, date>=heute)
-  -- offen & date>=heute: c4..1(+2), c4..5(heute), c4..AA(heute) = 3  (Parent NICHT dabei)
-  select count(*) into n from public.jobs where job_type='single' and status='open' and date >= today;
-  insert into _disp_results values (10,'KPI Offen ohne Parents','3', n::text);
+  -- CASE 10: Parent-Regeln zählen NIE in der KPI „Offen" mit.
+  -- Parents haben kein date und sind zusätzlich per job_type ausgeschlossen —
+  -- gegen das Offen-Fenster geprüft muss das Ergebnis 0 sein.
+  select count(*) into n from public.jobs
+   where job_type='recurring' and parent_job_id is null
+     and status='open' and date > today and date <= today + 30;
+  insert into _disp_results values (10,'KPI Offen: Parent-Regeln zählen nicht','0', n::text);
 
   -- CASE 11: Detached-Erkennung (SQL-Spiegel): c4..4 (09:30 != Regel 08:00) ist abweichend
   select (
