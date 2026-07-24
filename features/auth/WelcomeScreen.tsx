@@ -49,7 +49,7 @@ export default function WelcomeScreen() {
       <Animated.View style={[styles.content, { opacity, transform: [{ translateY }] }]}>
         {/* ── Oberer Bereich: Branding ── */}
         <View style={styles.top}>
-          <AuthBrand tagline="Field Service, simplified." iconSize={32} />
+          <AuthBrand tagline="Field Service, simplified." />
 
           {/* Feature-Liste */}
           <View style={styles.featureList}>
