@@ -303,6 +303,87 @@ begin
      and assigned_to is null;
   insert into _disp_results values (22,'Mitarbeiter-Filter (unassigned) bevorstehend','1', n::text);
 
+  -- ── Suche (SQL-Spiegel von utils/scheduleView.matchesSearch) ─────────
+  -- ODER über Kunde/Objekt, Service, Adresse, Mitarbeitername; case-insensitiv.
+  -- Datensatz: „Regelkunde"/„Unterhaltsreinigung"/„Regelweg 1" (Occurrences)
+  --            „Einzelkunde"/„Grundreinigung"/„Einzelweg 9" (Single, heute)
+
+  -- CASE 23: Suche nach Kunde/Objekt („einzelkunde") im Heute-Fenster = 1
+  select count(*) into n from public.jobs j
+   left join public.profiles p on p.id = j.assigned_to
+   where j.job_type='single' and j.date = today
+     and (j.customer_name ilike '%einzelkunde%' or j.service_name ilike '%einzelkunde%'
+          or j.location_address ilike '%einzelkunde%' or coalesce(p.full_name,'') ilike '%einzelkunde%');
+  insert into _disp_results values (23,'Suche: Kunde/Objekt (heute)','1', n::text);
+
+  -- CASE 24: Suche nach Adresse („einzelweg") im Heute-Fenster = 1
+  select count(*) into n from public.jobs j
+   left join public.profiles p on p.id = j.assigned_to
+   where j.job_type='single' and j.date = today
+     and (j.customer_name ilike '%einzelweg%' or j.service_name ilike '%einzelweg%'
+          or j.location_address ilike '%einzelweg%' or coalesce(p.full_name,'') ilike '%einzelweg%');
+  insert into _disp_results values (24,'Suche: Adresse (heute)','1', n::text);
+
+  -- CASE 25: Suche nach Service („grundreinigung") im Heute-Fenster = 1
+  select count(*) into n from public.jobs j
+   left join public.profiles p on p.id = j.assigned_to
+   where j.job_type='single' and j.date = today
+     and (j.customer_name ilike '%grundreinigung%' or j.service_name ilike '%grundreinigung%'
+          or j.location_address ilike '%grundreinigung%' or coalesce(p.full_name,'') ilike '%grundreinigung%');
+  insert into _disp_results values (25,'Suche: Service (heute)','1', n::text);
+
+  -- CASE 26: Suche nach Mitarbeitername („Employee A2") bevorstehend = c4..9
+  select count(*) into n from public.jobs j
+   left join public.profiles p on p.id = j.assigned_to
+   where j.job_type='single' and j.status in ('open','in_progress')
+     and j.date > today and j.date <= today + 60
+     and (j.customer_name ilike '%employee a2%' or j.service_name ilike '%employee a2%'
+          or j.location_address ilike '%employee a2%' or coalesce(p.full_name,'') ilike '%employee a2%');
+  insert into _disp_results values (26,'Suche: Mitarbeitername (bevorstehend)','1', n::text);
+
+  -- CASE 27: Suche UND Mitarbeiter-Filter (UND-Semantik):
+  --   Suche „Regelkunde" + Mitarbeiter A2, bevorstehend → nur c4..9 = 1
+  select count(*) into n from public.jobs j
+   left join public.profiles p on p.id = j.assigned_to
+   where j.job_type='single' and j.status in ('open','in_progress')
+     and j.date > today and j.date <= today + 60
+     and j.assigned_to='c2000000-0000-0000-0000-000000000004'
+     and (j.customer_name ilike '%regelkunde%' or j.service_name ilike '%regelkunde%'
+          or j.location_address ilike '%regelkunde%' or coalesce(p.full_name,'') ilike '%regelkunde%');
+  insert into _disp_results values (27,'Suche UND Mitarbeiter-Filter','1', n::text);
+
+  -- CASE 28: Suche kombiniert mit Status „Überfällig" → c4..2 (Regelkunde) = 1
+  select count(*) into n from public.jobs j
+   where j.job_type='single' and j.status in ('open','in_progress') and j.date < today
+     and j.customer_name ilike '%regelkunde%';
+  insert into _disp_results values (28,'Suche kombiniert mit Überfällig','1', n::text);
+
+  -- CASE 29: Suche kombiniert mit Status „Erledigt" → c4..3 + c4..7 = 2
+  select count(*) into n from public.jobs j
+   where j.job_type='single' and j.status='completed'
+     and j.customer_name ilike '%regelkunde%';
+  insert into _disp_results values (29,'Suche kombiniert mit Erledigt','2', n::text);
+
+  -- CASE 30: Suche ohne Treffer → leeres Ergebnis
+  select count(*) into n from public.jobs j
+   left join public.profiles p on p.id = j.assigned_to
+   where j.job_type='single'
+     and (j.customer_name ilike '%zzz_kein_treffer%' or j.service_name ilike '%zzz_kein_treffer%'
+          or j.location_address ilike '%zzz_kein_treffer%' or coalesce(p.full_name,'') ilike '%zzz_kein_treffer%');
+  insert into _disp_results values (30,'Suche ohne Treffer (Empty-State)','0', n::text);
+
+  -- CASE 31: Suche trifft NIE eine Parent-Regel (Zeitplan bleibt parent-frei),
+  -- obwohl „Regelkunde" auch im Namen der Parent-Regel steht.
+  select count(*) into n from public.jobs j
+   where j.job_type='single' and j.customer_name ilike '%regelkunde%'
+     and j.id='c3000000-0000-0000-0000-000000000001';
+  insert into _disp_results values (31,'Suche schließt Parent-Regel aus','0', n::text);
+
+  -- CASE 32: Leere Suche = kein Filter (alle heutigen Termine bleiben) = 2
+  select count(*) into n from public.jobs
+   where job_type='single' and date = today;
+  insert into _disp_results values (32,'Leere Suche filtert nicht (heute)','2', n::text);
+
   execute 'reset role';
 
   -- CASE 14: Employee A sieht KEINE Parent-Regel (RLS: nur job_type='single')
