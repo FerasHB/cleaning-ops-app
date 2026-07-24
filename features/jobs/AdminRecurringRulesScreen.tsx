@@ -9,11 +9,22 @@
 //
 // Datenquelle: eigene gebundene Queries (getRecurringRules +
 // getUpcomingOccurrenceSummaries), NICHT das volle JobContext-Array.
+//
+// Verwaltungsansicht statt operativer Zeitplan: bewusst KEINE permanenten
+// Status-/Mitarbeiter-Chip-Reihen (siehe Zeitplan). Stattdessen ein
+// Suchfeld + ein kompakter Filter-Button (Sliders-Icon), der ein
+// Bottom-Sheet mit Status/Mitarbeiter/Wochentage öffnet. Aktive Filter
+// erscheinen als EIN entfernbarer Zusammenfassungs-Chip, sonst nichts.
+// Filterlogik (Suche + Status + Mitarbeiter + Wochentage) läuft clientseitig
+// über die bereits serverseitig kleine, gebundene Regel-Liste — siehe
+// utils/recurringRuleFilter.ts.
 
 import { Card, EmptyState, ErrorBanner } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import { useJobs } from "@/context/JobContext";
+import { employeeSelectionLabel } from "@/features/jobs/components/EmployeeFilterControl";
+import { RuleFilterSheet } from "@/features/jobs/components/RuleFilterSheet";
 import {
   getRecurringRules,
   getUpcomingOccurrenceSummaries,
@@ -27,6 +38,13 @@ import {
   deriveRuleHealth,
   type RuleHealth,
 } from "@/utils/recurringRule";
+import {
+  DEFAULT_RULE_FILTERS,
+  isRuleFiltersActive,
+  matchesRuleSearchAndFilters,
+  ruleFilterSummaryParts,
+  type RuleFilters,
+} from "@/utils/recurringRuleFilter";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -37,6 +55,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -63,6 +82,18 @@ export default function AdminRecurringRulesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Suche + strukturierte Filter: eigener, unabhängiger State. Keiner der
+  // beiden setzt den anderen zurück, und beide bleiben über Refresh/Realtime
+  // erhalten (sie wirken rein clientseitig auf dem geladenen `rules`-Array).
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<RuleFilters>(DEFAULT_RULE_FILTERS);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+
+  const activeEmployees = useMemo(
+    () => employees.filter((e) => e.isActive !== false),
+    [employees],
+  );
 
   // Aktiv-Status je Mitarbeiter für die „Mitarbeiter inaktiv"-Warnung.
   const employeeActive = useMemo(() => {
@@ -147,76 +178,199 @@ export default function AdminRecurringRulesScreen() {
     load(true);
   }, [load]);
 
-  if (loading) {
-    return (
-      <View style={styles.centerBox}>
-        <ActivityIndicator color={theme.colors.primary} />
-        <Text style={styles.centerText}>Daueraufträge werden geladen …</Text>
-      </View>
-    );
-  }
+  // Kombinierte Anwendung von Suche UND Status UND Mitarbeiter UND
+  // Wochentage auf die bereits geladene, kleine Regel-Liste.
+  const visibleRules = useMemo(
+    () =>
+      rules.filter((rule) => matchesRuleSearchAndFilters(rule, search, filters)),
+    [rules, search, filters],
+  );
+
+  const filtersActive = isRuleFiltersActive(filters);
+  const hasActiveQuery = !!search.trim() || filtersActive;
+
+  // Zusammenfassungs-Chip-Text, z. B. „Aktiv • Lena Brandt • Mo Mi Fr".
+  const filterSummary = useMemo(() => {
+    if (!filtersActive) return "";
+    const employeeLabel = employeeSelectionLabel(filters.employee, employees);
+    return ruleFilterSummaryParts(filters, employeeLabel).join(" • ");
+  }, [filters, filtersActive, employees]);
+
+  const clearFilters = useCallback(() => {
+    setFilters(DEFAULT_RULE_FILTERS);
+  }, []);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
-        />
-      }
-    >
-      {error ? (
-        <ErrorBanner message={error} onDismiss={() => setError(null)} />
+    <View style={styles.screen}>
+      {/* ── Suche + kompakter Filter-Button ── */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchBar}>
+          <Ionicons
+            name="search"
+            size={18}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Objekt, Kunde, Service, Adresse …"
+            placeholderTextColor={theme.colors.outline}
+            style={styles.searchInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {search.length > 0 ? (
+            <TouchableOpacity
+              onPress={() => setSearch("")}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Suche löschen"
+            >
+              <Ionicons
+                name="close-circle"
+                size={18}
+                color={theme.colors.outline}
+              />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.filterButton, filtersActive && styles.filterButtonActive]}
+          onPress={() => setFilterSheetOpen(true)}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Daueraufträge filtern"
+          accessibilityValue={
+            filtersActive ? { text: filterSummary } : undefined
+          }
+          accessibilityHint="Öffnet Status-, Mitarbeiter- und Wochentag-Filter"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name="options-outline"
+            size={18}
+            color={
+              filtersActive
+                ? theme.colors.onPrimaryContainer
+                : theme.colors.onSurfaceVariant
+            }
+          />
+          {filtersActive ? <View style={styles.filterActiveDot} /> : null}
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Aktive Filter: EIN entfernbarer Zusammenfassungs-Chip ── */}
+      {filtersActive ? (
+        <View style={styles.activeFilterRow}>
+          <View style={styles.activeFilterChip}>
+            <Ionicons
+              name="options"
+              size={13}
+              color={theme.colors.onPrimaryContainer}
+            />
+            <Text style={styles.activeFilterText} numberOfLines={1}>
+              {filterSummary}
+            </Text>
+            <TouchableOpacity
+              onPress={clearFilters}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Alle Filter entfernen"
+            >
+              <Ionicons
+                name="close"
+                size={14}
+                color={theme.colors.onPrimaryContainer}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
       ) : null}
 
-      {rules.length === 0 ? (
-        <EmptyState
-          title="Keine Daueraufträge"
-          message="Sobald du einen wiederkehrenden Auftrag anlegst, erscheint er hier."
-          icon="repeat-outline"
-        />
-      ) : (
-        rules.map((rule) => {
-          const summary = summaries.get(rule.id) ?? {
-            parentJobId: rule.id,
-            nextOccurrenceDate: null,
-            hasOccurrences: false,
-          };
-          const assigneeActive = rule.employeeId
-            ? employeeActive.get(rule.employeeId) ?? null
-            : null;
-          const health = deriveRuleHealth(
-            rule,
-            {
-              hasOccurrences: summary.hasOccurrences,
-              nextOccurrenceDate: summary.nextOccurrenceDate,
-            },
-            assigneeActive,
-            todayKey,
-          );
-          return (
-            <RuleCard
-              key={rule.id}
-              rule={rule}
-              health={health}
-              nextDate={summary.nextOccurrenceDate}
-              busy={busyId === rule.id}
-              onEdit={() => router.push(`/jobs/${rule.id}/edit`)}
-              onToggleActive={() => handleToggleActive(rule)}
-              onDelete={() => handleDelete(rule)}
-              styles={styles}
-              theme={theme}
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
+      >
+        {error ? (
+          <ErrorBanner message={error} onDismiss={() => setError(null)} />
+        ) : null}
+
+        {loading ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator color={theme.colors.primary} />
+            <Text style={styles.centerText}>Daueraufträge werden geladen …</Text>
+          </View>
+        ) : visibleRules.length === 0 ? (
+          hasActiveQuery ? (
+            <EmptyState
+              title="Keine passenden Daueraufträge"
+              message="Passe Suche oder Filter an."
+              icon="search-outline"
             />
-          );
-        })
-      )}
-      <View style={{ height: theme.spacing.xl }} />
-    </ScrollView>
+          ) : (
+            <EmptyState
+              title="Keine Daueraufträge"
+              message="Sobald du einen wiederkehrenden Auftrag anlegst, erscheint er hier."
+              icon="repeat-outline"
+            />
+          )
+        ) : (
+          visibleRules.map((rule) => {
+            const summary = summaries.get(rule.id) ?? {
+              parentJobId: rule.id,
+              nextOccurrenceDate: null,
+              hasOccurrences: false,
+            };
+            const assigneeActive = rule.employeeId
+              ? employeeActive.get(rule.employeeId) ?? null
+              : null;
+            const health = deriveRuleHealth(
+              rule,
+              {
+                hasOccurrences: summary.hasOccurrences,
+                nextOccurrenceDate: summary.nextOccurrenceDate,
+              },
+              assigneeActive,
+              todayKey,
+            );
+            return (
+              <RuleCard
+                key={rule.id}
+                rule={rule}
+                health={health}
+                nextDate={summary.nextOccurrenceDate}
+                busy={busyId === rule.id}
+                onEdit={() => router.push(`/jobs/${rule.id}/edit`)}
+                onToggleActive={() => handleToggleActive(rule)}
+                onDelete={() => handleDelete(rule)}
+                styles={styles}
+                theme={theme}
+              />
+            );
+          })
+        )}
+        <View style={{ height: theme.spacing.xl }} />
+      </ScrollView>
+
+      <RuleFilterSheet
+        visible={filterSheetOpen}
+        onClose={() => setFilterSheetOpen(false)}
+        filters={filters}
+        onApply={setFilters}
+        employees={activeEmployees}
+      />
+    </View>
   );
 }
 
@@ -304,6 +458,16 @@ function RuleCard({
           theme={theme}
           styles={styles}
         />
+        {/* Status separat von Health-Badge: eine Regel kann aktiv UND
+            zugleich „ungesund" sein (z. B. aktiv + keine Termine generiert) —
+            der Health-Badge allein würde dann die Grundinformation
+            „läuft die Regel überhaupt?" verdecken. */}
+        <DetailRow
+          icon={active ? "checkmark-circle-outline" : "pause-circle-outline"}
+          text={active ? "Status: Aktiv" : "Status: Inaktiv"}
+          theme={theme}
+          styles={styles}
+        />
       </View>
 
       {health.hint ? (
@@ -385,6 +549,85 @@ function DetailRow({
 
 function createStyles(theme: AppTheme) {
   return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.colors.background },
+
+    // ── Suche + Filter-Button
+    searchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.sm,
+    },
+    searchBar: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      minHeight: theme.spacing.tapTarget,
+    },
+    searchInput: {
+      flex: 1,
+      paddingVertical: 10,
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurface,
+    },
+    filterButton: {
+      width: theme.spacing.tapTarget,
+      height: theme.spacing.tapTarget,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      backgroundColor: theme.colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    filterButtonActive: {
+      backgroundColor: theme.colors.primaryContainer,
+      borderColor: theme.colors.primaryContainer,
+    },
+    filterActiveDot: {
+      position: "absolute",
+      top: 6,
+      right: 6,
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: theme.colors.primary,
+      borderWidth: 1,
+      borderColor: theme.colors.surface,
+    },
+
+    // ── Aktive Filter (ein entfernbarer Zusammenfassungs-Chip)
+    activeFilterRow: {
+      flexDirection: "row",
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.sm,
+    },
+    activeFilterChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      maxWidth: "100%",
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 6,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.primaryContainer,
+    },
+    activeFilterText: {
+      flexShrink: 1,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onPrimaryContainer,
+    },
+
     container: { flex: 1, backgroundColor: theme.colors.background },
     content: {
       paddingHorizontal: theme.spacing.lg,
