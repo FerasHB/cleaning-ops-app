@@ -24,10 +24,14 @@ import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Job } from "@/types/job";
-import { isJobToday } from "@/utils/jobSchedule";
+import {
+  getScheduleKpis,
+  type ScheduleKpis,
+} from "@/services/jobs/jobs.service";
+import { formatDateISO } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const COMPANY_NAME = "Dashboard";
@@ -94,13 +98,34 @@ export default function AdminDashboardScreen() {
     [now],
   );
 
-  // ── KPI-Werte (aus vorhandenen Jobs berechnet)
-  const openCount = jobs.filter((j) => j.status === "open").length;
-  const inProgressCount = jobs.filter((j) => j.status === "in_progress").length;
-  const completedCount = jobs.filter((j) => j.status === "completed").length;
-  // Heute fällig: single mit heutigem Datum + recurring mit heutigem Wochentag,
-  // jeweils nur aktive — identische Logik wie in der Employee-Übersicht.
-  const todayCount = jobs.filter((j) => isJobToday(j, now)).length;
+  // ── KPI-Werte: serverseitig, gebündelt und ohne Parent-Regeln.
+  // Frühere Berechnung aus dem (unbeschränkten) jobs-Array zählte
+  // Recurring-Parents doppelt und war nach oben unbegrenzt. Jetzt liefert
+  // getScheduleKpis reine Zähler (count/head) über job_type='single'.
+  const todayKey = useMemo(() => formatDateISO(now) ?? "", [now]);
+  const [kpis, setKpis] = useState<ScheduleKpis | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!todayKey) return;
+    getScheduleKpis(todayKey)
+      .then((k) => {
+        if (!cancelled) setKpis(k);
+      })
+      .catch(() => {
+        // Fehler still: KPIs zeigen dann „—".
+        if (!cancelled) setKpis(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [todayKey]);
+
+  const openCount = kpis?.offen ?? null;
+  const inProgressCount = kpis?.inArbeit ?? null;
+  const completedCount = kpis?.erledigt ?? null;
+  const todayCount = kpis?.heute ?? null;
+  const overdueCount = kpis?.ueberfaellig ?? 0;
 
   // ── Mitarbeiter-Aktivität: aktiver (in_progress) Job pro Mitarbeiter
   const employeeActivity = useMemo(
@@ -171,8 +196,17 @@ export default function AdminDashboardScreen() {
       <View style={styles.kpiGrid}>
         <View style={styles.kpiItem}>
           <KPICard
-            label="Offene Jobs"
-            value={openCount}
+            label="Heute fällig"
+            value={todayCount ?? "—"}
+            icon="calendar-outline"
+            accentColor={theme.colors.primary}
+            onPress={() => router.push("/(admin-tabs)/jobs")}
+          />
+        </View>
+        <View style={styles.kpiItem}>
+          <KPICard
+            label="Offen"
+            value={openCount ?? "—"}
             icon="folder-open-outline"
             accentColor={theme.colors.statusOpen}
             onPress={() => router.push("/(admin-tabs)/jobs")}
@@ -181,7 +215,7 @@ export default function AdminDashboardScreen() {
         <View style={styles.kpiItem}>
           <KPICard
             label="In Arbeit"
-            value={inProgressCount}
+            value={inProgressCount ?? "—"}
             icon="time-outline"
             accentColor={theme.colors.statusInProgress}
             onPress={() => router.push("/(admin-tabs)/jobs")}
@@ -190,22 +224,38 @@ export default function AdminDashboardScreen() {
         <View style={styles.kpiItem}>
           <KPICard
             label="Erledigt"
-            value={completedCount}
+            value={completedCount ?? "—"}
             icon="checkmark-done-outline"
             accentColor={theme.colors.statusCompleted}
             onPress={() => router.push("/(admin-tabs)/jobs")}
           />
         </View>
-        <View style={styles.kpiItem}>
-          <KPICard
-            label="Heute fällig"
-            value={todayCount}
-            icon="calendar-outline"
-            accentColor={theme.colors.primary}
-            onPress={() => router.push("/(admin-tabs)/jobs")}
-          />
-        </View>
       </View>
+
+      {/* ── Überfällig-Hinweis (nur wenn vorhanden) ── */}
+      {overdueCount > 0 ? (
+        <TouchableOpacity
+          style={styles.overdueBanner}
+          activeOpacity={0.8}
+          onPress={() => router.push("/(admin-tabs)/jobs")}
+        >
+          <Ionicons
+            name="alert-circle"
+            size={18}
+            color={theme.colors.statusOpen}
+          />
+          <Text style={styles.overdueText}>
+            {overdueCount}{" "}
+            {overdueCount === 1 ? "überfälliger Termin" : "überfällige Termine"}
+          </Text>
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={theme.colors.statusOpen}
+            style={{ marginLeft: "auto" }}
+          />
+        </TouchableOpacity>
+      ) : null}
 
       {/* ── Mitarbeiter-Aktivität ── */}
       <View style={styles.section}>
@@ -415,6 +465,26 @@ function createStyles(theme: AppTheme) {
     },
     kpiItem: {
       width: "48.5%",
+    },
+
+    // ── Überfällig-Banner
+    overdueBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.statusOpenBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusOpenBorder,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+      marginBottom: theme.spacing.xl,
+    },
+    overdueText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.statusOpen,
     },
 
     // ── Sections

@@ -19,7 +19,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { JobPhotos } from "@/features/jobs/components/JobPhotos";
-import { getJobOccurrences } from "@/services/jobs/jobs.service";
+import { getJobById, getJobOccurrences } from "@/services/jobs/jobs.service";
 import { WorkedTimeCard } from "@/features/jobs/components/WorkedTimeCard";
 import { formatRecurringDays } from "@/utils/recurrence";
 import type { Job } from "@/types/job";
@@ -90,7 +90,45 @@ export default function JobDetailScreen() {
   const { jobs, startJob, completeJob, loading, online, markJobCommentsAsRead } =
     useJobs();
 
-  const job = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
+  // Cache-first: zuerst aus dem (ggf. begrenzten) Context-Fenster.
+  const cachedJob = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
+
+  // Fallback: liegt der Job NICHT im Cache (z. B. außerhalb des Zeitplan-
+  // Fensters oder per Deep-Link direkt geöffnet), direkt per ID nachladen.
+  // RLS entscheidet über Sichtbarkeit (fremde Firma → kein Datensatz).
+  const [fetchedJob, setFetchedJob] = useState<Job | null>(null);
+  const [fetchingJob, setFetchingJob] = useState(false);
+  const [fetchAttempted, setFetchAttempted] = useState(false);
+
+  useEffect(() => {
+    // Reset, wenn die ID wechselt.
+    setFetchedJob(null);
+    setFetchAttempted(false);
+  }, [id]);
+
+  useEffect(() => {
+    if (!id || cachedJob || fetchAttempted) return;
+    let cancelled = false;
+    setFetchingJob(true);
+    getJobById(id)
+      .then((j) => {
+        if (!cancelled) setFetchedJob(j);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedJob(null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setFetchingJob(false);
+          setFetchAttempted(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, cachedJob, fetchAttempted]);
+
+  const job = cachedJob ?? fetchedJob ?? undefined;
 
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -120,8 +158,9 @@ export default function JobDetailScreen() {
       .finally(() => setOccurrencesLoading(false));
   }, [job?.id, isAdmin, job?.jobType, job?.parentJobId]);
 
-  // ── Loading-Zustand (JobContext lädt noch)
-  if (loading) {
+  // ── Loading-Zustand: Context lädt, Direktabruf läuft, oder der Abruf wurde
+  // noch nicht versucht (verhindert ein „nicht gefunden"-Aufblitzen).
+  if ((loading && !cachedJob) || (!job && (fetchingJob || !fetchAttempted))) {
     return <LoadingScreen />;
   }
 
