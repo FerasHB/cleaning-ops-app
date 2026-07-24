@@ -26,7 +26,8 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": ["android.permission.RECORD_AUDIO"],
-      "package": "com.ferash.taskopsmanager"
+      "package": "com.ferash.taskopsmanager",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -55,7 +56,8 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
