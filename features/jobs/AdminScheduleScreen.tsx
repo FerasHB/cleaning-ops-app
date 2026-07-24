@@ -14,6 +14,10 @@
 
 import { EmptyState, ErrorBanner } from "@/components/ui";
 import JobCard from "@/components/JobCard";
+import {
+  employeeSelectionLabel,
+  type EmployeeSelection,
+} from "@/features/jobs/components/EmployeeFilterControl";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
@@ -40,7 +44,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   RefreshControl,
-  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -49,31 +52,32 @@ import {
   View,
 } from "react-native";
 
-// Auswahl im Mitarbeiter-Filter: alle, unzugewiesen, oder eine Mitarbeiter-ID.
-type EmployeeSelection = "all" | "unassigned" | string;
-
 // Standard-Fenster für „Bevorstehend": ab morgen bis +60 Tage.
 const UPCOMING_DAYS = 60;
 
-export default function AdminScheduleScreen() {
+type Props = {
+  /** Aktuelle Mitarbeiter-Auswahl (liegt im Host, siehe AdminJobsScreen). */
+  employeeSel: EmployeeSelection;
+  /** Setzt die Auswahl auf „Alle Mitarbeiter" zurück (Chip-Schließen). */
+  onClearEmployee: () => void;
+};
+
+export default function AdminScheduleScreen({
+  employeeSel,
+  onClearEmployee,
+}: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
 
-  // Aktive Mitarbeiter für den Filter (Nicht-zugewiesen-Option zusätzlich).
+  // employees nur noch für das Label des Aktiv-Chips;
   // unreadJobIds speist die Ungelesen-Punkte auf den Karten.
   const { employees, unreadJobIds } = useJobs();
-  const activeEmployees = useMemo(
-    () => employees.filter((e) => e.isActive !== false),
-    [employees],
-  );
 
   const [filter, setFilter] = useState<ScheduleFilter>("heute");
-  // Mitarbeiter-Auswahl bleibt über Filterwechsel/Refresh/Realtime erhalten.
-  const [employeeSel, setEmployeeSel] = useState<EmployeeSelection>("all");
-  // Suchtext bleibt ebenfalls erhalten (eigener State, wird nirgends
-  // zurückgesetzt — weder bei Filter-/Mitarbeiterwechsel noch beim Refresh).
+  // Suchtext bleibt erhalten (eigener State, wird nirgends zurückgesetzt —
+  // weder bei Filter-/Mitarbeiterwechsel noch beim Refresh).
   const [search, setSearch] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
   // Regel-Terminierung je Parent-ID → für die Abweichender-Termin-Erkennung.
@@ -213,8 +217,13 @@ export default function AdminScheduleScreen() {
   }, [visibleJobs, todayKey, filter]);
 
   // Ist gerade irgendein Filter/Suchbegriff aktiv? (für den Empty-State)
-  const hasActiveQuery =
-    !!search.trim() || employeeSel !== "all";
+  const hasActiveQuery = !!search.trim() || employeeSel !== "all";
+
+  // Anzeigename der aktiven Mitarbeiter-Auswahl (für den Chip).
+  const employeeLabel = useMemo(
+    () => employeeSelectionLabel(employeeSel, employees),
+    [employeeSel, employees],
+  );
 
   return (
     <View style={styles.container}>
@@ -253,39 +262,7 @@ export default function AdminScheduleScreen() {
         </View>
       </View>
 
-      {/* ── 2. Mitarbeiter-Filter (serverseitig, bleibt über Filterwechsel) ── */}
-      {activeEmployees.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.employeeRow}
-          keyboardShouldPersistTaps="handled"
-        >
-          <EmpChip
-            label="Alle Mitarbeiter"
-            active={employeeSel === "all"}
-            onPress={() => setEmployeeSel("all")}
-            styles={styles}
-          />
-          <EmpChip
-            label="Nicht zugewiesen"
-            active={employeeSel === "unassigned"}
-            onPress={() => setEmployeeSel("unassigned")}
-            styles={styles}
-          />
-          {activeEmployees.map((emp) => (
-            <EmpChip
-              key={emp.id}
-              label={emp.fullName}
-              active={employeeSel === emp.id}
-              onPress={() => setEmployeeSel(emp.id)}
-              styles={styles}
-            />
-          ))}
-        </ScrollView>
-      ) : null}
-
-      {/* ── 3. Status-/Zeit-Filter ── */}
+      {/* ── 2. Status-/Zeit-Filter ── */}
       <View style={styles.filterRow}>
         {SCHEDULE_FILTERS.map((f) => {
           const active = filter === f.key;
@@ -303,6 +280,36 @@ export default function AdminScheduleScreen() {
           );
         })}
       </View>
+
+      {/* ── 3. Aktiver Mitarbeiter-Filter: EIN entfernbarer Chip ──
+          Nur sichtbar, wenn wirklich gefiltert wird — bei „Alle Mitarbeiter"
+          bleibt der Header schlank. */}
+      {employeeSel !== "all" ? (
+        <View style={styles.activeFilterRow}>
+          <View style={styles.activeFilterChip}>
+            <Ionicons
+              name="people"
+              size={13}
+              color={theme.colors.onPrimaryContainer}
+            />
+            <Text style={styles.activeFilterText} numberOfLines={1}>
+              Mitarbeiter: {employeeLabel}
+            </Text>
+            <TouchableOpacity
+              onPress={onClearEmployee}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Mitarbeiter-Filter ${employeeLabel} entfernen`}
+            >
+              <Ionicons
+                name="close"
+                size={14}
+                color={theme.colors.onPrimaryContainer}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
 
       {error ? (
         <ErrorBanner message={error} onDismiss={() => setError(null)} />
@@ -377,34 +384,6 @@ export default function AdminScheduleScreen() {
         />
       )}
     </View>
-  );
-}
-
-// Mitarbeiter-Filter-Chip (gleiches Muster wie die frühere Admin-Jobliste).
-function EmpChip({
-  label,
-  active,
-  onPress,
-  styles,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={[styles.empChip, active && styles.empChipActive]}
-    >
-      <Text
-        style={[styles.empChipText, active && styles.empChipTextActive]}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
   );
 }
 
@@ -488,36 +467,28 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
     },
-    // ── Mitarbeiter-Filter
-    employeeRow: {
+    // ── Aktiver Mitarbeiter-Filter (ein entfernbarer Chip)
+    activeFilterRow: {
       flexDirection: "row",
-      gap: theme.spacing.sm,
       paddingHorizontal: theme.spacing.lg,
       paddingBottom: theme.spacing.sm,
     },
-    empChip: {
+    activeFilterChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      maxWidth: "100%",
       paddingHorizontal: theme.spacing.md,
-      paddingVertical: 7,
+      paddingVertical: 6,
       borderRadius: theme.radius.full,
-      borderWidth: 1,
-      borderColor: theme.colors.outlineVariant,
-      backgroundColor: theme.colors.surface,
-      maxWidth: 180,
+      backgroundColor: theme.colors.primaryContainer,
     },
-    empChipActive: {
-      backgroundColor: theme.colors.statusInProgressBg,
-      borderColor: theme.colors.statusInProgressBorder,
-    },
-    empChipText: {
+    activeFilterText: {
+      flexShrink: 1,
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.medium,
       fontWeight: theme.typography.weight.medium,
-      color: theme.colors.onSurfaceVariant,
-    },
-    empChipTextActive: {
-      color: theme.colors.statusInProgress,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onPrimaryContainer,
     },
     listContent: {
       paddingHorizontal: theme.spacing.lg,

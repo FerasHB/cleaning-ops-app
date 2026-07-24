@@ -10,7 +10,12 @@
 
 import AdminScheduleScreen from "@/features/jobs/AdminScheduleScreen";
 import AdminRecurringRulesScreen from "@/features/jobs/AdminRecurringRulesScreen";
+import {
+  EmployeeFilterControl,
+  type EmployeeSelection,
+} from "@/features/jobs/components/EmployeeFilterControl";
 import { OfflineBanner } from "@/components/ui";
+import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,6 +36,17 @@ export default function AdminJobsScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [segment, setSegment] = useState<Segment>("zeitplan");
 
+  // Mitarbeiter-Filter liegt hier (nicht im Zeitplan), damit der kompakte
+  // Button in der Kopfzeile neben „Jobs" sitzt. Er gilt ausschließlich für den
+  // Zeitplan und wird bei Daueraufträgen ausgeblendet, um nicht zu suggerieren,
+  // er würde die Regel-Liste filtern.
+  const { employees } = useJobs();
+  const activeEmployees = useMemo(
+    () => employees.filter((e) => e.isActive !== false),
+    [employees],
+  );
+  const [employeeSel, setEmployeeSel] = useState<EmployeeSelection>("all");
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <StatusBar
@@ -40,7 +56,18 @@ export default function AdminJobsScreen() {
 
       <View style={styles.header}>
         <OfflineBanner />
-        <Text style={styles.title}>Jobs</Text>
+
+        {/* Titel + kompakter Mitarbeiter-Filter (nur im Zeitplan) */}
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Jobs</Text>
+          {segment === "zeitplan" ? (
+            <EmployeeFilterControl
+              value={employeeSel}
+              onChange={setEmployeeSel}
+              employees={activeEmployees}
+            />
+          ) : null}
+        </View>
 
         {/* Segmented Control */}
         <View style={styles.segment}>
@@ -78,7 +105,10 @@ export default function AdminJobsScreen() {
 
       <View style={styles.body}>
         {segment === "zeitplan" ? (
-          <AdminScheduleScreen />
+          <AdminScheduleScreen
+            employeeSel={employeeSel}
+            onClearEmployee={() => setEmployeeSel("all")}
+          />
         ) : (
           <AdminRecurringRulesScreen />
         )}
@@ -102,6 +132,12 @@ function createStyles(theme: AppTheme) {
     header: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.md,
+      gap: theme.spacing.sm,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
       gap: theme.spacing.sm,
     },
     title: {
