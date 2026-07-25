@@ -675,6 +675,50 @@ end $$;
 
 
 -- =========================================================
+-- CASE 24: DIREKTER INSERT mit employee_id = NULL -> abgelehnt
+--   Anonyme Zeilen duerfen ausschliesslich NACHTRAEGLICH aus einer echten
+--   Zuweisung entstehen (ON DELETE SET NULL). Ohne diese Ablehnung liesse
+--   sich eine beliebige Zahl namenloser Geisterzeilen an einem Auftrag
+--   anlegen — und damit die Invariante aushebeln, auf der die Begruendung
+--   fuer NULLS DISTINCT beruht (jede NULL-Zeile = genau ein geloeschter
+--   Mitarbeiter). Regressionsschutz fuer den Security-Review zu PR #50.
+-- =========================================================
+do $$
+declare v text;
+begin
+  begin
+    insert into public.job_assignments (job_id, employee_id, employee_name_snapshot)
+    values ('c4000000-0000-0000-0000-000000000001', null, 'Geisterzeile');
+    v := 'ACCEPTED';
+  exception when others then v := 'REJECTED';
+  end;
+  insert into _ja_results values (24,'Direkter INSERT mit employee_id = NULL','REJECTED',v);
+  raise notice 'CASE 24 -> %', v;
+end $$;
+
+-- =========================================================
+-- CASE 25: Anonymisierungspfad bleibt trotz CASE-24-Ablehnung offen
+--   Der Guard darf NUR den INSERT treffen. Das UPDATE auf NULL, das
+--   PostgreSQL bei ON DELETE SET NULL ausfuehrt, muss weiterhin
+--   durchlaufen — sonst waeren Konto-Loeschungen blockiert.
+-- =========================================================
+do $$
+declare v text;
+begin
+  begin
+    update public.job_assignments
+       set employee_id = null
+     where job_id = 'c4000000-0000-0000-0000-000000000001'
+       and employee_id = 'c2000000-0000-0000-0000-000000000003';
+    v := 'ACCEPTED';
+  exception when others then v := 'REJECTED('||sqlstate||')';
+  end;
+  insert into _ja_results values (25,'UPDATE auf employee_id = NULL (Anonymisierung) bleibt erlaubt','ACCEPTED',v);
+  raise notice 'CASE 25 -> %', v;
+end $$;
+
+
+-- =========================================================
 -- Ergebnisuebersicht
 -- =========================================================
 select
@@ -695,7 +739,7 @@ begin
   if fails > 0 then
     raise exception 'JOB ASSIGNMENTS TEST: % Fall/Faelle FEHLGESCHLAGEN', fails;
   end if;
-  raise notice 'ALLE 23 FAELLE PASS';
+  raise notice 'ALLE 25 FAELLE PASS';
 end $$;
 
 -- Nichts persistieren — reine Pruefung.

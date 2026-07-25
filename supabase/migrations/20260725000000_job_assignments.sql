@@ -406,17 +406,28 @@ end $$;
 -- schreibt nichts und ist als Trigger-Funktion nicht über PostgREST
 -- aufrufbar. search_path ist fest gesetzt; EXECUTE wird unten entzogen.
 --
--- DREI bewusste Nicht-Prüfungen:
---   a) employee_id IS NULL -> sofort durchlassen. Das ist der
---      Anonymisierungspfad (ON DELETE SET NULL) einer Konto-Löschung.
---      Würde der Guard hier greifen, ließen sich Konten nicht mehr
---      löschen — derselbe Fehler wie seinerzeit bei job_photos.
---   b) UPDATE ohne Identitätswechsel -> durchlassen. Anwesenheits- und
+-- employee_id IS NULL wird ASYMMETRISCH behandelt:
+--   * beim UPDATE durchgelassen — das ist der Anonymisierungspfad
+--     (ON DELETE SET NULL) einer Konto-Löschung. Würde der Guard hier
+--     greifen, ließen sich Konten nicht mehr löschen — derselbe Fehler
+--     wie seinerzeit bei job_photos.
+--   * beim INSERT ABGELEHNT. Eine anonyme Zeile darf ausschließlich
+--     NACHTRÄGLICH aus einer echten Zuweisung entstehen, nie direkt
+--     angelegt werden. Genau darauf stützt sich die Begründung für
+--     NULLS DISTINCT im Abschnitt "Duplikat-Schutz": mehrere NULL-Zeilen
+--     an einem Auftrag stehen für mehrere VERSCHIEDENE gelöschte
+--     Mitarbeiter. Ohne diese Ablehnung könnte (spätestens ab Phase 3,
+--     wenn Admins INSERT-Rechte per Policy erhalten) eine beliebige
+--     Anzahl namenloser Geisterzeilen an einem Auftrag entstehen und
+--     diese Invariante aushebeln.
+--
+-- ZWEI weitere bewusste Nicht-Prüfungen:
+--   a) UPDATE ohne Identitätswechsel -> durchlassen. Anwesenheits- und
 --      Review-Änderungen müssen auch dann funktionieren, wenn der
 --      Mitarbeiter INZWISCHEN DEAKTIVIERT wurde. Ein Manager muss einen
 --      deaktivierten Mitarbeiter nachträglich als anwesend bestätigen
 --      oder als abwesend markieren können.
---   c) DELETE -> Trigger läuft gar nicht erst (nur INSERT/UPDATE).
+--   b) DELETE -> Trigger läuft gar nicht erst (nur INSERT/UPDATE).
 create or replace function public.enforce_active_assignment()
 returns trigger
 language plpgsql
@@ -426,8 +437,12 @@ as $$
 declare
   must_check boolean := false;
 begin
-  -- (a) Anonymisierte Historie niemals blockieren.
   if new.employee_id is null then
+    -- Anonyme Zeilen entstehen nur nachträglich, nie per INSERT.
+    if tg_op = 'INSERT' then
+      raise exception 'employee_id must be set on insert (NULL only results from account deletion)';
+    end if;
+    -- UPDATE: Anonymisierung durch Konto-Löschung — niemals blockieren.
     return new;
   end if;
 
@@ -465,7 +480,9 @@ comment on function public.enforce_active_assignment() is
 'Profil mit role=employee derselben company_id wie der Auftrag. Prüft bei INSERT '
 'und nur bei echtem Wechsel von employee_id/job_id — Anwesenheits- und '
 'Review-Änderungen bleiben für inzwischen deaktivierte Mitarbeiter möglich. '
-'employee_id IS NULL (Konto-Löschung) wird immer durchgelassen.';
+'employee_id IS NULL wird beim UPDATE durchgelassen (Anonymisierung durch '
+'Konto-Löschung), beim INSERT aber abgelehnt — anonyme Zeilen dürfen nur '
+'nachträglich aus einer echten Zuweisung entstehen (Basis für NULLS DISTINCT).';
 
 revoke all on function public.enforce_active_assignment() from public;
 revoke all on function public.enforce_active_assignment() from anon, authenticated;
