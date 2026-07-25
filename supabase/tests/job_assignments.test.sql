@@ -667,17 +667,29 @@ end $$;
 -- =========================================================
 -- CASE 23: Neue Tabelle ist fail-closed (RLS an, keine Grants)
 -- =========================================================
+-- Hinweis: Phase 3 (Migration 20260727000000) vergibt bewusst SELECT an
+-- authenticated, damit die dortigen Lese-Policies ueberhaupt greifen
+-- koennen. Geprueft werden hier deshalb die Zusicherungen, die
+-- phasenuebergreifend gelten MUESSEN: RLS bleibt aktiv, anon bekommt
+-- niemals irgendein Recht, und authenticated erhaelt zu keinem Zeitpunkt
+-- ein SCHREIBrecht auf der Tabelle.
 do $$
-declare v text; rls boolean; grants int;
+declare v text; rls boolean; anon_grants int; write_grants int;
 begin
   select relrowsecurity into rls from pg_class where oid = 'public.job_assignments'::regclass;
-  select count(*) into grants
+
+  select count(*) into anon_grants
+  from information_schema.role_table_grants
+  where table_schema='public' and table_name='job_assignments' and grantee='anon';
+
+  select count(*) into write_grants
   from information_schema.role_table_grants
   where table_schema='public' and table_name='job_assignments'
-    and grantee in ('anon','authenticated');
+    and grantee='authenticated' and privilege_type in ('INSERT','UPDATE','DELETE');
 
-  v := 'rls='||rls::text||'/grants='||grants::text;
-  insert into _ja_results values (23,'job_assignments fail-closed: RLS aktiv, keine anon/authenticated-Grants','rls=true/grants=0',v);
+  v := 'rls='||rls::text||'/anon_grants='||anon_grants::text||'/auth_schreibrechte='||write_grants::text;
+  insert into _ja_results values (23,'job_assignments: RLS aktiv, anon rechtelos, authenticated ohne Schreibrechte',
+    'rls=true/anon_grants=0/auth_schreibrechte=0',v);
   raise notice 'CASE 23 -> %', v;
 end $$;
 
