@@ -96,7 +96,15 @@ insert into public.jobs (
   -- J7: abgeschlossen, zugewiesen A4 (Konto wird später gelöscht)
   ('c4000000-0000-0000-0000-000000000007','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000007','c2000000-0000-0000-0000-000000000001','Kunde 7','Service 7','Ort 7','completed',   timestamptz '2026-06-02 08:00+00', timestamptz '2026-06-02 10:00+00','single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J8: Auftrag zum Löschen (Cascade-Fall)
-  ('c4000000-0000-0000-0000-000000000008','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 8','Service 8','Ort 8','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00');
+  ('c4000000-0000-0000-0000-000000000008','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 8','Service 8','Ort 8','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  -- J9: BEWUSST OHNE assigned_to — reserviert für die Touch-Trigger-Fälle 11–13.
+  -- Ab Phase 2 (Migration 20260726000000) legt der Kompatibilitäts-Trigger
+  -- compat_sync_assignments_from_legacy beim INSERT eines Auftrags MIT
+  -- assigned_to automatisch die passende Zuweisung an. Ein Auftrag mit
+  -- Zuweisung hätte hier also bereits eine Zeile, und der manuelle INSERT
+  -- der Touch-Fälle liefe in die UNIQUE-Bedingung. Ein unzugewiesener
+  -- Auftrag hält diese Fälle unabhängig von der Kompatibilitätsschicht.
+  ('c4000000-0000-0000-0000-000000000009','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 9','Service 9','Ort 9','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00');
 
 create temporary table _ja_results (
   case_no      int,
@@ -343,10 +351,10 @@ end $$;
 do $$
 declare v text;
 begin
-  perform pg_temp.reset_touch('c4000000-0000-0000-0000-000000000002');
+  perform pg_temp.reset_touch('c4000000-0000-0000-0000-000000000009');
   insert into public.job_assignments (job_id, employee_id, employee_name_snapshot)
-  values ('c4000000-0000-0000-0000-000000000002','c2000000-0000-0000-0000-000000000002','Anna Mueller');
-  v := case when pg_temp.touched('c4000000-0000-0000-0000-000000000002') then 'TOUCHED' else 'NOT_TOUCHED' end;
+  values ('c4000000-0000-0000-0000-000000000009','c2000000-0000-0000-0000-000000000002','Anna Mueller');
+  v := case when pg_temp.touched('c4000000-0000-0000-0000-000000000009') then 'TOUCHED' else 'NOT_TOUCHED' end;
   insert into _ja_results values (11,'jobs.updated_at angehoben bei Zuweisungs-INSERT','TOUCHED',v);
   raise notice 'CASE 11 -> %', v;
 end $$;
@@ -357,11 +365,11 @@ end $$;
 do $$
 declare v text;
 begin
-  perform pg_temp.reset_touch('c4000000-0000-0000-0000-000000000002');
+  perform pg_temp.reset_touch('c4000000-0000-0000-0000-000000000009');
   update public.job_assignments
      set attendance = 'started', employee_started_at = now()
-   where job_id = 'c4000000-0000-0000-0000-000000000002';
-  v := case when pg_temp.touched('c4000000-0000-0000-0000-000000000002') then 'TOUCHED' else 'NOT_TOUCHED' end;
+   where job_id = 'c4000000-0000-0000-0000-000000000009';
+  v := case when pg_temp.touched('c4000000-0000-0000-0000-000000000009') then 'TOUCHED' else 'NOT_TOUCHED' end;
   insert into _ja_results values (12,'jobs.updated_at angehoben bei Zuweisungs-UPDATE','TOUCHED',v);
   raise notice 'CASE 12 -> %', v;
 end $$;
@@ -372,9 +380,9 @@ end $$;
 do $$
 declare v text;
 begin
-  perform pg_temp.reset_touch('c4000000-0000-0000-0000-000000000002');
-  delete from public.job_assignments where job_id = 'c4000000-0000-0000-0000-000000000002';
-  v := case when pg_temp.touched('c4000000-0000-0000-0000-000000000002') then 'TOUCHED' else 'NOT_TOUCHED' end;
+  perform pg_temp.reset_touch('c4000000-0000-0000-0000-000000000009');
+  delete from public.job_assignments where job_id = 'c4000000-0000-0000-0000-000000000009';
+  v := case when pg_temp.touched('c4000000-0000-0000-0000-000000000009') then 'TOUCHED' else 'NOT_TOUCHED' end;
   insert into _ja_results values (13,'jobs.updated_at angehoben bei Zuweisungs-DELETE','TOUCHED',v);
   raise notice 'CASE 13 -> %', v;
 end $$;
