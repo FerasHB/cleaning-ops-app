@@ -182,6 +182,19 @@ revoke all on function public.compat_assignment_sync_active() from anon, authent
 --
 -- Anonymisierte Zeilen (employee_id IS NULL) werden durch die
 -- LEBEND-Bedingung strukturell nie ausgewählt.
+--
+-- WARUM STABLE UND NICHT VOLATILE (im Review geprüft, nicht angenommen)
+--   Die Funktion wird ausschließlich aus
+--   compat_sync_legacy_from_assignments() aufgerufen, und zwar NACH dem
+--   dortigen "SELECT … FOR UPDATE". Der Aufruf ist eine eigene
+--   PL/pgSQL-Anweisung innerhalb einer VOLATILE-Triggerfunktion und
+--   erhält damit in READ COMMITTED einen frischen Snapshot — also den
+--   Stand NACH dem Commit der blockierenden Transaktion. Als STABLE
+--   übernimmt diese Funktion exakt diesen frischen Snapshot ihres
+--   Aufrufers. VOLATILE ist deshalb nicht nötig; die Zwei-Sitzungs-
+--   Reproduktion aus dem Review ist mit STABLE + FOR UPDATE nachweislich
+--   nicht mehr auslösbar (auch in der Variante, in der der korrekte
+--   Primär ein anderer Mitarbeiter statt NULL ist).
 create or replace function public.compat_primary_assignee(p_job_id uuid)
 returns uuid
 language plpgsql
@@ -420,6 +433,29 @@ begin
     return null;
   end if;
 
+  -- Auftragszeile SPERREN, bevor der Primär bestimmt wird.
+  --
+  -- Ohne diese Sperre ist die Berechnung ein Read-then-Write ohne
+  -- Serialisierung: Löschen zwei Transaktionen gleichzeitig VERSCHIEDENE
+  -- Zuweisungen desselben Auftrags, liest die zweite den noch alten
+  -- assigned_to-Wert, hält ihn nach Regel 1 für gedeckt und schreibt
+  -- nichts — obwohl die erste Transaktion den Zeiger inzwischen auf einen
+  -- Mitarbeiter gesetzt hat, dessen Zuweisung die zweite gerade entfernt.
+  -- Ergebnis: jobs.assigned_to zeigt auf eine nicht mehr existierende
+  -- Zuweisung. Das ist nicht nur kosmetisch — start_own_job/
+  -- complete_own_job prüfen ausschließlich assigned_to = auth.uid().
+  -- Der Fall wurde im Review mit zwei echten Sitzungen reproduziert.
+  --
+  -- Das UPDATE weiter unten serialisiert NICHT von allein: greift Regel 1,
+  -- ist die WHERE-Bedingung "IS DISTINCT FROM" leer, das UPDATE trifft
+  -- null Zeilen und fordert nie eine Sperre an.
+  --
+  -- Gleiche Sperrdisziplin wie in update_job_occurrences (20260723000004).
+  -- In READ COMMITTED wartet die zweite Transaktion hier, liest die
+  -- Auftragszeile nach dem Commit der ersten neu (EvalPlanQual) und
+  -- berechnet den Primär auf dem dann gültigen Stand.
+  perform 1 from public.jobs where id = v_job_id for update;
+
   v_primary := public.compat_primary_assignee(v_job_id);
 
   perform set_config('app.jobs_assignment_sync', '1', true);
@@ -585,6 +621,36 @@ revoke all on function public.touch_job_on_assignment_change() from anon, authen
 -- =========================================================
 -- ROLLBACK (vollständig, nicht destruktiv)
 -- =========================================================
+-- REIHENFOLGE IST ZWINGEND: touch_job_on_assignment_change() ruft
+-- compat_assignment_sync_active() auf. Wird die Hilfsfunktion zuerst
+-- entfernt, scheitert JEDER Schreibvorgang auf job_assignments mit
+-- SQLSTATE 42883, bis der Phase-1-Rumpf wiederhergestellt ist. In diesem
+-- Repository werden Schemaänderungen manuell und Anweisung für Anweisung
+-- im Supabase SQL Editor ausgeführt (siehe CLAUDE.md) — dieses Fenster
+-- wäre also real und für laufenden Traffic sichtbar. Deshalb ZUERST den
+-- Trigger-Rumpf zurücksetzen, DANN die Kompatibilitätsobjekte abbauen.
+--
+--   -- 1) touch_job_on_assignment_change() auf den Phase-1-Stand
+--   --    zurücksetzen (Migration 20260725000000, Abschnitt 7):
+--   --    identischer Rumpf OHNE den vorangestellten Flag-Check.
+--   create or replace function public.touch_job_on_assignment_change()
+--   returns trigger language plpgsql security definer
+--   set search_path = public, pg_temp
+--   as $body$
+--   begin
+--     if tg_op = 'DELETE' then
+--       update public.jobs set updated_at = now() where id = old.job_id;
+--       return null;
+--     end if;
+--     update public.jobs set updated_at = now() where id = new.job_id;
+--     if tg_op = 'UPDATE' and new.job_id is distinct from old.job_id then
+--       update public.jobs set updated_at = now() where id = old.job_id;
+--     end if;
+--     return null;
+--   end;
+--   $body$;
+--
+--   -- 2) erst danach die Kompatibilitätsschicht abbauen:
 --   drop trigger if exists compat_sync_assignments_from_legacy_ins on public.jobs;
 --   drop trigger if exists compat_sync_assignments_from_legacy_upd on public.jobs;
 --   drop trigger if exists compat_sync_legacy_from_assignments_trg on public.job_assignments;
@@ -592,9 +658,6 @@ revoke all on function public.touch_job_on_assignment_change() from anon, authen
 --   drop function if exists public.compat_sync_legacy_from_assignments();
 --   drop function if exists public.compat_primary_assignee(uuid);
 --   drop function if exists public.compat_assignment_sync_active();
---   -- danach touch_job_on_assignment_change() auf den Phase-1-Stand
---   -- zurücksetzen (Migration 20260725000000, Abschnitt 7) — identischer
---   -- Rumpf ohne den vorangestellten Flag-Check.
 --
 -- Es gehen dabei KEINE Daten verloren: die Kompatibilitätsschicht besitzt
 -- keine eigenen Daten. jobs.assigned_to und job_assignments behalten
