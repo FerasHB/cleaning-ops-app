@@ -114,6 +114,12 @@ $f$;
 create or replace function pg_temp.updated(p_job uuid) returns timestamptz
 language sql as $f$ select updated_at from public.jobs where id=p_job; $f$;
 
+-- Setzt die JWT-Claims des Aufrufers (fuer die Admin-RPCs ab Phase 3).
+create or replace function pg_temp.act_as(uid uuid) returns void language plpgsql as $f$
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub',uid::text,'role','authenticated')::text, true);
+end $f$;
+
 
 -- =========================================================
 -- A. Richtung Legacy -> job_assignments
@@ -561,6 +567,221 @@ begin
 end $$;
 
 
+
+-- =========================================================
+-- F. Legacy-Schreibvorgang ersetzt die MENGE
+--    (Migration 20260729000000 — Mischmengen-Befund aus den Reviews
+--     zu PR #52 / PR #53)
+-- =========================================================
+
+-- CASE 26: Alt-Client setzt assigned_to auf einer Mehrfachzuweisung
+--   Frueher entstand eine Mischmenge, deren ueberlebender Mitarbeiter vom
+--   zufaelligen Primaer-Tiebreaker abhing ({A,C} bzw. {B,C}).
+do $$
+declare v text;
+begin
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000060');
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000060',
+    array['e2000000-0000-0000-0000-000000000002','e2000000-0000-0000-0000-000000000003']::uuid[]);
+  -- Alt-Client: updateJob setzt genau einen Mitarbeiter
+  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000004'
+   where id='e4000000-0000-0000-0000-000000000060';
+  v := 'menge='||pg_temp.zuw('e4000000-0000-0000-0000-000000000060')
+     ||'/legacy='||pg_temp.legacy('e4000000-0000-0000-0000-000000000060');
+  insert into _dw values (26,'Legacy-Schreibvorgang ersetzt die gesamte Menge',
+    'menge=e2000000-0000-0000-0000-000000000004:assigned/legacy=e2000000-0000-0000-0000-000000000004', v);
+  raise notice 'CASE 26 -> %', v;
+end $$;
+
+-- CASE 27: UNVERAENDERT mitgesendeter Wert laesst die Mehrfachzuweisung intakt
+--   Das ist die tragende Sicherung: alte Clients senden assigned_to bei
+--   JEDEM updateJob mit. Ohne diese Eigenschaft wuerde jede beliebige
+--   Feldaenderung die Mehrfachzuweisung platt machen.
+do $$
+declare v text; primaer uuid;
+begin
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000061');
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000061',
+    array['e2000000-0000-0000-0000-000000000002','e2000000-0000-0000-0000-000000000003']::uuid[]);
+  select assigned_to into primaer from public.jobs where id='e4000000-0000-0000-0000-000000000061';
+  -- Alt-Client aendert nur den Kundennamen und sendet assigned_to unveraendert mit
+  update public.jobs set customer_name='Alt-Client Edit', assigned_to=primaer
+   where id='e4000000-0000-0000-0000-000000000061';
+  v := 'zeilen='||(select count(*)::text from public.job_assignments where job_id='e4000000-0000-0000-0000-000000000061')
+     ||'/primaer_unveraendert='||(primaer = (select assigned_to from public.jobs where id='e4000000-0000-0000-0000-000000000061'))::text;
+  insert into _dw values (27,'Unveraendert mitgesendeter Wert laesst Mehrfachzuweisung unangetastet',
+    'zeilen=2/primaer_unveraendert=true', v);
+  raise notice 'CASE 27 -> %', v;
+end $$;
+
+-- CASE 28: Nachweis-Zeilen ueberleben die Mengenersetzung
+do $$
+declare v text;
+begin
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000062');
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000062',
+    array['e2000000-0000-0000-0000-000000000002','e2000000-0000-0000-0000-000000000003']::uuid[]);
+  update public.job_assignments set attendance='started', employee_started_at=now()
+   where job_id='e4000000-0000-0000-0000-000000000062' and employee_id='e2000000-0000-0000-0000-000000000002';
+  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000004'
+   where id='e4000000-0000-0000-0000-000000000062';
+  v := pg_temp.zuw('e4000000-0000-0000-0000-000000000062');
+  insert into _dw values (28,'Nachweis-Zeile ueberlebt die Legacy-Mengenersetzung',
+    'e2000000-0000-0000-0000-000000000002:started,e2000000-0000-0000-0000-000000000004:assigned', v);
+  raise notice 'CASE 28 -> %', v;
+end $$;
+
+-- CASE 29: anonymisierte Zeile (geloeschtes Konto) ueberlebt
+do $$
+declare v text;
+begin
+  insert into auth.users (instance_id,id,aud,role,email,raw_user_meta_data) values
+    ('00000000-0000-0000-0000-000000000000','e2000000-0000-0000-0000-000000000009','authenticated','authenticated','dw-del9@example.test','{"full_name":"Nina Weg"}');
+  insert into public.profiles (id,full_name) values ('e2000000-0000-0000-0000-000000000009','Nina Weg') on conflict (id) do nothing;
+  update public.profiles set company_id='e1000000-0000-0000-0000-000000000001', role='employee', is_active=true
+   where id='e2000000-0000-0000-0000-000000000009';
+
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000063');
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000063',
+    array['e2000000-0000-0000-0000-000000000009','e2000000-0000-0000-0000-000000000002']::uuid[]);
+  delete from auth.users where id='e2000000-0000-0000-0000-000000000009';
+
+  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000004'
+   where id='e4000000-0000-0000-0000-000000000063';
+
+  v := 'anon_erhalten='||(select count(*)::text from public.job_assignments
+         where job_id='e4000000-0000-0000-0000-000000000063' and employee_id is null)
+     ||'/snapshot='||coalesce((select employee_name_snapshot from public.job_assignments
+         where job_id='e4000000-0000-0000-0000-000000000063' and employee_id is null),'-')
+     ||'/neuer_da='||exists(select 1 from public.job_assignments
+         where job_id='e4000000-0000-0000-0000-000000000063' and employee_id='e2000000-0000-0000-0000-000000000004')::text;
+  insert into _dw values (29,'Anonymisierte Zeile ueberlebt die Legacy-Mengenersetzung',
+    'anon_erhalten=1/snapshot=Nina Weg/neuer_da=true', v);
+  raise notice 'CASE 29 -> %', v;
+end $$;
+
+-- CASE 30: Legacy-Schreibvorgang auf NULL entfernt alle sauberen Zuweisungen
+do $$
+declare v text;
+begin
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000064');
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000064',
+    array['e2000000-0000-0000-0000-000000000002','e2000000-0000-0000-0000-000000000003']::uuid[]);
+  update public.jobs set assigned_to=null where id='e4000000-0000-0000-0000-000000000064';
+  v := 'menge='||pg_temp.zuw('e4000000-0000-0000-0000-000000000064')
+     ||'/legacy='||pg_temp.legacy('e4000000-0000-0000-0000-000000000064');
+  insert into _dw values (30,'Legacy-Schreibvorgang auf NULL leert die Menge','menge=KEINE/legacy=NULL',v);
+  raise notice 'CASE 30 -> %', v;
+end $$;
+
+-- CASE 31: drei Mitarbeiter -> alle ausser dem neuen werden entfernt
+--   Beweist, dass nicht nur der (zufaellige) Primaer entfernt wird.
+do $$
+declare v text;
+begin
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000065');
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000065',
+    array['e2000000-0000-0000-0000-000000000002','e2000000-0000-0000-0000-000000000003',
+          'e2000000-0000-0000-0000-000000000004']::uuid[]);
+  -- Der neue Legacy-Wert ist BEREITS Teil der Menge. Damit prueft der Fall
+  -- zwei Dinge auf einmal: alle UEBRIGEN werden entfernt (nicht nur der
+  -- zufaellige Primaer), und die Zeile des neuen Werts wird dabei NICHT
+  -- geloescht-und-neu-angelegt (sie behaelt ihr urspruengliches
+  -- assigned_by, hier der Admin aus der RPC).
+  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000002'
+   where id='e4000000-0000-0000-0000-000000000065';
+  v := pg_temp.zuw('e4000000-0000-0000-0000-000000000065')
+     ||'/by='||coalesce((select assigned_by::text from public.job_assignments
+          where job_id='e4000000-0000-0000-0000-000000000065'),'-');
+  insert into _dw values (31,'Dreier-Menge wird auf den neuen Wert reduziert; dessen Zeile bleibt bestehen',
+    'e2000000-0000-0000-0000-000000000002:assigned/by=e2000000-0000-0000-0000-000000000001', v);
+  raise notice 'CASE 31 -> %', v;
+end $$;
+
+-- CASE 32: Einzelzuweisung -> Wechsel bleibt unveraendert (Regression)
+do $$
+declare v text;
+begin
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000066','e2000000-0000-0000-0000-000000000002');
+  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000003'
+   where id='e4000000-0000-0000-0000-000000000066';
+  v := 'menge='||pg_temp.zuw('e4000000-0000-0000-0000-000000000066')
+     ||'/legacy='||pg_temp.legacy('e4000000-0000-0000-0000-000000000066');
+  insert into _dw values (32,'Einzelzuweisung: Wechsel verhaelt sich unveraendert',
+    'menge=e2000000-0000-0000-0000-000000000003:assigned/legacy=e2000000-0000-0000-0000-000000000003', v);
+  raise notice 'CASE 32 -> %', v;
+end $$;
+
+-- CASE 33: Phase-4-Semantik bleibt: ein Legacy-Schreibvorgang markiert
+--   einen Termin NICHT als individuell angepasst.
+do $$
+declare v text; occ uuid;
+begin
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000067', null, 'open', null, null,
+                         'e1000000-0000-0000-0000-000000000001','recurring', null);
+  update public.jobs set recurrence_start_date=current_date where id='e4000000-0000-0000-0000-000000000067';
+  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000067',
+    array['e2000000-0000-0000-0000-000000000002']::uuid[]);
+  perform public.generate_job_occurrences('e4000000-0000-0000-0000-000000000067');
+  select id into occ from public.jobs where parent_job_id='e4000000-0000-0000-0000-000000000067' order by date limit 1;
+
+  -- Alt-Client bearbeitet den TERMIN direkt
+  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000003' where id=occ;
+
+  v := 'menge='||pg_temp.zuw(occ)
+     ||'/angepasst='||exists(select 1 from public.job_occurrence_assignment_overrides where job_id=occ)::text;
+  insert into _dw values (33,'Legacy-Schreibvorgang markiert einen Termin NICHT als angepasst',
+    'menge=e2000000-0000-0000-0000-000000000003:assigned/angepasst=false', v);
+  raise notice 'CASE 33 -> %', v;
+end $$;
+
+
+
+-- CASE 34: Konto-Loeschung darf die Zuweisungen der UEBRIGEN Mitarbeiter
+--   nicht mit entfernen.
+--   Regressionsschutz fuer den Anonymisierungspfad: der Fremdschluessel
+--   setzt jobs.assigned_to auf NULL, was auf Trigger-Ebene wie ein
+--   bewusstes "niemandem mehr zuweisen" aussieht. Ohne die Ausnahme in
+--   Richtung A wuerde die Mengenersetzung hier unbeteiligte Mitarbeiter
+--   loeschen.
+do $$
+declare v text;
+begin
+  insert into auth.users (instance_id,id,aud,role,email,raw_user_meta_data) values
+    ('00000000-0000-0000-0000-000000000000','e2000000-0000-0000-0000-00000000000a','authenticated','authenticated','dw-del10@example.test','{"full_name":"Ola Weg"}');
+  insert into public.profiles (id,full_name) values ('e2000000-0000-0000-0000-00000000000a','Ola Weg') on conflict (id) do nothing;
+  update public.profiles set company_id='e1000000-0000-0000-0000-000000000001', role='employee', is_active=true
+   where id='e2000000-0000-0000-0000-00000000000a';
+
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000068');
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  -- Mehrfachzuweisung ueber die RPC: zu loeschendes Konto + zwei weitere
+  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000068',
+    array['e2000000-0000-0000-0000-00000000000a','e2000000-0000-0000-0000-000000000003',
+          'e2000000-0000-0000-0000-000000000004']::uuid[]);
+
+  delete from auth.users where id='e2000000-0000-0000-0000-00000000000a';
+
+  v := 'lebende_zuweisungen='||(select count(*)::text from public.job_assignments
+         where job_id='e4000000-0000-0000-0000-000000000068' and employee_id is not null)
+     ||'/anonym='||(select count(*)::text from public.job_assignments
+         where job_id='e4000000-0000-0000-0000-000000000068' and employee_id is null)
+     ||'/legacy_gedeckt='||(select (j.assigned_to is null or exists(select 1 from public.job_assignments ja
+          where ja.job_id=j.id and ja.employee_id=j.assigned_to))::text
+        from public.jobs j where j.id='e4000000-0000-0000-0000-000000000068');
+  insert into _dw values (34,'Konto-Loeschung entfernt keine Zuweisungen unbeteiligter Mitarbeiter',
+    'lebende_zuweisungen=2/anonym=1/legacy_gedeckt=true', v);
+  raise notice 'CASE 34 -> %', v;
+end $$;
+
+
 -- =========================================================
 -- Ergebnisuebersicht
 -- =========================================================
@@ -577,7 +798,7 @@ begin
   if fails > 0 then
     raise exception 'DUAL WRITE TEST: % Fall/Faelle FEHLGESCHLAGEN', fails;
   end if;
-  raise notice 'ALLE 25 FAELLE PASS';
+  raise notice 'ALLE 34 FAELLE PASS';
 end $$;
 
 rollback;
