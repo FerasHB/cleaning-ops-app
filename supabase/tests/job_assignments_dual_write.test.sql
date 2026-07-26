@@ -680,27 +680,35 @@ begin
 end $$;
 
 -- CASE 31: drei Mitarbeiter -> alle ausser dem neuen werden entfernt
---   Beweist, dass nicht nur der (zufaellige) Primaer entfernt wird.
+--   DETERMINISTISCH: die Zuweisungen werden mit EXPLIZITEN assigned_at
+--   angelegt, damit der Primaer eindeutig der aelteste (A1) ist. Wuerde
+--   man hier set_job_assignments verwenden, teilten sich alle Zeilen
+--   denselben now()-Wert und der zufaellige id-Tiebreaker entschiede,
+--   ob der anschliessende Legacy-Schreibvorgang ueberhaupt eine
+--   Aenderung ist — der Fall waere dann nicht reproduzierbar.
+--
+--   Geprueft wird zugleich, dass die Zeile des NEUEN Werts nicht
+--   geloescht-und-neu-angelegt wird: ihr urspruengliches assigned_at
+--   bleibt erhalten.
 do $$
 declare v text;
 begin
   perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000065');
-  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
-  perform public.set_job_assignments('e4000000-0000-0000-0000-000000000065',
-    array['e2000000-0000-0000-0000-000000000002','e2000000-0000-0000-0000-000000000003',
-          'e2000000-0000-0000-0000-000000000004']::uuid[]);
-  -- Der neue Legacy-Wert ist BEREITS Teil der Menge. Damit prueft der Fall
-  -- zwei Dinge auf einmal: alle UEBRIGEN werden entfernt (nicht nur der
-  -- zufaellige Primaer), und die Zeile des neuen Werts wird dabei NICHT
-  -- geloescht-und-neu-angelegt (sie behaelt ihr urspruengliches
-  -- assigned_by, hier der Admin aus der RPC).
-  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000002'
+  insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_at) values
+    ('e4000000-0000-0000-0000-000000000065','e2000000-0000-0000-0000-000000000002','Anna Eins', now() - interval '3 min'),
+    ('e4000000-0000-0000-0000-000000000065','e2000000-0000-0000-0000-000000000003','Bert Zwei', now() - interval '2 min'),
+    ('e4000000-0000-0000-0000-000000000065','e2000000-0000-0000-0000-000000000004','Cora Drei', now() - interval '1 min');
+
+  -- Primaer ist jetzt eindeutig A1 (aeltester assigned_at).
+  -- Alt-Client schreibt A2 -> echte Aenderung -> Menge wird ersetzt.
+  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000003'
    where id='e4000000-0000-0000-0000-000000000065';
+
   v := pg_temp.zuw('e4000000-0000-0000-0000-000000000065')
-     ||'/by='||coalesce((select assigned_by::text from public.job_assignments
-          where job_id='e4000000-0000-0000-0000-000000000065'),'-');
+     ||'/zeile_erhalten='||(select (min(assigned_at) < now() - interval '90 seconds')::text
+          from public.job_assignments where job_id='e4000000-0000-0000-0000-000000000065');
   insert into _dw values (31,'Dreier-Menge wird auf den neuen Wert reduziert; dessen Zeile bleibt bestehen',
-    'e2000000-0000-0000-0000-000000000002:assigned/by=e2000000-0000-0000-0000-000000000001', v);
+    'e2000000-0000-0000-0000-000000000003:assigned/zeile_erhalten=true', v);
   raise notice 'CASE 31 -> %', v;
 end $$;
 
@@ -782,6 +790,80 @@ begin
 end $$;
 
 
+
+-- CASE 35: BEKANNTE GRENZE — Zielwert ist bereits der Primaer
+--   Die WHEN-Klausel feuert nur bei einer echten Wertaenderung. Schreibt
+--   ein alter Client genau den Wert, der ohnehin schon Primaer ist,
+--   passiert NICHTS — die Mehrfachzuweisung bleibt vollstaendig bestehen.
+--
+--   Das ist ausdruecklich gewollt: auf Datenbankebene ist dieser Fall
+--   nicht davon zu unterscheiden, dass ein alter Client ein unbeteiligtes
+--   Feld aendert und assigned_to unveraendert mitsendet — was er bei
+--   JEDEM updateJob tut. Wuerde man die WHEN-Klausel lockern, wuerde jede
+--   beliebige Feldaenderung eines alten Clients die gesamte
+--   Mehrfachzuweisung platt machen.
+--
+--   Deterministisch durch explizite assigned_at (Primaer = A1).
+do $$
+declare v text;
+begin
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000069');
+  insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_at) values
+    ('e4000000-0000-0000-0000-000000000069','e2000000-0000-0000-0000-000000000002','Anna Eins', now() - interval '3 min'),
+    ('e4000000-0000-0000-0000-000000000069','e2000000-0000-0000-0000-000000000003','Bert Zwei', now() - interval '2 min');
+
+  -- Alt-Client aendert ein unbeteiligtes Feld und sendet den bereits
+  -- primaeren Mitarbeiter unveraendert mit.
+  update public.jobs
+     set customer_name='Alt-Client Speichern',
+         assigned_to='e2000000-0000-0000-0000-000000000002'
+   where id='e4000000-0000-0000-0000-000000000069';
+
+  v := 'menge='||pg_temp.zuw('e4000000-0000-0000-0000-000000000069')
+     ||'/feld_gesynct='||(select (customer_name='Alt-Client Speichern')::text
+          from public.jobs where id='e4000000-0000-0000-0000-000000000069');
+  insert into _dw values (35,'Bekannte Grenze: Zielwert == Primaer laesst die Menge unveraendert',
+    'menge=e2000000-0000-0000-0000-000000000002:assigned,e2000000-0000-0000-0000-000000000003:assigned/feld_gesynct=true', v);
+  raise notice 'CASE 35 -> %', v;
+end $$;
+
+-- CASE 36: Fotos/Kommentare schuetzen KEINE Zuweisungszeile
+--   Bewusste Entscheidung (siehe Migrations-Header): das Evidenzmodell aus
+--   Phase 3 ist ein Modell je ZUWEISUNG (attendance/review/Zeitstempel).
+--   Fotos und Kommentare bleiben beim Entfernen einer Zuweisung
+--   vollstaendig erhalten — es geht also kein Nachweis verloren. Dieser
+--   Fall haelt die Entscheidung fest, damit sie nicht unbemerkt kippt.
+do $$
+declare v text;
+begin
+  perform pg_temp.mk_job('e4000000-0000-0000-0000-000000000070');
+  insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_at) values
+    ('e4000000-0000-0000-0000-000000000070','e2000000-0000-0000-0000-000000000002','Anna Eins', now() - interval '3 min'),
+    ('e4000000-0000-0000-0000-000000000070','e2000000-0000-0000-0000-000000000003','Bert Zwei', now() - interval '2 min');
+
+  -- A2 laedt ein Foto hoch und schreibt einen Kommentar, ohne zu starten.
+  insert into public.job_photos (job_id, company_id, uploaded_by, storage_path, file_name)
+  values ('e4000000-0000-0000-0000-000000000070','e1000000-0000-0000-0000-000000000001',
+          'e2000000-0000-0000-0000-000000000003','pfad/f.jpg','f.jpg');
+  insert into public.job_comments (job_id, company_id, author_id, message)
+  values ('e4000000-0000-0000-0000-000000000070','e1000000-0000-0000-0000-000000000001',
+          'e2000000-0000-0000-0000-000000000003','Notiz');
+
+  -- Alt-Client weist einem Dritten zu.
+  update public.jobs set assigned_to='e2000000-0000-0000-0000-000000000004'
+   where id='e4000000-0000-0000-0000-000000000070';
+
+  v := 'menge='||pg_temp.zuw('e4000000-0000-0000-0000-000000000070')
+     ||'/foto_bleibt='||(select count(*)::text from public.job_photos
+          where job_id='e4000000-0000-0000-0000-000000000070' and uploaded_by='e2000000-0000-0000-0000-000000000003')
+     ||'/kommentar_bleibt='||(select count(*)::text from public.job_comments
+          where job_id='e4000000-0000-0000-0000-000000000070' and author_id='e2000000-0000-0000-0000-000000000003');
+  insert into _dw values (36,'Fotos/Kommentare schuetzen keine Zuweisung, bleiben aber vollstaendig erhalten',
+    'menge=e2000000-0000-0000-0000-000000000004:assigned/foto_bleibt=1/kommentar_bleibt=1', v);
+  raise notice 'CASE 36 -> %', v;
+end $$;
+
+
 -- =========================================================
 -- Ergebnisuebersicht
 -- =========================================================
@@ -798,7 +880,7 @@ begin
   if fails > 0 then
     raise exception 'DUAL WRITE TEST: % Fall/Faelle FEHLGESCHLAGEN', fails;
   end if;
-  raise notice 'ALLE 34 FAELLE PASS';
+  raise notice 'ALLE 36 FAELLE PASS';
 end $$;
 
 rollback;

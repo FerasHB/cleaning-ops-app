@@ -65,6 +65,67 @@
 --     assigned_at/assigned_by und vermeidet unnoetigen Row-Churn.
 --
 -- =========================================================
+-- BEKANNTE GRENZE: Zielwert == aktueller Primaer
+-- =========================================================
+-- Die Aussage "ein Legacy-Schreibvorgang ersetzt die Menge" gilt NICHT,
+-- wenn der geschriebene Wert bereits der aktuelle Primaer ist. Die
+-- WHEN-Klausel der Trigger feuert nur bei
+--     new.assigned_to IS DISTINCT FROM old.assigned_to
+-- und unterdrueckt diesen Fall vollstaendig. Die Menge bleibt dann
+-- unveraendert.
+--
+-- Praktische Folge: ein alter Client kann eine Mehrfachzuweisung NICHT
+-- auf genau den bereits primaeren Mitarbeiter reduzieren. Bei der Menge
+-- {A,B,C} mit Primaer C sieht ein alter Client "zugewiesen an C",
+-- speichert C — und A und B bleiben zugewiesen.
+--
+-- DAS IST BEABSICHTIGT UND DARF NICHT "REPARIERT" WERDEN.
+-- Auf Datenbankebene sind beide Faelle nicht unterscheidbar: der
+-- Speichervorgang eines alten Clients, der ein unbeteiligtes Feld aendert
+-- und assigned_to unveraendert mitsendet, ist byteweise identisch mit dem
+-- Speichervorgang eines Admins, der bewusst den Primaer bestaetigt. Alte
+-- Clients senden assigned_to bei JEDEM updateJob mit. Wuerde man die
+-- WHEN-Klausel lockern, um diesen Fall zu erfassen, wuerde folglich JEDE
+-- beliebige Feldaenderung eines alten Clients (Kundenname, Notiz, Uhrzeit)
+-- die gesamte Mehrfachzuweisung platt machen — ein ungleich groesserer
+-- Schaden als die hier verbleibende Luecke.
+--
+-- Die Luecke entfaellt ersatzlos mit dem Sunset der Legacy-Spalte
+-- (Phase 11). Bis dahin ist sie durch den Regressionstest
+-- "Zielwert == aktueller Primaer" festgeschrieben.
+--
+-- =========================================================
+-- BEWUSST NICHT GEAENDERT: Fotos und Kommentare schuetzen KEINE
+-- Zuweisungszeile
+-- =========================================================
+-- Im Review wurde gefragt, ob eine Zuweisung geschuetzt sein sollte, wenn
+-- der Mitarbeiter auf dem Auftrag ein Foto hochgeladen oder einen
+-- Kommentar geschrieben hat. Geprueft und bewusst VERNEINT:
+--
+--   1. Das Evidenzmodell aus Phase 3 ist ausdruecklich ein Modell JE
+--      ZUWEISUNG: attendance, review, employee_started_at,
+--      employee_completed_at. set_job_assignments verwendet exakt dieses
+--      Praedikat. Fotos und Kommentare gehoeren nicht dazu.
+--   2. Der PRUNE-Block in update_job_occurrences beruecksichtigt Fotos und
+--      Kommentare aus einem ANDEREN Grund: dort wird eine JOB-Zeile
+--      geloescht, und der ON-DELETE-CASCADE wuerde die Artefakte selbst
+--      unwiederbringlich mitloeschen. Hier wird nur eine ZUWEISUNGSZEILE
+--      entfernt — job_photos.uploaded_by und job_comments.author_id
+--      bleiben vollstaendig erhalten. Es geht also kein Nachweis verloren.
+--   3. Eine Aufnahme in das Praedikat waere eine NEUE Regel, kein
+--      Wiederherstellen einer bestehenden. Sie muesste zudem in BEIDEN
+--      Schreibpfaden gelten; nur im Legacy-Pfad angewandt wuerden sich
+--      neue und alte Clients unterschiedlich verhalten.
+--   4. Fachlich waere die Folge unerwuenscht: eine Zuweisung waere nach
+--      der ersten beliebigen Interaktion praktisch nicht mehr entfernbar,
+--      und Auftraege wuerden dauerhaft Zuweisungen ansammeln.
+--   5. Abrechnung ist nicht betroffen: ein Mitarbeiter mit Foto, aber
+--      attendance='assigned', hat counts_for_timesheet = false.
+--
+-- Das Verhalten ist durch einen Regressionstest festgeschrieben, damit
+-- diese Entscheidung nicht unbemerkt kippt.
+--
+-- =========================================================
 -- BEWUSST NICHT TEIL DIESER MIGRATION
 -- =========================================================
 --   * KEINE Aenderung an Phase 4: ein Legacy-Schreibvorgang markiert
