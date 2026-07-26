@@ -504,6 +504,170 @@ begin
 end $$;
 
 
+
+-- =========================================================
+-- F. Follow-ups aus dem unabhaengigen Review zu PR #53
+-- =========================================================
+
+-- CASE 25: Speichern OHNE Aenderung erzeugt KEINE Markierung
+--   Der Kern von Follow-up 1: die spaetere Oberflaeche ruft
+--   set_job_assignments beim Speichern unbedingt auf. Ein blosses
+--   Oeffnen-und-Speichern darf den Termin nicht dauerhaft abkoppeln.
+do $$
+declare v text; occ uuid;
+begin
+  perform pg_temp.act_as('ca000000-0000-0000-0000-000000000001');
+  -- frische Regel + Termin, sauberer Ausgangszustand
+  insert into public.jobs (id,company_id,created_by,customer_name,service_name,location_address,
+                           status,job_type,recurring_days,start_time,recurrence_start_date,is_active)
+  values ('cb000000-0000-0000-0000-000000000009','c9000000-0000-0000-0000-000000000001',
+          'ca000000-0000-0000-0000-000000000001','Kunde R9','Service R9','Ort R9','open','recurring',
+          array['mon','tue','wed','thu','fri','sat','sun'],'09:00',current_date,true);
+  perform public.set_job_assignments('cb000000-0000-0000-0000-000000000009',
+    array['ca000000-0000-0000-0000-00000000000a','ca000000-0000-0000-0000-00000000000b']::uuid[]);
+  perform public.generate_job_occurrences('cb000000-0000-0000-0000-000000000009');
+  occ := pg_temp.erster('cb000000-0000-0000-0000-000000000009');
+
+  -- exakt dieselbe Menge erneut speichern
+  perform public.set_job_assignments(occ,
+    array['ca000000-0000-0000-0000-00000000000b','ca000000-0000-0000-0000-00000000000a']::uuid[]);
+
+  v := 'menge='||pg_temp.menge(occ)||'/angepasst='||pg_temp.angepasst(occ)::text;
+  insert into _oi values (25,'No-Op-Speichern erzeugt keine Markierung','menge=A,B/angepasst=false',v);
+  raise notice 'CASE 25 -> %', v;
+end $$;
+
+-- CASE 26: echte Aenderung erzeugt die Markierung
+do $$
+declare v text; occ uuid;
+begin
+  occ := pg_temp.erster('cb000000-0000-0000-0000-000000000009');
+  perform pg_temp.act_as('ca000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments(occ, array['ca000000-0000-0000-0000-00000000000a']::uuid[]);
+  v := 'menge='||pg_temp.menge(occ)||'/angepasst='||pg_temp.angepasst(occ)::text;
+  insert into _oi values (26,'Echte Mengenaenderung erzeugt die Markierung','menge=A/angepasst=true',v);
+  raise notice 'CASE 26 -> %', v;
+end $$;
+
+-- CASE 27: Rueckkehr zur Regelmenge entfernt die Markierung automatisch
+do $$
+declare v text; occ uuid;
+begin
+  occ := pg_temp.erster('cb000000-0000-0000-0000-000000000009');
+  perform pg_temp.act_as('ca000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments(occ,
+    array['ca000000-0000-0000-0000-00000000000a','ca000000-0000-0000-0000-00000000000b']::uuid[]);
+  v := 'angepasst='||pg_temp.angepasst(occ)::text;
+
+  -- und folgt danach der Regel wieder, ganz ohne Zuruecksetzen
+  perform public.set_job_assignments('cb000000-0000-0000-0000-000000000009',
+    array['ca000000-0000-0000-0000-00000000000c']::uuid[]);
+  perform public.update_job_occurrences('cb000000-0000-0000-0000-000000000009');
+  v := v || '/folgt_wieder='||pg_temp.menge(occ);
+
+  insert into _oi values (27,'Rueckkehr zur Regelmenge loest die Markierung ohne Reset',
+    'angepasst=false/folgt_wieder=C',v);
+  raise notice 'CASE 27 -> %', v;
+end $$;
+
+-- CASE 28: Zuruecksetzen auf GESTARTETEM Termin wird abgelehnt
+do $$
+declare v text; occ uuid; noch_angepasst boolean;
+begin
+  occ := pg_temp.erster('cb000000-0000-0000-0000-000000000009');
+  perform pg_temp.act_as('ca000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments(occ, array['ca000000-0000-0000-0000-00000000000a']::uuid[]);
+  update public.jobs set status='in_progress', started_at=now() where id=occ;
+  begin
+    perform public.reset_job_occurrence_assignments(occ);
+    v := 'AKZEPTIERT';
+  exception when others then v := 'ABGELEHNT('||sqlstate||')'; end;
+  noch_angepasst := pg_temp.angepasst(occ);
+  v := v || '/markierung_erhalten='||noch_angepasst::text;
+  insert into _oi values (28,'Reset auf gestartetem Termin wird abgelehnt, Markierung bleibt',
+    'ABGELEHNT(22023)/markierung_erhalten=true',v);
+  raise notice 'CASE 28 -> %', v;
+end $$;
+
+-- CASE 29: Zuruecksetzen auf ABGESCHLOSSENEM Termin wird abgelehnt
+do $$
+declare v text; occ uuid;
+begin
+  select id into occ from public.jobs
+   where parent_job_id='cb000000-0000-0000-0000-000000000009' and status='open'
+   order by date offset 1 limit 1;
+  perform pg_temp.act_as('ca000000-0000-0000-0000-000000000001');
+  perform public.set_job_assignments(occ, array['ca000000-0000-0000-0000-00000000000a']::uuid[]);
+  update public.jobs set status='completed', started_at=now()-interval '2 h', completed_at=now() where id=occ;
+  begin
+    perform public.reset_job_occurrence_assignments(occ);
+    v := 'AKZEPTIERT';
+  exception when others then v := 'ABGELEHNT('||sqlstate||')'; end;
+  v := v || '/markierung_erhalten='||pg_temp.angepasst(occ)::text;
+  insert into _oi values (29,'Reset auf abgeschlossenem Termin wird abgelehnt, Markierung bleibt',
+    'ABGELEHNT(22023)/markierung_erhalten=true',v);
+  raise notice 'CASE 29 -> %', v;
+end $$;
+
+-- CASE 30: Zuruecksetzen auf VERGANGENEM Termin wird abgelehnt
+do $$
+declare v text; occ uuid := 'cb000000-0000-0000-0000-0000000000ff';
+begin
+  perform pg_temp.act_as('ca000000-0000-0000-0000-000000000001');
+  insert into public.jobs (id,company_id,parent_job_id,created_by,customer_name,service_name,location_address,
+                           status,job_type,date,start_time,is_active)
+  values (occ,'c9000000-0000-0000-0000-000000000001','cb000000-0000-0000-0000-000000000009',
+          'ca000000-0000-0000-0000-000000000001','Kunde R9','Service R9','Ort R9','open','single',
+          current_date - 7,'09:00',true);
+  perform public.set_job_assignments(occ, array['ca000000-0000-0000-0000-00000000000a']::uuid[]);
+  begin
+    perform public.reset_job_occurrence_assignments(occ);
+    v := 'AKZEPTIERT';
+  exception when others then v := 'ABGELEHNT('||sqlstate||')'; end;
+  v := v || '/markierung_erhalten='||pg_temp.angepasst(occ)::text;
+  insert into _oi values (30,'Reset auf vergangenem Termin wird abgelehnt, Markierung bleibt',
+    'ABGELEHNT(22023)/markierung_erhalten=true',v);
+  raise notice 'CASE 30 -> %', v;
+end $$;
+
+-- CASE 31: der redundante inherit-Aufruf ist entfernt (Follow-up 4)
+--   update_job_occurrences ruft inherit NICHT mehr direkt auf; der
+--   Abgleich laeuft ausschliesslich ueber generate_job_occurrences.
+do $$
+declare v text; src_upd text; src_gen text;
+begin
+  select pg_get_functiondef('public.update_job_occurrences(uuid)'::regprocedure)   into src_upd;
+  select pg_get_functiondef('public.generate_job_occurrences(uuid)'::regprocedure) into src_gen;
+  v := 'update_ruft_inherit='||(position('perform public.inherit_occurrence_assignments' in src_upd) > 0)::text
+     ||'/generate_ruft_inherit='||(position('perform public.inherit_occurrence_assignments' in src_gen) > 0)::text;
+  insert into _oi values (31,'Kein doppelter Mengenabgleich mehr: nur generate ruft inherit',
+    'update_ruft_inherit=false/generate_ruft_inherit=true',v);
+  raise notice 'CASE 31 -> %', v;
+end $$;
+
+-- CASE 32: Grundlage der korrigierten Rollback-Reihenfolge (Follow-up 3)
+--   Die drei Funktionen verweisen im RUMPF auf die Markierungstabelle.
+--   Funktionsrumpfe werden nicht als Abhaengigkeit verfolgt — deshalb MUSS
+--   beim Rueckbau zuerst der Funktionsstand zurueckgesetzt und erst danach
+--   die Tabelle geloescht werden.
+do $$
+declare v text;
+begin
+  v := 'inherit='||(position('job_occurrence_assignment_overrides' in
+         pg_get_functiondef('public.inherit_occurrence_assignments(uuid,uuid)'::regprocedure)) > 0)::text
+     ||'/set='||(position('job_occurrence_assignment_overrides' in
+         pg_get_functiondef('public.set_job_assignments(uuid,uuid[])'::regprocedure)) > 0)::text
+     ||'/reset='||(position('job_occurrence_assignment_overrides' in
+         pg_get_functiondef('public.reset_job_occurrence_assignments(uuid)'::regprocedure)) > 0)::text
+     ||'/tabelle_haengt_an_funktion='||(select count(*)::text from pg_depend d
+         join pg_rewrite r on r.oid = d.objid
+         where d.refobjid = 'public.job_occurrence_assignment_overrides'::regclass and false);
+  insert into _oi values (32,'Funktionsrumpfe referenzieren die Tabelle (Rollback-Reihenfolge ist zwingend)',
+    'inherit=true/set=true/reset=true/tabelle_haengt_an_funktion=0',v);
+  raise notice 'CASE 32 -> %', v;
+end $$;
+
+
 -- =========================================================
 -- Ergebnisuebersicht
 -- =========================================================
@@ -518,7 +682,7 @@ begin
   if fails > 0 then
     raise exception 'OCCURRENCE ASSIGNMENT INHERITANCE TEST: % Fall/Faelle FEHLGESCHLAGEN', fails;
   end if;
-  raise notice 'ALLE 24 FAELLE PASS';
+  raise notice 'ALLE 32 FAELLE PASS';
 end $$;
 
 rollback;

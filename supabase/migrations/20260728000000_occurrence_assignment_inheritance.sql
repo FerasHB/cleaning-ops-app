@@ -501,13 +501,21 @@ begin
       or c.is_active        is distinct from parent.is_active
     );
 
-  -- ── 3) ZUWEISUNGSMENGE abgleichen ─────────────────────────────────
-  -- Nur fuer NICHT angepasste Termine. jobs.assigned_to wird dabei nicht
-  -- direkt geschrieben — die Phase-2-Richtung B leitet den primaeren
-  -- Mitarbeiter aus der resultierenden Menge ab.
-  perform public.inherit_occurrence_assignments(parent_job_id_input);
-
-  -- ── 4) GENERATE ───────────────────────────────────────────────────
+  -- ── 3) GENERATE (inkl. Mengenabgleich) ────────────────────────────
+  -- generate_job_occurrences fuegt fehlende Termine ein und ruft danach
+  -- selbst inherit_occurrence_assignments auf. Dessen Abgleich ist NICHT
+  -- auf neu erzeugte Zeilen beschraenkt, sondern erfasst alle nicht
+  -- angepassten, zukuenftigen, offenen Termine der Regel — also auch die
+  -- bereits bestehenden. Ein zusaetzlicher Aufruf an dieser Stelle waere
+  -- daher nachweislich redundant und wuerde den Abgleich bei Regeln mit
+  -- vielen Terminen unnoetig verdoppeln.
+  -- (generate kann seinen inherit-Aufruf auch nicht verfehlen: seine drei
+  -- Guards — Authentifizierung, Admin-Rolle, Parent-Lookup — sind mit den
+  -- oben bereits bestandenen identisch.)
+  --
+  -- jobs.assigned_to wird dabei nirgends direkt geschrieben; die
+  -- Phase-2-Richtung B leitet den primaeren Mitarbeiter aus der
+  -- resultierenden Menge ab.
   select public.generate_job_occurrences(parent_job_id_input)
   into new_count;
 
@@ -542,11 +550,12 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_company uuid;
-  v_parent  uuid;
-  v_ids     uuid[];
-  v_invalid int;
-  v_actor   uuid;
+  v_company    uuid;
+  v_parent     uuid;
+  v_ids        uuid[];
+  v_parent_ids uuid[];
+  v_invalid    int;
+  v_actor      uuid;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated' using errcode = '28000';
@@ -578,7 +587,9 @@ begin
     raise exception 'Job not found or not accessible' using errcode = '42501';
   end if;
 
-  select coalesce(array_agg(distinct x), '{}'::uuid[])
+  -- Kanonische Form: dedupliziert UND sortiert. Die Sortierung ist noetig,
+  -- damit die Menge unten direkt mit der Regelmenge verglichen werden kann.
+  select coalesce(array_agg(distinct x order by x), '{}'::uuid[])
     into v_ids
   from unnest(coalesce(p_employee_ids, '{}'::uuid[])) as x
   where x is not null;
@@ -623,17 +634,49 @@ begin
   join public.profiles p on p.id = x
   on conflict (job_id, employee_id) do nothing;
 
-  -- (b) Termin ab jetzt von der Regel-Synchronisierung ausnehmen.
-  -- Gilt ausdruecklich AUCH fuer die leere Zielmenge — genau dieser Fall
-  -- waere mit einer Markierung je Zuweisungszeile nicht abbildbar.
+  -- (b) Markierung NUR bei echter Abweichung von der Regelmenge.
+  --
+  -- Verglichen wird die ABSICHT des Aufrufers (die validierte, kanonische
+  -- Zielmenge v_ids) mit der effektiven Zuweisungsmenge der Regel — nicht
+  -- der resultierende Tabelleninhalt. Das ist wichtig, weil auf dem Termin
+  -- spurenbehaftete Zeilen liegen koennen, die gar nicht entfernt werden
+  -- duerfen; wuerde man diese mitvergleichen, wuerde ein Termin allein
+  -- wegen eines Nachweises faelschlich als "angepasst" gelten.
+  --
+  -- Folgen:
+  --   * Speichern OHNE Aenderung ist ein echter No-Op — der Termin wird
+  --     nicht abgekoppelt. Ohne diese Pruefung koppelte ein blosses
+  --     Oeffnen-und-Speichern in der spaeteren Oberflaeche den Termin
+  --     dauerhaft und unsichtbar von der Regel ab.
+  --   * Wird ein angepasster Termin wieder exakt auf die Regelmenge
+  --     gesetzt, verschwindet die Markierung automatisch; er folgt der
+  --     Regel wieder, ohne dass ein Zuruecksetzen noetig waere.
+  --   * Die LEERE Zielmenge bleibt eine echte Anpassung, solange die Regel
+  --     nicht ebenfalls leer ist — der Fall, der eine Markierung je
+  --     Zuweisungszeile unmoeglich macht, bleibt damit abgedeckt.
   if v_parent is not null then
-    select p.id into v_actor from public.profiles p where p.id = auth.uid();
+    select coalesce(array_agg(pa.employee_id order by pa.employee_id), '{}'::uuid[])
+      into v_parent_ids
+    from public.job_assignments pa
+    join public.profiles pp on pp.id = pa.employee_id
+    join public.jobs      pj on pj.id = pa.job_id
+    where pa.job_id      = v_parent
+      and pa.employee_id is not null
+      and pp.is_active   = true
+      and pp.role        = 'employee'
+      and pp.company_id  = pj.company_id;
 
-    insert into public.job_occurrence_assignment_overrides (job_id, customized_at, customized_by)
-    values (p_job_id, now(), v_actor)
-    on conflict (job_id) do update
-      set customized_at = now(),
-          customized_by = excluded.customized_by;
+    if v_ids = v_parent_ids then
+      delete from public.job_occurrence_assignment_overrides where job_id = p_job_id;
+    else
+      select p.id into v_actor from public.profiles p where p.id = auth.uid();
+
+      insert into public.job_occurrence_assignment_overrides (job_id, customized_at, customized_by)
+      values (p_job_id, now(), v_actor)
+      on conflict (job_id) do update
+        set customized_at = now(),
+            customized_by = excluded.customized_by;
+    end if;
   end if;
 
   return query
@@ -669,7 +712,11 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_parent uuid;
+  v_parent    uuid;
+  v_status    public.job_status;
+  v_started   timestamptz;
+  v_completed timestamptz;
+  v_date      date;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated' using errcode = '28000';
@@ -695,6 +742,29 @@ begin
   -- Gleiche Sperrreihenfolge wie ueberall: Regel zuerst, dann Termin.
   perform 1 from public.jobs where id = v_parent  for update;
   perform 1 from public.jobs where id = p_job_id  for update;
+
+  -- Zustand ERST NACH der Sperre lesen und pruefen, damit kein Wettlauf
+  -- zwischen Pruefung und Aenderung entsteht.
+  select j.status, j.started_at, j.completed_at, j.date
+    into v_status, v_started, v_completed, v_date
+  from public.jobs j
+  where j.id = p_job_id;
+
+  -- Der Mengenabgleich fasst ausschliesslich zukuenftige, offene und noch
+  -- nicht gestartete Termine an. Auf allen anderen wuerde das Entfernen der
+  -- Markierung den Termin als "folgt der Regel" ausweisen, ohne dass jemals
+  -- wieder etwas geerbt wird — ein Zustand, der die Wahrheit verfehlt.
+  -- Deshalb hier ABLEHNEN statt still die Markierung zu verlieren.
+  if v_status is distinct from 'open'
+     or v_started   is not null
+     or v_completed is not null
+     or coalesce(v_date, date '0001-01-01') < current_date then
+    raise exception
+      'Occurrence has already started, is completed or lies in the past; assignments can no longer be inherited'
+      using errcode = '22023',
+            detail  = 'Nur zukuenftige, offene und nicht gestartete Termine koennen die Zuweisungen der Regel erneut uebernehmen.',
+            hint    = 'Die Zuweisungen dieses Termins bleiben unveraendert erhalten.';
+  end if;
 
   delete from public.job_occurrence_assignment_overrides where job_id = p_job_id;
 
@@ -738,8 +808,19 @@ grant execute on function public.reset_job_occurrence_assignments(uuid) to authe
 -- =========================================================
 -- ROLLBACK (vollstaendig, nicht destruktiv)
 -- =========================================================
--- Reihenfolge unkritisch (keine Policy haengt an den neuen Funktionen;
--- die Policy auf der neuen Tabelle verschwindet mit ihr):
+-- REIHENFOLGE IST ZWINGEND — anders als bei den RLS-Policies der Phase 3
+-- schuetzt PostgreSQL hier NICHTS: inherit_occurrence_assignments,
+-- set_job_assignments und reset_job_occurrence_assignments verweisen im
+-- FUNKTIONSRUMPF auf job_occurrence_assignment_overrides, und
+-- Funktionsrumpfe werden nicht als Abhaengigkeit verfolgt. Wird die
+-- Tabelle zuerst geloescht, scheitern ab diesem Moment sowohl die
+-- Terminerzeugung als auch jede Zuweisungsaenderung mit
+-- 'relation ... does not exist' (nachgestellt und bestaetigt). Da
+-- Schemaaenderungen in diesem Repository manuell und Anweisung fuer
+-- Anweisung im SQL Editor laufen, ist dieses Fenster real.
+--
+-- Deshalb ZUERST die drei Funktionsrumpfe zurueckstellen und ERST DANACH
+-- die Hilfsfunktion und die Tabelle entfernen:
 --
 --   drop function if exists public.reset_job_occurrence_assignments(uuid);
 --   -- generate_job_occurrences / update_job_occurrences / set_job_assignments
