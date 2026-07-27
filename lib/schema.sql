@@ -993,6 +993,10 @@ as $$
       public.current_user_role() = 'admin'
       or (
         public.current_user_role() = 'employee'
+        -- BEWUSST weiterhin nur der Legacy-Primär: das Markieren als
+        -- gelesen schreibt auf job_comment_reads, dessen Policies denselben
+        -- Primär verlangen. Ein Erweitern nur hier erzeugte einen dauerhaft
+        -- hängenden Ungelesen-Punkt (siehe 20260730000000, Abschnitt 5).
         and j.assigned_to = auth.uid()
       )
     )
@@ -1244,6 +1248,16 @@ using (
 -- Das schließt Parent-Recurring-Regeln (job_type = 'recurring') aus.
 -- Gilt für normale Single-Jobs (parent_job_id IS NULL) und
 -- generierte Occurrences (parent_job_id IS NOT NULL) gleichermaßen.
+--
+-- Zugewiesen gilt seit Phase 5 (20260730000000) über die Zuweisungsmenge
+-- job_assignments ODER den Legacy-Zeiger assigned_to. Der Legacy-Zweig
+-- bleibt als Obermenge stehen und fällt erst in Phase 11 mit der Spalte.
+--
+-- WICHTIG: job_type = 'single' steht bewusst AUSSERHALB der ODER-Klammer.
+-- Recurring-Parent-Regeln tragen seit Phase 4 selbst Zuweisungen (als
+-- Vorlage für ihre Occurrences); is_assigned_to_job() kennt job_type
+-- nicht. Innerhalb der Klammer würden Mitarbeiter deshalb plötzlich
+-- Parent-Regeln in ihrer Jobliste sehen.
 create policy "employee read own assigned jobs"
 on public.jobs
 for select
@@ -1251,8 +1265,11 @@ to authenticated
 using (
   public.current_user_role() = 'employee'
   and job_type = 'single'
-  and assigned_to = auth.uid()
   and company_id = public.current_user_company_id()
+  and (
+    assigned_to = auth.uid()
+    or public.is_assigned_to_job(id)
+  )
 );
 
 create policy "admin insert jobs in own company"
@@ -1306,7 +1323,8 @@ using (
   and company_id = public.current_user_company_id()
 );
 
--- Employee liest nur Kommentare zu den ihm zugewiesenen Jobs.
+-- Employee liest nur Kommentare zu den ihm zugewiesenen Jobs
+-- (Zuweisungsmenge oder Legacy-Zeiger, siehe Phase 5).
 create policy "employee read comments on own jobs"
 on public.job_comments
 for select
@@ -1318,7 +1336,10 @@ using (
     select 1
     from public.jobs j
     where j.id = job_comments.job_id
-      and j.assigned_to = auth.uid()
+      and (
+        j.assigned_to = auth.uid()
+        or public.is_assigned_to_job(j.id)
+      )
   )
 );
 
@@ -1445,6 +1466,15 @@ using (
 );
 
 -- Employee liest nur Fotos zu den ihm zugewiesenen Jobs.
+-- Zwei weite Policies aus der Remote-Baseline (20260713000000) prüfen die
+-- Zuweisung NICHT selbst, sondern verlassen sich allein darauf, ob der
+-- Aufrufer die jobs-Zeile sehen kann. Seit Phase 5 ist diese Sichtbarkeit
+-- weiter — sie würden dadurch transitiv ein Schreibrecht öffnen. Beide
+-- sind durch die strengen Policies unten vollständig abgedeckt und in
+-- 20260730000000 entfernt worden.
+drop policy if exists "job_photos: Firma darf Fotos lesen"     on public.job_photos;
+drop policy if exists "job_photos: Firma darf Fotos hochladen" on public.job_photos;
+
 drop policy if exists "employee read photos on own jobs" on public.job_photos;
 create policy "employee read photos on own jobs"
 on public.job_photos
@@ -1457,7 +1487,10 @@ using (
     select 1
     from public.jobs j
     where j.id = job_photos.job_id
-      and j.assigned_to = auth.uid()
+      and (
+        j.assigned_to = auth.uid()
+        or public.is_assigned_to_job(j.id)
+      )
   )
 );
 
@@ -1551,13 +1584,17 @@ using (
         public.current_user_role() = 'admin'
         or (
           public.current_user_role() = 'employee'
-          and j.assigned_to = auth.uid()
+          and (
+            j.assigned_to = auth.uid()
+            or public.is_assigned_to_job(j.id)
+          )
         )
       )
   )
 );
 
 -- INSERT (= Upload): nur in den eigenen Firmen-Pfad und nur für erlaubte Jobs.
+-- BEWUSST weiterhin an j.assigned_to gebunden (Schreibpfad, Phase 6/7).
 drop policy if exists "job-photos insert allowed" on storage.objects;
 create policy "job-photos insert allowed"
 on storage.objects
