@@ -3,13 +3,53 @@ export type JobStatus = "open" | "in_progress" | "completed";
 // Einmaliger Auftrag (single) vs. dauerhafter/wiederkehrender Auftrag (recurring).
 export type JobType = "single" | "recurring";
 
+// Ein zugewiesener Mitarbeiter an einem Auftrag (eine Zeile aus job_assignments).
+//
+// BEWUSST MINIMAL: das Modell trägt nur, was der Lesepfad heute WIRKLICH
+// anzeigt. `attendance` und `counts_for_timesheet` existieren in der DB,
+// wurden hier aber entfernt — sie hatten keinen einzigen Konsumenten und
+// mussten in jedem Fallback-Pfad erfunden werden (aus job.status abgeleitet).
+// Insbesondere `counts_for_timesheet` ist die Quelle der Stundenzettel-
+// BERECHTIGUNG; ein erfundener Wert dafür im Client wäre eine Abrechnungs-
+// Falle. Beide kommen in Phase 7 zurück, wenn `attendance` serverseitig
+// gepflegt wird und es echte Konsumenten gibt.
+export type JobAssignee = {
+  /** PK der Zuweisung — stabiler React-Key, auch bei gelöschtem Konto. */
+  assignmentId: string;
+  /** NULL = das Mitarbeiterkonto wurde gelöscht (anonymisierter Nachweis). */
+  employeeId: string | null;
+  /** Lebender Profilname; Fallback auf den Schnappschuss bei gelöschtem Konto. */
+  fullName: string;
+  /** true, wenn das Konto gelöscht wurde (employeeId === null). */
+  isDeleted: boolean;
+};
+
 export type Job = {
   id: string;
   customerName: string;
   location: string;
   time: string;
   service: string;
+
+  /**
+   * Vollständige Zuweisungsmenge des Auftrags (Phase 5). Leeres Array =
+   * niemandem zugewiesen. Maßgeblich für JEDE Anzeige von Mitarbeitern.
+   */
+  assignees: JobAssignee[];
+
+  /**
+   * @deprecated Legacy-Primär aus jobs.assigned_to. NICHT mehr für die
+   * Anzeige verwenden — dafür ist `assignees` da.
+   *
+   * Bleibt in Phase 5 bewusst befüllt, weil er zwei Dinge trägt, die noch
+   * nicht umgestellt sind:
+   *  1. das Aktions-Gating (start_own_job/complete_own_job verlangen
+   *     serverseitig weiterhin assigned_to = auth.uid() — Phase 7),
+   *  2. den Schreibpfad beim Anlegen/Bearbeiten (Phase 6).
+   * Entfällt mit der Spalte in Phase 11.
+   */
   employeeId?: string | null;
+  /** @deprecated → `assignees`. Siehe Hinweis bei `employeeId`. */
   employeeName?: string | null;
   status: JobStatus;
   notes?: string | null;

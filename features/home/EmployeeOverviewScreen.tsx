@@ -19,6 +19,7 @@ import {
 } from "@/components/ui";
 import JobCard from "@/components/JobCard";
 import { useAuth } from "@/context/AuthContext";
+import { canRunJobActions } from "@/utils/jobAssignees";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
@@ -76,7 +77,7 @@ export default function EmployeeOverviewScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const { profile } = useAuth();
+  const { profile, role } = useAuth();
   const { jobs, startJob, completeJob, loading } = useJobs();
 
   const [filter, setFilter] = useState<Filter>("all");
@@ -124,9 +125,16 @@ export default function EmployeeOverviewScreen() {
   ).length;
 
   // ── Aktiver Job (erster in_progress über alle eigenen Jobs)
+  // Nur der eigene laufende Auftrag: seit Phase 5 sieht ein Mitarbeiter auch
+  // Aufträge, die eine Kollegin gestartet hat und bei denen er nur sekundär
+  // zugewiesen ist. Die Abschluss-Karte gehört ihm dann nicht.
   const activeJob = useMemo(
-    () => jobs.find((j) => j.status === "in_progress"),
-    [jobs],
+    () =>
+      jobs.find(
+        (j) =>
+          j.status === "in_progress" && canRunJobActions(j, role, profile?.id),
+      ),
+    [jobs, role, profile?.id],
   );
 
   // ── "Heute anstehend": gefiltert + nach Status sortiert, max. 5
@@ -336,8 +344,16 @@ export default function EmployeeOverviewScreen() {
                 job={job}
                 dueToday
                 onPress={() => router.push(`/jobs/${job.id}`)}
-                onStart={() => startJob(job.id)}
-                onComplete={() => completeJob(job.id)}
+                onStart={
+                  canRunJobActions(job, role, profile?.id)
+                    ? () => startJob(job.id)
+                    : undefined
+                }
+                onComplete={
+                  canRunJobActions(job, role, profile?.id)
+                    ? () => completeJob(job.id)
+                    : undefined
+                }
               />
             ))}
           </View>

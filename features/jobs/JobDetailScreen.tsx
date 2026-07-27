@@ -30,6 +30,12 @@ import {
 } from "@/services/jobs/jobs.service";
 import { WorkedTimeCard } from "@/features/jobs/components/WorkedTimeCard";
 import { formatRecurringDays } from "@/utils/recurrence";
+import {
+  formatAssigneesFull,
+  getAssignees,
+  isPrimaryAssignee,
+  UNASSIGNED_LABEL,
+} from "@/utils/jobAssignees";
 import type { Job } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -168,13 +174,24 @@ export default function JobDetailScreen() {
   const isParentRule =
     !!job && job.jobType === "recurring" && !job.parentJobId;
 
+  // Darf der Nutzer den Ungelesen-Status dieses Jobs schreiben?
+  //
+  // job_comment_reads hat eigene INSERT/UPDATE-Policies, die — wie alle
+  // Schreibpfade — weiterhin den LEGACY-PRIMÄR verlangen. Ein sekundär
+  // Zugewiesener darf die Kommentare zwar lesen (Phase 5), das Markieren
+  // schlägt für ihn aber mit 42501 fehl. Der Fehler würde im JobContext
+  // stillschweigend geschluckt — also gar nicht erst versuchen.
+  // Fällt mit Phase 6/7, wenn die Schreibpfade nachziehen.
+  const canMarkCommentsRead =
+    !!job && (isAdmin || isPrimaryAssignee(job, profile?.id));
+
   // Beim Öffnen die Kommentare dieses Jobs als gesehen markieren
   // (entfernt den roten Punkt). Online-only, optimistisch im Context.
   useEffect(() => {
-    if (id) {
+    if (id && canMarkCommentsRead) {
       markJobCommentsAsRead(id);
     }
-  }, [id, markJobCommentsAsRead]);
+  }, [id, canMarkCommentsRead, markJobCommentsAsRead]);
 
   const loadOccurrences = useCallback(async () => {
     if (!jobId || !isAdmin || !isParentRule) return;
@@ -374,25 +391,34 @@ export default function JobDetailScreen() {
   const timeText = job.startTime ? `${job.startTime} Uhr` : "—";
   const scheduledStartText =
     formatDateTime(job.scheduledStart) ?? "Kein Termin geplant";
-  const employeeText = job.employeeName ?? "Nicht zugewiesen";
+  // ANZEIGE: vollständige Zuweisungsmenge (Phase 5). Gelöschte Konten
+  // erscheinen mit „(ehemalig)", damit der Nachweis lesbar bleibt.
+  const assignees = getAssignees(job);
+  const employeeText =
+    assignees.length > 0 ? formatAssigneesFull(job) : UNASSIGNED_LABEL;
+  const employeeLabel = assignees.length > 1 ? "Mitarbeitende" : "Mitarbeiter";
 
-  // Start/Abschluss laufen über die RPCs start_own_job/complete_own_job, die
-  // role='employee' UND assigned_to=auth.uid() verlangen. Daher nur dem
-  // zugewiesenen Mitarbeiter anbieten — sonst RPC-Fehler "Job not found or not
-  // allowed" (z. B. wenn ein Admin den Button drückt). Admins nutzen "Bearbeiten".
+  // BERECHTIGUNG (bewusst NICHT die Zuweisungsmenge): Start/Abschluss laufen
+  // über die RPCs start_own_job/complete_own_job, die role='employee' UND
+  // assigned_to=auth.uid() verlangen. Ein sekundär Zugewiesener sieht den
+  // Auftrag seit Phase 5 zwar, darf ihn aber serverseitig noch nicht starten —
+  // bekäme er hier einen Button, schlüge dieser mit "Job not found or not
+  // allowed" fehl. Wird in Phase 7 zusammen mit den RPCs umgestellt.
   const isAssignedEmployee =
-    role === "employee" && job.employeeId === profile?.id;
+    role === "employee" && isPrimaryAssignee(job, profile?.id);
   // Parent-Recurring-Regeln dürfen niemals gestartet/abgeschlossen werden —
   // nur konkrete Occurrences (job_type='single') sind ausführbare Termine.
   const canStart = !isParentRule && isAssignedEmployee && job.status === "open";
   const canComplete = !isParentRule && isAssignedEmployee && job.status === "in_progress";
   const isDone = job.status === "completed";
 
-  // Foto-Upload: Admin immer; Employee nur wenn diesem Job zugewiesen.
+  // Foto-Upload: Admin immer; Employee nur wenn PRIMÄR zugewiesen.
+  // Gleiche Begründung wie oben bei isAssignedEmployee: die Insert-Policies auf
+  // job_photos und storage.objects verlangen weiterhin assigned_to = auth.uid().
   // isOnline wird separat übergeben — JobPhotos zeigt den Offline-Hinweis selbst.
   const canUploadPhotos =
     role === "admin" ||
-    (role === "employee" && job.employeeId === profile?.id);
+    (role === "employee" && isPrimaryAssignee(job, profile?.id));
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -544,9 +570,13 @@ export default function JobDetailScreen() {
           )}
 
           <InfoRow
-            label="Mitarbeiter"
+            label={employeeLabel}
             value={employeeText}
-            icon="person-outline"
+            icon={assignees.length > 1 ? "people-outline" : "person-outline"}
+            // Mehrfachzuweisungen dürfen nicht abgeschnitten werden — der
+            // Detail-Screen ist die Stelle, an der die Menge vollständig
+            // nachvollziehbar sein muss.
+            valueNumberOfLines={6}
           />
         </Card>
 
@@ -582,7 +612,13 @@ export default function JobDetailScreen() {
         />
 
         {/* ── Kommentare (append-only, online-only) ── */}
-        <JobComments jobId={job.id} onInputFocus={handleCommentFocus} />
+        {/* Schreibrecht = Legacy-Primär oder Admin (RLS-Insert-Policy).
+            Sekundär Zugewiesene lesen mit, sehen aber kein Eingabefeld. */}
+        <JobComments
+          jobId={job.id}
+          canComment={isAdmin || isPrimaryAssignee(job, profile?.id)}
+          onInputFocus={handleCommentFocus}
+        />
 
         {/* ── Aktionen ── */}
         <View style={styles.actions}>

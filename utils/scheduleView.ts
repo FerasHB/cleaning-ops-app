@@ -4,6 +4,7 @@
 // KEINE React-/Supabase-Imports.
 
 import type { Job } from "@/types/job";
+import { formatAssigneesFull } from "@/utils/jobAssignees";
 import { getJobDisplayTime } from "@/utils/jobSchedule";
 
 // Die vier Zeitplan-Filter (executable Jobs: single + Occurrences, nie Parents).
@@ -29,12 +30,15 @@ export const SCHEDULE_FILTERS: { key: ScheduleFilter; label: string }[] = [
  * supabase/tests/recurring_jobs_display.test.sql abgesichert.
  */
 export function matchesSearch(
-  job: Pick<Job, "customerName" | "service" | "location" | "employeeName">,
+  job: Pick<Job, "customerName" | "service" | "location" | "assignees">,
   query: string,
 ): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [job.customerName, job.service, job.location, job.employeeName]
+  // Seit Phase 5 über ALLE Zugewiesenen — sonst fände die Suche einen
+  // Auftrag nicht mehr, sobald der gesuchte Mitarbeiter nicht der
+  // Legacy-Primär ist.
+  return [job.customerName, job.service, job.location, formatAssigneesFull(job)]
     .filter(Boolean)
     .join(" ")
     .toLowerCase()

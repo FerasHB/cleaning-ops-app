@@ -81,6 +81,7 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
 
 ### Typen (`types/`)
 - `types/job.ts` — `Job`, `JobStatus` (`open`|`in_progress`|`completed`), `JobType` (`single`|`recurring`),
+  `JobAssignee` (**maßgeblich für jede Mitarbeiter-Anzeige**, `Job.assignees[]`),
   `CreateJobInput`, `EmployeeOption`. Terminierung am `Job`: `jobType`, `date` (`YYYY-MM-DD`, nur single),
   `startTime` (`HH:mm`), `recurringDays` (Kurzcodes `mon`…`sun`, nur recurring), `isActive`.
   Job trägt zusätzlich `hasUnreadComments` (gemerged im JobContext, nicht in `mapJob`).
@@ -113,6 +114,8 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
 - `i18n/` — Übersetzungen (`translations.ts`, `useTranslation.ts`).
 - `utils/` — `date.ts` (inkl. Zeit-/Datum-Helfer `formatTimeHHmm`, `formatDateISO`, `isSameLocalDate`),
   `recurrence.ts` (Wochentage `WEEKDAYS`, `getWeekdayKey`, `isWeekdayInList`, `formatRecurringDays`),
+  `jobAssignees.ts` (zentrale Zuweisungs-Helfer `getAssignees`, `isAssignedTo`, `isPrimaryAssignee`,
+  `canRunJobActions`, `formatAssigneesShort/Full` — siehe Konvention unten),
   `jobSchedule.ts` (zentrale Terminierungs-Helfer `isJobToday`, `getJobDisplayTime`, `getRecurringDaysLabel`
   — genutzt von Employee-Übersicht, Admin-Dashboard und JobCard), `debug.ts`.
 - `data/` — statische/Beispiel-Daten (`jobs.ts`, `employees.ts`).
@@ -132,6 +135,15 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   **Einmalig** (Datum + Uhrzeit) oder **Wiederkehrend** (Wochentage + Uhrzeit + Aktiv/Inaktiv). Validierung:
   single braucht Datum **und** Uhrzeit; recurring braucht mind. **einen** Wochentag **und** Uhrzeit. Kunde,
   Ort/Location, Service bleiben Pflicht; Mitarbeiter-Zuweisung und Notizen optional.
+- **Mehrere Mitarbeiter pro Auftrag (ab Phase 5, READ-ONLY):** Maßgeblich für jede ANZEIGE ist
+  `Job.assignees[]` (aus `job_assignments`, gemappt in `jobs.service.ts`). `Job.employeeId`/`employeeName`
+  sind `@deprecated` und tragen nur noch (a) den Schreibpfad (Phase 6) und (b) das **Aktions-Gating**.
+  Letzteres ist kein Versehen: `start_own_job`/`complete_own_job` und die Insert-Policies auf
+  `job_comments`/`job_photos`/`storage.objects` verlangen serverseitig weiterhin
+  `jobs.assigned_to = auth.uid()`. Start-/Fertig-/Upload-Buttons deshalb **immer** über
+  `canRunJobActions()` bzw. `isPrimaryAssignee()` gaten, **nie** über `isAssignedTo()` — sonst
+  erscheint für sekundär Zugewiesene ein Button, der mit „Job not found or not allowed" fehlschlägt.
+  Wird in Phase 7 aufgelöst. Zuweisungs-Anzeige nicht selbst formatieren: `utils/jobAssignees.ts` nutzen.
 - **Heute-Logik nicht duplizieren:** Die „heute fällig?"-Entscheidung liegt zentral in `utils/jobSchedule.ts`
   (`isJobToday`/`getJobDisplayTime`/`getRecurringDaysLabel`) und wird von `EmployeeOverviewScreen`,
   `AdminDashboardScreen` und `JobCard` genutzt. Neue Screens diesen Helper verwenden, keine eigene

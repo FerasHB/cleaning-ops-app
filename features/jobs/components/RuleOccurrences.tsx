@@ -24,6 +24,10 @@
 // maxHeight. Die unbegrenzt wachsende Historie bleibt seitenweise.
 
 import { StatusBadge } from "@/components/ui";
+import {
+  formatAssigneesShort,
+  isUnassigned,
+} from "@/utils/jobAssignees";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job } from "@/types/job";
@@ -263,7 +267,9 @@ function OccurrenceRow({
         </View>
         <Text style={styles.rowMeta} numberOfLines={1}>
           {occurrence.startTime ? `${occurrence.startTime} Uhr` : "—"}
-          {occurrence.employeeName ? ` · ${occurrence.employeeName}` : ""}
+          {isUnassigned(occurrence)
+            ? ""
+            : ` · ${formatAssigneesShort(occurrence)}`}
         </Text>
       </View>
 

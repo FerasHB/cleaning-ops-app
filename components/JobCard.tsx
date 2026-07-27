@@ -18,6 +18,11 @@ import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
 import { Ionicons } from "@expo/vector-icons";
 import { Job } from "@/types/job";
 import { getJobDisplayTime, getRecurringDaysLabel } from "@/utils/jobSchedule";
+import {
+  formatAssigneesFull,
+  formatAssigneesShort,
+  getAssignees,
+} from "@/utils/jobAssignees";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
@@ -173,7 +178,16 @@ export default function JobCard({
   // Bei Parent-Recurring-Regeln grundsätzlich keine Quick-Actions.
   const showStartAction = !isParentRule && job.status === "open" && !!onStart;
   const showCompleteAction = !isParentRule && job.status === "in_progress" && !!onComplete;
-  const employeeText = showEmployeeName ? job.employeeName : null;
+  // Mitarbeiter-Zeile: gekürzt („Anna, Bert +2"), das vollständige Register
+  // steckt im Screenreader-Label. Ohne Zuweisung bleibt die Zeile ganz weg —
+  // wie bisher, als employeeName schlicht null war.
+  const assigneeCount = getAssignees(job).length;
+  const employeeText =
+    showEmployeeName && assigneeCount > 0 ? formatAssigneesShort(job) : null;
+  const employeeA11yLabel =
+    showEmployeeName && assigneeCount > 0
+      ? `${assigneeCount === 1 ? "Mitarbeiter" : "Mitarbeitende"}: ${formatAssigneesFull(job)}`
+      : undefined;
 
   // Footer wird nur gerendert, wenn Mitarbeiter ODER Action vorhanden
   const hasFooter = !!employeeText || showStartAction || showCompleteAction;
@@ -315,9 +329,13 @@ export default function JobCard({
       {hasFooter ? (
         <View style={styles.footer}>
           {employeeText ? (
-            <View style={styles.employeeRow}>
+            <View
+              style={styles.employeeRow}
+              accessible
+              accessibilityLabel={employeeA11yLabel}
+            >
               <Ionicons
-                name="person-outline"
+                name={assigneeCount > 1 ? "people-outline" : "person-outline"}
                 size={14}
                 color={theme.colors.onSurfaceVariant}
               />

@@ -13,6 +13,7 @@
 //      / Zeitraum abgelaufen), damit defekte Regeln nicht still verborgen sind.
 
 import type { Job } from "@/types/job";
+import { isUnassigned } from "@/utils/jobAssignees";
 import { getWeekdayKey } from "@/utils/recurrence";
 import { normalizeTime } from "@/utils/date";
 
@@ -113,7 +114,7 @@ export type RuleOccurrenceSummary = {
  *   6. healthy           – alles in Ordnung
  */
 export function deriveRuleHealth(
-  rule: Pick<Job, "status" | "isActive" | "recurrenceEndDate" | "employeeId">,
+  rule: Pick<Job, "status" | "isActive" | "recurrenceEndDate" | "assignees">,
   summary: RuleOccurrenceSummary,
   assigneeIsActive: boolean | null,
   today: string,
@@ -149,12 +150,16 @@ export function deriveRuleHealth(
     };
   }
 
-  if (rule.employeeId && assigneeIsActive === false) {
+  // assigneeIsActive ist seit Phase 5 die ZUSAMMENFASSUNG über alle
+  // Zugewiesenen: false, sobald MINDESTENS EINER deaktiviert ist (der
+  // Aufrufer bildet das). Eine Regel mit einem deaktivierten Mitglied ist
+  // erklärungsbedürftig, auch wenn andere Mitglieder aktiv sind.
+  if (!isUnassigned(rule) && assigneeIsActive === false) {
     return {
       state: "inactive_employee",
       severity: "warning",
       label: "Mitarbeiter inaktiv",
-      hint: "Der zugewiesene Mitarbeiter ist deaktiviert.",
+      hint: "Mindestens ein zugewiesener Mitarbeiter ist deaktiviert.",
     };
   }
 

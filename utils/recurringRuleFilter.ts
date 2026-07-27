@@ -16,6 +16,7 @@
 // in ruleFilterSummaryParts() — keine bestehende Logik muss sich ändern.
 
 import type { Job } from "@/types/job";
+import { isAssignedTo, isUnassigned } from "@/utils/jobAssignees";
 import type { WeekdayKey } from "@/utils/recurrence";
 import { WEEKDAYS } from "@/utils/recurrence";
 
@@ -72,17 +73,20 @@ export function matchesRuleSearch(
  * Jede Bedingung ist unabhängig prüfbar — siehe Architektur-Hinweis oben.
  */
 export function matchesRuleFilters(
-  rule: Pick<Job, "isActive" | "employeeId" | "recurringDays">,
+  rule: Pick<Job, "isActive" | "assignees" | "recurringDays">,
   filters: RuleFilters,
 ): boolean {
   if (filters.status === "active" && rule.isActive === false) return false;
   if (filters.status === "inactive" && rule.isActive !== false) return false;
 
-  if (filters.employee === "unassigned" && rule.employeeId) return false;
+  // Zuweisungsmenge statt Legacy-Primär: „Nicht zugewiesen" heißt jetzt
+  // wirklich „keine einzige Zuweisung" (der Legacy-Zeiger kann auch dann
+  // NULL sein, wenn Zuweisungen existieren — siehe compat_primary_assignee).
+  if (filters.employee === "unassigned" && !isUnassigned(rule)) return false;
   if (
     filters.employee !== "all" &&
     filters.employee !== "unassigned" &&
-    rule.employeeId !== filters.employee
+    !isAssignedTo(rule, filters.employee)
   ) {
     return false;
   }
@@ -100,7 +104,7 @@ export function matchesRuleFilters(
 export function matchesRuleSearchAndFilters(
   rule: Pick<
     Job,
-    "customerName" | "service" | "location" | "isActive" | "employeeId" | "recurringDays"
+    "customerName" | "service" | "location" | "isActive" | "assignees" | "recurringDays"
   >,
   query: string,
   filters: RuleFilters,

@@ -8,7 +8,9 @@
 import { EmptyState, ErrorBanner, LoadingScreen, OfflineBanner } from "@/components/ui";
 import JobCard from "@/components/JobCard";
 import { MonthCalendar } from "@/features/jobs/components/MonthCalendar";
+import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
+import { canRunJobActions } from "@/utils/jobAssignees";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { formatDateISO } from "@/utils/date";
 import { getJobDisplayTime } from "@/utils/jobSchedule";
@@ -53,6 +55,7 @@ export default function EmployeeJobsCalendarScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
+  const { role, profile } = useAuth();
   const { jobs, startJob, completeJob, loading, refreshJobs } = useJobs();
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
@@ -287,8 +290,17 @@ export default function EmployeeJobsCalendarScreen() {
             job={item}
             // Start/Fertig sind Employee-Aktionen (RPCs start_own_job/
             // complete_own_job). JobCard zeigt je Status genau eine Action.
-            onStart={() => handleStart(item.id)}
-            onComplete={() => handleComplete(item.id)}
+            // Seit Phase 5 nur für den Legacy-Primär — siehe canRunJobActions.
+            onStart={
+              canRunJobActions(item, role, profile?.id)
+                ? () => handleStart(item.id)
+                : undefined
+            }
+            onComplete={
+              canRunJobActions(item, role, profile?.id)
+                ? () => handleComplete(item.id)
+                : undefined
+            }
             onPress={() => router.push(`/jobs/${item.id}`)}
           />
         )}

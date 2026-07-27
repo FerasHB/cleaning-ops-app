@@ -6,6 +6,7 @@
 import { EmptyState, LoadingScreen } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
+import { canRunJobActions } from "@/utils/jobAssignees";
 import HomeHeader from "@/features/home/components/HomeHeader";
 import HomeStats from "@/features/home/components/HomeStats";
 import { router } from "expo-router";
@@ -53,7 +54,7 @@ export default function HomeScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const { role, user } = useAuth();
+  const { role, user, profile } = useAuth();
   const { jobs, startJob, completeJob, loading } = useJobs();
   const { t } = useTranslation();
 
@@ -148,8 +149,16 @@ export default function HomeScreen() {
             item={item}
             index={index}
             onPress={() => router.push(`/jobs/${item.id}`)}
-            onStart={() => startJob(item.id)}
-            onComplete={() => completeJob(item.id)}
+            onStart={
+              canRunJobActions(item, role, profile?.id)
+                ? () => startJob(item.id)
+                : undefined
+            }
+            onComplete={
+              canRunJobActions(item, role, profile?.id)
+                ? () => completeJob(item.id)
+                : undefined
+            }
             // Admins sehen Mitarbeiter-Name in der Card (Übersicht über Zuweisungen).
             // Employees sehen ihn nicht — wäre redundant (sie sehen nur eigene Jobs).
             showEmployeeName={role === "admin"}
@@ -172,8 +181,11 @@ function AnimatedJobCard({
 }: {
   item: any;
   index: number;
-  onStart: () => void;
-  onComplete: () => void;
+  // Optional: ohne Handler blendet JobCard die Quick-Action aus. Seit Phase 5
+  // ist das der Normalfall für Aufträge, bei denen der Nutzer nicht der
+  // Legacy-Primär ist (siehe canRunJobActions).
+  onStart?: () => void;
+  onComplete?: () => void;
   onPress?: () => void;
   showEmployeeName?: boolean;
 }) {

@@ -1,7 +1,15 @@
 // features/jobs/components/JobComments.tsx
 // Kommentar-Sektion für einen Job (append-only, MVP).
-// Liste (Autor, Zeit, Text) + Eingabe. Employee und Admin dürfen schreiben.
-// Online-only — nutzt useJobComments (kein JobContext, keine Offline-Queue).
+// Liste (Autor, Zeit, Text) + Eingabe. Online-only — nutzt useJobComments
+// (kein JobContext, keine Offline-Queue).
+//
+// SCHREIBRECHT ist NICHT dasselbe wie Leserecht: seit Phase 5 sieht auch ein
+// nur sekundär zugewiesener Mitarbeiter den Auftrag und seine Kommentare,
+// darf aber keinen schreiben — die RLS-Policy
+// "employee insert comments on own jobs" verlangt weiterhin
+// jobs.assigned_to = auth.uid(). Deshalb MUSS der Aufrufer `canComment`
+// setzen; ohne dieses Prop hätte der Nutzer ein aktives Senden-Feld, das
+// serverseitig mit einem RLS-Fehler endet.
 
 import { Button, Card, ErrorBanner, Input } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
@@ -34,12 +42,22 @@ function formatDateTime(iso?: string | null): string | null {
 
 type JobCommentsProps = {
   jobId: string;
+  /**
+   * Darf der aktuelle Nutzer hier kommentieren? Pflicht-Prop (kein Default
+   * `true`): ein vergessenes Prop soll die Eingabe ausblenden, nicht
+   * fälschlich freischalten.
+   */
+  canComment: boolean;
   // Wird gerufen, wenn das Kommentarfeld fokussiert wird — der Screen scrollt
   // dann so, dass Eingabe + Senden über der Tastatur sichtbar bleiben.
   onInputFocus?: () => void;
 };
 
-export function JobComments({ jobId, onInputFocus }: JobCommentsProps) {
+export function JobComments({
+  jobId,
+  canComment,
+  onInputFocus,
+}: JobCommentsProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -49,7 +67,7 @@ export function JobComments({ jobId, onInputFocus }: JobCommentsProps) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
-  const canSend = draft.trim().length > 0 && !submitting;
+  const canSend = canComment && draft.trim().length > 0 && !submitting;
 
   const handleSend = async () => {
     setSubmitError("");
@@ -115,31 +133,40 @@ export function JobComments({ jobId, onInputFocus }: JobCommentsProps) {
         </View>
       )}
 
-      {/* ── Eingabe ── */}
-      <View style={styles.inputWrap}>
-        {submitError ? (
-          <ErrorBanner
-            message={submitError}
-            onDismiss={() => setSubmitError("")}
-          />
-        ) : null}
+      {/* ── Eingabe (nur mit Schreibrecht) ── */}
+      {canComment ? (
+        <View style={styles.inputWrap}>
+          {submitError ? (
+            <ErrorBanner
+              message={submitError}
+              onDismiss={() => setSubmitError("")}
+            />
+          ) : null}
 
-        <Input
-          placeholder="Kommentar schreiben…"
-          value={draft}
-          onChangeText={setDraft}
-          onFocus={onInputFocus}
-          multiline
-          editable={!submitting}
-        />
-        <Button
-          label="Senden"
-          icon="send"
-          loading={submitting}
-          disabled={!canSend}
-          onPress={handleSend}
-        />
-      </View>
+          <Input
+            placeholder="Kommentar schreiben…"
+            value={draft}
+            onChangeText={setDraft}
+            onFocus={onInputFocus}
+            multiline
+            editable={!submitting}
+          />
+          <Button
+            label="Senden"
+            icon="send"
+            loading={submitting}
+            disabled={!canSend}
+            onPress={handleSend}
+          />
+        </View>
+      ) : (
+        // Kein deaktivierter Button, sondern eine Erklärung: ein ausgegrautes
+        // Feld ohne Grund wirkt wie ein Fehler.
+        <Text style={styles.readOnlyHint}>
+          Du kannst hier mitlesen. Kommentare schreiben kann derzeit nur der
+          hauptverantwortliche Mitarbeiter des Auftrags.
+        </Text>
+      )}
     </Card>
   );
 }
@@ -160,6 +187,13 @@ function createStyles(theme: AppTheme) {
       fontWeight: theme.typography.weight.semibold,
       color: theme.colors.outline,
       letterSpacing: theme.typography.letterSpacing.wider,
+    },
+
+    readOnlyHint: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+      lineHeight: 20,
     },
 
     loadingWrap: {
