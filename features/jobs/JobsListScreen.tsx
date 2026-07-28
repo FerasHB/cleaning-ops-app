@@ -12,7 +12,7 @@ import { useJobs } from "@/context/JobContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
-  formatAssigneesFull,
+  getAssigneeNames,
   isAssignedTo,
   isPrimaryAssignee,
 } from "@/utils/jobAssignees";
@@ -105,13 +105,20 @@ export default function JobsListScreen() {
         return false;
       }
 
-      // Suche über Kunde / Service / Ort / (Admin) alle Mitarbeitenden
+      // Suche über Kunde / Service / Ort / (Admin) alle Mitarbeitenden.
+      //
+      // BEWUSST getAssigneeNames statt formatAssigneesFull: der
+      // Anzeige-Formatter liefert für einen Auftrag ohne Zuweisung den
+      // Platzhalter „Nicht zugewiesen". Der landete im Suchindex, wodurch
+      // schon einzelne Buchstaben (z, g, e, i, s, n, …) sämtliche
+      // unzugewiesenen Aufträge trafen. Die Namensliste ist für einen
+      // leeren Auftrag korrekt leer.
       if (query) {
         const haystack = [
           job.customerName,
           job.service,
           job.location,
-          isAdmin ? formatAssigneesFull(job) : null,
+          isAdmin ? getAssigneeNames(job).join(" ") : null,
         ]
           .filter(Boolean)
           .join(" ")
