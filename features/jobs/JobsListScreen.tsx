@@ -11,6 +11,11 @@ import JobCard from "@/components/JobCard";
 import { useJobs } from "@/context/JobContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import {
+  getAssigneeNames,
+  isAssignedTo,
+  isPrimaryAssignee,
+} from "@/utils/jobAssignees";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
@@ -60,7 +65,7 @@ export default function JobsListScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
   const { jobs, employees, startJob, completeJob, loading, refreshJobs, refreshEmployees } = useJobs();
 
   const [filter, setFilter] = useState<Filter>("all");
@@ -93,18 +98,27 @@ export default function JobsListScreen() {
       // Status-Filter
       if (filter !== "all" && job.status !== filter) return false;
 
-      // Mitarbeiter-Filter (nur Admin)
-      if (isAdmin && employeeId !== "all" && job.employeeId !== employeeId) {
+      // Mitarbeiter-Filter (nur Admin) — über die Zuweisungsmenge, damit
+      // ein Auftrag auch dann erscheint, wenn der gewählte Mitarbeiter nicht
+      // der Legacy-Primär ist.
+      if (isAdmin && employeeId !== "all" && !isAssignedTo(job, employeeId)) {
         return false;
       }
 
-      // Suche über Kunde / Service / Ort / (Admin) Mitarbeiter
+      // Suche über Kunde / Service / Ort / (Admin) alle Mitarbeitenden.
+      //
+      // BEWUSST getAssigneeNames statt formatAssigneesFull: der
+      // Anzeige-Formatter liefert für einen Auftrag ohne Zuweisung den
+      // Platzhalter „Nicht zugewiesen". Der landete im Suchindex, wodurch
+      // schon einzelne Buchstaben (z, g, e, i, s, n, …) sämtliche
+      // unzugewiesenen Aufträge trafen. Die Namensliste ist für einen
+      // leeren Auftrag korrekt leer.
       if (query) {
         const haystack = [
           job.customerName,
           job.service,
           job.location,
-          isAdmin ? job.employeeName : null,
+          isAdmin ? getAssigneeNames(job).join(" ") : null,
         ]
           .filter(Boolean)
           .join(" ")
@@ -307,8 +321,22 @@ export default function JobsListScreen() {
             // Admins dürfen den Status NICHT über diese RPCs ändern → bei ihnen
             // keine Quick-Action-Buttons zeigen, sonst RPC-Fehler "Job not found
             // or not allowed". (JobCard blendet die Buttons ohne diese Props aus.)
-            onStart={isAdmin ? undefined : () => startJob(item.id)}
-            onComplete={isAdmin ? undefined : () => completeJob(item.id)}
+            //
+            // Seit Phase 5 sieht ein Mitarbeiter auch Aufträge, denen er nur
+            // SEKUNDÄR zugewiesen ist. Die RPCs kennen die Zuweisungsmenge noch
+            // nicht — deshalb hier zusätzlich auf den Legacy-Primär prüfen,
+            // sonst bekäme er einen Button, der garantiert fehlschlägt.
+            // Entfällt mit Phase 7.
+            onStart={
+              isAdmin || !isPrimaryAssignee(item, profile?.id)
+                ? undefined
+                : () => startJob(item.id)
+            }
+            onComplete={
+              isAdmin || !isPrimaryAssignee(item, profile?.id)
+                ? undefined
+                : () => completeJob(item.id)
+            }
             onPress={() => router.push(`/jobs/${item.id}`)}
             showEmployeeName={isAdmin}
           />

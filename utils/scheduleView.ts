@@ -4,6 +4,7 @@
 // KEINE React-/Supabase-Imports.
 
 import type { Job } from "@/types/job";
+import { getAssigneeNames } from "@/utils/jobAssignees";
 import { getJobDisplayTime } from "@/utils/jobSchedule";
 
 // Die vier Zeitplan-Filter (executable Jobs: single + Occurrences, nie Parents).
@@ -29,12 +30,21 @@ export const SCHEDULE_FILTERS: { key: ScheduleFilter; label: string }[] = [
  * supabase/tests/recurring_jobs_display.test.sql abgesichert.
  */
 export function matchesSearch(
-  job: Pick<Job, "customerName" | "service" | "location" | "employeeName">,
+  job: Pick<Job, "customerName" | "service" | "location" | "assignees">,
   query: string,
 ): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [job.customerName, job.service, job.location, job.employeeName]
+  // Seit Phase 5 über ALLE Zugewiesenen — sonst fände die Suche einen
+  // Auftrag nicht mehr, sobald der gesuchte Mitarbeiter nicht der
+  // Legacy-Primär ist.
+  //
+  // BEWUSST getAssigneeNames statt formatAssigneesFull: der Anzeige-Formatter
+  // liefert für einen Auftrag ohne Zuweisung den Platzhalter
+  // „Nicht zugewiesen". Der landete im Suchindex, wodurch schon einzelne
+  // Buchstaben (z, g, e, i, s, n, …) sämtliche unzugewiesenen Aufträge
+  // trafen. Die Namensliste ist für einen leeren Auftrag korrekt leer.
+  return [job.customerName, job.service, job.location, getAssigneeNames(job).join(" ")]
     .filter(Boolean)
     .join(" ")
     .toLowerCase()

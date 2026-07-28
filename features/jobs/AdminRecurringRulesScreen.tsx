@@ -43,6 +43,7 @@ import {
   type ActionMenuItem,
 } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { formatAssigneesShort, getAssignees } from "@/utils/jobAssignees";
 import type { AppTheme } from "@/constants/theme";
 import { useJobs } from "@/context/JobContext";
 import { employeeSelectionLabel } from "@/features/jobs/components/EmployeeFilterControl";
@@ -442,9 +443,16 @@ export default function AdminRecurringRulesScreen() {
               nextOccurrenceDate: null,
               hasOccurrences: false,
             };
-            const assigneeActive = rule.employeeId
-              ? employeeActive.get(rule.employeeId) ?? null
-              : null;
+            // Zusammenfassung über ALLE Zugewiesenen: false, sobald einer
+            // deaktiviert ist; null, wenn zu keinem eine Auskunft vorliegt
+            // (z. B. gelöschtes Konto) oder die Regel niemandem zugewiesen ist.
+            const assigneeStates = getAssignees(rule)
+              .map((a) => (a.employeeId ? employeeActive.get(a.employeeId) : undefined))
+              .filter((v): v is boolean => typeof v === "boolean");
+            const assigneeActive =
+              assigneeStates.length === 0
+                ? null
+                : assigneeStates.every((active) => active);
             const health = deriveRuleHealth(
               rule,
               {
@@ -598,8 +606,10 @@ function RuleCard({
             styles={styles}
           />
           <MetaRow
-            icon="person-outline"
-            text={rule.employeeName ?? "Nicht zugewiesen"}
+            icon={
+              getAssignees(rule).length > 1 ? "people-outline" : "person-outline"
+            }
+            text={formatAssigneesShort(rule)}
             theme={theme}
             styles={styles}
           />

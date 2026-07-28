@@ -25,6 +25,7 @@ import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
 import { formatForDisplay } from "@/utils/date";
 import { getEmployeeStatus } from "@/utils/employeeStatus";
+import { isAssignedTo } from "@/utils/jobAssignees";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -78,9 +79,10 @@ export default function EmployeeDetailScreen() {
     [employees, id],
   );
 
-  // Alle Jobs dieses Mitarbeiters
+  // Alle Jobs dieses Mitarbeiters — über die Zuweisungsmenge, damit auch
+  // Aufträge zählen, bei denen er nicht der Legacy-Primär ist.
   const assignedJobs = useMemo(
-    () => jobs.filter((j) => j.employeeId === id),
+    () => jobs.filter((j) => isAssignedTo(j, id)),
     [jobs, id],
   );
 

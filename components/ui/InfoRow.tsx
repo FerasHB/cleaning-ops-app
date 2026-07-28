@@ -20,6 +20,12 @@ interface InfoRowProps {
   onPress?: () => void;
   /** Trennlinie unter der Zeile anzeigen */
   divider?: boolean;
+  /**
+   * Maximale Zeilen des Werts (Default 2). Höher setzen, wo Abschneiden
+   * Information kostet — z. B. bei der Mitarbeiter-Liste eines Auftrags,
+   * die mehrere Namen enthalten kann.
+   */
+  valueNumberOfLines?: number;
 }
 
 export function InfoRow({
@@ -28,6 +34,7 @@ export function InfoRow({
   icon,
   onPress,
   divider = false,
+  valueNumberOfLines = 2,
 }: InfoRowProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -48,7 +55,10 @@ export function InfoRow({
       </View>
 
       {/* Wert-Zeile */}
-      <Text style={[styles.value, onPress && styles.valueLink]} numberOfLines={2}>
+      <Text
+        style={[styles.value, onPress && styles.valueLink]}
+        numberOfLines={valueNumberOfLines}
+      >
         {value}
       </Text>
 

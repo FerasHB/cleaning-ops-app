@@ -29,6 +29,7 @@ import {
   type ScheduleKpis,
 } from "@/services/jobs/jobs.service";
 import { formatDateISO } from "@/utils/date";
+import { isAssignedTo } from "@/utils/jobAssignees";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -134,7 +135,7 @@ export default function AdminDashboardScreen() {
         .filter((emp) => emp.isActive !== false)
         .map((emp) => {
           const activeJob = jobs.find(
-            (j) => j.employeeId === emp.id && j.status === "in_progress",
+            (j) => isAssignedTo(j, emp.id) && j.status === "in_progress",
           );
           return { id: emp.id, name: emp.fullName, activeJob };
         }),

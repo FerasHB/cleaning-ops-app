@@ -1,6 +1,27 @@
 import { supabase } from "@/lib/supabase";
-import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
+import {
+  CreateJobInput,
+  EmployeeOption,
+  Job,
+  JobAssignee,
+  JobType,
+} from "@/types/job";
 import { normalizeTime } from "@/utils/date";
+import { buildLegacyAssignees } from "@/utils/jobAssignees";
+
+// Eine Zeile aus job_assignments, wie sie eingebettet zurückkommt.
+// profiles ist der LEBENDE Mitarbeiter; bei gelöschtem Konto ist
+// employee_id NULL und profiles fehlt — dann trägt der Snapshot den Namen.
+type JobAssignmentRow = {
+  id: string;
+  employee_id: string | null;
+  employee_name_snapshot: string | null;
+  assigned_at: string | null;
+  profiles?:
+  | { id: string; full_name: string | null }
+  | { id: string; full_name: string | null }[]
+  | null;
+};
 
 // So sieht ein Job direkt aus der Datenbank aus
 type JobRow = {
@@ -33,6 +54,9 @@ type JobRow = {
     full_name: string;
   }[]
   | null;
+  // Zuweisungsmenge (Phase 5). Alias "assignments" im Select, damit sie sich
+  // nicht mit dem Legacy-Embed profiles:assigned_to überschneidet.
+  assignments?: JobAssignmentRow[] | null;
 };
 
 // Einfaches DB-Format für Mitarbeiter
@@ -150,9 +174,14 @@ function formatTimeRange(start: string | null, end: string | null): string {
   return `${formatDateTime(start!)} - ${formatDateTime(end!)}`;
 }
 
-// Zentrale Spaltenauswahl für Job-Abfragen (identisch zu den bestehenden
-// Inline-Selects). Wird von den neuen, gebündelten Zeitplan-/Regel-Queries
-// genutzt, damit das Mapping (mapJob) überall konsistent funktioniert.
+// EINZIGE Spaltenauswahl für Job-Abfragen. Vor Phase 5 lag dieselbe Liste
+// zusätzlich viermal inline (getJobs, createJob, updateJob, getJobOccurrences);
+// mit der neuen Zuweisungsmenge wären das vier Stellen, an denen ein
+// vergessener Embed stillschweigend eine leere Mitarbeiterliste erzeugt.
+// Deshalb konsolidiert — alle Abfragen nutzen ausschließlich diese Konstante.
+//
+// assigned_to + profiles:assigned_to bleiben bewusst enthalten: sie tragen das
+// Aktions-Gating und den Schreibpfad, bis Phase 7/11 sie ablösen.
 const JOB_SELECT = `
   id,
   customer_name,
@@ -176,8 +205,121 @@ const JOB_SELECT = `
   profiles:assigned_to (
     id,
     full_name
+  ),
+  assignments:job_assignments (
+    id,
+    employee_id,
+    employee_name_snapshot,
+    assigned_at,
+    profiles:employee_id (
+      id,
+      full_name
+    )
   )
 `;
+
+// PostgREST liefert eingebettete 1:1-Beziehungen mal als Objekt, mal als
+// Array (abhängig davon, ob die Beziehung als to-one erkannt wird).
+function firstProfileName(
+  profiles: JobAssignmentRow["profiles"] | JobRow["profiles"],
+): string | null {
+  if (!profiles) return null;
+  if (Array.isArray(profiles)) return profiles[0]?.full_name ?? null;
+  return profiles.full_name ?? null;
+}
+
+// Wandelt die eingebetteten Zuweisungszeilen in die App-Darstellung.
+//
+// NAMENSREGEL (entspricht der Vorgabe der Phase-1-Migration): der LEBENDE
+// Profilname gewinnt, solange das Profil existiert; erst wenn das Konto
+// gelöscht wurde (employee_id IS NULL), trägt der Schnappschuss den Namen.
+//
+// SORTIERUNG: nach assigned_at, dann Name, dann assignmentId. Ohne stabile
+// Reihenfolge würde die Mitarbeiterliste einer Karte bei jedem Neuladen
+// springen — PostgREST garantiert für eingebettete Mengen keine Ordnung.
+function mapAssignees(rows: JobAssignmentRow[] | null | undefined): JobAssignee[] {
+  if (!rows || rows.length === 0) return [];
+
+  return rows
+    .map((row) => {
+      const livingName = firstProfileName(row.profiles);
+      const snapshot = row.employee_name_snapshot?.trim() || null;
+
+      return {
+        assignedAt: row.assigned_at ?? "",
+        assignee: {
+          assignmentId: row.id,
+          employeeId: row.employee_id,
+          fullName: livingName?.trim() || snapshot || "Unbekannt",
+          isDeleted: row.employee_id === null,
+        } satisfies JobAssignee,
+      };
+    })
+    .sort((a, b) => {
+      const timeDiff = a.assignedAt.localeCompare(b.assignedAt);
+      if (timeDiff !== 0) return timeDiff;
+      const nameDiff = a.assignee.fullName.localeCompare(
+        b.assignee.fullName,
+        "de",
+      );
+      if (nameDiff !== 0) return nameDiff;
+      return a.assignee.assignmentId.localeCompare(b.assignee.assignmentId);
+    })
+    .map((entry) => entry.assignee);
+}
+
+// Liest einen gerade geschriebenen Job EINMAL frisch nach.
+//
+// Warum: die eingebettete Zuweisungsmenge im RETURNING eines INSERT/UPDATE
+// ist NICHT verlaesslich. Die Kompatibilitaets-Trigger aus Phase 2 schreiben
+// job_assignments in AFTER-Triggern; der Embed derselben Anweisung sieht
+// deren Ergebnis nicht mehr. Gegen PostgREST reproduziert:
+//
+//   INSERT (assigned_to=Erika) -> assignments: []        | frisch: [Erika]
+//   UPDATE (assigned_to=Zoe)   -> assignments: [Erika]   | frisch: [Zoe]
+//
+// Ohne Nachlesen zeigte ein neu angelegter Auftrag "Nicht zugewiesen" und ein
+// bearbeiteter den VORHERIGEN Mitarbeiter — und beides landete zusaetzlich
+// ueber saveCachedJobs im Offline-Cache.
+//
+// FALLBACK, wenn das Nachlesen scheitert (Netz, RLS, kein Datensatz):
+// Der Schreibvorgang war erfolgreich und darf NIE nachtraeglich als Fehler
+// erscheinen — es wird also immer ein Job zurueckgegeben, nie geworfen.
+//
+// Entscheidend ist, WAS dann in `assignees` steht. mapJob(row) allein waere
+// hier falsch: es traegt exakt die unzuverlaessige Embed-Menge und damit
+// wieder `[]` (nach dem Anlegen) bzw. die ALTE Menge (nach dem Bearbeiten) —
+// und der JobContext schreibt das Ergebnis in State UND AsyncStorage.
+// Stattdessen wird die Menge aus dem Legacy-Zeiger abgeleitet
+// (buildLegacyAssignees): genau ein Mitarbeiter, nie geraten, nie mehrere.
+//
+// Der Legacy-Zeiger ist an dieser Stelle verlaesslich: assigned_to ist eine
+// echte Spalte der gerade geschriebenen Zeile und kommt frisch aus dem
+// RETURNING — nur die eingebettete Beziehung hinkt hinterher.
+//
+// BEIDE Fehlerpfade werden geloggt (Ausnahme UND leeres Ergebnis), damit ein
+// stiller Fallback nicht unbemerkt bleibt.
+async function readBackJob(row: JobRow): Promise<Job> {
+  const base = mapJob(row);
+
+  try {
+    const fresh = await getJobById(row.id);
+    if (fresh) return fresh;
+
+    console.error(
+      "[jobs.service] Nachlesen nach Schreibvorgang lieferte keinen Datensatz " +
+      `(Job ${row.id}) — Zuweisungen werden aus dem Legacy-Zeiger abgeleitet.`,
+    );
+  } catch (err) {
+    console.error(
+      "[jobs.service] Nachlesen nach Schreibvorgang fehlgeschlagen " +
+      `(Job ${row.id}) — Zuweisungen werden aus dem Legacy-Zeiger abgeleitet.`,
+      err,
+    );
+  }
+
+  return { ...base, assignees: buildLegacyAssignees(base) };
+}
 
 // Wandelt einen DB-Job in unser App-Job-Objekt um
 function mapJob(row: JobRow): Job {
@@ -187,13 +329,13 @@ function mapJob(row: JobRow): Job {
     location: row.location_address,
     time: formatTimeRange(row.scheduled_start, row.scheduled_end),
     service: row.service_name,
-    employeeId: row.assigned_to,
 
-    // profiles kann entweder ein Objekt, ein Array oder null sein
-    // deshalb fangen wir hier alle Fälle ab
-    employeeName: Array.isArray(row.profiles)
-      ? row.profiles[0]?.full_name ?? null
-      : row.profiles?.full_name ?? null,
+    // Maßgeblich für jede Anzeige (Phase 5).
+    assignees: mapAssignees(row.assignments),
+
+    // @deprecated — nur noch Aktions-Gating und Schreibpfad, siehe types/job.ts
+    employeeId: row.assigned_to,
+    employeeName: firstProfileName(row.profiles),
 
     status: row.status,
     notes: row.notes,
@@ -222,33 +364,7 @@ function mapJob(row: JobRow): Job {
 export async function getJobs(): Promise<Job[]> {
   const { data, error } = await supabase
     .from("jobs")
-    .select(
-      `
-      id,
-      customer_name,
-      service_name,
-      location_address,
-      scheduled_start,
-      scheduled_end,
-      status,
-      started_at,
-      completed_at,
-      notes,
-      job_type,
-      date,
-      start_time,
-      recurring_days,
-      is_active,
-      parent_job_id,
-      recurrence_start_date,
-      recurrence_end_date,
-      assigned_to,
-      profiles:assigned_to (
-        id,
-        full_name
-      )
-      `
-    )
+    .select(JOB_SELECT)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -439,33 +555,7 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
   const { data, error } = await supabase
     .from("jobs")
     .insert(payload)
-    .select(
-      `
-      id,
-      customer_name,
-      service_name,
-      location_address,
-      scheduled_start,
-      scheduled_end,
-      status,
-      started_at,
-      completed_at,
-      notes,
-      job_type,
-      date,
-      start_time,
-      recurring_days,
-      is_active,
-      parent_job_id,
-      recurrence_start_date,
-      recurrence_end_date,
-      assigned_to,
-      profiles:assigned_to (
-        id,
-        full_name
-      )
-      `
-    )
+    .select(JOB_SELECT)
     .single();
 
   // Hilfreich fürs Debugging (nur in Development)
@@ -545,8 +635,12 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
     }
   }
 
-  // Rückgabe im App-Format
-  return { job: mapJob(data as JobRow), recurringOccurrencesFailed };
+  // Rückgabe im App-Format. Frisch nachlesen, damit `assignees` die vom
+  // Kompatibilitäts-Trigger erzeugte Zuweisung enthält (siehe readBackJob).
+  return {
+    job: await readBackJob(data as unknown as JobRow),
+    recurringOccurrencesFailed,
+  };
 }
 
 // Aktualisiert einen bestehenden Job
@@ -633,33 +727,7 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     .from("jobs")
     .update(payload)
     .eq("id", input.jobId)
-    .select(
-      `
-      id,
-      customer_name,
-      service_name,
-      location_address,
-      scheduled_start,
-      scheduled_end,
-      status,
-      started_at,
-      completed_at,
-      notes,
-      job_type,
-      date,
-      start_time,
-      recurring_days,
-      is_active,
-      parent_job_id,
-      recurrence_start_date,
-      recurrence_end_date,
-      assigned_to,
-      profiles:assigned_to (
-        id,
-        full_name
-      )
-      `
-    )
+    .select(JOB_SELECT)
     .single();
 
   if (error) {
@@ -679,7 +747,9 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     }
   }
 
-  return mapJob(data as JobRow);
+  // Frisch nachlesen: der RETURNING-Embed traegt hier noch die ALTE
+  // Zuweisungsmenge (siehe readBackJob).
+  return readBackJob(data as unknown as JobRow);
 }
 
 // Setzt einen Job auf "in_progress" und speichert Startzeit.
@@ -751,33 +821,7 @@ async function sendPushNotification(token: string, title: string, body: string) 
 export async function getJobOccurrences(parentJobId: string): Promise<Job[]> {
   const { data, error } = await supabase
     .from("jobs")
-    .select(
-      `
-      id,
-      customer_name,
-      service_name,
-      location_address,
-      scheduled_start,
-      scheduled_end,
-      status,
-      started_at,
-      completed_at,
-      notes,
-      job_type,
-      date,
-      start_time,
-      recurring_days,
-      is_active,
-      parent_job_id,
-      recurrence_start_date,
-      recurrence_end_date,
-      assigned_to,
-      profiles:assigned_to (
-        id,
-        full_name
-      )
-      `
-    )
+    .select(JOB_SELECT)
     .eq("parent_job_id", parentJobId)
     .order("date", { ascending: true })
     .order("start_time", { ascending: true });
@@ -853,17 +897,44 @@ export async function getJobById(jobId: string): Promise<Job | null> {
 }
 
 // Mitarbeiter-Filter für Zeitplan-Queries (serverseitig).
-//   - employeeId gesetzt          → assigned_to = employeeId
-//   - unassigned = true           → assigned_to IS NULL („Nicht zugewiesen")
+//   - employeeId gesetzt          → Mitarbeiter ist dem Auftrag zugewiesen
+//   - unassigned = true           → Auftrag hat GAR KEINE Zuweisung
 //   - beides leer                 → alle Mitarbeiter
 export type EmployeeFilter = { employeeId?: string; unassigned?: boolean };
 
+// Zusätzliche Embeds, die AUSSCHLIESSLICH als Filter-Prädikat dienen.
+//
+// WARUM EIN ZWEITER EMBED? Der Anzeige-Embed `assignments` muss IMMER die
+// vollständige Zuweisungsmenge liefern. Würde man ihn selbst filtern, zeigte
+// eine nach Mitarbeiter X gefilterte Liste an jedem Auftrag nur noch X —
+// die Kolleginnen und Kollegen verschwänden aus der Anzeige. Der zweite,
+// aliasierte Embed schränkt deshalb nur die ZEILENMENGE ein und wird nie
+// gelesen. PostgREST dupliziert dabei keine Zeilen (verifiziert).
+const ASSIGNEE_FILTER_EMBED = `,f:job_assignments!inner(employee_id)`;
+const UNASSIGNED_FILTER_EMBED = `,f:job_assignments!left(employee_id)`;
+
+// Liefert die Spaltenauswahl inklusive des passenden Filter-Embeds.
+// WICHTIG: Filter-Embed und Filter-Bedingung gehören zusammen — immer beide
+// über applySelect/applyEmployeeFilter mit DEMSELBEN filter aufrufen.
+function jobSelectFor(filter?: EmployeeFilter): string {
+  if (filter?.unassigned) return JOB_SELECT + UNASSIGNED_FILTER_EMBED;
+  if (filter?.employeeId) return JOB_SELECT + ASSIGNEE_FILTER_EMBED;
+  return JOB_SELECT;
+}
+
 // Wendet den Mitarbeiter-Filter auf einen Query-Builder an (serverseitig).
+//
+// „Nicht zugewiesen" läuft bewusst NICHT mehr über assigned_to IS NULL:
+// compat_primary_assignee() setzt den Legacy-Zeiger auch dann auf NULL, wenn
+// zwar Zuweisungen existieren, aber keine davon spurenfrei und aktiv ist
+// (z. B. bereits gestartet oder Mitarbeiter deaktiviert). Die Legacy-Spalte
+// ist damit KEIN verlässlicher Indikator für „hat niemanden" — die
+// Zuweisungsmenge selbst schon.
 function applyEmployeeFilter<T>(query: T, filter?: EmployeeFilter): T {
   if (!filter) return query;
   const q = query as any;
-  if (filter.unassigned) return q.is("assigned_to", null);
-  if (filter.employeeId) return q.eq("assigned_to", filter.employeeId);
+  if (filter.unassigned) return q.is("f", null);
+  if (filter.employeeId) return q.eq("f.employee_id", filter.employeeId);
   return query;
 }
 
@@ -883,7 +954,7 @@ export async function getScheduleOccurrences(
 ): Promise<Job[]> {
   let query = supabase
     .from("jobs")
-    .select(JOB_SELECT)
+    .select(jobSelectFor(params.employee))
     .eq("job_type", "single")
     .gte("date", params.from)
     .lte("date", params.to);
@@ -902,7 +973,7 @@ export async function getScheduleOccurrences(
   if (error) {
     throw error;
   }
-  return (data ?? []).map((row) => mapJob(row as JobRow));
+  return (data ?? []).map((row) => mapJob(row as unknown as JobRow));
 }
 
 // Überfällige executable Jobs: offen/in Arbeit mit Datum vor heute.
@@ -914,7 +985,7 @@ export async function getOverdueOccurrences(
 ): Promise<Job[]> {
   let query = supabase
     .from("jobs")
-    .select(JOB_SELECT)
+    .select(jobSelectFor(employee))
     .eq("job_type", "single")
     .in("status", ["open", "in_progress"])
     .lt("date", todayKey);
@@ -929,7 +1000,7 @@ export async function getOverdueOccurrences(
   if (error) {
     throw error;
   }
-  return (data ?? []).map((row) => mapJob(row as JobRow));
+  return (data ?? []).map((row) => mapJob(row as unknown as JobRow));
 }
 
 // Erledigte executable Jobs, nach Abschlusszeit absteigend, keyset-fähig
@@ -941,7 +1012,7 @@ export async function getCompletedOccurrences(
 ): Promise<Job[]> {
   let query = supabase
     .from("jobs")
-    .select(JOB_SELECT)
+    .select(jobSelectFor(employee))
     .eq("job_type", "single")
     .eq("status", "completed")
     .not("completed_at", "is", null);
@@ -959,7 +1030,7 @@ export async function getCompletedOccurrences(
   if (error) {
     throw error;
   }
-  return (data ?? []).map((row) => mapJob(row as JobRow));
+  return (data ?? []).map((row) => mapJob(row as unknown as JobRow));
 }
 
 // Nur die Parent-Regeln (Daueraufträge): recurring UND parent_job_id IS NULL.
@@ -977,7 +1048,7 @@ export async function getRecurringRules(): Promise<Job[]> {
   if (error) {
     throw error;
   }
-  return (data ?? []).map((row) => mapJob(row as JobRow));
+  return (data ?? []).map((row) => mapJob(row as unknown as JobRow));
 }
 
 // Zusammenfassung der Occurrences je Regel (nächster Termin + „hat Termine?")
