@@ -26,11 +26,15 @@ const JOBS_QUEUE_STORAGE_KEY = "offline_jobs_queue";
 //
 // SICHERHEIT — geteilte Geräte: Ohne Besitzer konnte die Sync-Routine die
 // offline erfassten Aktionen von Nutzer A unter der Sitzung von Nutzer B
-// ausführen. Serverseitig scheitern die meisten davon (start_own_job/
-// complete_own_job verlangen assigned_to = auth.uid()), ABER im Sonderfall
-// „B ist demselben Auftrag zugewiesen" wäre A's Aktion mit A's Zeitstempel
-// unter B's Sitzung tatsächlich durchgelaufen — eine falsche Zuschreibung
-// von Arbeitszeit.
+// ausführen. Ist B demselben Auftrag zugewiesen, läuft A's Aktion mit A's
+// Zeitstempel unter B's Sitzung tatsächlich durch — eine falsche Zuschreibung
+// von Arbeitszeit UND ein falscher started_by/completed_by.
+//
+// Seit Phase 7 („Shared Job Time", Migration 20260731000000) darf JEDER
+// Zugewiesene starten und abschließen. Der Sonderfall „B ist demselben
+// Auftrag zugewiesen" ist damit kein Randfall mehr, sondern bei
+// mehrfach zugewiesenen Aufträgen der Normalfall — die Besitzer-Bindung
+// dieser Warteschlange ist dadurch WICHTIGER geworden, nicht weniger wichtig.
 export const JOBS_QUEUE_VERSION = 2;
 
 type StoredQueuePayload = {

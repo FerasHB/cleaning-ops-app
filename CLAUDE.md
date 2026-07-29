@@ -71,6 +71,8 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   `jobs` hat zusätzlich Terminierungs-Spalten: `job_type` (enum `single`|`recurring`), `date`,
   `start_time`, `recurring_days text[]`, `is_active`. Wiederkehrende Aufträge werden als **eine Regel**
   gespeichert (keine vorausberechneten Einzel-Jobs).
+  `jobs` trägt außerdem `started_at`/`started_by` und `completed_at`/`completed_by` — die `*_by`-Spalten
+  halten nur den **Akteur** des jeweiligen Übergangs fest (siehe „Geteilte Job-Uhr" unten).
   RPCs u. a.: `start_own_job`/`complete_own_job` (Employee-Aktionen trotz RLS), `setup_company_for_admin`,
   `update_my_push_token`, `get_unread_comment_job_ids` (ungelesene Kommentar-Job-IDs).
   **Wichtig:** `lib/schema.sql` ist nur Referenz — Schema-Änderungen müssen **manuell im Supabase
@@ -84,7 +86,8 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   `JobAssignee` (**maßgeblich für jede Mitarbeiter-Anzeige**, `Job.assignees[]`),
   `CreateJobInput`, `EmployeeOption`. Terminierung am `Job`: `jobType`, `date` (`YYYY-MM-DD`, nur single),
   `startTime` (`HH:mm`), `recurringDays` (Kurzcodes `mon`…`sun`, nur recurring), `isActive`.
-  Job trägt zusätzlich `hasUnreadComments` (gemerged im JobContext, nicht in `mapJob`).
+  Job trägt zusätzlich `hasUnreadComments` (gemerged im JobContext, nicht in `mapJob`) sowie
+  `startedBy`/`completedBy` (Akteure der Übergänge — nur IDs, Namen werden über `assignees` aufgelöst).
 - `types/comment.ts` — `JobComment`, `CreateCommentInput` (Job-Kommentare).
 
 ### Theming (`constants/`, `hooks/`)
@@ -135,15 +138,30 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   **Einmalig** (Datum + Uhrzeit) oder **Wiederkehrend** (Wochentage + Uhrzeit + Aktiv/Inaktiv). Validierung:
   single braucht Datum **und** Uhrzeit; recurring braucht mind. **einen** Wochentag **und** Uhrzeit. Kunde,
   Ort/Location, Service bleiben Pflicht; Mitarbeiter-Zuweisung und Notizen optional.
-- **Mehrere Mitarbeiter pro Auftrag (ab Phase 5, READ-ONLY):** Maßgeblich für jede ANZEIGE ist
-  `Job.assignees[]` (aus `job_assignments`, gemappt in `jobs.service.ts`). `Job.employeeId`/`employeeName`
-  sind `@deprecated` und tragen nur noch (a) den Schreibpfad (Phase 6) und (b) das **Aktions-Gating**.
-  Letzteres ist kein Versehen: `start_own_job`/`complete_own_job` und die Insert-Policies auf
-  `job_comments`/`job_photos`/`storage.objects` verlangen serverseitig weiterhin
-  `jobs.assigned_to = auth.uid()`. Start-/Fertig-/Upload-Buttons deshalb **immer** über
-  `canRunJobActions()` bzw. `isPrimaryAssignee()` gaten, **nie** über `isAssignedTo()` — sonst
-  erscheint für sekundär Zugewiesene ein Button, der mit „Job not found or not allowed" fehlschlägt.
-  Wird in Phase 7 aufgelöst. Zuweisungs-Anzeige nicht selbst formatieren: `utils/jobAssignees.ts` nutzen.
+- **Mehrere Mitarbeiter pro Auftrag:** Maßgeblich für jede ANZEIGE ist `Job.assignees[]` (aus
+  `job_assignments`, gemappt in `jobs.service.ts`). `Job.employeeId`/`employeeName` sind `@deprecated`
+  und tragen nur noch den Schreibpfad sowie den Bestands-/Kompatibilitätszweig. Zuweisungs-Anzeige nicht
+  selbst formatieren: `utils/jobAssignees.ts` nutzen.
+- **Aktions-Gating — zwei Gates, nie selbst gebaut:** jeder Button muss dem SERVER-Prädikat entsprechen,
+  das ihn ausführt. Es gibt genau zwei:
+  - `canRunJobActions(job, role, employeeId)` → **Start/Abschluss**. Seit Phase 7 („Shared Job Time",
+    Migration `20260731000000`) erlauben `start_own_job`/`complete_own_job` die **volle Zuweisungsmenge**
+    (ODER den Legacy-Zeiger für Bestandszeilen ohne `job_assignments`-Zeile). Prüft zusätzlich
+    `role='employee'` und `jobType='single'` — beides steht serverseitig ebenfalls außerhalb der
+    ODER-Klammer, weil Recurring-Parent-Regeln selbst Zuweisungen tragen.
+  - `isPrimaryAssignee(job, employeeId)` → **Kommentar schreiben, Foto-Upload, Ungelesen-Status**. Deren
+    INSERT-Policies auf `job_comments`/`job_photos`/`job_comment_reads`/`storage.objects` verlangen
+    weiterhin `jobs.assigned_to = auth.uid()`. Diese Asymmetrie ist gewollt und dokumentiert; sie fällt
+    in einem eigenen PR. Hier `isAssignedTo()` zu verwenden erzeugt einen Button, der mit 42501 bzw.
+    „Job not found or not allowed" fehlschlägt.
+- **Geteilte Job-Uhr (Shared Job Time):** ein Auftrag hat **genau eine** offizielle Dauer
+  (`completed_at - started_at`). Wer Start/Abschluss gedrückt hat, ist dafür unerheblich — **alle**
+  Zugewiesenen erhalten diese Zeit im Stundenzettel, auch wer Start nie gedrückt hat. Der erste
+  erfolgreiche Übergang gewinnt (Statusbedingung im UPDATE), jeder weitere ist ein idempotenter No-Op.
+  `jobs.started_by`/`completed_by` halten nur den **Akteur** fest (Nachvollziehbarkeit, **nie**
+  Abrechnungs- oder Berechtigungsgrundlage). Es gibt bewusst **keine** Pro-Mitarbeiter-Timer und
+  **keine** Anwesenheitserfassung: `job_assignments.attendance`/`counts_for_timesheet` werden von
+  nichts gepflegt — nicht darauf filtern (sonst leere Stundenzettel).
 - **Heute-Logik nicht duplizieren:** Die „heute fällig?"-Entscheidung liegt zentral in `utils/jobSchedule.ts`
   (`isJobToday`/`getJobDisplayTime`/`getRecurringDaysLabel`) und wird von `EmployeeOverviewScreen`,
   `AdminDashboardScreen` und `JobCard` genutzt. Neue Screens diesen Helper verwenden, keine eigene

@@ -8,11 +8,16 @@ import type { Job, JobAssignee } from "@/types/job";
  * neu beantwortet werden. Job-Karte, Detail, Dashboard, Mitarbeiter-Detail,
  * Suche und Filter nutzen ausschließlich diese Funktionen.
  *
- * WICHTIG — Anzeige vs. Berechtigung: diese Helfer beantworten NUR, wer
- * angezeigt wird. Sie sind KEINE Grundlage für Aktions-Buttons. Start und
- * Abschluss laufen über start_own_job/complete_own_job, die serverseitig
- * weiterhin jobs.assigned_to = auth.uid() verlangen (Phase 7). Dafür gibt es
- * bewusst `isPrimaryAssignee`.
+ * WICHTIG — Anzeige vs. Berechtigung: die Formatier-Helfer beantworten NUR,
+ * wer angezeigt wird. Für Aktions-Buttons gibt es genau zwei Gates, die dem
+ * jeweiligen SERVER-Prädikat entsprechen müssen:
+ *
+ *   canRunJobActions()  → Start/Abschluss. Serverseitig erlauben
+ *                         start_own_job/complete_own_job seit Phase 7 die
+ *                         volle Zuweisungsmenge (ODER Legacy-Primär).
+ *   isPrimaryAssignee() → Kommentar schreiben, Foto-Upload, Ungelesen-Status.
+ *                         Deren INSERT-Policies verlangen weiterhin
+ *                         jobs.assigned_to = auth.uid().
  */
 
 export const UNASSIGNED_LABEL = "Nicht zugewiesen";
@@ -39,7 +44,9 @@ export function isUnassigned(job: Pick<Job, "assignees">): boolean {
 
 /**
  * true, wenn der Mitarbeiter dem Auftrag zugewiesen ist (egal an welcher
- * Stelle der Menge). Für ANZEIGE und FILTER — nicht für Aktions-Gating.
+ * Stelle der Menge). Für ANZEIGE und FILTER — und seit Phase 7 zusätzlich
+ * die Grundlage von `canRunJobActions` (Start/Abschluss). NICHT ausreichend
+ * für Kommentar-/Foto-Schreibrechte, dafür siehe `isPrimaryAssignee`.
  */
 export function isAssignedTo(
   job: Pick<Job, "assignees">,
@@ -52,11 +59,18 @@ export function isAssignedTo(
 /**
  * true, wenn der Mitarbeiter der LEGACY-PRIMÄR des Auftrags ist.
  *
- * Ausschließlich für das Aktions-Gating (Start/Abschluss/Foto-Upload/
- * Kommentar) gedacht: die zugehörigen RPCs und Schreib-Policies verlangen
- * serverseitig weiterhin jobs.assigned_to = auth.uid(). Würde die UI hier
- * die volle Menge nutzen, bekäme ein sekundär Zugewiesener einen Button,
- * der mit „Job not found or not allowed" fehlschlägt. Fällt mit Phase 7.
+ * NUR NOCH für die Schreibpfade, die serverseitig weiterhin
+ * jobs.assigned_to = auth.uid() verlangen:
+ *   * Kommentar schreiben  (Policy „employee insert comments on own jobs")
+ *   * Foto-Upload          (job_photos + storage.objects INSERT)
+ *   * Ungelesen-Status     (job_comment_reads INSERT/UPDATE)
+ *
+ * Würde die UI dort die volle Zuweisungsmenge nutzen, bekäme ein sekundär
+ * Zugewiesener einen Button, der mit 42501 bzw. „Job not found or not
+ * allowed" fehlschlägt.
+ *
+ * NICHT MEHR für Start/Abschluss: diese laufen seit Phase 7 über die
+ * Zuweisungsmenge — siehe `canRunJobActions`.
  */
 export function isPrimaryAssignee(
   job: Pick<Job, "employeeId">,
@@ -74,26 +88,35 @@ export function isPrimaryAssignee(
  * Employee-Übersicht, Kalender, Home, Detail) und eine falsch-positive
  * Antwort einen Button erzeugt, der serverseitig garantiert fehlschlägt.
  *
- * Drei Bedingungen:
+ * Diese Funktion spiegelt bewusst ZEICHENGENAU das Prädikat von
+ * start_own_job/complete_own_job (Migration 20260731000000):
+ *
  *  1. Rolle 'employee' — Admins ändern den Status nie über diese RPCs.
  *  2. job_type 'single' — Parent-Recurring-Regeln sind keine ausführbaren
- *     Termine.
- *  3. LEGACY-PRIMÄR (nicht die Zuweisungsmenge!) — start_own_job und
- *     complete_own_job verlangen weiterhin assigned_to = auth.uid().
- *     Seit Phase 5 sieht ein Mitarbeiter auch Aufträge, denen er nur
- *     sekundär zugewiesen ist; ohne Bedingung 3 bekäme er dort einen
- *     Button, der mit „Job not found or not allowed" endet.
+ *     Termine. Steht wie serverseitig AUSSERHALB der Oder-Verknüpfung:
+ *     Recurring-Parent-Regeln tragen seit Phase 4 selbst Zuweisungen.
+ *  3. Zugewiesen — entweder über die Zuweisungsmenge (`assignees`, der
+ *     Normalfall) ODER über den Legacy-Zeiger `employeeId`.
  *
- * Bedingung 3 fällt mit Phase 7, wenn die RPCs die Zuweisungsmenge kennen.
+ * ZUM LEGACY-ZWEIG IN (3): er ist kein Rest, sondern nötig. Es existieren
+ * Bestands-Aufträge mit `assigned_to`, für die keine job_assignments-Zeile
+ * angelegt wurde (der Phase-1-Backfill hat nicht-konforme Zeilen bewusst
+ * erhalten). Serverseitig darf dieser Mitarbeiter starten; ohne den Zweig
+ * würde die App ihm den Button vorenthalten. Fällt mit Phase 11.
+ *
+ * Die Bedingung „nur der Legacy-Primär" ist mit Phase 7 ENTFALLEN: die
+ * Job-Uhr gehört dem Auftrag, nicht einem einzelnen Mitarbeiter. Jeder
+ * Zugewiesene darf starten und abschließen; der erste Erfolg gewinnt, alle
+ * anderen sehen danach denselben Status.
  */
 export function canRunJobActions(
-  job: Pick<Job, "employeeId" | "jobType">,
+  job: Pick<Job, "employeeId" | "jobType" | "assignees">,
   role: string | null | undefined,
   employeeId: string | null | undefined,
 ): boolean {
   if (role !== "employee") return false;
   if (job.jobType !== "single") return false;
-  return isPrimaryAssignee(job, employeeId);
+  return isAssignedTo(job, employeeId) || isPrimaryAssignee(job, employeeId);
 }
 
 /**

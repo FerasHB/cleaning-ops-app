@@ -125,9 +125,10 @@ export default function EmployeeOverviewScreen() {
   ).length;
 
   // ── Aktiver Job (erster in_progress über alle eigenen Jobs)
-  // Nur der eigene laufende Auftrag: seit Phase 5 sieht ein Mitarbeiter auch
-  // Aufträge, die eine Kollegin gestartet hat und bei denen er nur sekundär
-  // zugewiesen ist. Die Abschluss-Karte gehört ihm dann nicht.
+  // Seit Phase 7 („Shared Job Time") gehört die Abschluss-Karte JEDEM
+  // Zugewiesenen: hat eine Kollegin den Auftrag gestartet, darf ihn auch der
+  // Mitarbeiter abschließen, der Start nie gedrückt hat — beide erhalten
+  // dieselbe geteilte Arbeitszeit. canRunJobActions kapselt genau das.
   const activeJob = useMemo(
     () =>
       jobs.find(
