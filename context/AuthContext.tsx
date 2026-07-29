@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { registerForPushNotifications } from "@/services/notificationService";
+import { clearPendingJobActions } from "@/services/offline/jobs.queue";
+import { clearCachedJobs } from "@/services/offline/jobs.storage";
 import {
   clearCachedProfile,
   getCachedProfile,
@@ -172,6 +174,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Lokalen Profil-Cache leeren, damit ein deaktivierter Nutzer nicht beim
     // nächsten Offline-Start über den Cache wieder „aktiv" erscheint.
     await clearCachedProfile();
+
+    // DEAKTIVIERUNG (nicht: normaler Logout) räumt auch die lokalen Job-Daten
+    // weg. Bewusste Abweichung von signOut():
+    //  • Der Zugriff wurde ENTZOGEN — Firmendaten (Kunden, Adressen, Notizen)
+    //    dürfen auf dem Gerät nicht zurückbleiben, auch nicht verschlüsselt
+    //    hinter der User-Bindung.
+    //  • Offene Warteschlangen-Aktionen dieses Nutzers können ohnehin nie mehr
+    //    erfolgreich synchronisieren: start_own_job/complete_own_job laufen
+    //    über current_user_role()/RLS, die für inaktive Profile NULL liefern.
+    //    Sie zu behalten erzeugte nur einen dauerhaft klemmenden Pending-Zähler.
+    // Best effort — ein Fehler hier darf die Abmeldung nie blockieren.
+    try {
+      await Promise.all([clearCachedJobs(), clearPendingJobActions()]);
+    } catch (err) {
+      if (__DEV__) {
+        console.warn("Failed to clear local job data on deactivation:", err);
+      }
+    }
 
     try {
       await supabase.auth.signOut();
@@ -578,6 +598,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Profil-Cache leeren, damit auf einem geteilten Gerät kein Profil des
     // vorherigen Nutzers offline wiederhergestellt werden kann.
     await clearCachedProfile();
+
+    // BEWUSST NICHT geleert: Job-Cache und Offline-Warteschlange.
+    //
+    // Beide sind seit v2 an die User-ID gebunden (siehe jobs.storage.ts /
+    // jobs.queue.ts) — ein anderer Nutzer bekommt sie nach dem Anmelden
+    // strukturell nicht mehr zu sehen bzw. ausgeführt. Das Leeren wäre daher
+    // für die Absicherung nicht nötig, hätte aber zwei echte Nachteile:
+    //  • Es würde NOCH NICHT ÜBERTRAGENE Arbeitszeit vernichten. Meldet sich
+    //    ein Mitarbeiter nach einem offline gestarteten Auftrag ab, ginge
+    //    genau dieser Start-/Abschlusszeitpunkt verloren.
+    //  • Es würde den Offline-Kaltstart nach einer erneuten Anmeldung
+    //    unmöglich machen (kein Cache → Fehlerbildschirm statt Aufträge).
+    //
+    // Ein bewusstes Löschen gibt es deshalb nur dort, wo der Zugriff wirklich
+    // entzogen wird: forceSignOutDueToDeactivation() und die Kontolöschung
+    // (features/profile/DeleteAccountScreen.tsx).
 
     const { error } = await supabase.auth.signOut();
 
