@@ -160,6 +160,13 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const { session, role } = useAuth();
   const isAdmin = role === "admin";
 
+  // Besitzer aller lokalen Job-Daten (Cache + Warteschlange). Kommt aus der
+  // SESSION, nicht aus dem Profil: die Session steht beim Kaltstart sofort zur
+  // Verfügung, das Profil ggf. erst nach einem Netzwerk-Roundtrip. Würde hier
+  // profile.id verwendet, liefe der Offline-Kaltstart wieder in den früher
+  // behobenen Dauer-Spinner (siehe loadAll unten).
+  const userId = session?.user?.id ?? null;
+
   const [jobs, setJobs] = useState<Job[]>([]);
   // Ungelesene Kommentar-Job-IDs (gebündelt aus der RPC). Speist den Tab-Badge
   // unabhängig vom (für Admins begrenzten) Ladefenster.
@@ -182,13 +189,18 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const refreshJobsInProgressRef = useRef(false);
 
   const refreshPendingState = useCallback(async () => {
-    const actions = await getPendingJobActions();
+    if (!userId) {
+      setPendingActions([]);
+      setPendingCount(0);
+      return;
+    }
+    const actions = await getPendingJobActions(userId);
     setPendingActions(actions);
     setPendingCount(actions.length);
-  }, []);
+  }, [userId]);
 
   const runPendingSyncSafely = useCallback(async () => {
-    if (syncInProgressRef.current) {
+    if (syncInProgressRef.current || !userId) {
       return;
     }
 
@@ -199,7 +211,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const result = await syncPendingJobActions();
+      const result = await syncPendingJobActions(userId);
       setSyncFailed(result.failed > 0);
     } finally {
       syncInProgressRef.current = false;
@@ -209,10 +221,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         console.log("[Jobs] Queue-Sync beendet");
       }
     }
-  }, [refreshPendingState]);
+  }, [refreshPendingState, userId]);
 
   const refreshJobs = useCallback(async () => {
-    if (refreshJobsInProgressRef.current) {
+    if (refreshJobsInProgressRef.current || !userId) {
       return;
     }
 
@@ -228,9 +240,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           console.log("[Jobs] Quelle: remote");
         }
         const serverJobs = await loadJobsForRole(isAdmin);
-        await saveCachedJobs(serverJobs);
+        await saveCachedJobs(userId, serverJobs);
 
-        const pendingActions = await getPendingJobActions();
+        const pendingActions = await getPendingJobActions(userId);
         const mergedJobs = applyPendingActionsToJobs(
           serverJobs,
           pendingActions,
@@ -256,8 +268,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       if (__DEV__) {
         console.log("[Jobs] Quelle: cache (offline)");
       }
-      const cachedJobs = await getCachedJobs();
-      const pendingActions = await getPendingJobActions();
+      const cachedJobs = await getCachedJobs(userId);
+      const pendingActions = await getPendingJobActions(userId);
       const mergedJobs = applyPendingActionsToJobs(cachedJobs, pendingActions);
 
       setJobs(mergedJobs);
@@ -273,8 +285,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const cachedJobs = await getCachedJobs();
-        const pendingActions = await getPendingJobActions();
+        const cachedJobs = await getCachedJobs(userId);
+        const pendingActions = await getPendingJobActions(userId);
         const mergedJobs = applyPendingActionsToJobs(
           cachedJobs,
           pendingActions,
@@ -294,7 +306,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       refreshJobsInProgressRef.current = false;
       await refreshPendingState();
     }
-  }, [refreshPendingState, isAdmin]);
+  }, [refreshPendingState, isAdmin, userId]);
 
   const retrySync = useCallback(async () => {
     await runPendingSyncSafely();
@@ -354,6 +366,12 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Ohne User-ID darf NICHTS aus dem lokalen Cache gelesen werden — sonst
+    // landeten die Daten des zuletzt angemeldeten Nutzers in der Oberfläche.
+    if (!userId) {
+      return;
+    }
+
     if (didInitialLoadRef.current) {
       return;
     }
@@ -370,8 +388,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       try {
         const [cachedJobs, pending] = await Promise.all([
-          getCachedJobs(),
-          getPendingJobActions(),
+          getCachedJobs(userId),
+          getPendingJobActions(userId),
         ]);
         setJobs(applyPendingActionsToJobs(cachedJobs, pending));
         setPendingActions(pending);
@@ -405,7 +423,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     };
 
     loadAll();
-  }, [session, refreshJobs, refreshEmployees, runPendingSyncSafely]);
+  }, [session, userId, refreshJobs, refreshEmployees, runPendingSyncSafely]);
 
   useEffect(() => {
     if (!session) {
@@ -492,7 +510,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         const exists = prevJobs.some((job) => job.id === createdJob.id);
         const nextJobs: Job[] = exists ? prevJobs : [createdJob, ...prevJobs];
 
-        saveCachedJobs(nextJobs).catch((err) =>
+        saveCachedJobs(userId, nextJobs).catch((err) =>
           console.error("Failed to cache jobs after create:", err),
         );
 
@@ -508,7 +526,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to create job:", err);
       throw err;
     }
-  }, []);
+  }, [userId]);
 
   const updateJob = useCallback(
     async (input: {
@@ -534,7 +552,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
             (job): Job => (job.id === updatedJob.id ? updatedJob : job),
           );
 
-          saveCachedJobs(nextJobs).catch((err) =>
+          saveCachedJobs(userId, nextJobs).catch((err) =>
             console.error("Failed to cache jobs after update:", err),
           );
 
@@ -555,7 +573,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
               job.id === partiallyUpdatedJob.id ? partiallyUpdatedJob : job,
             );
 
-            saveCachedJobs(nextJobs).catch((cacheErr) =>
+            saveCachedJobs(userId, nextJobs).catch((cacheErr) =>
               console.error(
                 "Failed to cache jobs after partial update:",
                 cacheErr,
@@ -570,7 +588,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [],
+    [userId],
   );
 
   const deleteJob = useCallback(async (jobId: string) => {
@@ -580,7 +598,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setJobs((prevJobs) => {
         const nextJobs: Job[] = prevJobs.filter((job) => job.id !== jobId);
 
-        saveCachedJobs(nextJobs).catch((err) =>
+        saveCachedJobs(userId, nextJobs).catch((err) =>
           console.error("Failed to cache jobs after delete:", err),
         );
 
@@ -590,7 +608,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to delete job:", err);
       throw err;
     }
-  }, []);
+  }, [userId]);
 
   const startJob = useCallback(async (jobId: string) => {
     try {
@@ -605,7 +623,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
             startedAt,
           });
 
-          saveCachedJobs(nextJobs).catch((err) =>
+          saveCachedJobs(userId, nextJobs).catch((err) =>
             console.error("Failed to cache jobs after start:", err),
           );
 
@@ -621,7 +639,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       const timestamp = new Date().toISOString();
 
+      // Ohne bekannten Besitzer darf keine Aktion in die Warteschlange —
+      // sie liesse sich spaeter keinem Nutzer zuordnen und wuerde beim
+      // naechsten Lesen ohnehin verworfen (fail closed).
+      if (!userId) {
+        throw new Error(
+          "Aktion kann offline nicht gespeichert werden: keine aktive Sitzung.",
+        );
+      }
+
       const nextActions = await addPendingJobAction({
+        userId,
         type: "start_job",
         jobId,
         timestamp,
@@ -635,7 +663,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           startedAt: timestamp,
         });
 
-        saveCachedJobs(nextJobs).catch((err) =>
+        saveCachedJobs(userId, nextJobs).catch((err) =>
           console.error("Failed to cache jobs after offline start:", err),
         );
 
@@ -645,7 +673,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to start job:", err);
       throw err;
     }
-  }, []);
+  }, [userId]);
 
   const completeJob = useCallback(async (jobId: string) => {
     try {
@@ -660,7 +688,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
             completedAt,
           });
 
-          saveCachedJobs(nextJobs).catch((err) =>
+          saveCachedJobs(userId, nextJobs).catch((err) =>
             console.error("Failed to cache jobs after complete:", err),
           );
 
@@ -676,7 +704,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       const timestamp = new Date().toISOString();
 
+      // Ohne bekannten Besitzer darf keine Aktion in die Warteschlange —
+      // sie liesse sich spaeter keinem Nutzer zuordnen und wuerde beim
+      // naechsten Lesen ohnehin verworfen (fail closed).
+      if (!userId) {
+        throw new Error(
+          "Aktion kann offline nicht gespeichert werden: keine aktive Sitzung.",
+        );
+      }
+
       const nextActions = await addPendingJobAction({
+        userId,
         type: "complete_job",
         jobId,
         timestamp,
@@ -690,7 +728,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           completedAt: timestamp,
         });
 
-        saveCachedJobs(nextJobs).catch((err) =>
+        saveCachedJobs(userId, nextJobs).catch((err) =>
           console.error("Failed to cache jobs after offline complete:", err),
         );
 
@@ -700,7 +738,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to complete job:", err);
       throw err;
     }
-  }, []);
+  }, [userId]);
 
   const markJobCommentsAsRead = useCallback(async (jobId: string) => {
     // Optimistisch sofort den Punkt entfernen (gute UX, kein Warten auf DB).

@@ -41,11 +41,19 @@ async function executeAction(action: PendingJobAction): Promise<void> {
 
 /**
  * Hauptfunktion:
- * - verarbeitet die Queue
- * - führt alle Actions nacheinander aus
+ * - verarbeitet die Queue DES ÜBERGEBENEN NUTZERS
+ * - führt dessen Actions nacheinander aus
  * - entfernt erfolgreiche Actions aus der Queue
+ *
+ * NUTZER-BINDUNG (geteilte Geräte): Es werden ausschließlich Aktionen
+ * ausgeführt, deren `userId` mit der aktiven Sitzung übereinstimmt. Aktionen
+ * eines ANDEREN Nutzers werden übersprungen und bleiben unangetastet
+ * gespeichert — sie gehören ihm und synchronisieren, sobald er sich wieder
+ * anmeldet. Sie werden ausdrücklich NICHT gelöscht (kein Verlust echter,
+ * noch nicht übertragener Arbeitszeit) und NICHT unter fremder Sitzung
+ * ausgeführt (keine Falschzuschreibung).
  */
-export async function syncPendingJobActions(): Promise<{
+export async function syncPendingJobActions(userId: string): Promise<{
   success: number;
   failed: number;
 }> {
@@ -58,7 +66,8 @@ export async function syncPendingJobActions(): Promise<{
     return { success: 0, failed: 0 };
   }
 
-  const actions = await getPendingJobActions();
+  // Nur die eigenen Aktionen — fremde bleiben liegen (siehe oben).
+  const actions = await getPendingJobActions(userId);
 
   if (!actions.length) {
     if (__DEV__) {
