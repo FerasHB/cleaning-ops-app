@@ -12,15 +12,15 @@
 // - Datenquelle sind eigene Services (getScheduleOccurrences etc.), NICHT das
 //   volle JobContext-Array.
 
-import { EmptyState, ErrorBanner } from "@/components/ui";
 import JobCard from "@/components/JobCard";
+import { EmptyState, ErrorBanner } from "@/components/ui";
+import type { AppTheme } from "@/constants/theme";
+import { useJobs } from "@/context/JobContext";
 import {
   employeeSelectionLabel,
   type EmployeeSelection,
 } from "@/features/jobs/components/EmployeeFilterControl";
-import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import type { AppTheme } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import {
   getCompletedOccurrences,
@@ -40,7 +40,13 @@ import {
 } from "@/utils/scheduleView";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -171,21 +177,45 @@ export default function AdminScheduleScreen({
   // Realtime: nur die aktuelle Ansicht (aktueller Filter + Mitarbeiter) neu
   // laden, keine vollständige Historie. Firmen-Scoping erfolgt über RLS.
   useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
     const channel = supabase
-      .channel("admin-schedule-realtime")
+      .channel(`admin-schedule-realtime-${Date.now()}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "jobs" },
+        {
+          event: "*",
+          schema: "public",
+          table: "jobs",
+        },
         () => {
-          // Aktuellen Filter + Mitarbeiter leise neu laden (bounded).
-          load(filter, employeeSel, true);
+          if (timeout) {
+            clearTimeout(timeout);
+          }
+
+          timeout = setTimeout(() => {
+            void load(filter, employeeSel);
+          }, 300);
         },
       )
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error("Admin schedule realtime error:", error);
+        }
+
+        if (status === "CHANNEL_ERROR") {
+          console.error("Admin schedule realtime channel failed");
+        }
+      });
+
     return () => {
-      supabase.removeChannel(channel);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+
+      void supabase.removeChannel(channel);
     };
-  }, [filter, employeeSel, load]);
+  }, [load, filter, employeeSel]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -358,9 +388,7 @@ export default function AdminScheduleScreen({
                 showEmployeeName
                 detached={isDetachedOccurrence(
                   item,
-                  item.parentJobId
-                    ? ruleMap.get(item.parentJobId)
-                    : undefined,
+                  item.parentJobId ? ruleMap.get(item.parentJobId) : undefined,
                 )}
                 onPress={() => router.push(`/jobs/${item.id}`)}
               />
