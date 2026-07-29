@@ -51,9 +51,17 @@ folglich nur in Dev-Client- oder Standalone-Builds, **nicht** in Expo Go.
 
 ## E-Mail-Template
 
-Nutzt Supabase's Standard-"Invite user"-Template. Für eigenes Branding:
-**Dashboard → Authentication → Email Templates → Invite user** — reiner
-Dashboard-Schritt, nicht Teil dieses Repos.
+Eigenes Branding liegt als HTML in `supabase/templates/invite.html` (Invite)
+und `supabase/templates/recovery.html` (Passwort-Reset) im Repo und ist über
+`config.toml` (`[auth.email.template.invite]` / `[auth.email.template.recovery]`)
+für die **lokale** Supabase-CLI-Instanz aktiv.
+
+**Für Prod wirkt das nicht automatisch** — das gehostete Projekt liest seine
+Mail-Templates aus dem Dashboard, nicht aus `config.toml`. Der HTML-Inhalt
+der beiden Dateien muss daher manuell eingefügt werden unter:
+**Dashboard → Authentication → Email Templates → Invite user** bzw.
+**→ Reset Password**. Bei Änderungen an den Templates im Repo diesen Schritt
+wiederholen, sonst laufen Repo und Prod auseinander.
 
 ## Sicherheit
 
