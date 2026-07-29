@@ -238,10 +238,20 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Custom email templates (siehe supabase/templates/) — reine Präsentation,
+# keine Auth-Logik. content_path ist relativ zur Repo-Wurzel, nicht zu dieser
+# Datei. WICHTIG: Diese lokale Konfiguration wirkt nur gegen die lokale
+# Supabase-CLI-Instanz — das Projekt in Prod nutzt das im Supabase Dashboard
+# hinterlegte Template (Authentication → Email Templates), daher muss der
+# HTML-Inhalt zusätzlich dort eingefügt werden (siehe DEPLOY.md-Hinweis in
+# supabase/functions/create-employee/).
+[auth.email.template.invite]
+subject = "Deine Einladung zu TaskOps Manager"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.recovery]
+subject = "Passwort zurücksetzen – TaskOps Manager"
+content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
