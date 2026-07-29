@@ -89,6 +89,13 @@ create table if not exists public.jobs (
   scheduled_end timestamptz,
   started_at timestamptz,
   completed_at timestamptz,
+  -- ── Akteure der beiden Statusübergänge (Phase 7, „Shared Job Time") ──
+  -- WER gedrückt hat, nicht wem die Zeit gehört: die offizielle Dauer
+  -- (completed_at - started_at) gilt für ALLE Zugewiesenen, unabhängig davon,
+  -- wer Start/Abschluss ausgelöst hat. Nullable + ON DELETE SET NULL, damit
+  -- eine Kontolöschung nicht blockiert wird.
+  started_by uuid references public.profiles(id) on delete set null,
+  completed_by uuid references public.profiles(id) on delete set null,
   -- ── Terminierung: einmalig (single) vs. wiederkehrend (recurring) ──
   -- single:    date + start_time gesetzt, recurring_days null
   -- recurring: recurring_days (Wochentage) + start_time gesetzt, date null
@@ -638,6 +645,13 @@ grant execute on function public.accept_own_invite() to authenticated;
 -- = idempotenter No-Op (kein Fehler, kein zweites Event) — wichtig, damit ein
 -- Offline-Retry/Doppel-Tap nicht scheitert oder doppelt benachrichtigt.
 -- Siehe supabase/migrations/20260717000000_admin_status_notifications.sql.
+--
+-- BERECHTIGT ist JEDER über job_assignments Zugewiesene (Phase 7, „Shared Job
+-- Time") — plus, für Bestandszeilen ohne Zuweisungszeile, der Legacy-Primär
+-- jobs.assigned_to. job_type='single' bleibt eigenständige Bedingung AUSSERHALB
+-- der ODER-Klammer, weil Recurring-Parent-Regeln selbst Zuweisungen tragen und
+-- is_assigned_to_job() job_type nicht kennt. Vollständige Begründung in
+-- supabase/migrations/20260731000000_shared_job_time_multi_assignment.sql.
 create or replace function public.start_own_job(
   job_id_input uuid,
   started_at_input timestamptz default now()
@@ -660,13 +674,18 @@ begin
   set
     status = 'in_progress',
     started_at = started_at_input,
-    completed_at = null
+    started_by = auth.uid(),
+    completed_at = null,
+    completed_by = null
   where id = job_id_input
-    and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
     and job_type = 'single'   -- Parent-Recurring-Regeln dürfen nicht gestartet werden
     and status = 'open'       -- NUR der echte Übergang open -> in_progress
+    and (
+      assigned_to = auth.uid()                    -- Legacy-Primär (Bestand)
+      or public.is_assigned_to_job(job_id_input)  -- Zuweisungsmenge (Phase 7)
+    )
   returning * into updated_row;
 
   if found then
@@ -685,17 +704,22 @@ begin
     return started_at_input;
   end if;
 
-  -- Kein Übergang: idempotenter No-Op (eigener Job, aber nicht mehr 'open')
-  -- vs. nicht erlaubt (fremder/nicht gefundener Job) unterscheiden.
+  -- Kein Übergang: idempotenter No-Op (zugewiesener Job, aber nicht mehr
+  -- 'open') vs. nicht erlaubt (fremder/nicht gefundener Job) unterscheiden.
   select * into existing_row
   from public.jobs
   where id = job_id_input
-    and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
-    and job_type = 'single';
+    and job_type = 'single'
+    and (
+      assigned_to = auth.uid()
+      or public.is_assigned_to_job(job_id_input)
+    );
 
   if found then
+    -- Der Kollege war schneller (oder Doppel-Tap/Retry): die bereits
+    -- gesetzte, GETEILTE Startzeit zurückgeben — nie die eigene.
     return coalesce(existing_row.started_at, started_at_input);
   end if;
 
@@ -713,6 +737,7 @@ grant execute on function public.start_own_job(uuid, timestamptz) to authenticat
 -- completed eine notification_outbox-Zeile; bereits abgeschlossen = No-Op.
 -- Abschluss eines nicht gestarteten (open) Jobs wirft bewusst (kein falscher
 -- Erfolg) — die UI erlaubt „Abschließen" ohnehin nur bei in_progress.
+-- Berechtigung wie bei start_own_job: jeder Zugewiesene, plus Legacy-Primär.
 create or replace function public.complete_own_job(
   job_id_input uuid,
   completed_at_input timestamptz default now()
@@ -734,13 +759,17 @@ begin
   update public.jobs
   set
     status = 'completed',
-    completed_at = completed_at_input
+    completed_at = completed_at_input,
+    completed_by = auth.uid()
   where id = job_id_input
-    and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
     and job_type = 'single'          -- Parent-Recurring-Regeln nicht abschließbar
     and status = 'in_progress'       -- NUR der echte Übergang in_progress -> completed
+    and (
+      assigned_to = auth.uid()
+      or public.is_assigned_to_job(job_id_input)
+    )
   returning * into updated_row;
 
   if found then
@@ -762,22 +791,27 @@ begin
   select * into existing_row
   from public.jobs
   where id = job_id_input
-    and assigned_to = auth.uid()
     and company_id = public.current_user_company_id()
     and public.current_user_role() = 'employee'
-    and job_type = 'single';
+    and job_type = 'single'
+    and (
+      assigned_to = auth.uid()
+      or public.is_assigned_to_job(job_id_input)
+    );
 
   if not found then
     raise exception 'Job not found or not allowed';
   end if;
 
   -- Bereits abgeschlossen -> idempotenter No-Op (retry-sicher), kein Event.
+  -- Deckt auch den Wettlauf zweier Zugewiesener ab: der Zweite erhält die
+  -- GETEILTE Endzeit des Ersten.
   if existing_row.status = 'completed' then
     return coalesce(existing_row.completed_at, completed_at_input);
   end if;
 
-  -- Eigener Job, aber (noch) nicht in_progress (z. B. 'open') -> nicht als
-  -- Erfolg vortäuschen, sichtbar scheitern.
+  -- Zugewiesener Job, aber (noch) nicht in_progress (z. B. 'open') -> nicht
+  -- als Erfolg vortäuschen, sichtbar scheitern.
   raise exception 'Job not in progress (cannot complete)';
 end;
 $$;
@@ -1864,10 +1898,10 @@ comment on function public.clear_my_push_token() is
 'Clears only the current user expo push token. Always succeeds for any authenticated caller (active or not) — used on logout so a shared device never keeps a stale token bound to the previous user.';
 
 comment on function public.start_own_job(uuid, timestamptz) is
-'Employee can start only own assigned job inside own company.';
+'Setzt einen Auftrag der eigenen Firma auf in_progress. Berechtigt ist JEDER über job_assignments Zugewiesene sowie (Bestand) der Legacy-Primär jobs.assigned_to; nur role=employee, nur job_type=single. Schreibt started_at/started_by und ein job_started-Outbox-Event genau beim echten Übergang open -> in_progress; bereits gestartet/abgeschlossen ist ein idempotenter No-Op und gibt die GETEILTE Startzeit zurück. Fasst job_assignments nicht an (keine Anwesenheitserfassung).';
 
 comment on function public.complete_own_job(uuid, timestamptz) is
-'Employee can complete only own assigned job inside own company.';
+'Setzt einen laufenden Auftrag der eigenen Firma auf completed. Berechtigt ist JEDER über job_assignments Zugewiesene sowie (Bestand) der Legacy-Primär; nur role=employee, nur job_type=single. Schreibt completed_at/completed_by und ein job_completed-Outbox-Event genau beim echten Übergang in_progress -> completed; bereits abgeschlossen ist ein idempotenter No-Op. Ein noch nicht gestarteter Auftrag wird abgelehnt (ohne Start gibt es keine Dauer). Fasst job_assignments nicht an (keine Anwesenheitserfassung).';
 
 comment on function public.enforce_active_assignee() is
 'BEFORE INSERT/UPDATE Guard auf jobs: Zuweisung nur an ein aktives Profil mit role=employee derselben company_id. Prüft bei INSERT und bei UPDATE mit geändertem assigned_to oder company_id. Unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';

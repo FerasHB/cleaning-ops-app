@@ -181,9 +181,9 @@ function AnimatedJobCard({
 }: {
   item: any;
   index: number;
-  // Optional: ohne Handler blendet JobCard die Quick-Action aus. Seit Phase 5
-  // ist das der Normalfall für Aufträge, bei denen der Nutzer nicht der
-  // Legacy-Primär ist (siehe canRunJobActions).
+  // Optional: ohne Handler blendet JobCard die Quick-Action aus — für Admins
+  // und für Aufträge, denen der Nutzer nicht zugewiesen ist (siehe
+  // canRunJobActions).
   onStart?: () => void;
   onComplete?: () => void;
   onPress?: () => void;

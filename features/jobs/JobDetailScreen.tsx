@@ -31,6 +31,7 @@ import {
 import { WorkedTimeCard } from "@/features/jobs/components/WorkedTimeCard";
 import { formatRecurringDays } from "@/utils/recurrence";
 import {
+  canRunJobActions,
   formatAssigneesFull,
   getAssignees,
   isPrimaryAssignee,
@@ -176,12 +177,13 @@ export default function JobDetailScreen() {
 
   // Darf der Nutzer den Ungelesen-Status dieses Jobs schreiben?
   //
-  // job_comment_reads hat eigene INSERT/UPDATE-Policies, die — wie alle
-  // Schreibpfade — weiterhin den LEGACY-PRIMÄR verlangen. Ein sekundär
-  // Zugewiesener darf die Kommentare zwar lesen (Phase 5), das Markieren
-  // schlägt für ihn aber mit 42501 fehl. Der Fehler würde im JobContext
-  // stillschweigend geschluckt — also gar nicht erst versuchen.
-  // Fällt mit Phase 6/7, wenn die Schreibpfade nachziehen.
+  // job_comment_reads hat eigene INSERT/UPDATE-Policies, die weiterhin den
+  // LEGACY-PRIMÄR verlangen. Ein sekundär Zugewiesener darf die Kommentare
+  // zwar lesen (Phase 5), das Markieren schlägt für ihn aber mit 42501 fehl.
+  // Der Fehler würde im JobContext stillschweigend geschluckt — also gar
+  // nicht erst versuchen.
+  // Phase 7 hat NUR start_own_job/complete_own_job erweitert; die
+  // Kommentar-/Foto-Schreibpfade folgen in einem eigenen PR.
   const canMarkCommentsRead =
     !!job && (isAdmin || isPrimaryAssignee(job, profile?.id));
 
@@ -398,23 +400,23 @@ export default function JobDetailScreen() {
     assignees.length > 0 ? formatAssigneesFull(job) : UNASSIGNED_LABEL;
   const employeeLabel = assignees.length > 1 ? "Mitarbeitende" : "Mitarbeiter";
 
-  // BERECHTIGUNG (bewusst NICHT die Zuweisungsmenge): Start/Abschluss laufen
-  // über die RPCs start_own_job/complete_own_job, die role='employee' UND
-  // assigned_to=auth.uid() verlangen. Ein sekundär Zugewiesener sieht den
-  // Auftrag seit Phase 5 zwar, darf ihn aber serverseitig noch nicht starten —
-  // bekäme er hier einen Button, schlüge dieser mit "Job not found or not
-  // allowed" fehl. Wird in Phase 7 zusammen mit den RPCs umgestellt.
-  const isAssignedEmployee =
-    role === "employee" && isPrimaryAssignee(job, profile?.id);
-  // Parent-Recurring-Regeln dürfen niemals gestartet/abgeschlossen werden —
-  // nur konkrete Occurrences (job_type='single') sind ausführbare Termine.
-  const canStart = !isParentRule && isAssignedEmployee && job.status === "open";
-  const canComplete = !isParentRule && isAssignedEmployee && job.status === "in_progress";
+  // BERECHTIGUNG Start/Abschluss (Phase 7, „Shared Job Time"): JEDER
+  // Zugewiesene darf, nicht nur der Legacy-Primär — canRunJobActions spiegelt
+  // exakt das Prädikat von start_own_job/complete_own_job (Rolle, job_type,
+  // Zuweisungsmenge ODER Legacy-Zeiger). Der isParentRule-Zusatz ist
+  // redundant, bleibt aber als lokale, sichtbare Absicherung stehen: eine
+  // Parent-Regel ist kein ausführbarer Termin.
+  const canRunActions = canRunJobActions(job, role, profile?.id);
+  const canStart = !isParentRule && canRunActions && job.status === "open";
+  const canComplete =
+    !isParentRule && canRunActions && job.status === "in_progress";
   const isDone = job.status === "completed";
 
   // Foto-Upload: Admin immer; Employee nur wenn PRIMÄR zugewiesen.
-  // Gleiche Begründung wie oben bei isAssignedEmployee: die Insert-Policies auf
-  // job_photos und storage.objects verlangen weiterhin assigned_to = auth.uid().
+  // BEWUSSTE ASYMMETRIE zu canStart/canComplete oben: die Insert-Policies auf
+  // job_photos und storage.objects hängen weiterhin an assigned_to = auth.uid().
+  // Phase 7 hat NUR die beiden Status-RPCs erweitert — Fotos und Kommentare
+  // gehören nicht zur Job-Uhr und folgen in einem eigenen PR.
   // isOnline wird separat übergeben — JobPhotos zeigt den Offline-Hinweis selbst.
   const canUploadPhotos =
     role === "admin" ||

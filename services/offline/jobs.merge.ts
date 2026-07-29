@@ -6,11 +6,18 @@ import { PendingJobAction } from "./jobs.queue";
  */
 function applyPendingActionToJob(job: Job, action: PendingJobAction): Job {
   switch (action.type) {
+    // Der Akteur ist eindeutig der Besitzer der Aktion: die Warteschlange
+    // liefert ausschließlich Aktionen des angemeldeten Nutzers (siehe
+    // getPendingJobActions), und beim Sync setzt der Server genau denselben
+    // Wert (auth.uid()). Ohne diese Spiegelung zeigte ein offline gestarteter
+    // Job aus dem Cache "läuft, ohne Akteur".
     case "start_job":
       return {
         ...job,
         status: "in_progress" as const,
         startedAt: action.timestamp,
+        startedBy: action.userId,
+        completedBy: null,
       };
 
     case "complete_job":
@@ -18,6 +25,7 @@ function applyPendingActionToJob(job: Job, action: PendingJobAction): Job {
         ...job,
         status: "completed" as const,
         completedAt: action.timestamp,
+        completedBy: action.userId,
       };
 
     default:

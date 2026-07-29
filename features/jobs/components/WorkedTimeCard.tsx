@@ -8,6 +8,7 @@
 // hier wird nichts dupliziert.
 
 import { Card, StatusBadge } from "@/components/ui";
+import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
 import type { Job } from "@/types/job";
@@ -18,8 +19,41 @@ import { Animated, StyleSheet, Text, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
 
 type Props = {
-  job: Pick<Job, "status" | "startedAt" | "completedAt">;
+  job: Pick<
+    Job,
+    | "status"
+    | "startedAt"
+    | "completedAt"
+    | "startedBy"
+    | "completedBy"
+    | "assignees"
+  >;
 };
+
+/**
+ * Name des Akteurs eines Übergangs — oder null, wenn kein Hinweis nötig ist.
+ *
+ * Zeigt bewusst NUR fremde Akteure: „von Ahmed" erklärt einem Mitarbeiter,
+ * warum er Arbeitszeit erhält, die er selbst nicht gestartet hat (geteilte
+ * Job-Uhr, Phase 7). „von mir" wäre reines Rauschen.
+ *
+ * Kein Hinweis in drei Fällen — alle bewusst still:
+ *  - kein Akteur gespeichert (Alt-Daten vor Phase 7, oder Konto gelöscht:
+ *    ON DELETE SET NULL),
+ *  - der Akteur ist der aktuelle Nutzer,
+ *  - der Akteur ist in `assignees` nicht auflösbar (z. B. inzwischen aus dem
+ *    Auftrag entfernt). Ein erfundener Platzhaltername wäre schlechter als
+ *    kein Hinweis.
+ */
+function actorName(
+  actorId: string | null | undefined,
+  assignees: Job["assignees"] | undefined,
+  currentUserId: string | null | undefined,
+): string | null {
+  if (!actorId || actorId === currentUserId) return null;
+  const match = (assignees ?? []).find((a) => a.employeeId === actorId);
+  return match?.fullName ?? null;
+}
 
 // Datum als "18.07.2026" (ohne Uhrzeit) — für die Start-/Ende-Blöcke.
 function formatBlockDate(iso: string | null | undefined): string | null {
@@ -36,6 +70,7 @@ function formatBlockDate(iso: string | null | undefined): string | null {
 export function WorkedTimeCard({ job }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { profile } = useAuth();
   const { minutes, label, isRunning } = useJobWorkedTime(job);
 
   // Sanfte Puls-Animation, wenn sich das Label ändert (jede Minute während
@@ -73,6 +108,17 @@ export function WorkedTimeCard({ job }: Props) {
     ? formatTimeHHmm(new Date(job.completedAt))
     : null;
 
+  // Mehrfachzuweisung = geteilte Job-Uhr. Nur dann ist der Zusatzhinweis
+  // unten relevant; bei einem einzigen Mitarbeiter wäre er Ballast.
+  const isShared = (job.assignees ?? []).length > 1;
+
+  const startedByName = actorName(job.startedBy, job.assignees, profile?.id);
+  const completedByName = actorName(
+    job.completedBy,
+    job.assignees,
+    profile?.id,
+  );
+
   const accentColor = isRunning
     ? theme.colors.statusInProgress
     : theme.colors.statusCompleted;
@@ -107,6 +153,11 @@ export function WorkedTimeCard({ job }: Props) {
           <Text style={styles.timeBlockLabel}>GESTARTET</Text>
           <Text style={styles.timeBlockDate}>{startedDate ?? "—"}</Text>
           <Text style={styles.timeBlockValue}>{startedTime ?? "—:—"}</Text>
+          {startedByName ? (
+            <Text style={styles.timeBlockActor} numberOfLines={2}>
+              von {startedByName}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.timeBlockDivider} />
@@ -121,6 +172,11 @@ export function WorkedTimeCard({ job }: Props) {
             <>
               <Text style={styles.timeBlockDate}>{completedDate ?? "—"}</Text>
               <Text style={styles.timeBlockValue}>{completedTime ?? "—:—"}</Text>
+              {completedByName ? (
+                <Text style={styles.timeBlockActor} numberOfLines={2}>
+                  von {completedByName}
+                </Text>
+              ) : null}
             </>
           )}
         </View>
@@ -153,6 +209,11 @@ export function WorkedTimeCard({ job }: Props) {
         />
         <Text style={styles.infoText}>
           Die Arbeitszeit wird automatisch aus Start- und Endzeit berechnet.
+          {isShared
+            ? // Geteilte Job-Uhr (Phase 7): erklärt, warum jemand Zeit
+              // erhält, die ein Kollege gestartet hat.
+              " Sie gilt für alle zugewiesenen Mitarbeitenden — unabhängig davon, wer Start und Abschluss gedrückt hat."
+            : ""}
         </Text>
       </View>
     </Card>
@@ -237,6 +298,15 @@ function createStyles(theme: AppTheme) {
       fontWeight: theme.typography.weight.bold,
       color: theme.colors.onSurface,
       letterSpacing: theme.typography.letterSpacing.tight,
+    },
+    // „von <Name>" unter der Uhrzeit — nur bei fremdem Akteur (siehe
+    // actorName). Bewusst dezent: der Akteur ist ein Hinweis, keine
+    // Kennzahl.
+    timeBlockActor: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
     },
     timeBlockRunning: {
       fontSize: theme.typography.size.xl,

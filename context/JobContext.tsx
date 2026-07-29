@@ -621,6 +621,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           const nextJobs = updateJobInList(prevJobs, jobId, {
             status: "in_progress",
             startedAt,
+            // Akteur optimistisch auf den eigenen Nutzer.
+            //
+            // Hat ein Kollege das Rennen gewonnen, gibt die RPC dessen
+            // Startzeit zurück und der Akteur ist hier kurzzeitig falsch. Das
+            // ist bewusst harmlos gehalten: die Anzeige nennt den Akteur NUR,
+            // wenn es ein ANDERER war (siehe WorkedTimeCard). Der Fehler
+            // äußert sich also als fehlender Hinweis, nie als falscher Name,
+            // und der nächste Realtime-Event/Refresh korrigiert ihn.
+            startedBy: userId,
+            // Rückwärts-Übergang: die RPC nullt completed_at/completed_by.
+            completedBy: null,
           });
 
           saveCachedJobs(userId, nextJobs).catch((err) =>
@@ -661,6 +672,11 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         const nextJobs = updateJobInList(prevJobs, jobId, {
           status: "in_progress",
           startedAt: timestamp,
+          // Offline ist der Akteur eindeutig der lokale Nutzer (die Aktion
+          // liegt auf seinen Namen in der Warteschlange). Der Server setzt
+          // beim Sync denselben Wert.
+          startedBy: userId,
+          completedBy: null,
         });
 
         saveCachedJobs(userId, nextJobs).catch((err) =>
@@ -686,6 +702,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           const nextJobs = updateJobInList(prevJobs, jobId, {
             status: "completed",
             completedAt,
+            // Siehe Begründung bei startJob: Akteur optimistisch, Anzeige
+            // nennt ihn nur, wenn es ein anderer war.
+            completedBy: userId,
           });
 
           saveCachedJobs(userId, nextJobs).catch((err) =>
@@ -726,6 +745,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         const nextJobs = updateJobInList(prevJobs, jobId, {
           status: "completed",
           completedAt: timestamp,
+          // Offline eindeutig der lokale Nutzer (siehe startJob).
+          completedBy: userId,
         });
 
         saveCachedJobs(userId, nextJobs).catch((err) =>

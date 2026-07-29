@@ -53,6 +53,8 @@ type JobRow = {
   status: "open" | "in_progress" | "completed";
   started_at: string | null;
   completed_at: string | null;
+  started_by: string | null;
+  completed_by: string | null;
   notes: string | null;
   assigned_to: string | null;
   job_type: JobType | null;
@@ -231,8 +233,10 @@ function formatTimeRange(start: string | null, end: string | null): string {
 // vergessener Embed stillschweigend eine leere Mitarbeiterliste erzeugt.
 // Deshalb konsolidiert — alle Abfragen nutzen ausschließlich diese Konstante.
 //
-// assigned_to + profiles:assigned_to bleiben bewusst enthalten: sie tragen das
-// Aktions-Gating und den Schreibpfad, bis Phase 7/11 sie ablösen.
+// assigned_to + profiles:assigned_to bleiben bewusst enthalten: das
+// Aktions-Gating läuft seit Phase 7 über die Zuweisungsmenge, der Legacy-Zeiger
+// deckt aber weiterhin (a) Bestandszeilen ohne Zuweisungszeile, (b) die
+// Kommentar-/Foto-Schreibpfade und (c) den Schreibpfad — bis Phase 11.
 const JOB_SELECT = `
   id,
   customer_name,
@@ -243,6 +247,8 @@ const JOB_SELECT = `
   status,
   started_at,
   completed_at,
+  started_by,
+  completed_by,
   notes,
   job_type,
   date,
@@ -394,6 +400,11 @@ function mapJob(row: JobRow): Job {
     scheduledEnd: row.scheduled_end,
     startedAt: row.started_at,
     completedAt: row.completed_at,
+
+    // Akteure der Übergänge (Phase 7) — Nachvollziehbarkeit, KEINE
+    // Abrechnungs- oder Berechtigungsgrundlage (siehe types/job.ts).
+    startedBy: row.started_by,
+    completedBy: row.completed_by,
 
     // Terminierung — bestehende Zeilen ohne Typ gelten als "single"/aktiv.
     jobType: row.job_type ?? "single",

@@ -290,7 +290,7 @@ export default function EmployeeJobsCalendarScreen() {
             job={item}
             // Start/Fertig sind Employee-Aktionen (RPCs start_own_job/
             // complete_own_job). JobCard zeigt je Status genau eine Action.
-            // Seit Phase 5 nur für den Legacy-Primär — siehe canRunJobActions.
+            // Seit Phase 7 für JEDEN Zugewiesenen — siehe canRunJobActions.
             onStart={
               canRunJobActions(item, role, profile?.id)
                 ? () => handleStart(item.id)

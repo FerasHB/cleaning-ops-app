@@ -12,9 +12,9 @@ import { useJobs } from "@/context/JobContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
+  canRunJobActions,
   getAssigneeNames,
   isAssignedTo,
-  isPrimaryAssignee,
 } from "@/utils/jobAssignees";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -317,25 +317,23 @@ export default function JobsListScreen() {
           <JobCard
             job={item}
             // Start/Fertig sind Employee-Aktionen (RPCs start_own_job/
-            // complete_own_job verlangen role='employee' UND assigned_to=auth.uid()).
-            // Admins dürfen den Status NICHT über diese RPCs ändern → bei ihnen
-            // keine Quick-Action-Buttons zeigen, sonst RPC-Fehler "Job not found
-            // or not allowed". (JobCard blendet die Buttons ohne diese Props aus.)
+            // complete_own_job verlangen role='employee'). Admins dürfen den
+            // Status NICHT über diese RPCs ändern → bei ihnen keine
+            // Quick-Action-Buttons zeigen, sonst RPC-Fehler "Job not found or
+            // not allowed". (JobCard blendet die Buttons ohne diese Props aus.)
             //
-            // Seit Phase 5 sieht ein Mitarbeiter auch Aufträge, denen er nur
-            // SEKUNDÄR zugewiesen ist. Die RPCs kennen die Zuweisungsmenge noch
-            // nicht — deshalb hier zusätzlich auf den Legacy-Primär prüfen,
-            // sonst bekäme er einen Button, der garantiert fehlschlägt.
-            // Entfällt mit Phase 7.
+            // Rolle, Auftragstyp und Zuweisung entscheidet ausschließlich
+            // canRunJobActions — dieselbe Funktion wie in Home, Übersicht,
+            // Kalender und Detail, damit das Gating nicht auseinanderläuft.
             onStart={
-              isAdmin || !isPrimaryAssignee(item, profile?.id)
-                ? undefined
-                : () => startJob(item.id)
+              canRunJobActions(item, role, profile?.id)
+                ? () => startJob(item.id)
+                : undefined
             }
             onComplete={
-              isAdmin || !isPrimaryAssignee(item, profile?.id)
-                ? undefined
-                : () => completeJob(item.id)
+              canRunJobActions(item, role, profile?.id)
+                ? () => completeJob(item.id)
+                : undefined
             }
             onPress={() => router.push(`/jobs/${item.id}`)}
             showEmployeeName={isAdmin}

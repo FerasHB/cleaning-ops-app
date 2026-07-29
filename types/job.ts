@@ -58,6 +58,25 @@ export type Job = {
   startedAt?: string | null;
   completedAt?: string | null;
 
+  /**
+   * AKTEURE der beiden Statusübergänge (Phase 7, „Shared Job Time").
+   *
+   * WER gedrückt hat — NICHT, wem die Arbeitszeit gehört. Die offizielle
+   * Dauer (`completedAt - startedAt`) gilt für ALLE Zugewiesenen, auch für
+   * den, der Start nie gedrückt hat. Diese Felder sind daher reine
+   * Nachvollziehbarkeit und dürfen NIE als Abrechnungs- oder
+   * Berechtigungsgrundlage dienen.
+   *
+   * `null` bedeutet zweierlei und ist nicht unterscheidbar: der Übergang hat
+   * nie stattgefunden ODER das Konto des Akteurs wurde gelöscht
+   * (ON DELETE SET NULL). Die Anzeige lässt den Namen dann weg.
+   *
+   * Nur die ID — der Name wird über `assignees` aufgelöst (der Akteur ist
+   * zugewiesen), was eine zusätzliche Abfrage erspart.
+   */
+  startedBy?: string | null;
+  completedBy?: string | null;
+
   // ── Terminierung (single vs. recurring) ──
   // jobType "single": einmaliger Auftrag mit date + startTime.
   // jobType "recurring": wiederkehrend an recurringDays (Wochentage) + startTime.
