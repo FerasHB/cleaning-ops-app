@@ -9,6 +9,25 @@ import {
 import { normalizeTime } from "@/utils/date";
 import { buildLegacyAssignees } from "@/utils/jobAssignees";
 
+// Wird von updateJob() geworfen, wenn set_job_assignments bereits
+// erfolgreich committed wurde, das nachfolgende jobs-UPDATE und/oder
+// update_job_occurrences aber fehlgeschlagen ist. Die beiden Schreibvorgänge
+// sind ZWEI getrennte Netzwerk-Requests, keine gemeinsame Transaktion — ein
+// Fehlschlag hier ist deshalb NIE ein vollständiger Rollback, sondern ein
+// echter Teilerfolg: die Zuweisungsmenge steht bereits, andere Feldänderungen
+// (oder die Occurrence-Synchronisierung) nicht. `job` trägt den frisch vom
+// Server nachgelesenen Stand, damit Aufrufer die UI korrekt aktualisieren
+// können, statt auf dem Vor-Speichern-Zustand hängen zu bleiben.
+export class PartialUpdateError extends Error {
+  readonly job: Job | null;
+
+  constructor(message: string, job: Job | null) {
+    super(message);
+    this.name = "PartialUpdateError";
+    this.job = job;
+  }
+}
+
 // Eine Zeile aus job_assignments, wie sie eingebettet zurückkommt.
 // profiles ist der LEBENDE Mitarbeiter; bei gelöschtem Konto ist
 // employee_id NULL und profiles fehlt — dann trägt der Snapshot den Namen.
@@ -831,21 +850,49 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     .select(JOB_SELECT)
     .single();
 
-  if (error) {
-    throw error;
-  }
-
-  // Bei Recurring-Parent-Jobs: zukünftige offene Occurrences löschen und neu erzeugen.
-  // Nur für Parent-Regeln (parent_job_id IS NULL), nicht für Occurrences selbst.
-  // Fehler hier brechen das Update nicht ab — die Regeländerung ist bereits gespeichert.
-  if (input.jobType === "recurring" && !data.parent_job_id) {
-    const { error: occurrenceError } = await supabase.rpc(
+  // Bei Recurring-Parent-Jobs: zukünftige offene Occurrences löschen und neu
+  // erzeugen. Nur für Parent-Regeln (parent_job_id IS NULL), nicht für
+  // Occurrences selbst — und nur, wenn das jobs-UPDATE selbst erfolgreich
+  // war (sonst existiert `data`/`data.parent_job_id` nicht zuverlässig).
+  let occurrenceError: { message: string } | null = null;
+  if (!error && input.jobType === "recurring" && !data.parent_job_id) {
+    const { error: occErr } = await supabase.rpc(
       "update_job_occurrences",
       { parent_job_id_input: input.jobId }
     );
-    if (occurrenceError) {
-      console.error("[updateJob] update_job_occurrences fehlgeschlagen:", occurrenceError.message, occurrenceError);
+    if (occErr) {
+      occurrenceError = occErr;
+      console.error("[updateJob] update_job_occurrences fehlgeschlagen:", occErr.message, occErr);
     }
+  }
+
+  if (error || occurrenceError) {
+    // TEILERFOLG: set_job_assignments oben ist bereits committed — jobs-
+    // UPDATE und update_job_occurrences sind separate Requests ohne
+    // gemeinsame Transaktion mit Schritt 1. KEIN automatischer Retry, KEIN
+    // Vortäuschen eines vollständigen Rollbacks. Stattdessen den echten
+    // Serverstand frisch nachlesen und einen dedizierten Fehlertyp werfen,
+    // den Aufrufer (JobContext/EditJobScreen) von einem gewöhnlichen Fehler
+    // unterscheiden und passend anzeigen können.
+    const fresh = await getJobById(input.jobId);
+
+    const reasons: string[] = [];
+    if (error) {
+      reasons.push(
+        "die übrigen Änderungen an diesem Auftrag (z. B. Kunde, Ort, Termin) wurden NICHT gespeichert",
+      );
+    }
+    if (occurrenceError) {
+      reasons.push(
+        "die Termine des Dauerauftrags konnten nicht an die neue Zuweisung angeglichen werden",
+      );
+    }
+
+    throw new PartialUpdateError(
+      `Die Mitarbeiterzuweisung wurde gespeichert, aber ${reasons.join(" und ")}. ` +
+        `Bitte prüfen Sie den aktuellen Stand und speichern Sie bei Bedarf erneut.`,
+      fresh,
+    );
   }
 
   // Frisch nachlesen, damit `assignees` exakt den gerade per

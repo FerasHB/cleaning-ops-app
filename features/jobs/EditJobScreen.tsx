@@ -3,7 +3,7 @@
 // Vollständig auf useAppTheme() migriert — Light + Dark Mode.
 // Business-Logik (updateJob, deleteJob, useJobForm, AuthContext, JobContext) unverändert.
 
-import { Button, Card, Divider, LoadingScreen } from "@/components/ui";
+import { Button, Card, Divider, ErrorBanner, LoadingScreen } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
@@ -18,7 +18,7 @@ import {
 } from "@/utils/date";
 import type { WeekdayKey } from "@/utils/recurrence";
 import { getAssignees } from "@/utils/jobAssignees";
-import { getJobById } from "@/services/jobs/jobs.service";
+import { getJobById, PartialUpdateError } from "@/services/jobs/jobs.service";
 import type { Job } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -100,6 +100,38 @@ export default function EditJobScreen() {
     );
     return [...active, ...assignedButInactive];
   }, [employees, assignedEmployeeIds]);
+
+  // BLOCKIERT das Speichern vollständig, solange der Auftrag mindestens
+  // einem INAKTIVEN Mitarbeiter zugewiesen ist.
+  //
+  // Grund (verifiziert direkt im deployten SQL-Quelltext, nicht angenommen):
+  // supabase/migrations/20260728000000_occurrence_assignment_inheritance.sql,
+  // Funktion set_job_assignments (Zeilen 543–687, die aktuell gültige
+  // CREATE OR REPLACE-Fassung — keine spätere Migration definiert die
+  // Funktion erneut). Die Validierung (Zeilen 597–614) prüft JEDE ID in der
+  // übergebenen Menge p_employee_ids gegen profiles.is_active = true — ohne
+  // jede Ausnahme für IDs, die dem Auftrag bereits zugewiesen sind (es gibt
+  // in der gesamten Funktion keine Abfrage, die "schon zugewiesen" gegen
+  // job_assignments prüft, bevor validiert wird). Eine inaktive, bereits
+  // zugewiesene Person MUSS deshalb entweder mitgeschickt werden (→ die
+  // GESAMTE Speicherung schlägt mit "Assignment rejected" fehl, Zeilen
+  // 609–614) oder weggelassen werden — und genau das entfernt eine
+  // spurenfreie Zuweisung endgültig (DELETE, Zeilen 616–623: entfernt jede
+  // Zeile, deren employee_id NICHT in der übergebenen Menge steht UND die
+  // weder Anwesenheit noch Review noch Zeitstempel trägt).
+  //
+  // Es gibt also KEINEN sicheren Weg, eine inaktive Zuweisung über diese RPC
+  // zu erhalten: weder "mitschicken" (harter Fehler) noch "weglassen"
+  // (stille Löschung, falls spurenfrei). Bis eine künftige SQL-Migration
+  // set_job_assignments eine Ausnahme für bereits zugewiesene inaktive
+  // Personen hinzufügt, wird das Bearbeiten eines solchen Auftrags hier
+  // vollständig gesperrt, statt eine der beiden unsicheren Optionen zu
+  // wählen.
+  const inactiveAssignedEmployees = useMemo(
+    () => pickerEmployees.filter((e) => e.isActive === false),
+    [pickerEmployees],
+  );
+  const hasInactiveAssignedEmployees = inactiveAssignedEmployees.length > 0;
 
   const { values, errors, setField, validate, setValues, setErrors } =
     useJobForm();
@@ -240,18 +272,35 @@ export default function EditJobScreen() {
       return;
     }
 
+    // HARTE SPERRE (zusätzlich zum deaktivierten Save-Button unten): dieser
+    // Auftrag hat mindestens eine inaktive Zuweisung, die set_job_assignments
+    // nicht sicher abbilden kann (siehe ausführliche Begründung bei
+    // hasInactiveAssignedEmployees weiter oben). Kein Schreibvorgang darf in
+    // diesem Zustand stattfinden — auch nicht, falls der Button je über
+    // einen anderen Pfad als disabled=false erreichbar wäre.
+    if (hasInactiveAssignedEmployees) {
+      Alert.alert(
+        "Bearbeiten nicht möglich",
+        "Dieser Auftrag ist mindestens einem inaktiven Mitarbeiter zugewiesen " +
+          `(${inactiveAssignedEmployees.map((e) => e.fullName).join(", ")}). ` +
+          "Aus Datensicherheitsgründen kann der Auftrag aktuell nicht " +
+          "bearbeitet werden, da jedes Speichern diese Zuweisung " +
+          "unbeabsichtigt entfernen könnte.",
+      );
+      return;
+    }
+
     try {
       setSubmitting(true);
 
-      // Inaktive Mitarbeiter dürfen NICHT an set_job_assignments gesendet
-      // werden: die RPC validiert JEDE übergebene ID (auch bereits
-      // zugewiesene) auf active=true — unabhängig davon, ob sich an dieser
-      // Zuweisung überhaupt etwas ändert. Eine im Formular als
-      // ausgewählt+gesperrt angezeigte inaktive Person (siehe
-      // EmployeeMultiSelector/pickerEmployees) bliebe sonst zwar sichtbar,
-      // würde aber bei JEDEM Speichern — auch bei völlig unabhängigen
-      // Feldänderungen — die gesamte Speicherung mit einem Serverfehler
-      // blockieren. Deshalb hier vor dem Absenden herausfiltern.
+      // Zusätzliche Absicherung (defense-in-depth): inaktive Mitarbeiter
+      // dürfen NIE an set_job_assignments gesendet werden (siehe Sperre
+      // oben). Da das Speichern bereits vollständig blockiert ist, solange
+      // hasInactiveAssignedEmployees zutrifft, sollte values.employeeIds an
+      // dieser Stelle nie mehr eine inaktive ID enthalten — dieser Filter
+      // fängt trotzdem den Fall ab, dass sich der Aktiv-Status eines
+      // Mitarbeiters zwischen Prüfung und Absenden ändert (z. B. durch
+      // gleichzeitige Deaktivierung in einer anderen Sitzung).
       const activeEmployeeIds = new Set(
         employees.filter((e) => e.isActive !== false).map((e) => e.id),
       );
@@ -296,7 +345,18 @@ export default function EditJobScreen() {
         err instanceof Error
           ? err.message
           : "Job konnte nicht gespeichert werden.";
-      Alert.alert("Fehler", msg);
+
+      // Teilerfolg: die Mitarbeiterzuweisung wurde bereits gespeichert, auch
+      // wenn der Rest fehlgeschlagen ist (siehe PartialUpdateError in
+      // jobs.service.ts). JobContext hat den frisch nachgelesenen Job dafür
+      // bereits in den State übernommen — hier NICHT als vollständigen
+      // Fehlschlag/Rollback darstellen, im Formular bleiben (kein
+      // router.back()) und NICHT automatisch erneut speichern.
+      if (err instanceof PartialUpdateError) {
+        Alert.alert("Teilweise gespeichert", msg);
+      } else {
+        Alert.alert("Fehler", msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -450,6 +510,23 @@ export default function EditJobScreen() {
 
             <Divider style={styles.sectionDivider} />
 
+            {hasInactiveAssignedEmployees ? (
+              <View style={{ marginBottom: theme.spacing.sm }}>
+                <ErrorBanner
+                  type="warning"
+                  message={
+                    "Dieser Auftrag ist mindestens einem inaktiven Mitarbeiter " +
+                    `zugewiesen (${inactiveAssignedEmployees
+                      .map((e) => e.fullName)
+                      .join(", ")}). Der Auftrag kann aktuell nicht bearbeitet ` +
+                    "werden, da jedes Speichern diese Zuweisung unbeabsichtigt " +
+                    "entfernen könnte. Diese Einschränkung entfällt mit einer " +
+                    "künftigen Backend-Anpassung."
+                  }
+                />
+              </View>
+            ) : null}
+
             <EmployeeMultiSelector
               employees={pickerEmployees}
               selectedEmployeeIds={values.employeeIds}
@@ -459,9 +536,17 @@ export default function EditJobScreen() {
           </Card>
 
           <Button
-            label={hasChanges ? "Änderungen speichern" : "Keine Änderungen"}
+            label={
+              hasInactiveAssignedEmployees
+                ? "Bearbeiten derzeit nicht möglich"
+                : hasChanges
+                  ? "Änderungen speichern"
+                  : "Keine Änderungen"
+            }
             loading={submitting}
-            disabled={loading || submitting || !hasChanges}
+            disabled={
+              loading || submitting || !hasChanges || hasInactiveAssignedEmployees
+            }
             onPress={handleSave}
           />
 
