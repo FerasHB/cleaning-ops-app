@@ -57,7 +57,7 @@ type JobContextType = {
     customerName: string;
     location: string;
     service: string;
-    employeeId?: string | null;
+    employeeIds?: string[];
     notes?: string | null;
     scheduledStart?: string | null;
     scheduledEnd?: string | null;
@@ -499,7 +499,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (__DEV__) {
-        console.log("Creating job with employeeId:", input.employeeId);
+        console.log("Creating job with employeeIds:", input.employeeIds);
       }
 
       return { recurringOccurrencesFailed };
@@ -515,7 +515,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       customerName: string;
       location: string;
       service: string;
-      employeeId?: string | null;
+      employeeIds?: string[];
       notes?: string | null;
       scheduledStart?: string | null;
       scheduledEnd?: string | null;
