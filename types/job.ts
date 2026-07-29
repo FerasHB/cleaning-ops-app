@@ -91,7 +91,10 @@ export type CreateJobInput = {
   customerName: string;
   location: string;
   service: string;
-  employeeId?: string | null;
+  // Zuweisungsmenge (Phase 6 Schreibpfad). Leer/undefined = niemandem
+  // zugewiesen. jobs.assigned_to wird NICHT mehr direkt geschrieben — siehe
+  // services/jobs/jobs.service.ts createJob().
+  employeeIds?: string[];
   notes?: string | null;
 
   // ── Terminierung ──

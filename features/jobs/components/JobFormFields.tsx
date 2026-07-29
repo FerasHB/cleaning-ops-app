@@ -9,7 +9,7 @@
 import { Input } from "@/components/ui";
 import { DateTimeField } from "@/components/ui/DateTimeField";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { EmployeeSelector } from "@/features/jobs/components/EmployeeSelector";
+import { EmployeeMultiSelector } from "@/features/jobs/components/EmployeeMultiSelector";
 import { JobFormValues } from "@/features/jobs/hooks/useJobForm";
 import { EmployeeOption, JobType } from "@/types/job";
 import { WEEKDAYS, type WeekdayKey } from "@/utils/recurrence";
@@ -196,10 +196,10 @@ export function JobFormFields({
       )}
 
       <Text style={styles.sectionLabel}>Mitarbeiter</Text>
-      <EmployeeSelector
+      <EmployeeMultiSelector
         employees={employees}
-        selectedEmployeeId={values.employeeId}
-        onSelect={(employeeId) => onChangeField("employeeId", employeeId)}
+        selectedEmployeeIds={values.employeeIds}
+        onChange={(ids) => onChangeField("employeeIds", ids)}
       />
 
       <Input

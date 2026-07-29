@@ -9,6 +9,25 @@ import {
 import { normalizeTime } from "@/utils/date";
 import { buildLegacyAssignees } from "@/utils/jobAssignees";
 
+// Wird von updateJob() geworfen, wenn set_job_assignments bereits
+// erfolgreich committed wurde, das nachfolgende jobs-UPDATE und/oder
+// update_job_occurrences aber fehlgeschlagen ist. Die beiden Schreibvorgänge
+// sind ZWEI getrennte Netzwerk-Requests, keine gemeinsame Transaktion — ein
+// Fehlschlag hier ist deshalb NIE ein vollständiger Rollback, sondern ein
+// echter Teilerfolg: die Zuweisungsmenge steht bereits, andere Feldänderungen
+// (oder die Occurrence-Synchronisierung) nicht. `job` trägt den frisch vom
+// Server nachgelesenen Stand, damit Aufrufer die UI korrekt aktualisieren
+// können, statt auf dem Vor-Speichern-Zustand hängen zu bleiben.
+export class PartialUpdateError extends Error {
+  readonly job: Job | null;
+
+  constructor(message: string, job: Job | null) {
+    super(message);
+    this.name = "PartialUpdateError";
+    this.job = job;
+  }
+}
+
 // Eine Zeile aus job_assignments, wie sie eingebettet zurückkommt.
 // profiles ist der LEBENDE Mitarbeiter; bei gelöschtem Konto ist
 // employee_id NULL und profiles fehlt — dann trägt der Snapshot den Namen.
@@ -75,7 +94,9 @@ type UpdateJobInput = {
   customerName: string;
   location: string;
   service: string;
-  employeeId?: string | null;
+  // Zuweisungsmenge (Phase 6 Schreibpfad). jobs.assigned_to wird NICHT mehr
+  // direkt geschrieben — siehe updateJob() unten.
+  employeeIds?: string[];
   notes?: string | null;
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
@@ -146,6 +167,36 @@ function buildSchedulePayload(input: {
     recurrence_start_date: null,
     recurrence_end_date: null,
   };
+}
+
+// Bereinigt eine Mitarbeiter-ID-Liste: entfernt leere Werte und Duplikate.
+// set_job_assignments dedupliziert serverseitig zusätzlich selbst — hier
+// geht es nur um ein deterministisches Client-Payload.
+function normalizeEmployeeIds(ids: string[] | null | undefined): string[] {
+  return Array.from(new Set((ids ?? []).filter((id): id is string => !!id)));
+}
+
+// Ersetzt die Zuweisungsmenge eines Auftrags transaktional über die
+// Phase-3/4-RPC set_job_assignments (nur Admin, serverseitig validiert).
+//
+// WICHTIG: das Rückgabeergebnis der RPC (setof job_assignments) wird HIER
+// BEWUSST NICHT verwendet. Es sind rohe Tabellenzeilen (u. a.
+// employee_name_snapshot) — NICHT der auf den lebenden Profilnamen
+// gemappte Job. Für die UI wird nach dem Aufruf immer separat per
+// readBackJob()/getJobById() frisch gelesen, damit die Anzeige exakt dem
+// tatsächlichen Serverstand entspricht (siehe createJob/updateJob unten).
+async function callSetJobAssignments(
+  jobId: string,
+  employeeIds: string[],
+): Promise<void> {
+  const { error } = await supabase.rpc("set_job_assignments", {
+    p_job_id: jobId,
+    p_employee_ids: employeeIds,
+  });
+
+  if (error) {
+    throw error;
+  }
 }
 
 // Formatiert ein Datum / eine Uhrzeit schön auf Deutsch
@@ -534,11 +585,16 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
   // Terminierung validieren & aufbauen (single vs. recurring)
   const schedule = buildSchedulePayload(input);
 
-  // Daten vorbereiten für den Insert in die jobs-Tabelle
+  // Zuweisungsmenge normalisieren (dedupliziert, ohne leere Werte).
+  const employeeIds = normalizeEmployeeIds(input.employeeIds);
+
+  // Daten vorbereiten für den Insert in die jobs-Tabelle. KEIN assigned_to
+  // mehr — die Zuweisungsmenge wird ausschließlich über set_job_assignments()
+  // unten geschrieben; die Legacy-Spalte pflegt danach allein der
+  // Phase-2-Kompatibilitäts-Trigger (Richtung B: job_assignments -> jobs).
   const payload = {
     company_id: profile.company_id,
     created_by: userId,
-    assigned_to: input.employeeId ?? null,
     customer_name: customerName,
     service_name: serviceName,
     location_address: locationAddress,
@@ -572,8 +628,45 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
     throw new Error("Job wurde angelegt, aber kein Datensatz zurückgegeben.");
   }
 
+  // Zuweisungsmenge JETZT setzen — VOR jeder Occurrence-Generierung weiter
+  // unten, damit generate_job_occurrences (bei recurring) über
+  // inherit_occurrence_assignments bereits die richtige Menge an die
+  // erzeugten Termine weitergibt. Schlägt das fehl, existiert bereits eine
+  // Job-Zeile ohne die vom Admin gewählten Zuweisungen — das darf NICHT
+  // still bleiben. Kompensation: den unvollständigen Job wieder löschen,
+  // damit kein "Geister-Job" ohne Zuweisung liegen bleibt.
+  try {
+    await callSetJobAssignments(data.id, employeeIds);
+  } catch (assignError) {
+    try {
+      await supabase.from("jobs").delete().eq("id", data.id);
+    } catch (compensationError) {
+      if (__DEV__) {
+        console.error(
+          "[createJob] Kompensations-Löschung fehlgeschlagen:",
+          compensationError,
+        );
+      }
+      throw new Error(
+        `Job wurde angelegt, aber die Mitarbeiterzuweisung ist fehlgeschlagen UND ` +
+          `der Job konnte danach nicht automatisch wieder gelöscht werden ` +
+          `(Job-ID ${data.id}). Der Auftrag existiert möglicherweise ohne ` +
+          `Zuweisungen — bitte manuell in Supabase prüfen.`,
+      );
+    }
+
+    const assignMsg =
+      assignError instanceof Error ? assignError.message : String(assignError);
+    throw new Error(
+      `Job konnte nicht mit den gewählten Mitarbeitern angelegt werden ` +
+        `(${assignMsg}). Der unvollständig angelegte Job wurde automatisch ` +
+        `wieder entfernt.`,
+    );
+  }
+
   // Bei Recurring Jobs: konkrete Einzel-Termine für die nächsten 8 Wochen erzeugen.
-  // Fehler hier brechen den Job-Create nicht ab — der Parent existiert bereits.
+  // Fehler hier brechen den Job-Create nicht ab — der Parent existiert bereits
+  // UND ist bereits korrekt zugewiesen (s.o.).
   if (__DEV__) {
     console.log(
       "[createJob] job_type:", schedule.job_type,
@@ -604,19 +697,26 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
     }
   }
 
-  // Wenn ein Mitarbeiter direkt zugewiesen wurde, versuchen wir eine
-  // Push-Nachricht zu schicken. WICHTIG: Der Job ist nach dem erfolgreichen
-  // Insert oben bereits vollständig angelegt — ein Fehler beim Push-Versand
-  // (Netzwerk, Expo-Service down, etc.) darf createJob NICHT fehlschlagen
-  // lassen, sonst zeigt die UI "Fehler" bei einem in Wahrheit bereits
-  // erfolgreich erstellten Job an (Risiko: Admin tippt erneut → Duplikat).
-  // Daher: eigenes try/catch, nur loggen, niemals werfen.
-  if (payload.assigned_to) {
+  // Push-Benachrichtigung: WICHTIG — vorübergehend weiterhin nur EIN
+  // Empfänger (der erste gewählte Mitarbeiter), exakt wie vor Phase 6, wo
+  // ohnehin nur ein einzelner assigned_to existierte. Der Job ist nach dem
+  // erfolgreichen Insert + erfolgreicher Zuweisung oben bereits vollständig
+  // angelegt — ein Fehler beim Push-Versand (Netzwerk, Expo-Service down,
+  // etc.) darf createJob NICHT fehlschlagen lassen, sonst zeigt die UI
+  // "Fehler" bei einem in Wahrheit bereits erfolgreich erstellten Job an
+  // (Risiko: Admin tippt erneut → Duplikat). Daher: eigenes try/catch, nur
+  // loggen, niemals werfen.
+  //
+  // TODO(Phase 8): an ALLE gewählten Mitarbeiter fächern, sobald der
+  // client-seitige Push-Fetch hier durch die notification_outbox/
+  // Dispatcher-Pipeline mit recipient_id ersetzt wird (siehe Roadmap).
+  const primaryEmployeeId = employeeIds[0] ?? null;
+  if (primaryEmployeeId) {
     try {
       const { data: employee } = await supabase
         .from("profiles")
         .select("expo_push_token, full_name")
-        .eq("id", payload.assigned_to)
+        .eq("id", primaryEmployeeId)
         .single();
 
       // Nur senden, wenn wirklich ein Push-Token vorhanden ist
@@ -635,8 +735,9 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
     }
   }
 
-  // Rückgabe im App-Format. Frisch nachlesen, damit `assignees` die vom
-  // Kompatibilitäts-Trigger erzeugte Zuweisung enthält (siehe readBackJob).
+  // Rückgabe im App-Format. Frisch nachlesen, damit `assignees` exakt den
+  // gerade per set_job_assignments geschriebenen Stand widerspiegelt
+  // (siehe readBackJob).
   return {
     job: await readBackJob(data as unknown as JobRow),
     recurringOccurrencesFailed,
@@ -688,11 +789,30 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     throw new Error("Service fehlt.");
   }
 
-  // Terminierung validieren & aufbauen (single vs. recurring)
+  // Terminierung validieren & aufbauen (single vs. recurring). Bewusst VOR
+  // jedem Schreibvorgang (inkl. set_job_assignments unten) — ein
+  // clientseitiger Validierungsfehler darf keine halb angewandte Änderung
+  // hinterlassen.
   const schedule = buildSchedulePayload(input);
+  const employeeIds = normalizeEmployeeIds(input.employeeIds);
+
+  // Zuweisungsmenge ZUERST schreiben — VOR dem jobs-UPDATE und vor
+  // update_job_occurrences weiter unten, damit die Regel-Synchronisierung
+  // (bei recurring Parents) bereits die NEUE Menge sieht und über
+  // inherit_occurrence_assignments an nicht individuell angepasste Termine
+  // weitergibt. Würde man stattdessen zuerst die Regel-Felder speichern und
+  // erst danach die Zuweisung, sähen frisch generierte/synchronisierte
+  // Termine noch die ALTE Menge.
+  //
+  // NICHT TRANSAKTIONAL mit dem jobs-UPDATE danach: schlägt das UPDATE nach
+  // einem erfolgreichen set_job_assignments fehl, bleibt die neue
+  // Zuweisungsmenge gespeichert, während Kundenname/Termin/etc. auf dem
+  // alten Stand bleiben. Es gibt in dieser Phase keine RPC, die beides
+  // atomar zusammenfasst — dieses Risiko ist im Implementierungsbericht
+  // dokumentiert und wird NICHT durch eine neue Migration behoben.
+  await callSetJobAssignments(input.jobId, employeeIds);
 
   const payload: {
-    assigned_to: string | null;
     customer_name: string;
     service_name: string;
     location_address: string;
@@ -705,7 +825,7 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     recurring_days: string[] | null;
     is_active: boolean;
   } = {
-    assigned_to: input.employeeId ?? null,
+    // KEIN assigned_to mehr — siehe createJob() und die Erläuterung oben.
     customer_name: customerName,
     service_name: serviceName,
     location_address: locationAddress,
@@ -730,25 +850,53 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     .select(JOB_SELECT)
     .single();
 
-  if (error) {
-    throw error;
-  }
-
-  // Bei Recurring-Parent-Jobs: zukünftige offene Occurrences löschen und neu erzeugen.
-  // Nur für Parent-Regeln (parent_job_id IS NULL), nicht für Occurrences selbst.
-  // Fehler hier brechen das Update nicht ab — die Regeländerung ist bereits gespeichert.
-  if (input.jobType === "recurring" && !data.parent_job_id) {
-    const { error: occurrenceError } = await supabase.rpc(
+  // Bei Recurring-Parent-Jobs: zukünftige offene Occurrences löschen und neu
+  // erzeugen. Nur für Parent-Regeln (parent_job_id IS NULL), nicht für
+  // Occurrences selbst — und nur, wenn das jobs-UPDATE selbst erfolgreich
+  // war (sonst existiert `data`/`data.parent_job_id` nicht zuverlässig).
+  let occurrenceError: { message: string } | null = null;
+  if (!error && input.jobType === "recurring" && !data.parent_job_id) {
+    const { error: occErr } = await supabase.rpc(
       "update_job_occurrences",
       { parent_job_id_input: input.jobId }
     );
-    if (occurrenceError) {
-      console.error("[updateJob] update_job_occurrences fehlgeschlagen:", occurrenceError.message, occurrenceError);
+    if (occErr) {
+      occurrenceError = occErr;
+      console.error("[updateJob] update_job_occurrences fehlgeschlagen:", occErr.message, occErr);
     }
   }
 
-  // Frisch nachlesen: der RETURNING-Embed traegt hier noch die ALTE
-  // Zuweisungsmenge (siehe readBackJob).
+  if (error || occurrenceError) {
+    // TEILERFOLG: set_job_assignments oben ist bereits committed — jobs-
+    // UPDATE und update_job_occurrences sind separate Requests ohne
+    // gemeinsame Transaktion mit Schritt 1. KEIN automatischer Retry, KEIN
+    // Vortäuschen eines vollständigen Rollbacks. Stattdessen den echten
+    // Serverstand frisch nachlesen und einen dedizierten Fehlertyp werfen,
+    // den Aufrufer (JobContext/EditJobScreen) von einem gewöhnlichen Fehler
+    // unterscheiden und passend anzeigen können.
+    const fresh = await getJobById(input.jobId);
+
+    const reasons: string[] = [];
+    if (error) {
+      reasons.push(
+        "die übrigen Änderungen an diesem Auftrag (z. B. Kunde, Ort, Termin) wurden NICHT gespeichert",
+      );
+    }
+    if (occurrenceError) {
+      reasons.push(
+        "die Termine des Dauerauftrags konnten nicht an die neue Zuweisung angeglichen werden",
+      );
+    }
+
+    throw new PartialUpdateError(
+      `Die Mitarbeiterzuweisung wurde gespeichert, aber ${reasons.join(" und ")}. ` +
+        `Bitte prüfen Sie den aktuellen Stand und speichern Sie bei Bedarf erneut.`,
+      fresh,
+    );
+  }
+
+  // Frisch nachlesen, damit `assignees` exakt den gerade per
+  // set_job_assignments geschriebenen Stand widerspiegelt (siehe readBackJob).
   return readBackJob(data as unknown as JobRow);
 }
 

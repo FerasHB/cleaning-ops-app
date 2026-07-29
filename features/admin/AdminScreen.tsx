@@ -174,7 +174,7 @@ export default function AdminScreen() {
         customerName: values.customerName.trim(),
         location: values.location.trim(),
         service: values.service.trim(),
-        employeeId: values.employeeId,
+        employeeIds: values.employeeIds,
         notes: values.notes.trim() || null,
       };
 

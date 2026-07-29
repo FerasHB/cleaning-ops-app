@@ -6,7 +6,8 @@ export type JobFormValues = {
     customerName: string;
     location: string;
     service: string;
-    employeeId: string | null;
+    // Zuweisungsmenge (Phase 6 Schreibpfad). Leer = niemandem zugewiesen.
+    employeeIds: string[];
     notes: string;
 
     // ── Terminierung ──
@@ -30,7 +31,7 @@ const emptyValues: JobFormValues = {
     customerName: "",
     location: "",
     service: "",
-    employeeId: null,
+    employeeIds: [],
     notes: "",
     jobType: "single",
     singleDateTime: null,

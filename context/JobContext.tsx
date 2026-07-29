@@ -8,6 +8,7 @@ import {
   setEmployeeActive as setEmployeeActiveService,
   getJobs,
   getScheduleOccurrences,
+  PartialUpdateError,
   startJob as startJobService,
   updateJob as updateJobService,
 } from "@/services/jobs/jobs.service";
@@ -57,7 +58,7 @@ type JobContextType = {
     customerName: string;
     location: string;
     service: string;
-    employeeId?: string | null;
+    employeeIds?: string[];
     notes?: string | null;
     scheduledStart?: string | null;
     scheduledEnd?: string | null;
@@ -499,7 +500,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (__DEV__) {
-        console.log("Creating job with employeeId:", input.employeeId);
+        console.log("Creating job with employeeIds:", input.employeeIds);
       }
 
       return { recurringOccurrencesFailed };
@@ -515,7 +516,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       customerName: string;
       location: string;
       service: string;
-      employeeId?: string | null;
+      employeeIds?: string[];
       notes?: string | null;
       scheduledStart?: string | null;
       scheduledEnd?: string | null;
@@ -540,6 +541,31 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           return nextJobs;
         });
       } catch (err) {
+        // Teilerfolg (PartialUpdateError): die Zuweisungsmenge wurde bereits
+        // serverseitig geschrieben, auch wenn der restliche Speichervorgang
+        // fehlgeschlagen ist. Den frisch nachgelesenen Stand trotzdem
+        // übernehmen, damit die UI (z. B. EditJobScreen) nicht auf dem
+        // Vor-Speichern-Zustand hängen bleibt — und danach den Fehler
+        // unverändert weiterreichen, damit der Aufrufer den Teilerfolg
+        // sichtbar macht (kein stiller Erfolg, kein automatischer Retry).
+        if (err instanceof PartialUpdateError && err.job) {
+          const partiallyUpdatedJob = err.job;
+          setJobs((prevJobs) => {
+            const nextJobs: Job[] = prevJobs.map((job): Job =>
+              job.id === partiallyUpdatedJob.id ? partiallyUpdatedJob : job,
+            );
+
+            saveCachedJobs(nextJobs).catch((cacheErr) =>
+              console.error(
+                "Failed to cache jobs after partial update:",
+                cacheErr,
+              ),
+            );
+
+            return nextJobs;
+          });
+        }
+
         console.error("Failed to update job:", err);
         throw err;
       }
