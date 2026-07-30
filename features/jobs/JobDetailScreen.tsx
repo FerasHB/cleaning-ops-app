@@ -2,48 +2,48 @@
 // Detail-Ansicht eines Jobs mit allen Infos und kontextabhängigen Aktionen.
 // Aktionen (Start/Complete/Edit) nutzen weiter den bestehenden JobContext —
 // keine Änderungen an Supabase-/Offline-Sync-Logik.
+//
+// "Job Details 2.0": die Präsentationsschicht ist auf kleine, reine
+// Anzeige-Komponenten in features/jobs/components/ aufgeteilt (siehe unten).
+// Dieser Screen bleibt der Orchestrator: er hält Daten/State/Handler und
+// entscheidet NUR, WELCHE Komponente wann sichtbar ist — die Berechtigungs-
+// und Aktions-Logik selbst ist unverändert gegenüber der Vorversion.
 
 import {
   ActionMenuSheet,
-  AppHeader,
-  Badge,
-  Button,
-  Card,
   EmptyState,
   ErrorBanner,
-  InfoRow,
   LoadingScreen,
   OfflineBanner,
-  StatusBadge,
   type ActionMenuItem,
 } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
+import { AssignedEmployeesCard } from "@/features/jobs/components/AssignedEmployeesCard";
+import { JobActionFooter } from "@/features/jobs/components/JobActionFooter";
 import { JobComments } from "@/features/jobs/components/JobComments";
+import { JobDetailHeader } from "@/features/jobs/components/JobDetailHeader";
+import { JobLocationCard } from "@/features/jobs/components/JobLocationCard";
+import { JobNotesCard } from "@/features/jobs/components/JobNotesCard";
+import { JobPendingActionHint } from "@/features/jobs/components/JobPendingActionHint";
 import { JobPhotos } from "@/features/jobs/components/JobPhotos";
+import { JobScheduleCard } from "@/features/jobs/components/JobScheduleCard";
+import { JobServiceDetailsCard } from "@/features/jobs/components/JobServiceDetailsCard";
+import { JobStatusOverview } from "@/features/jobs/components/JobStatusOverview";
+import { JobTimelineCard } from "@/features/jobs/components/JobTimelineCard";
 import { RuleOccurrences } from "@/features/jobs/components/RuleOccurrences";
 import {
   getJobById,
   getJobOccurrences,
   setRecurringRuleActive,
 } from "@/services/jobs/jobs.service";
-import { WorkedTimeCard } from "@/features/jobs/components/WorkedTimeCard";
-import { formatRecurringDays } from "@/utils/recurrence";
-import {
-  canRunJobActions,
-  formatAssigneesFull,
-  getAssignees,
-  isPrimaryAssignee,
-  UNASSIGNED_LABEL,
-} from "@/utils/jobAssignees";
+import { canRunJobActions, isPrimaryAssignee } from "@/utils/jobAssignees";
 import type { Job } from "@/types/job";
-import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Linking,
@@ -51,8 +51,6 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import {
@@ -60,26 +58,6 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
-
-// ─────────────────────────────────────────────
-// Datums-/Zeit-Formatierung
-// ─────────────────────────────────────────────
-function formatDateTime(iso?: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (isNaN(date.getTime())) return null;
-
-  const datePart = date.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-  const timePart = date.toLocaleTimeString("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${datePart} um ${timePart}`;
-}
 
 // ─────────────────────────────────────────────
 // JobDetailScreen
@@ -113,6 +91,7 @@ export default function JobDetailScreen() {
     deleteJob,
     loading,
     online,
+    pendingActions,
     markJobCommentsAsRead,
   } = useJobs();
 
@@ -246,7 +225,7 @@ export default function JobDetailScreen() {
           barStyle={theme.isDark ? "light-content" : "dark-content"}
           backgroundColor={theme.colors.background}
         />
-        <AppHeader title="Job-Details" showBack />
+        <JobDetailHeader showMenu={false} menuBusy={false} onMenuPress={() => {}} />
         <View style={styles.emptyWrap}>
           <EmptyState
             title="Job nicht gefunden"
@@ -387,19 +366,6 @@ export default function JobDetailScreen() {
     });
   };
 
-  // ── Formatierte Werte
-  const isRecurring = job.jobType === "recurring";
-  const recurringDaysText = formatRecurringDays(job.recurringDays);
-  const timeText = job.startTime ? `${job.startTime} Uhr` : "—";
-  const scheduledStartText =
-    formatDateTime(job.scheduledStart) ?? "Kein Termin geplant";
-  // ANZEIGE: vollständige Zuweisungsmenge (Phase 5). Gelöschte Konten
-  // erscheinen mit „(ehemalig)", damit der Nachweis lesbar bleibt.
-  const assignees = getAssignees(job);
-  const employeeText =
-    assignees.length > 0 ? formatAssigneesFull(job) : UNASSIGNED_LABEL;
-  const employeeLabel = assignees.length > 1 ? "Mitarbeitende" : "Mitarbeiter";
-
   // BERECHTIGUNG Start/Abschluss (Phase 7, „Shared Job Time"): JEDER
   // Zugewiesene darf, nicht nur der Legacy-Primär — canRunJobActions spiegelt
   // exakt das Prädikat von start_own_job/complete_own_job (Rolle, job_type,
@@ -429,36 +395,10 @@ export default function JobDetailScreen() {
         backgroundColor={theme.colors.background}
       />
 
-      {/* ── Sticky-Header ── */}
-      {/* Header-Rechts: Aktions-Menü der Regel (früher: inertes „Admin"-Badge,
-          das nur die ohnehin bekannte Rolle wiederholte). */}
-      <AppHeader
-        title="Job-Details"
-        showBack
-        right={
-          isAdmin && isParentRule ? (
-            <TouchableOpacity
-              style={styles.headerMenuBtn}
-              onPress={() => setMenuOpen(true)}
-              disabled={ruleBusy}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel="Aktionen für diesen Dauerauftrag"
-              accessibilityHint="Öffnet Bearbeiten, Aktivieren/Deaktivieren und Löschen"
-            >
-              {ruleBusy ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              ) : (
-                <Ionicons
-                  name="ellipsis-horizontal"
-                  size={20}
-                  color={theme.colors.onSurface}
-                />
-              )}
-            </TouchableOpacity>
-          ) : undefined
-        }
+      <JobDetailHeader
+        showMenu={isAdmin && isParentRule}
+        menuBusy={ruleBusy}
+        onMenuPress={() => setMenuOpen(true)}
       />
 
       <KeyboardAvoidingView
@@ -472,40 +412,12 @@ export default function JobDetailScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ── Hero: Kunden-Name + Status ──
-            Bei Parent-Regeln ist der Job-Status bedeutungslos (er gilt global
-            für die Regel, nicht für einen konkreten Tag) — dort zählt
-            ausschließlich Aktiv/Inaktiv. Deshalb genau EIN Badge, und die
-            frühere Zeile „Status: Aktiv" in der Detail-Karte entfällt. */}
-        <View style={styles.hero}>
-          <Text style={styles.customerName}>{job.customerName}</Text>
-          {isParentRule ? (
-            <Badge
-              label={job.isActive ? "Aktiv" : "Inaktiv"}
-              variant={job.isActive ? "success" : "default"}
-            />
-          ) : (
-            <StatusBadge status={job.status} />
-          )}
-        </View>
+        {/* 1 — Hero: Kunde/Objekt, Status, Service, Termin */}
+        <JobStatusOverview job={job} isParentRule={isParentRule} />
 
-        {/* Kompakter Typ-Hinweis statt des früheren großen blauen
-            Erklär-Banners (ganzer Absatz „Dies ist eine Vorlage …"). */}
-        {isParentRule ? (
-          <View style={styles.ruleTypeRow}>
-            <Ionicons
-              name="repeat-outline"
-              size={14}
-              color={theme.colors.primary}
-            />
-            <Text style={styles.ruleTypeText}>Wiederkehrender Auftrag</Text>
-          </View>
-        ) : null}
-
-        {/* ── Save-Status ── */}
+        {/* Globaler Speicher-/Verbindungsstatus + Aktions-Fehler bleiben
+            oben — Chrome, kein Inhalt, muss ohne Scrollen sichtbar sein. */}
         <OfflineBanner />
-
-        {/* ── Fehler-Banner (Aktionen) ── */}
         {actionError ? (
           <ErrorBanner
             message={actionError}
@@ -513,91 +425,26 @@ export default function JobDetailScreen() {
           />
         ) : null}
 
-        {/* ── Arbeitszeit — prominent, direkt nach dem Hero ── */}
-        <WorkedTimeCard job={job} />
+        {/* 2 — Adresse + Maps */}
+        <JobLocationCard
+          location={job.location}
+          onOpenInMaps={handleOpenInMaps}
+        />
 
-        {/* ── Details-Karte ── */}
-        <Card padding={theme.spacing.lg} style={styles.card}>
-          <InfoRow label="Service" value={job.service} icon="construct-outline" />
-          <View style={styles.rowDivider} />
+        {/* 3 — Zugewiesene Mitarbeitende */}
+        <AssignedEmployeesCard job={job} />
 
-          <InfoRow
-            label="Adresse"
-            value={job.location || "—"}
-            icon="location-outline"
-          />
-          {job.location ? (
-            <View style={styles.mapsBtnRow}>
-              <Button
-                label="In Maps öffnen"
-                variant="secondary"
-                icon="map-outline"
-                fullWidth={false}
-                onPress={handleOpenInMaps}
-                style={{ paddingHorizontal: theme.spacing.lg }}
-              />
-            </View>
-          ) : null}
-          <View style={styles.rowDivider} />
+        {/* 4 — Zeitlicher Verlauf (Start/Ende/Akteure/Dauer bzw. geplant) */}
+        {!isParentRule ? <JobTimelineCard job={job} /> : null}
 
-          {isRecurring ? (
-            // Auftragstyp-Zeile entfällt: der Typ steht bereits als kompakter
-            // Hinweis unter dem Titel. Hier nur noch entscheidungsrelevante
-            // Terminierung.
-            <>
-              <InfoRow
-                label="Wochentage"
-                value={recurringDaysText}
-                icon="calendar-number-outline"
-              />
-              <View style={styles.rowDivider} />
-              <InfoRow label="Uhrzeit" value={timeText} icon="time-outline" />
-              <View style={styles.rowDivider} />
-            </>
-          ) : (
-            <>
-              <InfoRow
-                label="Auftragstyp"
-                value="Einmalig"
-                icon="calendar-outline"
-              />
-              <View style={styles.rowDivider} />
-              <InfoRow
-                label="Geplanter Start"
-                value={scheduledStartText}
-                icon="calendar-outline"
-              />
-              <View style={styles.rowDivider} />
-            </>
-          )}
+        {/* 5 — Service + Terminierung/Wiederholung */}
+        <JobServiceDetailsCard service={job.service} />
+        <JobScheduleCard job={job} isParentRule={isParentRule} />
 
-          <InfoRow
-            label={employeeLabel}
-            value={employeeText}
-            icon={assignees.length > 1 ? "people-outline" : "person-outline"}
-            // Mehrfachzuweisungen dürfen nicht abgeschnitten werden — der
-            // Detail-Screen ist die Stelle, an der die Menge vollständig
-            // nachvollziehbar sein muss.
-            valueNumberOfLines={6}
-          />
-        </Card>
+        {/* 6 — Notizen */}
+        {job.notes ? <JobNotesCard notes={job.notes} /> : null}
 
-        {/* ── Notizen ── */}
-        {job.notes ? (
-          <Card padding={theme.spacing.lg} style={styles.card}>
-            <View style={styles.notesLabelRow}>
-              <Ionicons
-                name="document-text-outline"
-                size={12}
-                color={theme.colors.primary}
-              />
-              <Text style={styles.notesLabel}>NOTIZEN</Text>
-            </View>
-            <Text style={styles.notesText}>{job.notes}</Text>
-          </Card>
-        ) : null}
-
-        {/* ── Generierte Termine (nur für Admin bei Parent-Recurring-Jobs) ── */}
+        {/* Generierte Termine (nur Admin bei Parent-Recurring-Jobs) */}
         {isParentRule && isAdmin ? (
           <RuleOccurrences
             occurrences={occurrences}
@@ -606,69 +453,35 @@ export default function JobDetailScreen() {
           />
         ) : null}
 
-        {/* ── Fotos (Upload + Anzeige, online-only) ── */}
+        {/* 7 — Fotos (Upload + Anzeige, online-only, unverändert) */}
         <JobPhotos
           jobId={job.id}
           canUpload={canUploadPhotos}
           isOnline={online}
         />
 
-        {/* ── Kommentare (append-only, online-only) ── */}
-        {/* Schreibrecht = Legacy-Primär oder Admin (RLS-Insert-Policy).
-            Sekundär Zugewiesene lesen mit, sehen aber kein Eingabefeld. */}
+        {/* 8 — Kommentare (append-only, online-only, unverändert) */}
         <JobComments
           jobId={job.id}
           canComment={isAdmin || isPrimaryAssignee(job, profile?.id)}
           onInputFocus={handleCommentFocus}
         />
 
-        {/* ── Aktionen ── */}
-        <View style={styles.actions}>
-          {canStart ? (
-            <Button
-              label="Job starten"
-              icon="play"
-              loading={submitting}
-              disabled={submitting}
-              onPress={handleStart}
-            />
-          ) : null}
+        {/* 9 — Job-spezifischer Offline-Hinweis, direkt vor den Aktionen,
+            auf die er sich bezieht */}
+        <JobPendingActionHint jobId={job.id} pendingActions={pendingActions} />
 
-          {canComplete ? (
-            <Button
-              label="Job abschließen"
-              icon="checkmark"
-              loading={submitting}
-              disabled={submitting}
-              onPress={handleComplete}
-            />
-          ) : null}
-
-          {isDone ? (
-            <View style={styles.doneInfo}>
-              <Ionicons
-                name="checkmark-circle"
-                size={20}
-                color={theme.colors.statusCompleted}
-              />
-              <Text style={styles.doneInfoText}>
-                Dieser Job ist abgeschlossen.
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Bei Parent-Regeln liegt „Bearbeiten" im Header-Menü — kein
-              zweiter Button für dieselbe Aktion. */}
-          {isAdmin && !isParentRule ? (
-            <Button
-              label="Bearbeiten"
-              variant="secondary"
-              icon="create-outline"
-              disabled={submitting}
-              onPress={handleEdit}
-            />
-          ) : null}
-        </View>
+        {/* 10 — Aktionen */}
+        <JobActionFooter
+          canStart={canStart}
+          canComplete={canComplete}
+          isDone={isDone}
+          submitting={submitting}
+          onStart={handleStart}
+          onComplete={handleComplete}
+          showEdit={isAdmin && !isParentRule}
+          onEdit={handleEdit}
+        />
 
         <View style={{ height: theme.spacing.xl }} />
       </ScrollView>
@@ -709,105 +522,6 @@ function createStyles(theme: AppTheme) {
       paddingTop: theme.spacing.lg,
       paddingBottom: 32,
       gap: theme.spacing.md,
-    },
-
-    // Header rechts: Aktions-Menü — sichtbarer runder Hintergrund, damit der
-    // Button als Bedienelement lesbar ist und nicht wie ein Meta-Icon wirkt.
-    headerMenuBtn: {
-      width: 36,
-      height: 36,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.surfaceContainerHigh,
-      borderWidth: 1,
-      borderColor: theme.colors.outlineVariant,
-    },
-
-    // Hero-Bereich
-    hero: {
-      gap: theme.spacing.sm,
-      paddingVertical: theme.spacing.sm,
-    },
-    customerName: {
-      fontSize: theme.typography.size.xxl,
-      fontFamily: theme.typography.family.bold,
-      fontWeight: theme.typography.weight.bold,
-      color: theme.colors.onSurface,
-      letterSpacing: theme.typography.letterSpacing.tight,
-      lineHeight: theme.typography.lineHeight.xxl,
-    },
-
-    // Cards
-    card: {
-      gap: theme.spacing.md,
-    },
-    rowDivider: {
-      height: 1,
-      backgroundColor: theme.colors.outlineVariant,
-    },
-    mapsBtnRow: {
-      flexDirection: "row",
-      marginTop: 4,
-    },
-
-    // Notizen
-    notesLabelRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      marginBottom: 6,
-    },
-    notesLabel: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.outline,
-      letterSpacing: theme.typography.letterSpacing.wider,
-    },
-    notesText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.onSurface,
-      lineHeight: theme.typography.lineHeight.sm,
-    },
-
-    // Aktionen
-    actions: {
-      gap: theme.spacing.sm,
-      marginTop: theme.spacing.xs,
-    },
-    doneInfo: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: theme.spacing.sm,
-      backgroundColor: theme.colors.statusCompletedBg,
-      borderWidth: 1,
-      borderColor: theme.colors.statusCompletedBorder,
-      borderRadius: theme.radius.md,
-      paddingVertical: theme.spacing.md,
-      minHeight: theme.spacing.tapTarget,
-    },
-    doneInfoText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.statusCompleted,
-    },
-
-    // Kompakter Typ-Hinweis (ersetzt das große Erklär-Banner)
-    ruleTypeRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginTop: -theme.spacing.xs,
-    },
-    ruleTypeText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.primary,
     },
   });
 }
