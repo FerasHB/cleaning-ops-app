@@ -6,8 +6,13 @@
 // Termin (bereits vorhandenes scheduledStart, keine neue Abfrage), damit
 // Mitarbeitende auch dann sehen, worauf sich der Auftrag bezieht.
 //
-// Wird vom Screen NUR für echte Termine gerendert (nie für Parent-Regeln —
-// dort ist "gestartet/geplant" bedeutungslos).
+// WICHTIG — die Arbeitszeit-Anzeige hängt NICHT an isParentRule: sobald
+// startedAt gesetzt ist, rendert WorkedTimeCard, genau wie vor der
+// 2.0-Aufteilung. Eine Parent-Regel mit Start-/Abschlusszeiten ist eine
+// Datenanomalie (eine Regel wird nie ausgeführt) — dann muss der Wert
+// sichtbar bleiben statt still verborgen zu werden. Nur der „noch nicht
+// gestartet"-Platzhalter ist auf ausführbare Termine begrenzt
+// (`showPlaceholder`), weil er für eine Regel-Vorlage bedeutungslos wäre.
 
 import { Card } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
@@ -30,15 +35,23 @@ type Props = {
     | "assignees"
     | "scheduledStart"
   >;
+  /**
+   * Darf der „noch nicht gestartet"-Platzhalter erscheinen? Nur für
+   * ausführbare Termine — bei Parent-Regeln false. Beeinflusst NICHT die
+   * WorkedTimeCard (siehe Kopfkommentar).
+   */
+  showPlaceholder: boolean;
 };
 
-export function JobTimelineCard({ job }: Props) {
+export function JobTimelineCard({ job, showPlaceholder }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   if (job.startedAt) {
     return <WorkedTimeCard job={job} />;
   }
+
+  if (!showPlaceholder) return null;
 
   const scheduledText = formatDateTimeDE(job.scheduledStart);
 

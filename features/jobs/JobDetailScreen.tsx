@@ -434,8 +434,11 @@ export default function JobDetailScreen() {
         {/* 3 — Zugewiesene Mitarbeitende */}
         <AssignedEmployeesCard job={job} />
 
-        {/* 4 — Zeitlicher Verlauf (Start/Ende/Akteure/Dauer bzw. geplant) */}
-        {!isParentRule ? <JobTimelineCard job={job} /> : null}
+        {/* 4 — Zeitlicher Verlauf (Start/Ende/Akteure/Dauer bzw. geplant).
+            Bewusst NICHT an isParentRule gehängt: eine bereits gestartete
+            Regel ist eine Anomalie, die sichtbar bleiben muss. Nur der
+            Platzhalter vor dem Start gilt für ausführbare Termine. */}
+        <JobTimelineCard job={job} showPlaceholder={!isParentRule} />
 
         {/* 5 — Service + Terminierung/Wiederholung */}
         <JobServiceDetailsCard service={job.service} />
