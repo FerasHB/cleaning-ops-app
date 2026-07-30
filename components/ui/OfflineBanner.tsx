@@ -11,9 +11,12 @@ import { useJobs } from "@/context/JobContext";
 import type { PendingJobAction } from "@/services/offline/jobs.queue";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
+  Animated,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -61,6 +64,32 @@ function actionLabel(action: PendingJobAction): string {
   }
 }
 
+// Für Screenreader: derselbe Text, der auch sichtbar im Banner steht (siehe
+// `config.title` unten) — als eigene Funktion, damit die Animations-Effect
+// den Text kennt, ohne `config` (das von der aktuellen Theme-Farbe abhängt)
+// vorziehen zu müssen.
+function stateAnnouncement(state: SaveState, pendingCount: number): string {
+  switch (state) {
+    case "offline":
+      return "Kein Internet. Änderungen gehen nicht verloren.";
+    case "saving":
+      return "Änderungen werden gespeichert.";
+    case "error":
+      return "Änderungen konnten nicht gespeichert werden.";
+    case "pending":
+      return pendingLabel(pendingCount);
+    case "saved":
+      return "Alles gespeichert.";
+  }
+}
+
+// ── Animation: Timing für das Ein-/Ausblenden des Banners ─────────────────
+const ENTER_DURATION_MS = 220;
+const EXIT_DURATION_MS = 250;
+// Wie lange die "Alles gespeichert"-Bestätigung stehen bleibt, bevor sie
+// ausblendet — sonst verschwindet sie, bevor man sie lesen kann.
+const SAVED_HOLD_MS = 1500;
+
 export function OfflineBanner() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -79,11 +108,88 @@ export function OfflineBanner() {
 
   const state = deriveSaveState({ online, isSyncing, syncFailed, pendingCount });
 
-  // Online & alles gespeichert → kein volles Banner. Dieser Zustand wird
-  // dezent über <SaveStatusBadge/> oben rechts im Header angezeigt.
-  // Das volle Banner bleibt den wichtigen Zuständen vorbehalten
-  // (offline / saving / error / pending).
-  if (state === "saved") return null;
+  // ── Animation: sanftes Ein-/Ausblenden bei Statuswechsel ──────────────
+  // Banner bleibt gemountet, solange state !== "saved" ODER die
+  // Ausblend-Animation noch läuft. Beim Wechsel zu "saved" zeigt es kurz
+  // die Bestätigung (SAVED_HOLD_MS), bevor es animiert ausblendet, statt
+  // abrupt zu verschwinden (frühere Version: `if (state === "saved")
+  // return null;` sofort beim Statuswechsel).
+  const [mounted, setMounted] = useState(state !== "saved");
+  const animProgress = useRef(
+    new Animated.Value(state !== "saved" ? 1 : 0),
+  ).current;
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runningAnim = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    runningAnim.current?.stop();
+
+    // iOS: VoiceOver bekommt Statuswechsel nicht zuverlässig über
+    // accessibilityRole="alert" bei Prop-Updates mit — explizit ansagen.
+    // Android: übernimmt accessibilityLiveRegion="polite" auf dem Banner
+    // selbst (siehe unten), daher hier nicht doppelt ansagen.
+    if (Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        stateAnnouncement(state, pendingCount),
+      );
+    }
+
+    if (state !== "saved") {
+      setMounted(true);
+      runningAnim.current = Animated.timing(animProgress, {
+        toValue: 1,
+        duration: ENTER_DURATION_MS,
+        useNativeDriver: true,
+      });
+      runningAnim.current.start();
+    } else {
+      hideTimer.current = setTimeout(() => {
+        runningAnim.current = Animated.timing(animProgress, {
+          toValue: 0,
+          duration: EXIT_DURATION_MS,
+          useNativeDriver: true,
+        });
+        runningAnim.current.start(({ finished }) => {
+          if (finished) setMounted(false);
+        });
+      }, SAVED_HOLD_MS);
+    }
+
+    return () => {
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+        hideTimer.current = null;
+      }
+    };
+    // animProgress ist ein stabiler Ref-Wert, absichtlich nicht in den Deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, pendingCount]);
+
+  // Läuft eine Animation noch, wenn die Komponente verschwindet (z. B. Navi-
+  // gation weg vom Screen mitten im Ausblenden) — sauber stoppen.
+  useEffect(() => {
+    return () => {
+      runningAnim.current?.stop();
+    };
+  }, []);
+
+  if (!mounted) return null;
+
+  const animatedStyle = {
+    opacity: animProgress,
+    transform: [
+      {
+        translateY: animProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-12, 0],
+        }),
+      },
+    ],
+  };
 
   // Farb-/Icon-/Text-Konfiguration je Zustand (alles über Theme-Tokens)
   const config = {
@@ -133,11 +239,14 @@ export function OfflineBanner() {
 
   return (
     <>
-      <View
+      <Animated.View
         style={[
           styles.banner,
           { backgroundColor: config.bg, borderColor: config.border },
+          animatedStyle,
         ]}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
       >
         <View style={styles.left}>
           <Ionicons name={config.icon} size={18} color={config.fg} />
@@ -176,7 +285,7 @@ export function OfflineBanner() {
             </Text>
           </TouchableOpacity>
         ) : null}
-      </View>
+      </Animated.View>
 
       <Modal
         visible={detailsOpen}
