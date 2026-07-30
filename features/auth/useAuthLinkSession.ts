@@ -22,6 +22,7 @@
 
 import { useAuthLinkUrl } from "@/features/auth/AuthLinkUrlProvider";
 import { supabase } from "@/lib/supabase";
+import { toFriendlyAuthLinkErrorMessage } from "@/utils/authErrorMessages";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -104,7 +105,13 @@ function firstString(value: string | string[] | undefined): string {
   return value ?? "";
 }
 
-export function useAuthLinkSession(defaultInvalidMessage: string): {
+export function useAuthLinkSession(
+  defaultInvalidMessage: string,
+  // Eigene Meldung für den Fall, dass Supabase den Link explizit als
+  // abgelaufen kennzeichnet (error_code/error_description enthält
+  // "expired") — fehlt sie, wird defaultInvalidMessage auch dafür verwendet.
+  expiredMessage: string = defaultInvalidMessage,
+): {
   status: AuthLinkStatus;
   invalidMessage: string;
   /** Nochmals die Kaltstart-URL auswerten (z.B. wenn der Deep-Link verzögert ankam). */
@@ -183,11 +190,18 @@ export function useAuthLinkSession(defaultInvalidMessage: string): {
           recovery.errorCode ?? "?",
           recovery.errorDescription ?? "",
         );
+        // Supabase liefert error/error_description als englischen,
+        // technischen Text (z.B. "Email link is invalid or has expired") —
+        // NIE direkt anzeigen, sondern nur zur Unterscheidung
+        // ungültig/abgelaufen verwenden (siehe toFriendlyAuthLinkErrorMessage).
         finish(
           "invalid",
-          recovery.errorDescription
-            ? recovery.errorDescription.replace(/\+/g, " ")
-            : defaultInvalidMessage,
+          toFriendlyAuthLinkErrorMessage(
+            recovery.errorCode,
+            recovery.errorDescription?.replace(/\+/g, " "),
+            defaultInvalidMessage,
+            expiredMessage,
+          ),
         );
         return;
       }
@@ -233,7 +247,7 @@ export function useAuthLinkSession(defaultInvalidMessage: string): {
         finish("invalid", defaultInvalidMessage);
       }
     },
-    [finish, readySessionOrInvalid, defaultInvalidMessage],
+    [finish, readySessionOrInvalid, defaultInvalidMessage, expiredMessage],
   );
 
   // Unabhängiger Watchdog: steht der Screen nach RECHECK_TIMEOUT_MS immer noch

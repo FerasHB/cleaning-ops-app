@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { setupCompanyForAdmin } from "@/services/company/setupCompanyForAdmin";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 
 type RegisterAdminInput = {
     fullName: string;
@@ -45,7 +46,7 @@ export async function registerAdmin({
     });
 
     if (error) {
-        throw new Error(error.message || "Registrierung fehlgeschlagen.");
+        throw new Error(toFriendlyAuthErrorMessage(error, "Registrierung fehlgeschlagen."));
     }
 
     if (!data.user) {

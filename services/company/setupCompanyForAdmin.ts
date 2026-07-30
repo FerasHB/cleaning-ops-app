@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 
 export async function setupCompanyForAdmin(companyName: string): Promise<string> {
   const trimmedName = companyName.trim();
@@ -13,7 +14,7 @@ export async function setupCompanyForAdmin(companyName: string): Promise<string>
 
   if (error) {
     console.error("setupCompanyForAdmin RPC error:", error);
-    throw new Error(error.message || "Firma konnte nicht erstellt werden.");
+    throw new Error(toFriendlyAuthErrorMessage(error, "Firma konnte nicht erstellt werden."));
   }
 
   if (typeof data !== "string" || !data) {
