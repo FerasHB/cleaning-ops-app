@@ -115,3 +115,37 @@ export function formatDurationLong(totalMinutes: number): string {
   if (hours === 0) return `${minutes} min`;
   return `${hours}h ${String(minutes).padStart(2, "0")}min`;
 }
+
+// ─────────────────────────────────────────────
+// Anzeige-Formatierung (Job-Detail)
+// ─────────────────────────────────────────────
+
+/**
+ * Formatiert einen ISO-Zeitstempel als "dd.mm.yyyy um HH:mm" (de-DE).
+ * Immer das volle Datum - fuer die "heute"-relative Kurzform siehe die
+ * separate Logik in JobComments (dort bewusst eigenstaendig, andere Regel).
+ */
+export function formatDateTimeDE(iso?: string | null): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return null;
+
+  const datePart = date.toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${datePart} um ${timePart}`;
+}
+
+/** Formatiert ein "YYYY-MM-DD"-Datum (ohne Uhrzeit) als "dd.mm.yyyy". */
+export function formatDateOnlyDE(dateKey?: string | null): string | null {
+  if (!dateKey) return null;
+  const [y, m, d] = dateKey.slice(0, 10).split("-");
+  if (!y || !m || !d) return null;
+  return `${d}.${m}.${y}`;
+}
