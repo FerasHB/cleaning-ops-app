@@ -1,6 +1,7 @@
 import { ErrorBanner, PasswordInput } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import type { AppTheme } from "@/constants/theme";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -50,15 +51,17 @@ export default function ChangePasswordScreen() {
       });
 
       if (updateError) {
-        setError(updateError.message);
+        setError(
+          toFriendlyAuthErrorMessage(updateError, "Passwort konnte nicht geändert werden."),
+        );
         return;
       }
 
       Alert.alert("Gespeichert", "Dein Passwort wurde erfolgreich geändert.", [
         { text: "OK", onPress: () => router.back() },
       ]);
-    } catch {
-      setError("Ein unbekannter Fehler ist aufgetreten. Bitte versuche es erneut.");
+    } catch (err) {
+      setError(toFriendlyAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }

@@ -10,6 +10,7 @@ import type { AppTheme } from "@/constants/theme";
 import { useAuthLinkSession } from "@/features/auth/useAuthLinkSession";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { validateNewPassword } from "@/utils/passwordValidation";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -29,13 +30,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const DEFAULT_INVALID_MESSAGE =
-  "Diese Einladung ist ungültig oder abgelaufen. Bitte wende dich an deinen Administrator für eine neue Einladung.";
+  "Diese Einladung ist ungültig. Bitte wende dich an deinen Administrator für eine neue Einladung.";
+const EXPIRED_INVITE_MESSAGE =
+  "Diese Einladung ist abgelaufen. Bitte bitte deinen Administrator, dir eine neue Einladung zu senden.";
 
 export default function AcceptInviteScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { status, invalidMessage, recheck } = useAuthLinkSession(
     DEFAULT_INVALID_MESSAGE,
+    EXPIRED_INVITE_MESSAGE,
   );
 
   const [formSuccess, setFormSuccess] = useState(false);
@@ -60,7 +64,9 @@ export default function AcceptInviteScreen() {
       });
 
       if (error) {
-        setFormError(error.message || "Passwort konnte nicht gesetzt werden.");
+        setFormError(
+          toFriendlyAuthErrorMessage(error, "Passwort konnte nicht gesetzt werden."),
+        );
         return;
       }
 
@@ -79,10 +85,8 @@ export default function AcceptInviteScreen() {
       await supabase.auth.signOut().catch(() => {});
 
       setFormSuccess(true);
-    } catch {
-      setFormError(
-        "Ein unbekannter Fehler ist aufgetreten. Bitte versuche es erneut.",
-      );
+    } catch (err) {
+      setFormError(toFriendlyAuthErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
