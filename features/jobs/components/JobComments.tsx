@@ -14,6 +14,7 @@
 import { Button, Card, ErrorBanner, Input } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useJobComments } from "@/features/jobs/hooks/useJobComments";
+import { formatDateISO, isSameLocalDate } from "@/utils/date";
 import { isNetworkError } from "@/utils/networkError";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,20 +23,29 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 // ─────────────────────────────────────────────
 // Datums-/Zeit-Formatierung (analog JobDetailScreen)
+// Heutige Kommentare: kompaktes "Heute um HH:mm" statt vollem Datum.
+// Tagesvergleich über die zentralen Helfer aus utils/date.ts (formatDateISO +
+// isSameLocalDate), damit "heute" überall im lokalen Kalendertag ausgewertet
+// wird — keine eigene Duplikat-Logik hier.
 // ─────────────────────────────────────────────
 function formatDateTime(iso?: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
 
+  const timePart = date.toLocaleTimeString("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (isSameLocalDate(formatDateISO(date), new Date())) {
+    return `Heute um ${timePart}`;
+  }
+
   const datePart = date.toLocaleDateString("de-DE", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  });
-  const timePart = date.toLocaleTimeString("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
   });
   return `${datePart} um ${timePart}`;
 }
