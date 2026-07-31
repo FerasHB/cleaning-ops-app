@@ -61,7 +61,7 @@ export default function EditJobScreen() {
     updateJob,
     deleteJob,
   } = useJobs();
-  const { signOut, role, loading: authLoading } = useAuth();
+  const { role, loading: authLoading } = useAuth();
 
   // Cache-first mit Direktabruf-Fallback: Regeln/Jobs außerhalb des (für Admins
   // begrenzten) Ladefensters müssen dennoch bearbeitbar sein. RLS begrenzt die
@@ -240,26 +240,6 @@ export default function EditJobScreen() {
       !sameEndDate
     );
   }, [job, values, assignedEmployeeIds]);
-
-  // ── Logout (unveränderte Logik)
-  const handleLogout = async () => {
-    Alert.alert("Abmelden", "Möchtest du dich wirklich abmelden?", [
-      { text: "Abbrechen", style: "cancel" },
-      {
-        text: "Abmelden",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut();
-          } catch (err: unknown) {
-            const msg =
-              err instanceof Error ? err.message : "Abmeldung fehlgeschlagen.";
-            Alert.alert("Fehler", msg);
-          }
-        },
-      },
-    ]);
-  };
 
   // ── Speichern (unveränderte Logik)
   const handleSave = async () => {
@@ -472,13 +452,8 @@ export default function EditJobScreen() {
             )}
           </View>
 
-          <TouchableOpacity
-            onPress={handleLogout}
-            style={styles.logoutButton}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.logoutText}>Abmelden</Text>
-          </TouchableOpacity>
+          {/* Gegengewicht zum Zurück-Button, damit der Titel mittig bleibt. */}
+          <View style={styles.headerSpacer} />
         </View>
 
         {/* ── Scroll-Inhalt ── */}
@@ -657,16 +632,8 @@ function createStyles(theme: AppTheme) {
       fontWeight: theme.typography.weight.medium,
       color: theme.colors.statusInProgress,
     },
-    logoutButton: {
-      paddingVertical: theme.spacing.xs,
+    headerSpacer: {
       minWidth: 70,
-      alignItems: "flex-end",
-    },
-    logoutText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.error,
     },
 
     // ── Scroll-Container
