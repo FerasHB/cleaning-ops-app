@@ -88,6 +88,13 @@ export default function RecurringRuleDetailScreen({
   // im Array" eine Warnung werden — sonst blitzt beim Öffnen kurz
   // „Keine Termine generiert" auf, obwohl nur noch geladen wird.
   const [occurrencesLoaded, setOccurrencesLoaded] = useState(false);
+  // Ist der LETZTE Ladeversuch gescheitert? Muss getrennt von „Liste ist leer"
+  // geführt werden: ein Abbruch (offline, Netzfehler) liefert ebenfalls ein
+  // leeres Array, ist aber KEINE Aussage über die Regel. Ohne diese
+  // Unterscheidung meldete eine völlig gesunde Regel beim Öffnen ohne
+  // Verbindung die Warnung „Keine Termine" — ein Datenbefund, wo nur die
+  // Abfrage fehlgeschlagen war.
+  const [occurrencesError, setOccurrencesError] = useState(false);
 
   const [actionError, setActionError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -99,10 +106,18 @@ export default function RecurringRuleDetailScreen({
     // Termine sind wie bisher ausschließlich eine Admin-Ansicht.
     if (!isAdmin) return;
     setOccurrencesLoading(true);
+    setOccurrencesError(false);
     try {
       setOccurrences(await getJobOccurrences(ruleId));
-    } catch {
+    } catch (err: unknown) {
+      // Der Fehler verschwindet nicht stillschweigend: die Agenda zeigt einen
+      // eigenen Fehlerzustand mit Wiederholen, und die Regel-Gesundheit bleibt
+      // unangetastet (siehe hasOccurrences weiter unten).
       setOccurrences([]);
+      setOccurrencesError(true);
+      if (__DEV__) {
+        console.warn("[RecurringRuleDetail] Termine konnten nicht geladen werden:", err);
+      }
     } finally {
       setOccurrencesLoading(false);
       setOccurrencesLoaded(true);
@@ -146,14 +161,30 @@ export default function RecurringRuleDetailScreen({
       deriveRuleHealth(
         rule,
         {
-          // Vor dem ersten Ladevorgang optimistisch — siehe occurrencesLoaded.
-          hasOccurrences: !occurrencesLoaded || agendaSummary.counts.upcoming > 0,
+          // Optimistisch, solange keine belastbare Auskunft vorliegt: vor dem
+          // ersten Ladevorgang, WÄHREND jedes laufenden Abrufs (auch eines
+          // Wiederholversuchs) und nach einem gescheiterten Ladeversuch. Nur
+          // ein erfolgreich geladenes, wirklich leeres Ergebnis darf zur
+          // Warnung „Keine Termine" führen.
+          hasOccurrences:
+            !occurrencesLoaded ||
+            occurrencesLoading ||
+            occurrencesError ||
+            agendaSummary.counts.upcoming > 0,
           nextOccurrenceDate: agendaSummary.nextUp[0]?.date?.slice(0, 10) ?? null,
         },
         assigneeActive,
         todayKey,
       ),
-    [rule, occurrencesLoaded, agendaSummary, assigneeActive, todayKey],
+    [
+      rule,
+      occurrencesLoaded,
+      occurrencesLoading,
+      occurrencesError,
+      agendaSummary,
+      assigneeActive,
+      todayKey,
+    ],
   );
 
   // ── Aktionen (unverändert gegenüber JobDetailScreen)
@@ -282,10 +313,16 @@ export default function RecurringRuleDetailScreen({
         {/* 2 — Erklärung, sobald der Zustand erklärungsbedürftig ist */}
         <RuleStatusCard health={health} />
 
-        {/* 3 — Die Wiederholung selbst */}
+        {/* 3 — Die Wiederholung selbst. Der erzeugte Zeitraum wird nur
+            angezeigt, wenn er tatsächlich belegt ist — nach einem
+            gescheiterten Ladeversuch wäre er geraten. */}
         <RuleScheduleSummary
           rule={rule}
-          horizonDate={occurrencesLoaded ? agendaSummary.horizonDate : null}
+          horizonDate={
+            occurrencesLoaded && !occurrencesError
+              ? agendaSummary.horizonDate
+              : null
+          }
         />
 
         {/* 4 — Wer ist zugewiesen? */}
@@ -303,7 +340,13 @@ export default function RecurringRuleDetailScreen({
         {isAdmin ? (
           <RuleOccurrenceAgenda
             occurrences={occurrences}
-            loading={occurrencesLoading && !occurrencesLoaded}
+            // Spinner immer dann, wenn ein Abruf läuft und noch NICHTS
+            // anzuzeigen ist — also beim ersten Laden und beim Wiederholen
+            // nach einem Fehler. Liegen bereits Termine vor (Fokus-Rückkehr),
+            // bleibt die Liste stehen statt zu flackern.
+            loading={occurrencesLoading && occurrences.length === 0}
+            error={occurrencesError}
+            onRetry={loadOccurrences}
             rule={rule}
             onOpen={(occurrence) => router.push(`/jobs/${occurrence.id}`)}
           />

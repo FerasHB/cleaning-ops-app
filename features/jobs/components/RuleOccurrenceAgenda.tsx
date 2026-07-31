@@ -63,6 +63,14 @@ type Props = {
   /** Termine wie von getJobOccurrences geliefert (unverändert). */
   occurrences: Job[];
   loading: boolean;
+  /**
+   * Der letzte Ladeversuch ist gescheitert. MUSS getrennt vom leeren Ergebnis
+   * behandelt werden: ein Abbruch liefert ebenfalls ein leeres Array, darf
+   * aber nicht als „keine Termine erzeugt" erscheinen.
+   */
+  error: boolean;
+  /** Lädt über denselben Lesepfad erneut (kein eigener Service-Aufruf). */
+  onRetry: () => void;
   /** Die Regel selbst — für Abweichungs-Erkennung und Zuweisungs-Vergleich. */
   rule: Job;
   onOpen: (occurrence: Job) => void;
@@ -71,6 +79,8 @@ type Props = {
 export function RuleOccurrenceAgenda({
   occurrences,
   loading,
+  error,
+  onRetry,
   rule,
   onOpen,
 }: Props) {
@@ -174,6 +184,31 @@ export function RuleOccurrenceAgenda({
       {loading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="small" color={theme.colors.primary} />
+        </View>
+      ) : error ? (
+        // Ladefehler ≠ „keine Termine". Der Zustand sagt genau das, was
+        // passiert ist, und bietet denselben Lesepfad erneut an.
+        <View style={styles.errorWrap}>
+          <View style={styles.errorRow}>
+            <Ionicons
+              name="cloud-offline-outline"
+              size={16}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text style={styles.errorText}>
+              Termine konnten nicht geladen werden.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={onRetry}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="Termine erneut laden"
+          >
+            <Ionicons name="refresh" size={14} color={theme.colors.primary} />
+            <Text style={styles.retryText}>Erneut versuchen</Text>
+          </TouchableOpacity>
         </View>
       ) : agenda.counts.total === 0 ? (
         <EmptyState
@@ -344,6 +379,42 @@ function createStyles(theme: AppTheme) {
     loadingWrap: {
       paddingVertical: theme.spacing.md,
       alignItems: "center",
+    },
+
+    // Ladefehler (bewusst ruhig: kein Alarm-Rot, es ist ein Verbindungs-
+    // problem und kein Datenbefund)
+    errorWrap: {
+      gap: theme.spacing.sm,
+      paddingVertical: theme.spacing.sm,
+    },
+    errorRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+    },
+    errorText: {
+      flex: 1,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      lineHeight: theme.typography.lineHeight.sm,
+      color: theme.colors.onSurfaceVariant,
+    },
+    retryBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: theme.spacing.xs,
+      paddingVertical: theme.spacing.sm,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      minHeight: theme.spacing.tapTarget,
+    },
+    retryText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.primary,
     },
 
     // Zähl-Leiste

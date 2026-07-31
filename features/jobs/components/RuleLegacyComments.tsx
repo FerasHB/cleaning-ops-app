@@ -72,8 +72,14 @@ export function RuleLegacyComments({ jobId }: Props) {
   // gleich wieder verschwindet, wirkt wie ein Fehler.
   if (loading) return null;
 
+  // Scheitert der Abruf, bleibt der Abschnitt ebenfalls weg. Ihn trotzdem zu
+  // zeigen, würde auf ALLEN Regeln Altbestand behaupten — auch auf den elf
+  // von zwölf, die gar keinen haben. Kommentare sind ohnehin nur online
+  // verfügbar; offline gibt es hier schlicht nichts zu zeigen.
+  if (error) return null;
+
   // Ohne Bestand gibt es nichts zu bewahren — dann bleibt der Abschnitt weg.
-  if (!error && comments.length === 0) return null;
+  if (comments.length === 0) return null;
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
@@ -83,13 +89,9 @@ export function RuleLegacyComments({ jobId }: Props) {
         activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={
-          error
-            ? "Kommentare zur Regel"
-            : `Kommentare zur Regel, ${comments.length} ${
-                comments.length === 1 ? "Eintrag" : "Einträge"
-              }`
-        }
+        accessibilityLabel={`Kommentare zur Regel, ${comments.length} ${
+          comments.length === 1 ? "Eintrag" : "Einträge"
+        }`}
         accessibilityHint={open ? "Zum Einklappen antippen" : "Zum Aufklappen antippen"}
       >
         <Ionicons
@@ -100,9 +102,7 @@ export function RuleLegacyComments({ jobId }: Props) {
         <Text style={styles.title} numberOfLines={1}>
           Kommentare zur Regel
         </Text>
-        {!error ? (
-          <Text style={styles.count}>{comments.length}</Text>
-        ) : null}
+        <Text style={styles.count}>{comments.length}</Text>
       </TouchableOpacity>
 
       {open ? (
@@ -113,25 +113,21 @@ export function RuleLegacyComments({ jobId }: Props) {
             stattdessen am konkreten Termin.
           </Text>
 
-          {error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : (
-            <View style={styles.list}>
-              {comments.map((comment) => (
-                <View key={comment.id} style={styles.comment}>
-                  <View style={styles.commentHeader}>
-                    <Text style={styles.commentAuthor} numberOfLines={1}>
-                      {comment.authorName ?? "Unbekannt"}
-                    </Text>
-                    <Text style={styles.commentTime}>
-                      {formatDateTime(comment.createdAt) ?? ""}
-                    </Text>
-                  </View>
-                  <Text style={styles.commentText}>{comment.message}</Text>
+          <View style={styles.list}>
+            {comments.map((comment) => (
+              <View key={comment.id} style={styles.comment}>
+                <View style={styles.commentHeader}>
+                  <Text style={styles.commentAuthor} numberOfLines={1}>
+                    {comment.authorName ?? "Unbekannt"}
+                  </Text>
+                  <Text style={styles.commentTime}>
+                    {formatDateTime(comment.createdAt) ?? ""}
+                  </Text>
                 </View>
-              ))}
-            </View>
-          )}
+                <Text style={styles.commentText}>{comment.message}</Text>
+              </View>
+            ))}
+          </View>
         </View>
       ) : null}
     </Card>
@@ -172,12 +168,6 @@ function createStyles(theme: AppTheme) {
       lineHeight: theme.typography.lineHeight.xs,
       color: theme.colors.onSurfaceVariant,
     },
-    errorText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.error,
-    },
-
     list: {
       gap: theme.spacing.md,
     },

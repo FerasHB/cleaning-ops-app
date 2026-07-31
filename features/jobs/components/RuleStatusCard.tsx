@@ -21,23 +21,30 @@ import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 /**
- * Konkreter nächster Schritt je Zustand. Bewusst zurückhaltend formuliert:
- * die Termin-Erzeugung läuft ausschließlich über die bestehenden Wege
- * (Anlegen, Speichern, Aktivieren) — dieser Text beschreibt sie, er löst
- * nichts aus.
+ * GENAU EIN Erklärungstext je Zustand — Symptom und nächster Schritt in einem.
+ *
+ * Vorher standen hier zwei Absätze übereinander: der generische `hint` aus
+ * deriveRuleHealth und zusätzlich ein Handlungshinweis. Bei „keine Termine"
+ * widersprachen sie sich sogar („Für diese Regel wurden keine Termine erzeugt."
+ * gefolgt von „Der erzeugte Zeitraum kann abgelaufen sein"), bei anderen
+ * Zuständen sagten sie schlicht zweimal dasselbe.
+ *
+ * Bewusst zurückhaltend formuliert: die Termin-Erzeugung läuft ausschließlich
+ * über die bestehenden Wege (Anlegen, Speichern, Aktivieren) — dieser Text
+ * beschreibt sie, er löst nichts aus.
  */
-function nextStepFor(state: RuleHealthState): string | null {
+function explanationFor(state: RuleHealthState): string | null {
   switch (state) {
     case "no_occurrences":
-      return "Termine entstehen beim Anlegen sowie beim Speichern oder Aktivieren der Regel. Der bereits erzeugte Zeitraum kann abgelaufen sein — öffne „Bearbeiten“ und speichere die Regel, um den Zeitraum aufzufrischen.";
+      return "Für den kommenden Zeitraum liegen keine Termine vor. Termine entstehen beim Anlegen sowie beim Speichern oder Aktivieren der Regel — öffne „Bearbeiten“ und speichere die Regel, um den Zeitraum aufzufrischen.";
     case "horizon_expired":
-      return "Das Enddatum liegt in der Vergangenheit. Setze unter „Bearbeiten“ ein neues Enddatum, damit wieder Termine erzeugt werden.";
+      return "Das Enddatum der Regel liegt in der Vergangenheit. Setze unter „Bearbeiten“ ein neues Enddatum, damit wieder Termine erzeugt werden.";
     case "inactive":
-      return "Deaktivierte Regeln erzeugen keine neuen Termine und erscheinen Mitarbeitenden nicht. Über das Menü oben rechts lässt sich die Regel wieder aktivieren.";
+      return "Diese Regel ist deaktiviert: Sie erzeugt keine neuen Termine und erscheint Mitarbeitenden nicht. Über das Menü oben rechts lässt sie sich wieder aktivieren.";
     case "inactive_employee":
-      return "Weise die Regel unter „Bearbeiten“ einer aktiven Person zu, damit die erzeugten Termine sichtbar bleiben.";
+      return "Mindestens eine zugewiesene Person ist deaktiviert. Weise die Regel unter „Bearbeiten“ einer aktiven Person zu, damit die erzeugten Termine sichtbar bleiben.";
     case "completed_rule":
-      return "Eine Regel wird nie „erledigt“ — dieser Status deutet auf einen Altbestand hin und sollte geprüft werden.";
+      return "Der Status dieser Regel steht auf „erledigt“. Eine Regel wird nie erledigt — das deutet auf einen Altbestand hin und sollte geprüft werden.";
     case "healthy":
       return null;
   }
@@ -56,7 +63,9 @@ export function RuleStatusCard({ health }: Props) {
 
   const isWarning = health.severity === "warning";
   const accent = isWarning ? theme.colors.statusOpen : theme.colors.onSurfaceVariant;
-  const nextStep = nextStepFor(health.state);
+  // Zustandsspezifischer Text hat Vorrang; `hint` ist nur der Rückfall, falls
+  // je ein neuer Zustand ohne eigene Erklärung dazukommt.
+  const body = explanationFor(health.state) ?? health.hint ?? null;
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
@@ -68,10 +77,7 @@ export function RuleStatusCard({ health }: Props) {
         />
         <View style={styles.textBlock}>
           <Text style={[styles.title, { color: accent }]}>{health.label}</Text>
-          {health.hint ? (
-            <Text style={styles.body}>{health.hint}</Text>
-          ) : null}
-          {nextStep ? <Text style={styles.body}>{nextStep}</Text> : null}
+          {body ? <Text style={styles.body}>{body}</Text> : null}
         </View>
       </View>
     </Card>

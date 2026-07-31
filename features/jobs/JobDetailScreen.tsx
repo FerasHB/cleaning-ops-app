@@ -332,8 +332,16 @@ export default function JobDetailScreen() {
 
         {/* 1b — Herkunft: EIN antippbarer Weg zurück zur Regel. Ersetzt die
             beiden bisherigen, nicht antippbaren Hinweise (Kopfzeile +
-            Terminierungs-Karte), die dasselbe zweimal sagten. */}
-        {job.parentJobId ? (
+            Terminierungs-Karte), die dasselbe zweimal sagten.
+
+            NUR FÜR ADMINS. Die Lese-Policy „employee read own assigned jobs"
+            auf public.jobs verlangt job_type = 'single'; eine Parent-Regel ist
+            job_type = 'recurring' und für Mitarbeitende damit grundsätzlich
+            nicht lesbar. Ein Link dorthin endete für sie ausnahmslos in
+            „Job nicht gefunden" — also gar nicht erst anbieten. Mitarbeitende
+            bekommen dadurch keine Information weniger als vor diesem PR: sie
+            konnten die Regel noch nie öffnen. */}
+        {isAdmin && job.parentJobId ? (
           <OccurrenceOriginLink parentJobId={job.parentJobId} />
         ) : null}
 

@@ -48,6 +48,12 @@ export function OccurrenceOriginLink({ parentJobId }: Props) {
     if (requestedForRef.current === parentJobId) return;
     requestedForRef.current = parentJobId;
 
+    // Vor dem Abruf einer ANDEREN Regel den alten Namen verwerfen: sonst
+    // stünde bis zum Eintreffen der Antwort der Name der zuvor angezeigten
+    // Regel an diesem Termin. Bis die neue Antwort da ist, greift die
+    // neutrale Beschriftung „Zum Dauerauftrag".
+    setParentName(null);
+
     let cancelled = false;
     getJobById(parentJobId)
       .then((parent) => {
