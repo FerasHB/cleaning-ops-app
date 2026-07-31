@@ -1,25 +1,31 @@
 // features/jobs/JobDetailScreen.tsx
-// Detail-Ansicht eines Jobs mit allen Infos und kontextabhängigen Aktionen.
-// Aktionen (Start/Complete/Edit) nutzen weiter den bestehenden JobContext —
-// keine Änderungen an Supabase-/Offline-Sync-Logik.
+// Detail-Ansicht eines AUSFÜHRBAREN Jobs (Einzeltermin oder generierter
+// Termin) mit allen Infos und kontextabhängigen Aktionen. Aktionen
+// (Start/Complete/Edit) nutzen weiter den bestehenden JobContext — keine
+// Änderungen an Supabase-/Offline-Sync-Logik.
 //
 // "Job Details 2.0": die Präsentationsschicht ist auf kleine, reine
 // Anzeige-Komponenten in features/jobs/components/ aufgeteilt (siehe unten).
 // Dieser Screen bleibt der Orchestrator: er hält Daten/State/Handler und
 // entscheidet NUR, WELCHE Komponente wann sichtbar ist — die Berechtigungs-
 // und Aktions-Logik selbst ist unverändert gegenüber der Vorversion.
+//
+// PARENT-REGELN LAUFEN HIER NICHT MEHR DURCH: eine Dauerauftrags-Regel ist
+// eine Vorlage, kein ausführbarer Termin. Sie wird an derselben Route
+// (/jobs/[id]) an RecurringRuleDetailScreen übergeben — die Route und damit
+// jeder bestehende Deep-Link bleiben unverändert. Dadurch entfallen hier
+// sämtliche `isParentRule`-Sonderfälle.
 
 import {
-  ActionMenuSheet,
   EmptyState,
   ErrorBanner,
   LoadingScreen,
   OfflineBanner,
-  type ActionMenuItem,
 } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
+import RecurringRuleDetailScreen from "@/features/jobs/RecurringRuleDetailScreen";
 import { AssignedEmployeesCard } from "@/features/jobs/components/AssignedEmployeesCard";
 import { JobActionFooter } from "@/features/jobs/components/JobActionFooter";
 import { JobComments } from "@/features/jobs/components/JobComments";
@@ -32,19 +38,14 @@ import { JobScheduleCard } from "@/features/jobs/components/JobScheduleCard";
 import { JobServiceDetailsCard } from "@/features/jobs/components/JobServiceDetailsCard";
 import { JobStatusOverview } from "@/features/jobs/components/JobStatusOverview";
 import { JobTimelineCard } from "@/features/jobs/components/JobTimelineCard";
-import { RuleOccurrences } from "@/features/jobs/components/RuleOccurrences";
-import {
-  getJobById,
-  getJobOccurrences,
-  setRecurringRuleActive,
-} from "@/services/jobs/jobs.service";
+import { OccurrenceOriginLink } from "@/features/jobs/components/OccurrenceOriginLink";
+import { getJobById } from "@/services/jobs/jobs.service";
 import { canRunJobActions, isPrimaryAssignee } from "@/utils/jobAssignees";
 import type { Job } from "@/types/job";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -88,7 +89,6 @@ export default function JobDetailScreen() {
     jobs,
     startJob,
     completeJob,
-    deleteJob,
     loading,
     online,
     pendingActions,
@@ -138,19 +138,12 @@ export default function JobDetailScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
 
-  // Occurrences für Parent-Recurring-Regeln (nur Admin-Ansicht)
-  const [occurrences, setOccurrences] = useState<Job[]>([]);
-  const [occurrencesLoading, setOccurrencesLoading] = useState(false);
-
-  // Aktions-Menü im Header (Regel bearbeiten/de-aktivieren/löschen)
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [ruleBusy, setRuleBusy] = useState(false);
-
   const isAdmin = role === "admin";
   const jobId = job?.id;
   const hasCachedJob = !!cachedJob;
   // Parent-Regel: job_type='recurring' ohne parentJobId — Vorlage, kein
   // startbarer Termin. Generierte Occurrences sind job_type='single'.
+  // Wird unten an RecurringRuleDetailScreen weitergereicht.
   const isParentRule =
     !!job && job.jobType === "recurring" && !job.parentJobId;
 
@@ -174,26 +167,11 @@ export default function JobDetailScreen() {
     }
   }, [id, canMarkCommentsRead, markJobCommentsAsRead]);
 
-  const loadOccurrences = useCallback(async () => {
-    if (!jobId || !isAdmin || !isParentRule) return;
-    setOccurrencesLoading(true);
-    try {
-      setOccurrences(await getJobOccurrences(jobId));
-    } catch {
-      setOccurrences([]);
-    } finally {
-      setOccurrencesLoading(false);
-    }
-  }, [jobId, isAdmin, isParentRule]);
-
-  // Occurrences bei jedem Fokussieren laden statt nur beim Mounten:
   // `app/jobs/[id]/edit` wird ÜBER diesen Screen gepusht, ohne ihn zu
-  // unmounten — nach einer Regeländerung (andere Wochentage/Uhrzeit) wären
-  // die Termine sonst dauerhaft veraltet. Beim ersten Fokus ist das der
-  // initiale Ladevorgang.
+  // unmounten — ein reiner Mount-Effect würde beim Zurücknavigieren nie
+  // erneut feuern. Deshalb bei JEDEM Fokussieren prüfen.
   useFocusEffect(
     useCallback(() => {
-      loadOccurrences();
       // Der Job selbst kommt aus dem Context-Cache ODER aus dem Direktabruf.
       // Nur im zweiten Fall (Parent-Regeln liegen meist außerhalb des
       // Context-Fensters) kann er nach dem Bearbeiten veraltet sein — dann
@@ -208,7 +186,7 @@ export default function JobDetailScreen() {
           })
           .catch(() => {});
       }
-    }, [loadOccurrences, jobId, hasCachedJob]),
+    }, [jobId, hasCachedJob]),
   );
 
   // ── Loading-Zustand: Context lädt, Direktabruf läuft, oder der Abruf wurde
@@ -236,6 +214,20 @@ export default function JobDetailScreen() {
           />
         </View>
       </SafeAreaView>
+    );
+  }
+
+  // ── Parent-Regel: eigene Ansicht, gleiche Route.
+  // Muss NACH allen Hooks stehen (Hook-Reihenfolge), aber VOR allem, was
+  // sich auf einen ausführbaren Termin bezieht. Das Markieren gelesener
+  // Kommentare oben gilt weiterhin für beide Fälle — unverändert.
+  if (isParentRule) {
+    return (
+      <RecurringRuleDetailScreen
+        rule={job}
+        isAdmin={isAdmin}
+        onRuleRefreshed={setFetchedJob}
+      />
     );
   }
 
@@ -274,80 +266,6 @@ export default function JobDetailScreen() {
     router.push(`/jobs/${job.id}/edit`);
   };
 
-  // ── Regel-Aktionen aus dem Header-Menü (nur Parent-Regeln, nur Admin)
-  const handleToggleRuleActive = async () => {
-    setActionError("");
-    setRuleBusy(true);
-    try {
-      await setRecurringRuleActive(job.id, !(job.isActive ?? true));
-      // Regel + Termine neu laden: das Deaktivieren entfernt serverseitig
-      // zukünftige offene Termine.
-      const fresh = await getJobById(job.id);
-      if (fresh) setFetchedJob(fresh);
-      await loadOccurrences();
-    } catch (err: unknown) {
-      setActionError(
-        err instanceof Error ? err.message : "Aktion fehlgeschlagen.",
-      );
-    } finally {
-      setRuleBusy(false);
-    }
-  };
-
-  const handleDeleteRule = () => {
-    Alert.alert(
-      "Dauerauftrag löschen",
-      "Regeln mit bereits gestarteten oder abgeschlossenen Terminen können aus Sicherheitsgründen nicht gelöscht werden. Fortfahren?",
-      [
-        { text: "Abbrechen", style: "cancel" },
-        {
-          text: "Löschen",
-          style: "destructive",
-          onPress: async () => {
-            setActionError("");
-            setRuleBusy(true);
-            try {
-              await deleteJob(job.id);
-              router.back();
-            } catch (err: unknown) {
-              // Der DB-Guard lehnt Löschungen mit geschützter Historie ab —
-              // Meldung sichtbar machen statt still zu scheitern.
-              setActionError(
-                err instanceof Error
-                  ? err.message
-                  : "Löschen nicht möglich (geschützte Historie).",
-              );
-            } finally {
-              setRuleBusy(false);
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  // Aktion erst nach dem Schließen des Sheets auslösen — ein Alert oder
-  // Navigations-Push während der Modal-Animation wird auf iOS verschluckt.
-  const handleMenuSelect = (key: string) => {
-    setMenuOpen(false);
-    setTimeout(() => {
-      if (key === "edit") handleEdit();
-      else if (key === "toggle") handleToggleRuleActive();
-      else if (key === "delete") handleDeleteRule();
-    }, 250);
-  };
-
-  const ruleActive = job.isActive ?? true;
-  const menuItems: ActionMenuItem[] = [
-    { key: "edit", label: "Bearbeiten", icon: "create-outline" },
-    {
-      key: "toggle",
-      label: ruleActive ? "Deaktivieren" : "Aktivieren",
-      icon: ruleActive ? "pause-outline" : "play-outline",
-    },
-    { key: "delete", label: "Löschen", icon: "trash-outline", destructive: true },
-  ];
-
   // ── Maps öffnen (plattform-spezifischer URL-Schema)
   const handleOpenInMaps = () => {
     setActionError("");
@@ -369,13 +287,12 @@ export default function JobDetailScreen() {
   // BERECHTIGUNG Start/Abschluss (Phase 7, „Shared Job Time"): JEDER
   // Zugewiesene darf, nicht nur der Legacy-Primär — canRunJobActions spiegelt
   // exakt das Prädikat von start_own_job/complete_own_job (Rolle, job_type,
-  // Zuweisungsmenge ODER Legacy-Zeiger). Der isParentRule-Zusatz ist
-  // redundant, bleibt aber als lokale, sichtbare Absicherung stehen: eine
-  // Parent-Regel ist kein ausführbarer Termin.
+  // Zuweisungsmenge ODER Legacy-Zeiger). Parent-Regeln sind hier nicht mehr
+  // möglich (eigener Screen weiter oben) und `canRunJobActions` prüft
+  // jobType='single' ohnehin selbst.
   const canRunActions = canRunJobActions(job, role, profile?.id);
-  const canStart = !isParentRule && canRunActions && job.status === "open";
-  const canComplete =
-    !isParentRule && canRunActions && job.status === "in_progress";
+  const canStart = canRunActions && job.status === "open";
+  const canComplete = canRunActions && job.status === "in_progress";
   const isDone = job.status === "completed";
 
   // Foto-Upload: Admin immer; Employee nur wenn PRIMÄR zugewiesen.
@@ -395,11 +312,9 @@ export default function JobDetailScreen() {
         backgroundColor={theme.colors.background}
       />
 
-      <JobDetailHeader
-        showMenu={isAdmin && isParentRule}
-        menuBusy={ruleBusy}
-        onMenuPress={() => setMenuOpen(true)}
-      />
+      {/* Das Aktionsmenü im Header gehört ausschließlich zu Parent-Regeln —
+          für ausführbare Termine gab es hier noch nie einen Menüpunkt. */}
+      <JobDetailHeader showMenu={false} menuBusy={false} onMenuPress={() => {}} />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -413,7 +328,14 @@ export default function JobDetailScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* 1 — Hero: Kunde/Objekt, Status, Service, Termin */}
-        <JobStatusOverview job={job} isParentRule={isParentRule} />
+        <JobStatusOverview job={job} />
+
+        {/* 1b — Herkunft: EIN antippbarer Weg zurück zur Regel. Ersetzt die
+            beiden bisherigen, nicht antippbaren Hinweise (Kopfzeile +
+            Terminierungs-Karte), die dasselbe zweimal sagten. */}
+        {job.parentJobId ? (
+          <OccurrenceOriginLink parentJobId={job.parentJobId} />
+        ) : null}
 
         {/* Globaler Speicher-/Verbindungsstatus + Aktions-Fehler bleiben
             oben — Chrome, kein Inhalt, muss ohne Scrollen sichtbar sein. */}
@@ -434,27 +356,15 @@ export default function JobDetailScreen() {
         {/* 3 — Zugewiesene Mitarbeitende */}
         <AssignedEmployeesCard job={job} />
 
-        {/* 4 — Zeitlicher Verlauf (Start/Ende/Akteure/Dauer bzw. geplant).
-            Bewusst NICHT an isParentRule gehängt: eine bereits gestartete
-            Regel ist eine Anomalie, die sichtbar bleiben muss. Nur der
-            Platzhalter vor dem Start gilt für ausführbare Termine. */}
-        <JobTimelineCard job={job} showPlaceholder={!isParentRule} />
+        {/* 4 — Zeitlicher Verlauf (Start/Ende/Akteure/Dauer bzw. geplant) */}
+        <JobTimelineCard job={job} showPlaceholder />
 
-        {/* 5 — Service + Terminierung/Wiederholung */}
+        {/* 5 — Service + Terminierung */}
         <JobServiceDetailsCard service={job.service} />
-        <JobScheduleCard job={job} isParentRule={isParentRule} />
+        <JobScheduleCard job={job} />
 
         {/* 6 — Notizen */}
         {job.notes ? <JobNotesCard notes={job.notes} /> : null}
-
-        {/* Generierte Termine (nur Admin bei Parent-Recurring-Jobs) */}
-        {isParentRule && isAdmin ? (
-          <RuleOccurrences
-            occurrences={occurrences}
-            loading={occurrencesLoading}
-            onOpen={(occ) => router.push(`/jobs/${occ.id}`)}
-          />
-        ) : null}
 
         {/* 7 — Fotos (Upload + Anzeige, online-only, unverändert) */}
         <JobPhotos
@@ -482,21 +392,13 @@ export default function JobDetailScreen() {
           submitting={submitting}
           onStart={handleStart}
           onComplete={handleComplete}
-          showEdit={isAdmin && !isParentRule}
+          showEdit={isAdmin}
           onEdit={handleEdit}
         />
 
         <View style={{ height: theme.spacing.xl }} />
       </ScrollView>
       </KeyboardAvoidingView>
-
-      <ActionMenuSheet
-        visible={menuOpen}
-        title={job.customerName}
-        items={menuItems}
-        onClose={() => setMenuOpen(false)}
-        onSelect={handleMenuSelect}
-      />
     </SafeAreaView>
   );
 }
