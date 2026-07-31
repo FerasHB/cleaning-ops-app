@@ -2,62 +2,45 @@
 // Hero-Bereich des Job-Detail-Screens: beantwortet auf den ersten Blick
 // "Wo arbeite ich? Was ist zu tun? Wann? Welcher Status?"
 //
-// Genau EIN Status-Indikator (StatusBadge für echte Termine, Aktiv/Inaktiv-
-// Badge für Parent-Regeln) — keine Duplikate. Reine Präsentationskomponente,
-// keine eigene Datenlogik: alle Werte kommen fertig aufbereitet vom Screen
-// bzw. aus den bestehenden Formatier-Helfern (utils/date, utils/recurrence).
+// Genau EIN Status-Indikator (StatusBadge) — keine Duplikate. Reine
+// Präsentationskomponente, keine eigene Datenlogik: alle Werte kommen fertig
+// aufbereitet vom Screen bzw. aus den bestehenden Formatier-Helfern.
+//
+// NUR NOCH AUSFÜHRBARE TERMINE: Parent-Regeln haben eine eigene Ansicht
+// (RecurringRuleDetailScreen) und erreichen diese Komponente nicht mehr. Der
+// frühere Zweig mit Aktiv/Inaktiv-Badge und Wochentagszeile ist damit
+// entfallen. Ebenso der Hinweis-Chip „Teil eines Dauerauftrags": er sagte
+// dasselbe wie der Hinweis in der Terminierungs-Karte, ohne irgendwohin zu
+// führen. Beides ersetzt jetzt EIN antippbares Element im Screen
+// (OccurrenceOriginLink).
 
-import { Badge, StatusBadge } from "@/components/ui";
+import { StatusBadge } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job } from "@/types/job";
 import { formatDateTimeDE } from "@/utils/date";
-import { formatRecurringDays } from "@/utils/recurrence";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
-  job: Pick<
-    Job,
-    | "customerName"
-    | "status"
-    | "isActive"
-    | "jobType"
-    | "service"
-    | "startTime"
-    | "recurringDays"
-    | "scheduledStart"
-    | "isOccurrence"
-  >;
-  isParentRule: boolean;
+  job: Pick<Job, "customerName" | "status" | "service" | "scheduledStart">;
 };
 
-export function JobStatusOverview({ job, isParentRule }: Props) {
+export function JobStatusOverview({ job }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  // Kompakte Terminzeile: Wochentage+Uhrzeit für Parent-Regeln, sonst der
-  // formatierte geplante Termin (deckt Einzeltermine UND generierte
-  // Occurrences ab — beide tragen scheduledStart).
-  const scheduleSummary = isParentRule
-    ? `${formatRecurringDays(job.recurringDays)} · ${
-        job.startTime ? `${job.startTime} Uhr` : "—"
-      }`
-    : formatDateTimeDE(job.scheduledStart) ?? "Kein Termin geplant";
+  // Kompakte Terminzeile — deckt Einzeltermine UND generierte Occurrences ab
+  // (beide tragen scheduledStart).
+  const scheduleSummary =
+    formatDateTimeDE(job.scheduledStart) ?? "Kein Termin geplant";
 
   return (
     <View style={styles.hero}>
       <View style={styles.titleRow}>
         <Text style={styles.customerName}>{job.customerName}</Text>
-        {isParentRule ? (
-          <Badge
-            label={job.isActive ? "Aktiv" : "Inaktiv"}
-            variant={job.isActive ? "success" : "default"}
-          />
-        ) : (
-          <StatusBadge status={job.status} />
-        )}
+        <StatusBadge status={job.status} />
       </View>
 
       <View style={styles.metaRow}>
@@ -79,31 +62,6 @@ export function JobStatusOverview({ job, isParentRule }: Props) {
           {scheduleSummary}
         </Text>
       </View>
-
-      {isParentRule ? (
-        <View style={styles.typeChip}>
-          <Ionicons
-            name="repeat-outline"
-            size={14}
-            color={theme.colors.primary}
-          />
-          <Text style={styles.typeChipText}>Wiederkehrender Auftrag</Text>
-        </View>
-      ) : job.isOccurrence ? (
-        // Unterscheidung generierte Occurrence vs. eigenständiger Einzeltermin
-        // (neu — nutzt nur das bereits vorhandene isOccurrence-Feld, keine
-        // zusätzliche Abfrage).
-        <View style={styles.typeChip}>
-          <Ionicons
-            name="repeat-outline"
-            size={14}
-            color={theme.colors.onSurfaceVariant}
-          />
-          <Text style={[styles.typeChipText, styles.typeChipTextMuted]}>
-            Teil eines Dauerauftrags
-          </Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -147,21 +105,6 @@ function createStyles(theme: AppTheme) {
     metaDot: {
       fontSize: theme.typography.size.sm,
       color: theme.colors.outline,
-    },
-    typeChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      alignSelf: "flex-start",
-    },
-    typeChipText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.primary,
-    },
-    typeChipTextMuted: {
-      color: theme.colors.onSurfaceVariant,
     },
   });
 }

@@ -1,104 +1,51 @@
 // features/jobs/components/JobScheduleCard.tsx
-// Terminierungs-Details: Wochentage/Uhrzeit + Gültigkeitszeitraum für
-// Parent-Regeln, geplanter Start/Ende für Einzeltermine und generierte
-// Occurrences. Zeigt zusätzlich scheduledEnd, recurrenceStartDate/EndDate
-// und einen Hinweis auf die Herkunft einer Occurrence — alles bereits
-// vorhandene Felder auf Job, die der bisherige Screen nicht anzeigte.
-// Keine neue Abfrage, keine geänderte Terminierungs-Logik.
+// Terminierungs-Details eines AUSFÜHRBAREN Termins: geplanter Start und —
+// falls gesetzt — das geplante Ende.
+//
+// Parent-Regeln laufen seit der eigenen Regel-Ansicht
+// (RecurringRuleDetailScreen → RuleScheduleSummary) nicht mehr durch diese
+// Karte; der frühere Wochentage/Uhrzeit/Gültigkeits-Zweig ist deshalb
+// entfallen. Ebenso der Hinweis „Generierter Termin eines Dauerauftrags." —
+// die Herkunft steht jetzt EINMAL und antippbar im Screen
+// (OccurrenceOriginLink) statt zweimal als toter Text.
+//
+// Reine Anzeige, keine geänderte Terminierungs-Logik, keine neue Abfrage.
 
 import { Card, InfoRow } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job } from "@/types/job";
-import { formatDateOnlyDE, formatDateTimeDE } from "@/utils/date";
-import { formatRecurringDays } from "@/utils/recurrence";
-import { Ionicons } from "@expo/vector-icons";
+import { formatDateTimeDE } from "@/utils/date";
 import React, { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 type Props = {
-  job: Pick<
-    Job,
-    | "recurringDays"
-    | "startTime"
-    | "scheduledStart"
-    | "scheduledEnd"
-    | "recurrenceStartDate"
-    | "recurrenceEndDate"
-    | "isOccurrence"
-  >;
-  isParentRule: boolean;
+  job: Pick<Job, "scheduledStart" | "scheduledEnd">;
 };
 
-export function JobScheduleCard({ job, isParentRule }: Props) {
+export function JobScheduleCard({ job }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
-      {isParentRule ? (
+      <InfoRow label="Auftragstyp" value="Einmalig" icon="calendar-outline" />
+      <View style={styles.rowDivider} />
+      <InfoRow
+        label="Geplanter Start"
+        value={formatDateTimeDE(job.scheduledStart) ?? "Kein Termin geplant"}
+        icon="calendar-outline"
+      />
+      {job.scheduledEnd ? (
         <>
-          <InfoRow
-            label="Wochentage"
-            value={formatRecurringDays(job.recurringDays)}
-            icon="calendar-number-outline"
-          />
           <View style={styles.rowDivider} />
           <InfoRow
-            label="Uhrzeit"
-            value={job.startTime ? `${job.startTime} Uhr` : "—"}
-            icon="time-outline"
-          />
-          <View style={styles.rowDivider} />
-          <InfoRow
-            label="Gültig ab"
-            value={formatDateOnlyDE(job.recurrenceStartDate) ?? "—"}
-            icon="play-forward-outline"
-          />
-          <View style={styles.rowDivider} />
-          <InfoRow
-            label="Gültig bis"
-            value={formatDateOnlyDE(job.recurrenceEndDate) ?? "Kein Enddatum"}
-            icon="flag-outline"
-          />
-        </>
-      ) : (
-        <>
-          <InfoRow
-            label="Auftragstyp"
-            value="Einmalig"
+            label="Geplantes Ende"
+            value={formatDateTimeDE(job.scheduledEnd) ?? "—"}
             icon="calendar-outline"
           />
-          <View style={styles.rowDivider} />
-          <InfoRow
-            label="Geplanter Start"
-            value={formatDateTimeDE(job.scheduledStart) ?? "Kein Termin geplant"}
-            icon="calendar-outline"
-          />
-          {job.scheduledEnd ? (
-            <>
-              <View style={styles.rowDivider} />
-              <InfoRow
-                label="Geplantes Ende"
-                value={formatDateTimeDE(job.scheduledEnd) ?? "—"}
-                icon="calendar-outline"
-              />
-            </>
-          ) : null}
-          {job.isOccurrence ? (
-            <View style={styles.originHint}>
-              <Ionicons
-                name="repeat-outline"
-                size={14}
-                color={theme.colors.onSurfaceVariant}
-              />
-              <Text style={styles.originHintText}>
-                Generierter Termin eines Dauerauftrags.
-              </Text>
-            </View>
-          ) : null}
         </>
-      )}
+      ) : null}
     </Card>
   );
 }
@@ -111,18 +58,6 @@ function createStyles(theme: AppTheme) {
     rowDivider: {
       height: 1,
       backgroundColor: theme.colors.outlineVariant,
-    },
-    originHint: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginTop: -theme.spacing.xs,
-    },
-    originHintText: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.onSurfaceVariant,
-      flexShrink: 1,
     },
   });
 }
