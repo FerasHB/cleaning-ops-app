@@ -31,6 +31,7 @@ export { ActionMenuSheet } from "./ActionMenuSheet";
 export type { ActionMenuItem } from "./ActionMenuSheet";
 export { AppHeader } from "./AppHeader";
 export { StatusBadge } from "./StatusBadge";
+export { WeekdayDots } from "./WeekdayDots";
 export { SkeletonCard } from "./SkeletonCard";
 export { OfflineBanner, SaveStatusBadge } from "./OfflineBanner";
 export { ErrorBanner } from "./ErrorBanner";
@@ -510,14 +511,30 @@ interface EmptyStateProps {
   onCta?: () => void;
   /** Emoji oder Ionicons-Name als Icon */
   icon?: React.ComponentProps<typeof Ionicons>["name"];
+  /**
+   * Kompakte Variante für die Verwendung INNERHALB einer Karte/Sektion.
+   * Die Standardform ist für ganze Bildschirme gedacht (flex: 1 + 64 px
+   * vertikales Padding) und sprengt jeden Karten-Abschnitt — Abschnitte
+   * behalfen sich deshalb bisher mit nacktem <Text>, was drei verschiedene
+   * Leer-Zustände im selben Feature erzeugt hat. Rein additiv: ohne dieses
+   * Prop verhält sich die Komponente exakt wie bisher.
+   */
+  compact?: boolean;
 }
 
-export function EmptyState({ title, message, ctaLabel, onCta, icon }: EmptyStateProps) {
+export function EmptyState({
+  title,
+  message,
+  ctaLabel,
+  onCta,
+  icon,
+  compact = false,
+}: EmptyStateProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createEmptyStateStyles(theme), [theme]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, compact && styles.containerCompact]}>
       <View style={styles.iconWrap}>
         {icon ? (
           <Ionicons name={icon} size={28} color={theme.colors.outline} />
@@ -548,6 +565,12 @@ function createEmptyStateStyles(theme: AppTheme) {
       paddingVertical: 64,
       paddingHorizontal: theme.spacing.xl,
       gap: theme.spacing.sm,
+    },
+    // Eingebettet: kein flex-Wachstum, deutlich weniger Höhe.
+    containerCompact: {
+      flex: 0,
+      paddingVertical: theme.spacing.lg,
+      paddingHorizontal: theme.spacing.md,
     },
     iconWrap: {
       width: 60,
