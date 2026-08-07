@@ -7,6 +7,7 @@ import { Button, Card, ErrorBanner } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useJobPhotos } from "@/features/jobs/hooks/useJobPhotos";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { alertDialog } from "@/utils/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -77,6 +78,24 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
   // ── Quelle wählen: Kamera oder Galerie ──
   function handleAddPhoto() {
     setUploadError(null);
+
+    // WEB: Alert.alert ist in react-native-web eine leere Attrappe
+    // (`static alert() {}`, siehe utils/dialogs.ts). Der Quellen-Dialog wäre
+    // dort nie erschienen und KEINER der onPress-Callbacks je gelaufen — der
+    // Button "Foto hinzufügen" war im Browser damit vollständig wirkungslos:
+    // kein Dateidialog, kein Upload, kein Fehler, kein Log-Eintrag.
+    //
+    // Im Browser gibt es ohnehin keine sinnvolle Unterscheidung zwischen
+    // Kamera und Galerie: expo-image-picker öffnet dort in beiden Fällen
+    // denselben Datei-Dialog. Deshalb wird die Auswahl übersprungen und direkt
+    // der Datei-Dialog geöffnet.
+    //
+    // iOS/Android bleiben unverändert bei der Drei-Wege-Auswahl.
+    if (Platform.OS === "web") {
+      void pickFromLibrary();
+      return;
+    }
+
     Alert.alert(
       "Foto hinzufügen",
       "Wähle eine Quelle:",
@@ -95,10 +114,15 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
 
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
+      // Über alertDialog statt Alert.alert, damit die Meldung auch im Web
+      // sichtbar ist. Zusätzlich als uploadError spiegeln — so bleibt der
+      // Grund am Bildschirm stehen und verschwindet nicht mit dem Dialog.
+      setUploadError(
+        "Kamera-Zugriff verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
+      );
+      await alertDialog(
         "Kamera-Zugriff verweigert",
         "Damit du ein Foto aufnehmen kannst, benötigt die App Zugriff auf die Kamera. Bitte erteile die Berechtigung in den Einstellungen.",
-        [{ text: "OK" }],
       );
       return;
     }
@@ -119,10 +143,13 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
+      // Siehe pickFromCamera: sichtbar im Web UND dauerhaft am Bildschirm.
+      setUploadError(
+        "Zugriff auf die Fotomediathek verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
+      );
+      await alertDialog(
         "Zugriff verweigert",
         "Damit du Fotos hochladen kannst, benötigt die App Zugriff auf deine Fotomediathek. Bitte erteile die Berechtigung in den Einstellungen.",
-        [{ text: "OK" }],
       );
       return;
     }

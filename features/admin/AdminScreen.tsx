@@ -10,6 +10,7 @@ import { useJobs } from "@/context/JobContext";
 import { JobFormFields } from "@/features/jobs/components/JobFormFields";
 import { useJobForm } from "@/features/jobs/hooks/useJobForm";
 import { formatDateISO, formatTimeHHmm, formatToISO } from "@/utils/date";
+import { alertDialog, confirmDialog } from "@/utils/dialogs";
 import type { CreateJobInput } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -133,28 +134,34 @@ export default function AdminScreen() {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
-  // ── Logout (unveränderte Logik)
+  // ── Logout
+  // Über confirmDialog/alertDialog statt Alert.alert — Alert ist im Web eine
+  // leere Attrappe, der onPress-Callback lief dort nie (siehe utils/dialogs.ts).
   const handleLogout = async () => {
-    Alert.alert("Abmelden", "Möchtest du dich wirklich abmelden?", [
-      { text: "Abbrechen", style: "cancel" },
-      {
-        text: "Abmelden",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut();
-            // Explizit zur Anmeldung navigieren, statt uns auf das Neu-Mounten
-            // der Auth-Gruppe durch die Auth-Gates zu verlassen (das konnte den
-            // zuletzt sichtbaren Auth-Screen — Register — wieder aufdecken).
-            router.replace("/login");
-          } catch (err: unknown) {
-            const msg =
-              err instanceof Error ? err.message : "Abmeldung fehlgeschlagen.";
-            Alert.alert("Fehler", msg);
-          }
-        },
-      },
-    ]);
+    const bestaetigt = await confirmDialog({
+      title: "Abmelden",
+      message: "Möchtest du dich wirklich abmelden?",
+      confirmLabel: "Abmelden",
+      destructive: true,
+    });
+
+    if (!bestaetigt) {
+      return;
+    }
+
+    try {
+      await signOut();
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error && err.message ? err.message : "Abmeldung fehlgeschlagen.";
+      await alertDialog("Abmelden fehlgeschlagen", `${msg}\n\nDu bist weiterhin angemeldet.`);
+      return;
+    }
+
+    // Explizit zur Anmeldung navigieren, statt uns auf das Neu-Mounten der
+    // Auth-Gruppe durch die Auth-Gates zu verlassen (das konnte den zuletzt
+    // sichtbaren Auth-Screen — Register — wieder aufdecken).
+    router.replace("/login");
   };
 
   // ── Job erstellen
