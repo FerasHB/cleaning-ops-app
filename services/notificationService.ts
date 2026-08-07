@@ -10,6 +10,18 @@ export function setupNotifications() {
     return;
   }
 
+  // PLATTFORM-GUARD (Web): expo-notifications ist im Browser nicht
+  // implementiert. Es gibt dort keine Push-Tokens (siehe
+  // registerForPushNotifications unten, das seit jeher früh mit null
+  // zurückkehrt), also auch nichts zu konfigurieren. Ohne diesen Guard hinge
+  // die Web-Tauglichkeit der App am Wohlwollen einer nicht unterstützten
+  // Plattform-API. Früher Ausstieg, BEVOR notificationsConfigured gesetzt
+  // wird — so bleibt der Aufruf auf einer künftig unterstützten Plattform
+  // wiederholbar.
+  if (Platform.OS === "web") {
+    return;
+  }
+
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldPlaySound: true,
