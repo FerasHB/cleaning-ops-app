@@ -9,6 +9,7 @@
 // - "Erscheinungsbild" → Info, dass die App der Systemeinstellung folgt (kein eigener Toggle)
 
 import { Card, InitialsAvatar } from "@/components/ui";
+import { alertDialog, confirmDialog } from "@/utils/dialogs";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
@@ -53,26 +54,40 @@ export default function ProfileScreen({
   const isAdmin = role === "admin";
   const hasCompany = !!profile?.company_id;
 
-  // ── Logout mit Bestätigung (signOut-Logik unverändert)
-  const handleLogout = () => {
-    Alert.alert("Abmelden", "Möchtest du dich wirklich abmelden?", [
-      { text: "Abbrechen", style: "cancel" },
-      {
-        text: "Abmelden",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut();
-            // Nach dem Abmelden immer zur Anmeldung (Login). router.replace
-            // ersetzt die aktuelle Route und die geschützten Gruppen werden
-            // durch die Auth-Gates entfernt → kein Zurück in geschützte Screens.
-            router.replace("/login");
-          } catch {
-            Alert.alert("Fehler", "Logout fehlgeschlagen.");
-          }
-        },
-      },
-    ]);
+  // ── Logout mit Bestätigung
+  // Läuft über confirmDialog/alertDialog statt direkt über Alert.alert:
+  // Alert ist im Web eine leere Attrappe, der onPress-Callback wurde dort nie
+  // ausgeführt und das Abmelden war damit unmöglich (siehe utils/dialogs.ts).
+  // Die signOut-Logik selbst ist unverändert — sie wurde nur nie erreicht.
+  const handleLogout = async () => {
+    const bestaetigt = await confirmDialog({
+      title: "Abmelden",
+      message: "Möchtest du dich wirklich abmelden?",
+      confirmLabel: "Abmelden",
+      destructive: true,
+    });
+
+    if (!bestaetigt) {
+      return;
+    }
+
+    try {
+      await signOut();
+    } catch (error) {
+      // Fehler NICHT verschlucken: vorher lief dieser Zweig in ein Alert, das
+      // im Web nichts anzeigte — ein fehlgeschlagener Logout sah damit aus wie
+      // gar keine Reaktion. Der Nutzer bleibt bewusst angemeldet, statt in
+      // einen halb abgemeldeten Zustand zu geraten.
+      const grund =
+        error instanceof Error && error.message ? error.message : "Unbekannter Fehler.";
+      await alertDialog("Abmelden fehlgeschlagen", `${grund}\n\nDu bist weiterhin angemeldet.`);
+      return;
+    }
+
+    // Nach dem Abmelden immer zur Anmeldung (Login). router.replace ersetzt die
+    // aktuelle Route und die geschützten Gruppen werden durch die Auth-Gates
+    // entfernt → kein Zurück in geschützte Screens.
+    router.replace("/login");
   };
 
   return (
