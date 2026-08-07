@@ -15,10 +15,29 @@
 //   data = { type, jobId, companyId, employeeId, status }
 // ─────────────────────────────────────────────────────────────────
 
+// PLATTFORM-GUARD (Web): expo-notifications hat im Web KEINE Implementierung
+// für useLastNotificationResponse — der Hook ruft intern
+// getLastNotificationResponseAsync auf und wirft dort ERR_UNAVAILABLE
+// ("The method or property ExpoNotifications.getLastNotificationResponseAsync
+// is not available on web"). Da dieser Hook in app/_layout.tsx im
+// RootNavigator hängt, hat das die GESAMTE Web-App vor dem ersten Render in
+// die AppErrorBoundary geworfen ("Etwas ist schiefgelaufen") — Login war im
+// Browser überhaupt nicht erreichbar.
+//
+// Gelöst über zwei Implementierungen, die beim Modul-Laden EINMAL ausgewählt
+// werden (siehe Export unten). Bewusst NICHT über ein `if (Platform.OS ===
+// "web") return;` INNERHALB des Hooks: das wäre ein bedingter Hook-Aufruf und
+// verstößt gegen die Rules of Hooks. Platform.OS ist zur Laufzeit konstant,
+// die Hook-Reihenfolge bleibt damit über alle Renders stabil.
+//
+// iOS/Android bleiben unverändert: dort wird exakt die bisherige
+// Implementierung exportiert.
+
 import { useAuth } from "@/context/AuthContext";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
+import { Platform } from "react-native";
 
 function extractJobId(
   response: Notifications.NotificationResponse | null,
@@ -34,7 +53,7 @@ function extractJobId(
   return null;
 }
 
-export function useNotificationNavigation() {
+function useNotificationNavigationNative() {
   const { session, profile } = useAuth();
   const lastResponse = Notifications.useLastNotificationResponse();
 
@@ -81,3 +100,17 @@ export function useNotificationNavigation() {
     router.push({ pathname: "/jobs/[id]", params: { id: jobId } });
   }, [session, profile?.company_id, lastResponse]);
 }
+
+// Web-Variante: bewusst ein No-Op. Im Browser gibt es keine Push-Tokens
+// (registerForPushNotifications liefert dort seit jeher null) und damit auch
+// keine Notification, die angetippt werden könnte — es geht also keine
+// Funktion verloren. Die Signatur bleibt identisch, damit der Aufrufer in
+// app/_layout.tsx plattformunabhängig bleibt.
+function useNotificationNavigationWeb() {
+  // absichtlich leer
+}
+
+export const useNotificationNavigation =
+  Platform.OS === "web"
+    ? useNotificationNavigationWeb
+    : useNotificationNavigationNative;
