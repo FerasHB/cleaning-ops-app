@@ -8,6 +8,7 @@ import {
 } from "@/types/job";
 import { normalizeTime } from "@/utils/date";
 import { buildLegacyAssignees } from "@/utils/jobAssignees";
+import { buildAssignedPushBody } from "@/utils/jobNotificationContent";
 
 // Wird von updateJob() geworfen, wenn set_job_assignments bereits
 // erfolgreich committed wurde, das nachfolgende jobs-UPDATE und/oder
@@ -732,11 +733,30 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
 
       // Nur senden, wenn wirklich ein Push-Token vorhanden ist
       if (employee?.expo_push_token) {
-        await sendPushNotification(
-          employee.expo_push_token,
-          "Neuer Auftrag",
-          `Du hast einen neuen Job: ${payload.service_name}`
-        );
+        await sendPushNotification(employee.expo_push_token, {
+          title: "Neuer Auftrag",
+          body: buildAssignedPushBody({
+            serviceName,
+            customerName,
+            locationAddress,
+            schedule: {
+              jobType: schedule.job_type,
+              date: schedule.date,
+              startTime: schedule.start_time,
+              recurringDays: schedule.recurring_days,
+            },
+          }),
+          // Gleiche Payload-Form wie der Dispatcher (dispatch-notifications).
+          // `jobId` ist der Schlüssel, den useNotificationNavigation ausliest —
+          // ohne ihn öffnet der Tap nur die App, nicht den Auftrag.
+          data: {
+            type: "job_assigned",
+            jobId: data.id,
+            companyId: profile.company_id,
+            employeeId: primaryEmployeeId,
+            status: payload.status,
+          },
+        });
       }
     } catch (pushError) {
       console.error(
@@ -958,18 +978,40 @@ export async function completeJob(
   return typeof data === "string" && data ? data : timestamp;
 }
 
-// Schickt eine Expo Push Notification an ein Gerät
-async function sendPushNotification(token: string, title: string, body: string) {
+// Payload einer Job-Push. `data` folgt exakt der Form, die der Dispatcher
+// (supabase/functions/dispatch-notifications) für gestartet/abgeschlossen
+// verschickt — damit liest useNotificationNavigation alle drei Ereignisse
+// über denselben Pfad aus.
+type JobPushMessage = {
+  title: string;
+  body: string;
+  data: {
+    type: string;
+    jobId: string;
+    companyId: string;
+    employeeId: string | null;
+    status: string;
+  };
+};
+
+// Schickt eine Expo Push Notification an ein Gerät.
+// `channelId`/`priority` spiegeln den Dispatcher: "default" ist exakt der
+// Kanal, den registerForPushNotifications auf Android anlegt (Importance MAX).
+async function sendPushNotification(token: string, message: JobPushMessage) {
   await fetch("https://exp.host/--/api/v2/push/send", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Accept: "application/json",
     },
     body: JSON.stringify({
       to: token,
       sound: "default",
-      title,
-      body,
+      title: message.title,
+      body: message.body,
+      data: message.data,
+      channelId: "default",
+      priority: "high",
     }),
   });
 }
