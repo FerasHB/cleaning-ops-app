@@ -78,13 +78,29 @@ function jobTitle(row: ClaimedDelivery): string {
   return row.service_name?.trim() || row.customer_name?.trim() || "Auftrag";
 }
 
+// Der Admin soll am Text erkennen, WELCHER Auftrag gemeint ist, ohne die App
+// zu öffnen: wer, was, bei wem. Mehr steht hier nicht zur Verfügung —
+// claim_notification_deliveries liefert bewusst nur employee_name /
+// customer_name / service_name (keine Adresse, keine Terminierung). Eine
+// Erweiterung bräuchte eine Migration und gehört nicht in diesen Änderungsschritt.
 function buildContent(row: ClaimedDelivery): { title: string; body: string } {
   const who = row.employee_name?.trim() || "Ein Mitarbeiter";
+  const service = row.service_name?.trim();
+  const customer = row.customer_name?.trim();
+
+  // `what` ist die in Anführungszeichen gesetzte Leistung. Fehlt sie, rückt
+  // der Kunde nach (jobTitle) — dann darf er NICHT zusätzlich als "bei …"
+  // erscheinen, sonst steht er doppelt in der Zeile.
   const what = jobTitle(row);
-  if (row.event_type === "job_completed") {
-    return { title: "Job abgeschlossen", body: `${who} hat „${what}" abgeschlossen.` };
-  }
-  return { title: "Job gestartet", body: `${who} hat „${what}" gestartet.` };
+  const at = service && customer ? ` bei ${customer}` : "";
+
+  const done = row.event_type === "job_completed";
+  const verb = done ? "abgeschlossen" : "gestartet";
+
+  return {
+    title: done ? "Auftrag abgeschlossen" : "Auftrag gestartet",
+    body: `${who} hat „${what}“${at} ${verb}.`,
+  };
 }
 
 Deno.serve(async (req) => {
