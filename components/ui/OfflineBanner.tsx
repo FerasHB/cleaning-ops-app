@@ -5,6 +5,23 @@
 // Liest nur vorhandene Offline-/Queue-Werte aus dem JobContext —
 // keine eigene Sync-Logik. Sichtbare Texte bewusst ohne
 // Fachbegriffe (kein "Sync", "Queue", "pending").
+//
+// NUR AUSSAGEKRÄFTIGE ZUSTÄNDE: Das Banner erscheint ausschließlich bei
+// offline / wartenden Änderungen / Speichern / Fehler. Der Normalfall
+// ("saved") zeigt NICHTS.
+//
+// Vorher lief nach JEDER erfolgreichen Speicherung ein „Alles gespeichert"-
+// Banner an: es montierte sich in den Layout-Fluss (Inhalt darunter sprang
+// ~46 px nach unten), blieb 1500 ms stehen und demontierte sich dann wieder
+// (Inhalt sprang zurück). Zwei Layout-Sprünge pro Aktion für eine Information,
+// die niemand braucht — der Normalzustand ist genau das, was der Nutzer
+// ohnehin erwartet. Es gab zusätzlich einen dauerhaften „Online"-Badge im
+// Header (SaveStatusBadge), der dasselbe „saved" anders benannte und beim
+// Statuswechsel die Begrüßung neu umbrach; er ist ersatzlos entfallen.
+//
+// Beim Übergang zurück nach "saved" blendet das Banner den ZULETZT
+// aussagekräftigen Zustand sauber aus (displayState), statt vorher noch auf
+// Grün umzuspringen.
 // ─────────────────────────────────────────────────────────────────
 
 import { useJobs } from "@/context/JobContext";
@@ -27,8 +44,13 @@ import {
 
 type SaveState = "offline" | "saving" | "error" | "pending" | "saved";
 
+// Zustände, die dem Nutzer tatsächlich etwas sagen. "saved" ist der stille
+// Normalfall und wird bewusst NICHT dargestellt.
+type InformativeSaveState = Exclude<SaveState, "saved">;
+
 // Leitet den Speicher-/Verbindungszustand aus den Offline-/Queue-Werten ab.
-// Zentral, damit Banner (volle Anzeige) und Badge (kompakt) dieselbe Logik teilen.
+// Unverändert — die Queue-/Sync-Logik selbst liegt im JobContext, hier wird
+// sie nur gelesen und in eine Darstellung übersetzt.
 function deriveSaveState(args: {
   online: boolean;
   isSyncing: boolean;
@@ -41,12 +63,6 @@ function deriveSaveState(args: {
   if (syncFailed) return "error";
   if (pendingCount > 0) return "pending";
   return "saved";
-}
-
-// Hook-Variante für Komponenten, die nur den Zustand brauchen (z. B. Badge).
-export function useSaveState(): SaveState {
-  const { online, isSyncing, syncFailed, pendingCount } = useJobs();
-  return deriveSaveState({ online, isSyncing, syncFailed, pendingCount });
 }
 
 function pendingLabel(count: number): string {
@@ -68,7 +84,10 @@ function actionLabel(action: PendingJobAction): string {
 // `config.title` unten) — als eigene Funktion, damit die Animations-Effect
 // den Text kennt, ohne `config` (das von der aktuellen Theme-Farbe abhängt)
 // vorziehen zu müssen.
-function stateAnnouncement(state: SaveState, pendingCount: number): string {
+function stateAnnouncement(
+  state: InformativeSaveState,
+  pendingCount: number,
+): string {
   switch (state) {
     case "offline":
       return "Kein Internet. Änderungen gehen nicht verloren.";
@@ -78,17 +97,12 @@ function stateAnnouncement(state: SaveState, pendingCount: number): string {
       return "Änderungen konnten nicht gespeichert werden.";
     case "pending":
       return pendingLabel(pendingCount);
-    case "saved":
-      return "Alles gespeichert.";
   }
 }
 
 // ── Animation: Timing für das Ein-/Ausblenden des Banners ─────────────────
 const ENTER_DURATION_MS = 220;
 const EXIT_DURATION_MS = 250;
-// Wie lange die "Alles gespeichert"-Bestätigung stehen bleibt, bevor sie
-// ausblendet — sonst verschwindet sie, bevor man sie lesen kann.
-const SAVED_HOLD_MS = 1500;
 
 export function OfflineBanner() {
   const theme = useAppTheme();
@@ -107,38 +121,42 @@ export function OfflineBanner() {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const state = deriveSaveState({ online, isSyncing, syncFailed, pendingCount });
+  const informativeState: InformativeSaveState | null =
+    state === "saved" ? null : state;
 
   // ── Animation: sanftes Ein-/Ausblenden bei Statuswechsel ──────────────
-  // Banner bleibt gemountet, solange state !== "saved" ODER die
-  // Ausblend-Animation noch läuft. Beim Wechsel zu "saved" zeigt es kurz
-  // die Bestätigung (SAVED_HOLD_MS), bevor es animiert ausblendet, statt
-  // abrupt zu verschwinden (frühere Version: `if (state === "saved")
-  // return null;` sofort beim Statuswechsel).
-  const [mounted, setMounted] = useState(state !== "saved");
+  // Banner ist gemountet, solange es einen aussagekräftigen Zustand gibt ODER
+  // die Ausblend-Animation noch läuft. Erreicht der Zustand "saved", blendet
+  // es SOFORT aus (kein Halten, keine Erfolgsmeldung) und demontiert sich.
+  const [mounted, setMounted] = useState(informativeState !== null);
+  // Zuletzt dargestellter aussagekräftiger Zustand. Bleibt während der
+  // Ausblend-Animation stehen, damit z. B. „Änderungen werden gespeichert…"
+  // ruhig ausblendet, statt vorher noch auf einen Erfolgszustand umzuspringen.
+  const [displayState, setDisplayState] = useState<InformativeSaveState | null>(
+    informativeState,
+  );
   const animProgress = useRef(
-    new Animated.Value(state !== "saved" ? 1 : 0),
+    new Animated.Value(informativeState !== null ? 1 : 0),
   ).current;
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runningAnim = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    if (hideTimer.current) {
-      clearTimeout(hideTimer.current);
-      hideTimer.current = null;
-    }
     runningAnim.current?.stop();
 
-    // iOS: VoiceOver bekommt Statuswechsel nicht zuverlässig über
-    // accessibilityRole="alert" bei Prop-Updates mit — explizit ansagen.
-    // Android: übernimmt accessibilityLiveRegion="polite" auf dem Banner
-    // selbst (siehe unten), daher hier nicht doppelt ansagen.
-    if (Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(
-        stateAnnouncement(state, pendingCount),
-      );
-    }
+    if (informativeState !== null) {
+      // iOS: VoiceOver bekommt Statuswechsel nicht zuverlässig über
+      // accessibilityRole="alert" bei Prop-Updates mit — explizit ansagen.
+      // Android: übernimmt accessibilityLiveRegion="polite" auf dem Banner
+      // selbst (siehe unten), daher hier nicht doppelt ansagen.
+      // Der Normalfall ("saved") wird bewusst NICHT angesagt — es gibt nichts
+      // zu melden, und eine Ansage bei jedem gespeicherten Job wäre Lärm.
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(
+          stateAnnouncement(informativeState, pendingCount),
+        );
+      }
 
-    if (state !== "saved") {
+      setDisplayState(informativeState);
       setMounted(true);
       runningAnim.current = Animated.timing(animProgress, {
         toValue: 1,
@@ -147,27 +165,18 @@ export function OfflineBanner() {
       });
       runningAnim.current.start();
     } else {
-      hideTimer.current = setTimeout(() => {
-        runningAnim.current = Animated.timing(animProgress, {
-          toValue: 0,
-          duration: EXIT_DURATION_MS,
-          useNativeDriver: true,
-        });
-        runningAnim.current.start(({ finished }) => {
-          if (finished) setMounted(false);
-        });
-      }, SAVED_HOLD_MS);
+      runningAnim.current = Animated.timing(animProgress, {
+        toValue: 0,
+        duration: EXIT_DURATION_MS,
+        useNativeDriver: true,
+      });
+      runningAnim.current.start(({ finished }) => {
+        if (finished) setMounted(false);
+      });
     }
-
-    return () => {
-      if (hideTimer.current) {
-        clearTimeout(hideTimer.current);
-        hideTimer.current = null;
-      }
-    };
     // animProgress ist ein stabiler Ref-Wert, absichtlich nicht in den Deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, pendingCount]);
+  }, [informativeState, pendingCount]);
 
   // Läuft eine Animation noch, wenn die Komponente verschwindet (z. B. Navi-
   // gation weg vom Screen mitten im Ausblenden) — sauber stoppen.
@@ -177,7 +186,8 @@ export function OfflineBanner() {
     };
   }, []);
 
-  if (!mounted) return null;
+  // Nichts zu melden → nichts rendern. Kein Platzhalter, keine Erfolgsmeldung.
+  if (!mounted || !displayState) return null;
 
   const animatedStyle = {
     opacity: animProgress,
@@ -221,21 +231,16 @@ export function OfflineBanner() {
       border: theme.colors.statusOpenBorder,
       title: pendingLabel(pendingCount),
     },
-    saved: {
-      icon: "checkmark-circle-outline" as const,
-      fg: theme.colors.statusCompleted,
-      bg: theme.colors.statusCompletedBg,
-      border: theme.colors.statusCompletedBorder,
-      title: "Alles gespeichert",
-    },
-  }[state];
+  }[displayState];
 
   // Zweite Zeile: offline + wartende Änderungen → Anzahl zeigen
   const subtitle =
-    state === "offline" && pendingCount > 0 ? pendingLabel(pendingCount) : null;
+    displayState === "offline" && pendingCount > 0
+      ? pendingLabel(pendingCount)
+      : null;
 
   const showDetails = pendingCount > 0;
-  const showRetry = state === "error";
+  const showRetry = displayState === "error";
 
   return (
     <>
@@ -300,10 +305,13 @@ export function OfflineBanner() {
           <Pressable style={styles.sheet} onPress={() => {}}>
             <View style={styles.sheetHandle} />
 
+            {/* Das Sheet ist nur bei wartenden Änderungen erreichbar. Fällt der
+                Zähler auf 0, während es offen ist, bleibt eine sachliche
+                Angabe stehen — keine Erfolgsmeldung. */}
             <Text style={styles.sheetTitle}>
               {pendingCount > 0
                 ? pendingLabel(pendingCount)
-                : "Alles gespeichert"}
+                : "Keine wartenden Änderungen"}
             </Text>
             <Text style={styles.sheetHint}>
               {online
@@ -348,55 +356,6 @@ export function OfflineBanner() {
       </Modal>
     </>
   );
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Kompakter Status-Badge für den Header (oben rechts).
-// Zeigt im Online-/Alles-gespeichert-Zustand dezent "Online".
-// Wichtige Zustände (offline/pending/saving/error) übernimmt das volle
-// <OfflineBanner/> — der Badge rendert dann nichts.
-// ─────────────────────────────────────────────────────────────────
-export function SaveStatusBadge() {
-  const theme = useAppTheme();
-  const styles = useMemo(() => createBadgeStyles(theme), [theme]);
-  const state = useSaveState();
-
-  if (state !== "saved") return null;
-
-  return (
-    <View style={styles.badge}>
-      <View style={styles.dot} />
-      <Text style={styles.label}>Online</Text>
-    </View>
-  );
-}
-
-function createBadgeStyles(theme: ReturnType<typeof useAppTheme>) {
-  return StyleSheet.create({
-    badge: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.statusCompletedBg,
-      borderWidth: 1,
-      borderColor: theme.colors.statusCompletedBorder,
-    },
-    dot: {
-      width: 6,
-      height: 6,
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.statusCompleted,
-    },
-    label: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.statusCompleted,
-    },
-  });
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {

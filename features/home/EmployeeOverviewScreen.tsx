@@ -13,7 +13,6 @@ import {
   KPICard,
   LoadingScreen,
   OfflineBanner,
-  SaveStatusBadge,
   ScreenContainer,
   SectionHeader,
 } from "@/components/ui";
@@ -173,15 +172,16 @@ export default function EmployeeOverviewScreen() {
       {/* ── Save-Status ── */}
       <OfflineBanner />
 
-      {/* ── Header ── */}
+      {/* ── Header ──
+          Die Begrüßung nimmt immer die volle Breite ein. Vorher saß rechts
+          daneben ein Save-Status-Badge, der nur im Normalfall gerendert wurde:
+          bei jedem Speichern verschwand er und die Begrüßung wurde breiter
+          (anderer Zeilenumbruch/Abschnitt) — sichtbares Zappeln im Kopfbereich.
+          Der Badge ist entfallen; aussagekräftige Zustände zeigt das Banner. */}
       <View style={styles.header}>
-        <View style={styles.headerTopRow}>
-          <Text style={styles.greeting} numberOfLines={1}>
-            {getGreeting(now)}, {firstName}
-          </Text>
-          {/* Dezenter Online-Status oben rechts */}
-          <SaveStatusBadge />
-        </View>
+        <Text style={styles.greeting} numberOfLines={1}>
+          {getGreeting(now)}, {firstName}
+        </Text>
         <Text style={styles.dateText}>{dateLabel}</Text>
       </View>
 
@@ -419,14 +419,7 @@ function createStyles(theme: AppTheme) {
       paddingTop: theme.spacing.md,
       marginBottom: theme.spacing.xl,
     },
-    headerTopRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: theme.spacing.sm,
-    },
     greeting: {
-      flex: 1,
       fontSize: theme.typography.size.xxl,
       fontFamily: theme.typography.family.bold,
       fontWeight: theme.typography.weight.bold,
