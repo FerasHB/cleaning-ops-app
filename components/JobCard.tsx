@@ -23,9 +23,10 @@ import {
   formatAssigneesShort,
   getAssignees,
 } from "@/utils/jobAssignees";
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
+import { confirmCompleteJob } from "@/utils/jobDialogs";
 
 type Props = {
   job: Job;
@@ -34,12 +35,14 @@ type Props = {
   /**
    * Inline-Quick-Action "Start" — wird nur gezeigt, wenn übergeben UND job.status === "open".
    * Wer keine Inline-Action will (z.B. Admin), lässt das Prop einfach weg.
+   * Darf ein Promise zurückgeben; die Karte sperrt dann bis zum Abschluss.
    */
-  onStart?: () => void;
+  onStart?: () => void | Promise<void>;
   /**
    * Inline-Quick-Action "Fertig" — wird nur gezeigt, wenn übergeben UND job.status === "in_progress".
+   * Darf ein Promise zurückgeben; die Karte sperrt dann bis zum Abschluss.
    */
-  onComplete?: () => void;
+  onComplete?: () => void | Promise<void>;
   /** Soll der Name des zugewiesenen Mitarbeiters in der Card stehen? (Default: false) */
   showEmployeeName?: boolean;
   /**
@@ -134,6 +137,32 @@ export default function JobCard({
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const status = getStatusConfig(theme, job.status);
+
+  // Doppel-Tap-Schutz für die Quick-Actions. Der Ref sperrt SYNCHRON (setBusy
+  // wirkt erst beim nächsten Render, zwei schnelle Taps kämen sonst beide
+  // durch); der State steuert nur die sichtbare Deaktivierung.
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+
+  const runAction = useCallback(
+    async (action: () => void | Promise<void>, confirm: boolean) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setBusy(true);
+      try {
+        // Abschließen ist unumkehrbar — vorher nachfragen. Start bleibt ohne
+        // Rückfrage (zeitkritisch und unschädlich).
+        if (confirm && !(await confirmCompleteJob())) {
+          return;
+        }
+        await action();
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    },
+    [],
+  );
 
   // Parent-Recurring-Regeln dürfen weder gestartet noch abgeschlossen werden.
   const isParentRule = isParentRecurringJob(job);
@@ -349,8 +378,13 @@ export default function JobCard({
 
           {showStartAction ? (
             <TouchableOpacity
-              style={styles.quickActionPrimary}
-              onPress={onStart}
+              style={[styles.quickActionPrimary, busy && styles.quickActionBusy]}
+              // Fehleranzeige liegt beim Aufrufer (er kennt seine Fehlerfläche);
+              // der catch verhindert hier nur eine unbehandelte Promise.
+              onPress={() => {
+                if (onStart) runAction(onStart, false).catch(() => {});
+              }}
+              disabled={busy}
               activeOpacity={0.85}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
@@ -365,8 +399,11 @@ export default function JobCard({
 
           {showCompleteAction ? (
             <TouchableOpacity
-              style={styles.quickActionSuccess}
-              onPress={onComplete}
+              style={[styles.quickActionSuccess, busy && styles.quickActionBusy]}
+              onPress={() => {
+                if (onComplete) runAction(onComplete, true).catch(() => {});
+              }}
+              disabled={busy}
               activeOpacity={0.85}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
@@ -539,6 +576,11 @@ function createStyles(theme: AppTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
+    },
+
+    // Läuft gerade (Bestätigung offen oder Aktion unterwegs) → sichtbar gesperrt.
+    quickActionBusy: {
+      opacity: 0.5,
     },
 
     // Quick-Action "Start" (primär)
