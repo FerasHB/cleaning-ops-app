@@ -10,7 +10,6 @@ import { useJobs } from "@/context/JobContext";
 import { JobFormFields } from "@/features/jobs/components/JobFormFields";
 import { useJobForm } from "@/features/jobs/hooks/useJobForm";
 import { formatDateISO, formatTimeHHmm, formatToISO } from "@/utils/date";
-import { alertDialog, confirmDialog } from "@/utils/dialogs";
 import type { CreateJobInput } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -100,7 +99,7 @@ export default function AdminScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { createJob, employees, loading } = useJobs();
-  const { signOut, role, loading: authLoading } = useAuth();
+  const { role, loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   // Synchrone Re-Entrancy-Sperre gegen Doppel-Absendung. setSubmitting(true)
   // wirkt erst beim nächsten Render — zwei sehr schnelle Taps könnten daher
@@ -133,36 +132,6 @@ export default function AdminScreen() {
       }),
     ]).start();
   }, [fadeAnim, slideAnim]);
-
-  // ── Logout
-  // Über confirmDialog/alertDialog statt Alert.alert — Alert ist im Web eine
-  // leere Attrappe, der onPress-Callback lief dort nie (siehe utils/dialogs.ts).
-  const handleLogout = async () => {
-    const bestaetigt = await confirmDialog({
-      title: "Abmelden",
-      message: "Möchtest du dich wirklich abmelden?",
-      confirmLabel: "Abmelden",
-      destructive: true,
-    });
-
-    if (!bestaetigt) {
-      return;
-    }
-
-    try {
-      await signOut();
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error && err.message ? err.message : "Abmeldung fehlgeschlagen.";
-      await alertDialog("Abmelden fehlgeschlagen", `${msg}\n\nDu bist weiterhin angemeldet.`);
-      return;
-    }
-
-    // Explizit zur Anmeldung navigieren, statt uns auf das Neu-Mounten der
-    // Auth-Gruppe durch die Auth-Gates zu verlassen (das konnte den zuletzt
-    // sichtbaren Auth-Screen — Register — wieder aufdecken).
-    router.replace("/login");
-  };
 
   // ── Job erstellen
   const handleCreateJob = async () => {
@@ -293,13 +262,8 @@ export default function AdminScreen() {
             ) : null}
           </View>
 
-          <TouchableOpacity
-            onPress={handleLogout}
-            style={styles.logoutBtn}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.logoutText}>Abmelden</Text>
-          </TouchableOpacity>
+          {/* Gegengewicht zum Zurück-Button, damit der Titel mittig bleibt. */}
+          <View style={styles.headerSpacer} />
         </View>
 
         {/* ── Scroll-Inhalt ── */}
@@ -414,16 +378,8 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.statusInProgress,
     },
 
-    // Logout-Button
-    logoutBtn: {
+    headerSpacer: {
       minWidth: 72,
-      alignItems: "flex-end",
-    },
-    logoutText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.error,
     },
 
     // Scroll-Container
