@@ -15,7 +15,6 @@ import {
   KPICard,
   LoadingScreen,
   OfflineBanner,
-  SaveStatusBadge,
   ScreenContainer,
   SectionHeader,
 } from "@/components/ui";
@@ -168,20 +167,18 @@ export default function AdminDashboardScreen() {
     <ScreenContainer>
       {/* ── Header ── */}
       <View style={styles.header}>
+        {/* Marken-Zeile. Rechts saß hier ein Save-Status-Badge, der nur im
+            Normalfall gerendert wurde und bei jedem Speichern verschwand —
+            aussagekräftige Zustände zeigt jetzt ausschließlich das Banner. */}
         <View style={styles.brandRow}>
-          <View style={styles.brandLeft}>
-            <View style={styles.logoBadge}>
-              <Ionicons
-                name="business"
-                size={18}
-                color={theme.colors.onPrimaryContainer}
-              />
-            </View>
-            <Text style={styles.companyName}>{COMPANY_NAME}</Text>
+          <View style={styles.logoBadge}>
+            <Ionicons
+              name="business"
+              size={18}
+              color={theme.colors.onPrimaryContainer}
+            />
           </View>
-
-          {/* Dezenter Online-Status oben rechts */}
-          <SaveStatusBadge />
+          <Text style={styles.companyName}>{COMPANY_NAME}</Text>
         </View>
 
         <Text style={styles.greeting}>
@@ -420,13 +417,8 @@ function createStyles(theme: AppTheme) {
     brandRow: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: theme.spacing.md,
-    },
-    brandLeft: {
-      flexDirection: "row",
-      alignItems: "center",
       gap: theme.spacing.sm,
+      marginBottom: theme.spacing.md,
     },
     logoBadge: {
       width: 34,
