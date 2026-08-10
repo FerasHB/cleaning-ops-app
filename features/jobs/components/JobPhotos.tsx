@@ -23,6 +23,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { toUserMessage } from "@/utils/userMessages";
 
 // ─────────────────────────────────────────────
 // Konstanten
@@ -207,7 +208,7 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
       // Fehler wurde im Hook bereits in error-State gesetzt;
       // hier als lokalen uploadError spiegeln für direktes Feedback.
       setUploadError(
-        err instanceof Error ? err.message : "Upload fehlgeschlagen.",
+        toUserMessage(err, "Upload fehlgeschlagen."),
       );
     }
   }

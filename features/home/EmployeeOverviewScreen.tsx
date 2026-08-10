@@ -26,6 +26,7 @@ import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
 import { isJobToday } from "@/utils/jobSchedule";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
+import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
@@ -79,9 +80,35 @@ export default function EmployeeOverviewScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { profile, role } = useAuth();
-  const { jobs, startJob, completeJob, loading } = useJobs();
+  const {
+    jobs,
+    startJob,
+    completeJob,
+    loading,
+    error: dataError,
+    refreshJobs,
+  } = useJobs();
 
   const [filter, setFilter] = useState<Filter>("all");
+
+  // ── Pull-to-Refresh ──────────────────────────────────────────────────────
+  // Lädt die Jobs neu; alles Heute-Abgeleitete (KPIs, aktiver Job, "Heute
+  // anstehend", Monatsaktivität) hängt an `jobs` und aktualisiert sich damit
+  // mit. Bewusst kein loading-Gate → kein Vollbild-Spinner beim Ziehen.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
+
+  const handleRefresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await refreshJobs();
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, [refreshJobs]);
 
   // ── Aktions-State für Start/Abschluss ─────────────────────────────────────
   // Vorher liefen diese Aufrufe als Fire-and-Forget: nicht awaited, kein
@@ -102,7 +129,7 @@ export default function EmployeeOverviewScreen() {
       try {
         await action();
       } catch (err: unknown) {
-        setActionError(err instanceof Error ? err.message : fallbackMessage);
+        setActionError(toUserMessage(err, fallbackMessage));
       } finally {
         actionBusyRef.current = false;
         setActionBusy(false);
@@ -228,9 +255,30 @@ export default function EmployeeOverviewScreen() {
   if (loading) return <LoadingScreen />;
 
   return (
-    <ScreenContainer>
+    <ScreenContainer
+      refreshing={refreshing}
+      onRefresh={() => {
+        void handleRefresh();
+      }}
+    >
       {/* ── Save-Status ── */}
       <OfflineBanner />
+
+      {/* ── Lade-/Aktualisierungsfehler der Jobs ──
+          Bleibt sichtbar, ohne die bereits angezeigten (ggf. veralteten)
+          Jobs zu verwerfen. Offline erzeugt hier bewusst keinen Fehler —
+          das übernimmt das OfflineBanner darüber. */}
+      {dataError ? (
+        <View style={styles.loadErrorWrap}>
+          <ErrorBanner
+            message={dataError}
+            actionLabel="Erneut versuchen"
+            onAction={() => {
+              void handleRefresh();
+            }}
+          />
+        </View>
+      ) : null}
 
       {/* ── Fehler aus Start/Abschluss — oben, ohne Scrollen sichtbar ── */}
       {actionError ? (
@@ -512,6 +560,9 @@ function createStyles(theme: AppTheme) {
       textTransform: "capitalize",
     },
     // ── Sections
+    loadErrorWrap: {
+      marginBottom: theme.spacing.md,
+    },
     section: {
       marginBottom: theme.spacing.xl,
     },

@@ -10,6 +10,7 @@ import React, { useMemo } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -28,6 +29,17 @@ interface ScreenContainerProps {
   style?: ViewStyle;
   /** Tastatur-Ausweich-Verhalten aktivieren (Standard: false) */
   avoidKeyboard?: boolean;
+  /**
+   * Pull-to-Refresh: läuft gerade eine Aktualisierung? Steuert den nativen
+   * Spinner. Nur wirksam zusammen mit `onRefresh` und `scrollable`.
+   */
+  refreshing?: boolean;
+  /**
+   * Pull-to-Refresh-Handler. Ist er gesetzt, bekommt die ScrollView einen
+   * RefreshControl — so muss ihn kein Screen selbst verdrahten (die ScrollView
+   * gehört ScreenContainer, nicht dem Screen).
+   */
+  onRefresh?: () => void;
 }
 
 export function ScreenContainer({
@@ -36,6 +48,8 @@ export function ScreenContainer({
   noPadding = false,
   style,
   avoidKeyboard = false,
+  refreshing = false,
+  onRefresh,
 }: ScreenContainerProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -45,6 +59,18 @@ export function ScreenContainer({
       contentContainerStyle={[styles.scrollContent, noPadding && styles.noPadding, style]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            // Theme-aware, damit der Spinner auch im Dark Mode sichtbar ist.
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+            progressBackgroundColor={theme.colors.surface}
+          />
+        ) : undefined
+      }
     >
       {children}
     </ScrollView>

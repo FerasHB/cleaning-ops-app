@@ -27,6 +27,7 @@ import { getCachedJobs, saveCachedJobs } from "@/services/offline/jobs.storage";
 import { syncPendingJobActions } from "@/services/offline/jobs.sync";
 import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
 import { isNetworkError } from "@/utils/networkError";
+import { toUserMessage } from "@/utils/userMessages";
 import NetInfo from "@react-native-community/netinfo";
 import React, {
   createContext,
@@ -300,7 +301,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       // Bei Netzwerkfehler keinen Fehler-State setzen — Offline ist erwartbar
       // und der Cache wurde bereits geladen. Nur echte Fehler sichtbar machen.
       if (!networkError) {
-        setError(err?.message ?? "Jobs konnten nicht geladen werden.");
+        setError(toUserMessage(err, "Jobs konnten nicht geladen werden."));
       }
     } finally {
       refreshJobsInProgressRef.current = false;
@@ -333,7 +334,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       console.error("Failed to load employees:", err);
-      setError(err?.message ?? "Mitarbeiter konnten nicht geladen werden.");
+      setError(
+        toUserMessage(err, "Mitarbeiter konnten nicht geladen werden."),
+      );
     }
   }, []);
 

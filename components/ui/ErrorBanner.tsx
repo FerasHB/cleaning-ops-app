@@ -20,12 +20,23 @@ interface ErrorBannerProps {
   onDismiss?: () => void;
   /** Banner-Typ: error (rot) oder warning (orange) */
   type?: "error" | "warning";
+  /**
+   * Optionale Wiederholen-Aktion. Nur zusammen mit `actionLabel` sichtbar.
+   * Gedacht für Teil-Fehler, bei denen der Rest des Screens nutzbar bleibt
+   * (z. B. fehlgeschlagene KPI-Abfrage im Admin-Dashboard) — dort wäre ein
+   * Vollbild-Fehlerscreen falsch, aber ohne Retry säße der Nutzer fest.
+   */
+  onAction?: () => void;
+  /** Beschriftung der Aktion, z. B. "Erneut versuchen". */
+  actionLabel?: string;
 }
 
 export function ErrorBanner({
   message,
   onDismiss,
   type = "error",
+  onAction,
+  actionLabel,
 }: ErrorBannerProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme, type), [theme, type]);
@@ -38,9 +49,22 @@ export function ErrorBanner({
   return (
     <View style={styles.banner}>
       <Ionicons name={iconName} size={16} color={iconColor} style={styles.icon} />
-      <Text style={styles.message} numberOfLines={3}>
-        {message}
-      </Text>
+      <View style={styles.body}>
+        <Text style={styles.message} numberOfLines={3}>
+          {message}
+        </Text>
+        {onAction && actionLabel ? (
+          <TouchableOpacity
+            onPress={onAction}
+            activeOpacity={0.7}
+            style={styles.action}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="refresh" size={14} color={iconColor} />
+            <Text style={styles.actionText}>{actionLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
       {onDismiss && (
         <TouchableOpacity
           onPress={onDismiss}
@@ -77,8 +101,24 @@ function createStyles(
     icon: {
       marginTop: 1,
     },
-    message: {
+    body: {
       flex: 1,
+      gap: 6,
+    },
+    action: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      alignSelf: "flex-start",
+    },
+    actionText: {
+      fontSize: theme.typography.size.sm,
+      fontWeight: theme.typography.weight.semibold,
+      fontFamily: theme.typography.family.semibold,
+      color: textColor,
+      textDecorationLine: "underline",
+    },
+    message: {
       fontSize: theme.typography.size.sm,
       fontWeight: theme.typography.weight.medium,
       fontFamily: theme.typography.family.medium,

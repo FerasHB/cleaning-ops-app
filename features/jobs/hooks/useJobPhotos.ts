@@ -11,6 +11,7 @@ import {
 import type { JobPhoto, UploadPhotoInput } from "@/types/photo";
 import { isNetworkError } from "@/utils/networkError";
 import { useCallback, useEffect, useState } from "react";
+import { toUserMessage } from "@/utils/userMessages";
 
 type UploadArgs = Omit<UploadPhotoInput, "jobId" | "companyId">;
 
@@ -49,9 +50,7 @@ export function useJobPhotos(jobId: string, isOnline: boolean) {
         setError(null);
       } else {
         setError(
-          err instanceof Error
-            ? err.message
-            : "Fotos konnten nicht geladen werden.",
+          toUserMessage(err, "Fotos konnten nicht geladen werden."),
         );
       }
     } finally {
@@ -87,8 +86,7 @@ export function useJobPhotos(jobId: string, isOnline: boolean) {
         // Neues Foto vorne einfügen (neueste zuerst, analog Service-Sortierung)
         setPhotos((prev) => [newPhoto, ...prev]);
       } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : "Upload fehlgeschlagen.";
+        const message = toUserMessage(err, "Upload fehlgeschlagen.");
         setError(message);
         throw err;
       } finally {

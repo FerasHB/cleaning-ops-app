@@ -27,6 +27,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 
 const APP_VERSION =
   Constants.expoConfig?.version ??
@@ -78,8 +79,7 @@ export default function ProfileScreen({
       // im Web nichts anzeigte — ein fehlgeschlagener Logout sah damit aus wie
       // gar keine Reaktion. Der Nutzer bleibt bewusst angemeldet, statt in
       // einen halb abgemeldeten Zustand zu geraten.
-      const grund =
-        error instanceof Error && error.message ? error.message : "Unbekannter Fehler.";
+      const grund = toFriendlyAuthErrorMessage(error, "Unbekannter Fehler.");
       await alertDialog("Abmelden fehlgeschlagen", `${grund}\n\nDu bist weiterhin angemeldet.`);
       return;
     }

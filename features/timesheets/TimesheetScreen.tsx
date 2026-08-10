@@ -76,7 +76,12 @@ export default function TimesheetScreen() {
         />
         {employees.length === 0 ? (
           <Card>
-            <Text style={styles.muted}>Keine Mitarbeiter vorhanden.</Text>
+            <EmptyState
+              title="Keine Mitarbeiter"
+              message="Lege zuerst Mitarbeiter an, um einen Nachweis zu erstellen."
+              icon="people-outline"
+              compact
+            />
           </Card>
         ) : (
           <Card padding={0}>
