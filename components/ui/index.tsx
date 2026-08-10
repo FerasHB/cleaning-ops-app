@@ -33,7 +33,7 @@ export { AppHeader } from "./AppHeader";
 export { StatusBadge } from "./StatusBadge";
 export { WeekdayDots } from "./WeekdayDots";
 export { SkeletonCard } from "./SkeletonCard";
-export { OfflineBanner, SaveStatusBadge } from "./OfflineBanner";
+export { OfflineBanner } from "./OfflineBanner";
 export { ErrorBanner } from "./ErrorBanner";
 export { InitialsAvatar } from "./InitialsAvatar";
 export { InfoRow } from "./InfoRow";
