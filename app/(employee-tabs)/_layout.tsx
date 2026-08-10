@@ -9,10 +9,13 @@ import { Tabs } from "expo-router";
 
 export default function EmployeeTabsLayout() {
   const theme = useAppTheme();
-  const { jobs } = useJobs();
+  const { hasUnread } = useJobs();
 
   // Roter Punkt am Jobs-Tab, wenn irgendein Job ungelesene Kommentare hat.
-  const hasUnreadComments = jobs.some((job) => job.hasUnreadComments);
+  // Quelle ist die gebündelte Unread-Liste (RPC) — identisch zum Admin-Layout.
+  // Vorher: jobs.some(...), das nur Jobs im aktuell geladenen Fenster sah; ein
+  // ungelesener Kommentar außerhalb davon blieb ohne Punkt.
+  const hasUnreadComments = hasUnread;
 
   return (
     <Tabs

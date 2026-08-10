@@ -41,6 +41,7 @@ import { JobTimelineCard } from "@/features/jobs/components/JobTimelineCard";
 import { OccurrenceOriginLink } from "@/features/jobs/components/OccurrenceOriginLink";
 import { getJobById } from "@/services/jobs/jobs.service";
 import { canRunJobActions, isPrimaryAssignee } from "@/utils/jobAssignees";
+import { confirmCompleteJob } from "@/utils/jobDialogs";
 import type { Job } from "@/types/job";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -248,6 +249,14 @@ export default function JobDetailScreen() {
 
   const handleComplete = async () => {
     setActionError("");
+
+    // Abschließen ist unumkehrbar (setzt completed_at) — vorher nachfragen.
+    // Start bleibt bewusst ohne Rückfrage.
+    const bestaetigt = await confirmCompleteJob();
+    if (!bestaetigt) {
+      return;
+    }
+
     try {
       setSubmitting(true);
       await completeJob(job.id);
@@ -389,23 +398,26 @@ export default function JobDetailScreen() {
         />
 
         {/* 9 — Job-spezifischer Offline-Hinweis, direkt vor den Aktionen,
-            auf die er sich bezieht */}
+            auf die er sich bezieht (die Aktionsleiste liegt unmittelbar
+            darunter, jetzt fixiert am unteren Rand) */}
         <JobPendingActionHint jobId={job.id} pendingActions={pendingActions} />
-
-        {/* 10 — Aktionen */}
-        <JobActionFooter
-          canStart={canStart}
-          canComplete={canComplete}
-          isDone={isDone}
-          submitting={submitting}
-          onStart={handleStart}
-          onComplete={handleComplete}
-          showEdit={isAdmin}
-          onEdit={handleEdit}
-        />
-
-        <View style={{ height: theme.spacing.xl }} />
       </ScrollView>
+
+      {/* 10 — Aktionen: FIXIERT, außerhalb des Scroll-Flusses.
+          Als Geschwister der ScrollView innerhalb der KeyboardAvoidingView —
+          dadurch rutscht die Leiste bei geöffneter Tastatur mit nach oben und
+          liegt nie unter ihr. Der Scroll-Bereich wird entsprechend kürzer, die
+          Leiste überdeckt also auch keine Kommentare. */}
+      <JobActionFooter
+        canStart={canStart}
+        canComplete={canComplete}
+        isDone={isDone}
+        submitting={submitting}
+        onStart={handleStart}
+        onComplete={handleComplete}
+        showEdit={isAdmin}
+        onEdit={handleEdit}
+      />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

@@ -10,6 +10,7 @@
 import {
   Card,
   EmptyState,
+  ErrorBanner,
   KPICard,
   LoadingScreen,
   OfflineBanner,
@@ -25,9 +26,10 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
 import { isJobToday } from "@/utils/jobSchedule";
+import { confirmCompleteJob } from "@/utils/jobDialogs";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Filter = "all" | JobStatus;
@@ -81,6 +83,64 @@ export default function EmployeeOverviewScreen() {
   const { jobs, startJob, completeJob, loading } = useJobs();
 
   const [filter, setFilter] = useState<Filter>("all");
+
+  // ── Aktions-State für Start/Abschluss ─────────────────────────────────────
+  // Vorher liefen diese Aufrufe als Fire-and-Forget: nicht awaited, kein
+  // try/catch, keine Sperre. Eine abgelehnte RPC (offline, fehlende Rechte)
+  // erzeugte eine unbehandelte Promise und NULL sichtbares Feedback — der
+  // Mitarbeiter tippte dann erneut. Gleiches Muster wie im Kalender-Screen.
+  const [actionError, setActionError] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  // Sperrt synchron; setActionBusy wirkt erst beim nächsten Render.
+  const actionBusyRef = useRef(false);
+
+  const runJobAction = useCallback(
+    async (action: () => Promise<void>, fallbackMessage: string) => {
+      if (actionBusyRef.current) return;
+      actionBusyRef.current = true;
+      setActionBusy(true);
+      setActionError("");
+      try {
+        await action();
+      } catch (err: unknown) {
+        setActionError(err instanceof Error ? err.message : fallbackMessage);
+      } finally {
+        actionBusyRef.current = false;
+        setActionBusy(false);
+      }
+    },
+    [],
+  );
+
+  // JobCard bringt Bestätigung und eigenen Doppel-Tap-Schutz mit — hier nur
+  // noch ausführen und Fehler anzeigen.
+  const handleStart = useCallback(
+    (jobId: string) =>
+      runJobAction(
+        () => startJob(jobId),
+        "Job konnte nicht gestartet werden.",
+      ),
+    [runJobAction, startJob],
+  );
+
+  const handleComplete = useCallback(
+    (jobId: string) =>
+      runJobAction(
+        () => completeJob(jobId),
+        "Job konnte nicht abgeschlossen werden.",
+      ),
+    [runJobAction, completeJob],
+  );
+
+  // Aktiver-Job-Karte: eigener Button ohne JobCard → Bestätigung hier.
+  const handleCompleteActiveJob = useCallback(
+    async (jobId: string) => {
+      if (actionBusyRef.current) return;
+      if (!(await confirmCompleteJob())) return;
+      await handleComplete(jobId);
+    },
+    [handleComplete],
+  );
 
   // Zeitpunkt beim Render. Header zeigt nur das Datum (keine Live-Uhrzeit).
   const now = new Date();
@@ -173,6 +233,14 @@ export default function EmployeeOverviewScreen() {
       {/* ── Save-Status ── */}
       <OfflineBanner />
 
+      {/* ── Fehler aus Start/Abschluss — oben, ohne Scrollen sichtbar ── */}
+      {actionError ? (
+        <ErrorBanner
+          message={actionError}
+          onDismiss={() => setActionError("")}
+        />
+      ) : null}
+
       {/* ── Header ── */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
@@ -228,67 +296,77 @@ export default function EmployeeOverviewScreen() {
         </View>
       </View>
 
-      {/* ── Aktiver Job (nur wenn vorhanden) ── */}
+      {/* ── Aktiver Job (nur wenn vorhanden) ──
+          Karte ist ein View, KEIN TouchableOpacity: der Abschließen-Button lag
+          vorher INNERHALB der Karten-Touchable. Beide Press-Highlights
+          überlagerten sich und ein Tap knapp neben dem Button navigierte
+          stillschweigend, statt abzuschließen. Jetzt zwei klar getrennte
+          Geschwister: oben der Navigations-Bereich, unten die Aktion. */}
       {activeJob && (
         <View style={styles.section}>
           <SectionHeader title="Aktiver Job" />
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => router.push(`/jobs/${activeJob.id}`)}
-            style={styles.activeCard}
-          >
-            <View style={styles.activeTopRow}>
-              <View style={styles.activeBadge}>
-                <View style={styles.activePulse} />
-                <Text style={styles.activeBadgeText}>Läuft</Text>
+          <View style={styles.activeCard}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => router.push(`/jobs/${activeJob.id}`)}
+              style={styles.activeNavArea}
+            >
+              <View style={styles.activeTopRow}>
+                <View style={styles.activeBadge}>
+                  <View style={styles.activePulse} />
+                  <Text style={styles.activeBadgeText}>Läuft</Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={theme.colors.onPrimaryContainer}
+                />
               </View>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={theme.colors.onPrimaryContainer}
-              />
-            </View>
 
-            <Text style={styles.activeCustomer} numberOfLines={1}>
-              {activeJob.customerName}
-            </Text>
-            {activeJob.service ? (
-              <Text style={styles.activeService} numberOfLines={1}>
-                {activeJob.service}
+              <Text style={styles.activeCustomer} numberOfLines={1}>
+                {activeJob.customerName}
               </Text>
-            ) : null}
+              {activeJob.service ? (
+                <Text style={styles.activeService} numberOfLines={1}>
+                  {activeJob.service}
+                </Text>
+              ) : null}
 
-            <View style={styles.activeMetaRow}>
-              {activeJob.location ? (
-                <View style={styles.activeMetaItem}>
-                  <Ionicons
-                    name="location-outline"
-                    size={14}
-                    color={theme.colors.onPrimaryContainer}
-                  />
-                  <Text style={styles.activeMetaText} numberOfLines={1}>
-                    {activeJob.location}
-                  </Text>
-                </View>
-              ) : null}
-              {activeJob.startTime ?? formatTime(activeJob.scheduledStart) ? (
-                <View style={styles.activeMetaItem}>
-                  <Ionicons
-                    name="time-outline"
-                    size={14}
-                    color={theme.colors.onPrimaryContainer}
-                  />
-                  <Text style={styles.activeMetaText}>
-                    {activeJob.startTime ?? formatTime(activeJob.scheduledStart)}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
+              <View style={styles.activeMetaRow}>
+                {activeJob.location ? (
+                  <View style={styles.activeMetaItem}>
+                    <Ionicons
+                      name="location-outline"
+                      size={14}
+                      color={theme.colors.onPrimaryContainer}
+                    />
+                    <Text style={styles.activeMetaText} numberOfLines={1}>
+                      {activeJob.location}
+                    </Text>
+                  </View>
+                ) : null}
+                {activeJob.startTime ?? formatTime(activeJob.scheduledStart) ? (
+                  <View style={styles.activeMetaItem}>
+                    <Ionicons
+                      name="time-outline"
+                      size={14}
+                      color={theme.colors.onPrimaryContainer}
+                    />
+                    <Text style={styles.activeMetaText}>
+                      {activeJob.startTime ?? formatTime(activeJob.scheduledStart)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.completeBtn}
+              style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
               activeOpacity={0.85}
-              onPress={() => completeJob(activeJob.id)}
+              disabled={actionBusy}
+              onPress={() => {
+                handleCompleteActiveJob(activeJob.id).catch(() => {});
+              }}
             >
               <Ionicons
                 name="checkmark"
@@ -297,7 +375,7 @@ export default function EmployeeOverviewScreen() {
               />
               <Text style={styles.completeBtnText}>Job abschließen</Text>
             </TouchableOpacity>
-          </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -347,12 +425,12 @@ export default function EmployeeOverviewScreen() {
                 onPress={() => router.push(`/jobs/${job.id}`)}
                 onStart={
                   canRunJobActions(job, role, profile?.id)
-                    ? () => startJob(job.id)
+                    ? () => handleStart(job.id)
                     : undefined
                 }
                 onComplete={
                   canRunJobActions(job, role, profile?.id)
-                    ? () => completeJob(job.id)
+                    ? () => handleComplete(job.id)
                     : undefined
                 }
               />
@@ -456,12 +534,18 @@ function createStyles(theme: AppTheme) {
     },
 
     // ── Aktiver Job (hervorgehoben)
+    // Container ist nicht mehr tappbar — die beiden Interaktionen liegen als
+    // Geschwister darin (Navigations-Bereich oben, Abschließen-Button unten).
     activeCard: {
       backgroundColor: theme.colors.primaryContainer,
       borderRadius: theme.radius.lg,
       padding: theme.spacing.lg,
       gap: 6,
       ...theme.shadows.md,
+    },
+    // Tappbarer Bereich für die Detail-Navigation (alles außer dem Button).
+    activeNavArea: {
+      gap: 6,
     },
     activeTopRow: {
       flexDirection: "row",
@@ -534,6 +618,9 @@ function createStyles(theme: AppTheme) {
       borderRadius: theme.radius.md,
       paddingVertical: theme.spacing.md,
       minHeight: theme.spacing.tapTarget,
+    },
+    completeBtnBusy: {
+      opacity: 0.5,
     },
     completeBtnText: {
       fontSize: theme.typography.size.md,

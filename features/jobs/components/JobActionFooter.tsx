@@ -4,6 +4,19 @@
 // Handler, Berechtigungs-Booleans (canStart/canComplete/isDone) und der
 // submitting-State kommen unverändert vom Screen — hier wird nichts davon
 // neu berechnet oder verändert.
+//
+// FIXIERTE LEISTE: Diese Komponente liegt NICHT mehr im Scroll-Fluss, sondern
+// als Geschwister der ScrollView am unteren Rand (siehe JobDetailScreen). Vorher
+// stand sie am Ende eines langen Inhalts — hinter Foto-Raster und Kommentar-
+// Verlauf. Bei einem Auftrag mit mehreren Fotos und Kommentaren musste ein
+// Mitarbeiter im Feld mehrere Bildschirmhöhen scrollen, um „Starten“ oder
+// „Abschließen“ überhaupt zu erreichen. Jetzt ist die wichtigste Aktion immer
+// ohne Scrollen erreichbar.
+//
+// Die Leiste bringt ihr eigenes Chrome mit (Hintergrund, obere Trennlinie,
+// Safe-Area-Abstand unten), damit der Screen selbst schlank bleibt. Gibt es
+// nichts zu tun UND nichts zu melden, rendert sie gar nichts — dann bleibt der
+// volle Bildschirm dem Inhalt.
 
 import { Button } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
@@ -11,6 +24,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Props = {
   canStart: boolean;
@@ -35,9 +49,24 @@ export function JobActionFooter({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const insets = useSafeAreaInsets();
+
+  // Nichts anzuzeigen (z. B. Mitarbeiter ohne Zuweisung auf einem offenen
+  // Auftrag) → keine leere Leiste am Bildschirmrand stehen lassen.
+  const hasContent = canStart || canComplete || isDone || showEdit;
+  if (!hasContent) {
+    return null;
+  }
 
   return (
-    <View style={styles.actions}>
+    <View
+      style={[
+        styles.bar,
+        // Home-Indikator / Gestennavigation freihalten. Der Screen selbst nutzt
+        // edges={["top"]}, der untere Inset ist hier also noch offen.
+        { paddingBottom: Math.max(insets.bottom, theme.spacing.md) },
+      ]}
+    >
       {canStart ? (
         <Button
           label="Job starten"
@@ -90,9 +119,14 @@ export function JobActionFooter({
 
 function createStyles(theme: AppTheme) {
   return StyleSheet.create({
-    actions: {
+    // Fixierte Leiste am unteren Rand — abgesetzt vom Inhalt darüber.
+    bar: {
       gap: theme.spacing.sm,
-      marginTop: theme.spacing.xs,
+      paddingHorizontal: theme.spacing.gutter,
+      paddingTop: theme.spacing.md,
+      backgroundColor: theme.colors.surface,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.outlineVariant,
     },
     doneInfo: {
       flexDirection: "row",

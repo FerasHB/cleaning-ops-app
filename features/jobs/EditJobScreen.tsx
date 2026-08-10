@@ -470,10 +470,16 @@ export default function EditJobScreen() {
 
             <Divider style={styles.sectionDivider} />
 
+            {/* Mitarbeiter-Auswahl bewusst NICHT hier: dieser Screen zeigt sie
+                unten in einem eigenen Abschnitt — mit der Warnung zu inaktiven
+                Zuweisungen und der erweiterten Liste (aktive + bereits
+                zugewiesene). Ohne dieses Prop stand die Auswahl zweimal auf dem
+                Bildschirm, oben dauerhaft leer. */}
             <JobFormFields
               values={values}
               errors={errors}
               onChangeField={setField}
+              showEmployeePicker={false}
             />
           </Card>
 

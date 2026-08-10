@@ -25,6 +25,18 @@ type JobFormFieldsProps = {
     value: JobFormValues[K],
   ) => void;
   employees?: EmployeeOption[];
+  /**
+   * Mitarbeiter-Auswahl hier mitrendern (Standard: true — so nutzt es der
+   * Erstellen-Screen).
+   *
+   * Der Bearbeiten-Screen setzt `false`: er zeigt die Zuweisung in einem
+   * eigenen Abschnitt, weil er dort zusätzlich inaktive-Zuweisungen warnt und
+   * eine andere Mitarbeiter-Liste braucht (aktive + bereits zugewiesene). Ohne
+   * dieses Prop rendert er die Auswahl zweimal — und weil er `employees` hier
+   * nie übergibt, stand in der ersten (leeren) Auswahl dauerhaft
+   * „Keine Mitarbeiter verfügbar.“
+   */
+  showEmployeePicker?: boolean;
 };
 
 const JOB_TYPE_OPTIONS: { key: JobType; label: string }[] = [
@@ -37,6 +49,7 @@ export function JobFormFields({
   errors,
   onChangeField,
   employees = [],
+  showEmployeePicker = true,
 }: JobFormFieldsProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -195,12 +208,16 @@ export function JobFormFields({
         </View>
       )}
 
-      <Text style={styles.sectionLabel}>Mitarbeiter</Text>
-      <EmployeeMultiSelector
-        employees={employees}
-        selectedEmployeeIds={values.employeeIds}
-        onChange={(ids) => onChangeField("employeeIds", ids)}
-      />
+      {showEmployeePicker ? (
+        <>
+          <Text style={styles.sectionLabel}>Mitarbeiter</Text>
+          <EmployeeMultiSelector
+            employees={employees}
+            selectedEmployeeIds={values.employeeIds}
+            onChange={(ids) => onChangeField("employeeIds", ids)}
+          />
+        </>
+      ) : null}
 
       <Input
         label="Notizen"
