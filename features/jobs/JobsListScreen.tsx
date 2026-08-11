@@ -16,6 +16,7 @@ import {
   getAssigneeNames,
   isAssignedTo,
 } from "@/utils/jobAssignees";
+import { getJobStatusLabel, JOB_STATUS_ORDER } from "@/utils/jobStatus";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
@@ -37,11 +38,11 @@ import type { AppTheme } from "@/constants/theme";
 
 type Filter = "all" | "open" | "in_progress" | "completed";
 
+// Beschriftungen aus der kanonischen Status-Quelle — die Chips müssen exakt so
+// heißen wie die Badges auf den Karten darunter (utils/jobStatus.ts).
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "Alle" },
-  { key: "open", label: "Offen" },
-  { key: "in_progress", label: "In Arbeit" },
-  { key: "completed", label: "Erledigt" },
+  ...JOB_STATUS_ORDER.map((key) => ({ key, label: getJobStatusLabel(key) })),
 ];
 
 // ── Sortier-Optionen

@@ -30,6 +30,7 @@ import {
 } from "@/services/jobs/jobs.service";
 import { formatDateISO } from "@/utils/date";
 import { isAssignedTo } from "@/utils/jobAssignees";
+import { getJobStatusLabel } from "@/utils/jobStatus";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -279,7 +280,7 @@ export default function AdminDashboardScreen() {
         </View>
         <View style={styles.kpiItem}>
           <KPICard
-            label="Offen"
+            label={getJobStatusLabel("open")}
             value={openCount ?? "—"}
             icon="folder-open-outline"
             accentColor={theme.colors.statusOpen}
@@ -288,7 +289,7 @@ export default function AdminDashboardScreen() {
         </View>
         <View style={styles.kpiItem}>
           <KPICard
-            label="In Arbeit"
+            label={getJobStatusLabel("in_progress")}
             value={inProgressCount ?? "—"}
             icon="time-outline"
             accentColor={theme.colors.statusInProgress}
@@ -297,7 +298,7 @@ export default function AdminDashboardScreen() {
         </View>
         <View style={styles.kpiItem}>
           <KPICard
-            label="Erledigt"
+            label={getJobStatusLabel("completed")}
             value={completedCount ?? "—"}
             icon="checkmark-done-outline"
             accentColor={theme.colors.statusCompleted}

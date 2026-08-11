@@ -26,6 +26,7 @@ import type { Job, JobStatus } from "@/types/job";
 import { formatForDisplay } from "@/utils/date";
 import { getEmployeeStatus } from "@/utils/employeeStatus";
 import { isAssignedTo } from "@/utils/jobAssignees";
+import { getJobStatusLabel } from "@/utils/jobStatus";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -343,7 +344,7 @@ export default function EmployeeDetailScreen() {
             </View>
             <View style={styles.kpiItem}>
               <KPICard
-                label="Offen"
+                label={getJobStatusLabel("open")}
                 value={openCount}
                 icon="folder-open-outline"
                 accentColor={theme.colors.statusOpen}
@@ -351,7 +352,7 @@ export default function EmployeeDetailScreen() {
             </View>
             <View style={styles.kpiItem}>
               <KPICard
-                label="In Arbeit"
+                label={getJobStatusLabel("in_progress")}
                 value={inProgressCount}
                 icon="time-outline"
                 accentColor={theme.colors.statusInProgress}
@@ -359,7 +360,7 @@ export default function EmployeeDetailScreen() {
             </View>
             <View style={styles.kpiItem}>
               <KPICard
-                label="Erledigt"
+                label={getJobStatusLabel("completed")}
                 value={completedCount}
                 icon="checkmark-circle-outline"
                 accentColor={theme.colors.statusCompleted}
