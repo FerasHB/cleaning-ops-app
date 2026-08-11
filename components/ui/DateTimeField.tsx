@@ -40,6 +40,13 @@ export interface DateTimeFieldProps {
    * "date": nur Datum, keine Uhrzeit (Start-/Enddatum für Recurring-Regeln).
    */
   mode?: "datetime" | "time" | "date";
+  /**
+   * Validierungsfehler zu diesem Feld. Wird direkt unter dem Feld gerendert —
+   * genau wie beim Input, damit Datums-/Zeitfelder nicht anders aussehen als
+   * Textfelder. Vorher musste jede Aufrufstelle den Fehler selbst als <Text>
+   * nachbauen (5× dieselbe Zeile in JobFormFields).
+   */
+  error?: string;
 }
 
 export function DateTimeField({
@@ -48,6 +55,7 @@ export function DateTimeField({
   value,
   onChange,
   mode = "datetime",
+  error,
 }: DateTimeFieldProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -202,6 +210,11 @@ export function DateTimeField({
         )}
       </View>
 
+      {/* Fehler bewusst AUSSERHALB des positionierten Wrappers: der
+          Löschen-Button darin ist absolut am unteren Rand verankert und würde
+          sonst auf die Fehlerzeile rutschen. */}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
       <Modal visible={showPickerModal} transparent animationType="fade">
         <View style={modalStyles.overlay}>
           <View style={modalStyles.container}>
@@ -283,6 +296,13 @@ function createStyles(theme: AppTheme) {
     },
     fieldArea: {
       width: "100%",
+    },
+    // Gleiche Optik wie die Fehlerzeile im Input (components/ui/index.tsx).
+    errorText: {
+      marginTop: 2,
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.error,
     },
     clearBtn: {
       position: "absolute",

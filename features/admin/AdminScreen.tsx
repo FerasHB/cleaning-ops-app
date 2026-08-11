@@ -3,7 +3,7 @@
 // Vollständig auf useAppTheme() migriert — Light + Dark Mode.
 // Business-Logik (createJob, useJobForm, AuthContext, JobContext) unverändert.
 
-import { LoadingScreen } from "@/components/ui";
+import { Button, LoadingScreen } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
@@ -15,7 +15,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -28,6 +27,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
+import { alertDialog } from "@/utils/dialogs";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 
 // ─────────────────────────────────────────────
 // Section-Block (theme-aware Karte mit Header)
@@ -114,7 +115,12 @@ export default function AdminScreen() {
     [employees],
   );
 
-  const { values, errors, setField, validate, reset } = useJobForm();
+  const { values, errors, isDirty, setField, validate, reset } = useJobForm();
+
+  // Warnung vor dem Verlassen mit ungespeicherten Eingaben. Deckt eigenen
+  // Zurück-Button, Android-Hardware-Zurück und iOS-Swipe ab (siehe Hook).
+  // Während des Absendens bewusst aus: der Erfolgs-Pfad navigiert selbst.
+  const { leaveWithoutWarning } = useUnsavedChangesGuard(isDirty && !submitting);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -180,34 +186,28 @@ export default function AdminScreen() {
 
       const { recurringOccurrencesFailed } = await createJob(input);
 
-      // Formular vor dem Erfolgshinweis zurücksetzen.
+      // Formular vor dem Erfolgshinweis zurücksetzen (setzt auch isDirty zurück).
       reset();
 
-      // Nach Bestätigung des Hinweises zur Jobs-Übersicht navigieren. Der Job
-      // ist bereits angelegt — deshalb navigieren wir auch bei fehlgeschlagener
-      // Occurrence-Generierung; wir zeigen dann aber KEINEN vollen Erfolg,
-      // sondern einen Teil-Erfolg-Hinweis (Termine bitte prüfen).
-      const goToJobs = () => router.replace("/(admin-tabs)/jobs");
-
+      // Erst den Hinweis abwarten, DANN navigieren — über alertDialog, weil
+      // Alert.alert im Web nichts anzeigt und der onPress-Callback dort nie
+      // liefe (die Navigation wäre unerreichbar). Der Job ist bereits angelegt,
+      // deshalb navigieren wir auch bei fehlgeschlagener Occurrence-Generierung
+      // — dann aber mit Teil-Erfolg-Hinweis statt vollem Erfolg.
       if (recurringOccurrencesFailed) {
-        Alert.alert(
+        await alertDialog(
           "Job angelegt",
           "Der Job wurde angelegt, aber die Termine konnten nicht vollständig erzeugt werden. Bitte prüfe die Terminierung.",
-          [{ text: "OK", onPress: goToJobs }],
-          { cancelable: false },
         );
       } else {
-        Alert.alert(
-          "✓ Erstellt",
-          "Der Job wurde erfolgreich angelegt.",
-          [{ text: "OK", onPress: goToJobs }],
-          { cancelable: false },
-        );
+        await alertDialog("Erstellt", "Der Job wurde erfolgreich angelegt.");
       }
+
+      leaveWithoutWarning(() => router.replace("/(admin-tabs)/jobs"));
     } catch (err: unknown) {
       // Bei einem Fehler wird NICHT navigiert — der Admin bleibt im Formular.
       const msg = toUserMessage(err, "Job konnte nicht erstellt werden.");
-      Alert.alert("Fehler", msg);
+      await alertDialog("Fehler", msg);
     } finally {
       // Sperre in beiden Fällen wieder freigeben (Erfolg wie Fehler).
       submittingRef.current = false;
@@ -283,19 +283,15 @@ export default function AdminScreen() {
             />
           </SectionBlock>
 
-          <TouchableOpacity
+          {/* Gemeinsamer Button statt eigener TouchableOpacity-Nachbau —
+              gleiche Optik, gleicher Lade-Spinner und gleiche Tap-Fläche wie
+              im Bearbeiten-Screen. */}
+          <Button
+            label="Job erstellen"
             onPress={handleCreateJob}
+            loading={submitting}
             disabled={loading || submitting}
-            activeOpacity={0.85}
-            style={[
-              styles.createBtn,
-              (loading || submitting) && styles.createBtnDisabled,
-            ]}
-          >
-            <Text style={styles.createBtnText}>
-              {submitting ? "Wird erstellt…" : "Job erstellen"}
-            </Text>
-          </TouchableOpacity>
+          />
 
           <View style={{ height: 40 }} />
         </Animated.ScrollView>
@@ -384,27 +380,6 @@ function createStyles(theme: AppTheme) {
     scroll: {
       padding: theme.spacing.lg,
       gap: theme.spacing.md,
-    },
-
-    // "Job erstellen"-Button
-    createBtn: {
-      backgroundColor: theme.colors.primaryContainer,
-      paddingVertical: 15,
-      borderRadius: theme.radius.md,
-      alignItems: "center",
-      minHeight: theme.spacing.tapTarget,
-      justifyContent: "center",
-      ...theme.shadows.md,
-    },
-    createBtnDisabled: {
-      opacity: 0.5,
-    },
-    createBtnText: {
-      fontSize: theme.typography.size.md,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onPrimaryContainer,
-      letterSpacing: theme.typography.letterSpacing.wide,
     },
   });
 }
