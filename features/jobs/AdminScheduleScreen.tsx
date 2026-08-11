@@ -38,6 +38,7 @@ import {
   matchesSearch,
   type ScheduleFilter,
 } from "@/utils/scheduleView";
+import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, {
@@ -158,8 +159,11 @@ export default function AdminScheduleScreen({
         }
         setRuleMap(map);
         setJobs(items);
-      } catch (err: any) {
-        setError(err?.message ?? "Zeitplan konnte nicht geladen werden.");
+      } catch (err: unknown) {
+        // Letzte verbliebene Roh-Fehlerstelle dieses Screens: err.message kam
+        // direkt aus Supabase/PostgREST und konnte Tabellen-/Policy-Namen
+        // anzeigen. Jetzt über den zentralen Mapper (siehe utils/userMessages).
+        setError(toUserMessage(err, "Zeitplan konnte nicht geladen werden."));
       } finally {
         loadInProgress.current = false;
         setLoading(false);
@@ -198,13 +202,24 @@ export default function AdminScheduleScreen({
           }, 300);
         },
       )
+      // Status NUR im Development protokollieren — analog zum Kanal in
+      // context/JobContext.tsx ("Jobs realtime status:").
+      //
+      // Warum kein console.error mehr: CHANNEL_ERROR ist hier ein erwartbarer,
+      // sich selbst heilender Zustand. supabase-js setzt den Realtime-JWT erst
+      // bei SIGNED_IN/TOKEN_REFRESHED — beim Kaltstart mit gespeicherter
+      // Session feuert aber INITIAL_SESSION, sodass der erste Join ohne Token
+      // (also als anon) gegen die RLS auf `jobs` läuft und abgelehnt wird.
+      // realtime-js rejoint daraufhin selbstständig mit Backoff (1/2/5/10 s)
+      // und übernimmt den Token, sobald er gesetzt ist. console.error erzeugte
+      // dafür ein rotes LogBox-Overlay im Dev-Build, obwohl nichts kaputt ist
+      // und der Zeitplan sich danach normal weiter aktualisiert.
+      //
+      // Bewusst NICHT geändert: Kanal-Topic, Events, Filter, Cleanup sowie
+      // jegliche Auth-/Reconnect-Logik. Reine Logging-Änderung.
       .subscribe((status, error) => {
-        if (error) {
-          console.error("Admin schedule realtime error:", error);
-        }
-
-        if (status === "CHANNEL_ERROR") {
-          console.error("Admin schedule realtime channel failed");
+        if (__DEV__) {
+          console.log("Admin schedule realtime status:", status, error ?? "");
         }
       });
 
