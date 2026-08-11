@@ -27,6 +27,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
+import { toUserMessage } from "@/utils/userMessages";
 
 // ─────────────────────────────────────────────
 // Section-Block (theme-aware Karte mit Header)
@@ -205,10 +206,7 @@ export default function AdminScreen() {
       }
     } catch (err: unknown) {
       // Bei einem Fehler wird NICHT navigiert — der Admin bleibt im Formular.
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Job konnte nicht erstellt werden.";
+      const msg = toUserMessage(err, "Job konnte nicht erstellt werden.");
       Alert.alert("Fehler", msg);
     } finally {
       // Sperre in beiden Fällen wieder freigeben (Erfolg wie Fehler).

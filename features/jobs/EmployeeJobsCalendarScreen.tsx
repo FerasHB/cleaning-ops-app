@@ -29,6 +29,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
+import { toUserMessage } from "@/utils/userMessages";
 
 // Datums-Key "YYYY-MM-DD" eines Jobs.
 // single hat date; Fallback scheduledStart (Alt-Daten / single ohne date).
@@ -157,7 +158,7 @@ export default function EmployeeJobsCalendarScreen() {
         await startJob(jobId);
       } catch (err: unknown) {
         setActionError(
-          err instanceof Error ? err.message : "Job konnte nicht gestartet werden.",
+          toUserMessage(err, "Job konnte nicht gestartet werden."),
         );
       }
     },
@@ -171,7 +172,7 @@ export default function EmployeeJobsCalendarScreen() {
         await completeJob(jobId);
       } catch (err: unknown) {
         setActionError(
-          err instanceof Error ? err.message : "Job konnte nicht abgeschlossen werden.",
+          toUserMessage(err, "Job konnte nicht abgeschlossen werden."),
         );
       }
     },

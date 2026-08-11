@@ -31,6 +31,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { toUserMessage } from "@/utils/userMessages";
 
 // Reihenfolge für die Job-Liste: laufend → offen → erledigt
 const STATUS_ORDER: Record<JobStatus, number> = {
@@ -196,10 +197,10 @@ export default function EmployeeDetailScreen() {
         `${employee.fullName} hat eine neue Einladungs-E-Mail erhalten.`,
       );
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Einladung konnte nicht erneut verschickt werden.";
+      const message = toUserMessage(
+        err,
+        "Einladung konnte nicht erneut verschickt werden.",
+      );
       Alert.alert("Fehler", message);
     } finally {
       setResendingInvite(false);
@@ -220,10 +221,10 @@ export default function EmployeeDetailScreen() {
           : "Mitarbeiter wurde deaktiviert.",
       );
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Status konnte nicht geändert werden.";
+      const message = toUserMessage(
+        err,
+        "Status konnte nicht geändert werden.",
+      );
       Alert.alert("Fehler", message);
     } finally {
       setUpdatingActive(false);

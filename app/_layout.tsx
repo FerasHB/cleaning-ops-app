@@ -6,6 +6,7 @@ import { AnimatedSplash } from "@/components/ui";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { JobProvider } from "@/context/JobContext";
 import { AuthLinkUrlProvider } from "@/features/auth/AuthLinkUrlProvider";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { useNotificationNavigation } from "@/hooks/useNotificationNavigation";
 import { setupNotifications } from "@/services/notificationService";
 import { installNetworkErrorGuard } from "@/utils/networkError";
@@ -38,8 +39,52 @@ installNetworkErrorGuard();
 
 // Einfacher globaler Error-Boundary: fängt unerwartete Render-Fehler im
 // gesamten App-Baum ab, damit die App nicht komplett weiß/rot einfriert.
-// Bewusst minimal (kein Crash-Reporting, kein Theme) — nur ein deutscher
-// Fallback mit "Erneut versuchen".
+// Bewusst minimal (kein Crash-Reporting) — nur ein deutscher Fallback mit
+// "Erneut versuchen".
+//
+// Die Darstellung liegt in einer eigenen Funktionskomponente, weil die Klasse
+// selbst keine Hooks nutzen kann: der Fallback hing dadurch an festen
+// Light-Mode-Farben (#FFFFFF/#111827) und blitzte im Dark Mode als weiße
+// Seite auf. useAppTheme() braucht keinen Provider (nur useColorScheme) und
+// funktioniert deshalb auch hier oberhalb des Provider-Baums.
+function AppErrorFallback({ onReset }: { onReset: () => void }) {
+  const theme = useAppTheme();
+
+  return (
+    <View
+      style={[
+        styles.errorContainer,
+        { backgroundColor: theme.colors.background },
+      ]}
+    >
+      <Text style={[styles.errorTitle, { color: theme.colors.onSurface }]}>
+        Etwas ist schiefgelaufen
+      </Text>
+      <Text
+        style={[styles.errorMessage, { color: theme.colors.onSurfaceVariant }]}
+      >
+        Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es erneut.
+      </Text>
+      <Pressable
+        style={[
+          styles.errorButton,
+          { backgroundColor: theme.colors.primaryContainer },
+        ]}
+        onPress={onReset}
+      >
+        <Text
+          style={[
+            styles.errorButtonText,
+            { color: theme.colors.onPrimaryContainer },
+          ]}
+        >
+          Erneut versuchen
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 type AppErrorBoundaryState = { hasError: boolean };
 
 class AppErrorBoundary extends Component<
@@ -63,18 +108,7 @@ class AppErrorBoundary extends Component<
 
   render() {
     if (this.state.hasError) {
-      return (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorTitle}>Etwas ist schiefgelaufen</Text>
-          <Text style={styles.errorMessage}>
-            Es ist ein unerwarteter Fehler aufgetreten. Bitte versuche es
-            erneut.
-          </Text>
-          <Pressable style={styles.errorButton} onPress={this.handleReset}>
-            <Text style={styles.errorButtonText}>Erneut versuchen</Text>
-          </Pressable>
-        </View>
-      );
+      return <AppErrorFallback onReset={this.handleReset} />;
     }
 
     return this.props.children;
@@ -82,34 +116,31 @@ class AppErrorBoundary extends Component<
 }
 
 const styles = StyleSheet.create({
+  // Farben werden zur Laufzeit aus dem Theme ergänzt (siehe AppErrorFallback) —
+  // hier stehen nur Maße/Typo, damit der Fallback Dark Mode respektiert.
   errorContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
-    backgroundColor: "#FFFFFF",
   },
   errorTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#111827",
     marginBottom: 8,
     textAlign: "center",
   },
   errorMessage: {
     fontSize: 15,
-    color: "#4B5563",
     textAlign: "center",
     marginBottom: 24,
   },
   errorButton: {
-    backgroundColor: "#2563EB",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
   },
   errorButtonText: {
-    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "600",
   },

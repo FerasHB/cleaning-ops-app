@@ -21,6 +21,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 
 export function SetupCompanyScreen() {
   const theme  = useAppTheme();
@@ -50,9 +51,7 @@ export function SetupCompanyScreen() {
       router.replace("/");
     } catch (err) {
       setFormError(
-        err instanceof Error
-          ? err.message
-          : "Firma konnte nicht erstellt werden."
+        toFriendlyAuthErrorMessage(err, "Firma konnte nicht erstellt werden.")
       );
     } finally {
       setLoading(false);

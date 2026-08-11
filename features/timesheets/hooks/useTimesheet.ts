@@ -10,6 +10,7 @@ import {
 import type { TimesheetData } from "@/types/timesheet";
 import type { EmployeeOption } from "@/types/job";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toUserMessage } from "@/utils/userMessages";
 
 // In Version 1 neutraler, fest hinterlegter Firmenname (kein company.name-Fetch).
 const COMPANY_NAME = "Cleaning Ops";
@@ -114,9 +115,10 @@ export function useTimesheet(): UseTimesheetResult {
       .catch((err) => {
         if (!cancelled) {
           setError(
-            err instanceof Error
-              ? err.message
-              : "Stundenzettel konnte nicht geladen werden.",
+            toUserMessage(
+              err,
+              "Stundenzettel konnte nicht geladen werden.",
+            ),
           );
           setData(null);
         }
@@ -138,7 +140,7 @@ export function useTimesheet(): UseTimesheetResult {
       await exportTimesheetPdf(data);
     } catch (err) {
       setExportError(
-        err instanceof Error ? err.message : "PDF-Export fehlgeschlagen.",
+        toUserMessage(err, "PDF-Export fehlgeschlagen."),
       );
     } finally {
       setExporting(false);

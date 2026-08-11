@@ -144,9 +144,12 @@ export async function uploadJobPhoto(input: UploadPhotoInput): Promise<JobPhoto>
     });
 
   if (storageError) {
-    throw new Error(
-      `Foto konnte nicht hochgeladen werden: ${storageError.message}`,
-    );
+    // Rohtext NICHT anhängen: er enthält Bucket-/Pfad-/Policy-Namen und landete
+    // bisher unverändert im UI. Details bleiben im Dev-Log nachvollziehbar.
+    if (__DEV__) {
+      console.error("[photos] Upload fehlgeschlagen:", storageError);
+    }
+    throw new Error("Das Foto konnte nicht hochgeladen werden.");
   }
 
   // 3. Metadaten in Tabelle speichern
@@ -167,8 +170,11 @@ export async function uploadJobPhoto(input: UploadPhotoInput): Promise<JobPhoto>
   if (dbError) {
     // 4. Best-effort Rollback: Datei aus Storage entfernen
     await supabase.storage.from(BUCKET).remove([storagePath]);
+    if (__DEV__) {
+      console.error("[photos] Speichern der Metadaten fehlgeschlagen:", dbError);
+    }
     throw new Error(
-      `Foto wurde hochgeladen, aber konnte nicht gespeichert werden: ${dbError.message}`,
+      "Das Foto konnte nicht gespeichert werden. Bitte versuche es erneut.",
     );
   }
 
@@ -200,9 +206,10 @@ export async function getJobPhotos(jobId: string): Promise<JobPhoto[]> {
     .order("created_at", { ascending: false });
 
   if (error) {
-    throw new Error(
-      `Fotos konnten nicht geladen werden: ${error.message}`,
-    );
+    if (__DEV__) {
+      console.error("[photos] Laden fehlgeschlagen:", error);
+    }
+    throw new Error("Die Fotos konnten nicht geladen werden.");
   }
 
   if (!data || data.length === 0) {

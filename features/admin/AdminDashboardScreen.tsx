@@ -11,6 +11,7 @@
 import {
   Card,
   EmptyState,
+  ErrorBanner,
   InitialsAvatar,
   KPICard,
   LoadingScreen,
@@ -29,9 +30,10 @@ import {
 } from "@/services/jobs/jobs.service";
 import { formatDateISO } from "@/utils/date";
 import { isAssignedTo } from "@/utils/jobAssignees";
+import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const COMPANY_NAME = "Dashboard";
@@ -80,7 +82,14 @@ export default function AdminDashboardScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { profile } = useAuth();
-  const { jobs, employees, loading } = useJobs();
+  const {
+    jobs,
+    employees,
+    loading,
+    error: dataError,
+    refreshJobs,
+    refreshEmployees,
+  } = useJobs();
 
   // Zeitpunkt beim Render. Header zeigt nur das Datum (keine Live-Uhrzeit).
   const now = new Date();
@@ -104,22 +113,53 @@ export default function AdminDashboardScreen() {
   // getScheduleKpis reine Zähler (count/head) über job_type='single'.
   const todayKey = useMemo(() => formatDateISO(now) ?? "", [now]);
   const [kpis, setKpis] = useState<ScheduleKpis | null>(null);
+  // Schlägt die KPI-Abfrage fehl, blieben die vier Kacheln früher stumm auf
+  // „—" stehen — für den Admin nicht von „es gibt heute nichts" zu
+  // unterscheiden. Jetzt: sichtbares Banner + Retry, restliches Dashboard
+  // bleibt nutzbar (ein fehlgeschlagener Zähler ist kein Screen-Fehler).
+  const [kpiError, setKpiError] = useState("");
+  const kpiLoadingRef = useRef(false);
+
+  const loadKpis = useCallback(async () => {
+    if (!todayKey || kpiLoadingRef.current) return;
+    kpiLoadingRef.current = true;
+    try {
+      const fresh = await getScheduleKpis(todayKey);
+      setKpis(fresh);
+      setKpiError("");
+    } catch (err: unknown) {
+      // Zuvor geladene Werte NICHT verwerfen — veraltete Zahlen sind
+      // brauchbarer als leere Kacheln, das Banner ordnet sie ein.
+      setKpiError(
+        toUserMessage(err, "Die Kennzahlen konnten nicht geladen werden."),
+      );
+    } finally {
+      kpiLoadingRef.current = false;
+    }
+  }, [todayKey]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!todayKey) return;
-    getScheduleKpis(todayKey)
-      .then((k) => {
-        if (!cancelled) setKpis(k);
-      })
-      .catch(() => {
-        // Fehler still: KPIs zeigen dann „—".
-        if (!cancelled) setKpis(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [todayKey]);
+    void loadKpis();
+  }, [loadKpis]);
+
+  // ── Pull-to-Refresh ──────────────────────────────────────────────────────
+  // Aktualisiert Jobs, Mitarbeiter und KPIs gemeinsam. Bewusst KEIN
+  // loading-Gate: der LoadingScreen darf den Screen dabei nicht ersetzen,
+  // sichtbare (auch veraltete) Inhalte bleiben stehen.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
+
+  const handleRefresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await Promise.all([refreshJobs(), refreshEmployees(), loadKpis()]);
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, [refreshJobs, refreshEmployees, loadKpis]);
 
   const openCount = kpis?.offen ?? null;
   const inProgressCount = kpis?.inArbeit ?? null;
@@ -164,7 +204,12 @@ export default function AdminDashboardScreen() {
   if (loading) return <LoadingScreen />;
 
   return (
-    <ScreenContainer>
+    <ScreenContainer
+      refreshing={refreshing}
+      onRefresh={() => {
+        void handleRefresh();
+      }}
+    >
       {/* ── Header ── */}
       <View style={styles.header}>
         {/* Marken-Zeile. Rechts saß hier ein Save-Status-Badge, der nur im
@@ -189,6 +234,37 @@ export default function AdminDashboardScreen() {
 
       {/* ── Save-Status ── */}
       <OfflineBanner />
+
+      {/* ── Lade-/Aktualisierungsfehler der Job-/Mitarbeiterdaten ──
+          Sichtbar, aber nicht destruktiv: die zuletzt geladenen (ggf.
+          veralteten) Inhalte bleiben stehen. Offline setzt JobContext
+          bewusst KEINEN Fehler — dafür ist das OfflineBanner zuständig. */}
+      {dataError ? (
+        <View style={styles.kpiErrorWrap}>
+          <ErrorBanner
+            message={dataError}
+            actionLabel="Erneut versuchen"
+            onAction={() => {
+              void handleRefresh();
+            }}
+          />
+        </View>
+      ) : null}
+
+      {/* ── KPI-Fehler: nur die Kacheln betroffen, Rest bleibt bedienbar ── */}
+      {kpiError ? (
+        <View style={styles.kpiErrorWrap}>
+          <ErrorBanner
+            message={kpiError}
+            type="warning"
+            actionLabel="Erneut versuchen"
+            onAction={() => {
+              void loadKpis();
+            }}
+            onDismiss={() => setKpiError("")}
+          />
+        </View>
+      ) : null}
 
       {/* ── KPI-Karten (2×2) → tippen öffnet die Jobliste ── */}
       <View style={styles.kpiGrid}>
@@ -450,6 +526,9 @@ function createStyles(theme: AppTheme) {
     },
 
     // ── KPI Grid
+    kpiErrorWrap: {
+      marginBottom: theme.spacing.md,
+    },
     kpiGrid: {
       flexDirection: "row",
       flexWrap: "wrap",

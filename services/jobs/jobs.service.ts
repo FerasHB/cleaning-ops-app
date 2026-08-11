@@ -659,20 +659,26 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
           compensationError,
         );
       }
+      // Interne Details (Job-ID, Supabase-Hinweis) gehören ins Log, nicht in
+      // die UI — der Nutzer braucht nur zu wissen, dass er nachsehen muss.
+      if (__DEV__) {
+        console.error(
+          `[createJob] Kompensation fehlgeschlagen für Job-ID ${data.id} — ` +
+            `Auftrag existiert möglicherweise ohne Zuweisungen.`,
+        );
+      }
       throw new Error(
-        `Job wurde angelegt, aber die Mitarbeiterzuweisung ist fehlgeschlagen UND ` +
-          `der Job konnte danach nicht automatisch wieder gelöscht werden ` +
-          `(Job-ID ${data.id}). Der Auftrag existiert möglicherweise ohne ` +
-          `Zuweisungen — bitte manuell in Supabase prüfen.`,
+        "Der Auftrag wurde angelegt, aber die Mitarbeiterzuweisung ist " +
+          "fehlgeschlagen. Bitte prüfe den Auftrag in der Jobliste.",
       );
     }
 
-    const assignMsg =
-      assignError instanceof Error ? assignError.message : String(assignError);
+    if (__DEV__) {
+      console.error("[createJob] Zuweisung fehlgeschlagen:", assignError);
+    }
     throw new Error(
-      `Job konnte nicht mit den gewählten Mitarbeitern angelegt werden ` +
-        `(${assignMsg}). Der unvollständig angelegte Job wurde automatisch ` +
-        `wieder entfernt.`,
+      "Der Auftrag konnte nicht mit den gewählten Mitarbeitern angelegt " +
+        "werden. Es wurde nichts gespeichert — bitte erneut versuchen.",
     );
   }
 

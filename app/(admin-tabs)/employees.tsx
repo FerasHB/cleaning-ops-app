@@ -3,7 +3,7 @@
 // Vollständig theme-aware (Light + Dark Mode).
 // Business-Logik (createEmployee, JobContext) unverändert.
 
-import { EmptyState, LoadingScreen } from "@/components/ui";
+import { EmptyState, ErrorBanner, LoadingScreen } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useJobs } from "@/context/JobContext";
 import { createEmployee } from "@/services/employees/createEmployee";
@@ -27,6 +27,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { getEmployeeStatus } from "@/utils/employeeStatus";
+import { toUserMessage } from "@/utils/userMessages";
 
 function roleLabel(role?: string | null): string {
   if (role === "admin") return "Admin";
@@ -104,10 +105,10 @@ export default function EmployeesScreen() {
 
       handleCloseModal();
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Einladung konnte nicht verschickt werden.";
+      const message = toUserMessage(
+        error,
+        "Einladung konnte nicht verschickt werden.",
+      );
 
       Alert.alert("Fehler", message);
     } finally {
@@ -167,7 +168,10 @@ export default function EmployeesScreen() {
               <Text style={styles.countLabel}>aktive Mitarbeiter</Text>
             </View>
 
-            {error && <Text style={styles.errorText}>{error}</Text>}
+            {/* Ladefehler der Mitarbeiterliste: einheitlich als ErrorBanner
+                statt als nackter roter Text (dieselbe Darstellung wie in den
+                Job-Screens). Text kam bisher zudem roh aus dem Backend. */}
+            {error ? <ErrorBanner message={error} /> : null}
           </View>
         }
         ListEmptyComponent={
@@ -387,13 +391,6 @@ function createStyles(theme: AppTheme) {
     },
 
     // ── Error-Text
-    errorText: {
-      marginTop: theme.spacing.md,
-      color: theme.colors.error,
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-    },
 
     // ── Mitarbeiter-Karten in der Liste
     employeeCard: {

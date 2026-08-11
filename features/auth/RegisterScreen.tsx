@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
+import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 
 export default function RegisterScreen() {
   const theme      = useAppTheme();
@@ -106,7 +107,7 @@ export default function RegisterScreen() {
       router.replace("/");
     } catch (err) {
       setFormError(
-        err instanceof Error ? err.message : "Registrierung fehlgeschlagen."
+        toFriendlyAuthErrorMessage(err, "Registrierung fehlgeschlagen.")
       );
     } finally {
       setLoading(false);

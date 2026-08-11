@@ -60,6 +60,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
+import { toUserMessage } from "@/utils/userMessages";
 
 // ─────────────────────────────────────────────
 // JobDetailScreen
@@ -240,7 +241,7 @@ export default function JobDetailScreen() {
       await startJob(job.id);
     } catch (err: unknown) {
       setActionError(
-        err instanceof Error ? err.message : "Job konnte nicht gestartet werden."
+        toUserMessage(err, "Job konnte nicht gestartet werden.")
       );
     } finally {
       setSubmitting(false);
@@ -262,9 +263,7 @@ export default function JobDetailScreen() {
       await completeJob(job.id);
     } catch (err: unknown) {
       setActionError(
-        err instanceof Error
-          ? err.message
-          : "Job konnte nicht abgeschlossen werden."
+        toUserMessage(err, "Job konnte nicht abgeschlossen werden.")
       );
     } finally {
       setSubmitting(false);

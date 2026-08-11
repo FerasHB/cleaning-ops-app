@@ -57,6 +57,7 @@ import { router } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, StatusBar, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { toUserMessage } from "@/utils/userMessages";
 
 type Props = {
   /** Die Parent-Regel. Der Aufrufer hat bereits geprüft, dass es eine ist. */
@@ -204,7 +205,7 @@ export default function RecurringRuleDetailScreen({
       await loadOccurrences();
     } catch (err: unknown) {
       setActionError(
-        err instanceof Error ? err.message : "Aktion fehlgeschlagen.",
+        toUserMessage(err, "Aktion fehlgeschlagen."),
       );
     } finally {
       setRuleBusy(false);
@@ -230,9 +231,10 @@ export default function RecurringRuleDetailScreen({
               // Der DB-Guard lehnt Löschungen mit geschützter Historie ab —
               // Meldung sichtbar machen statt still zu scheitern.
               setActionError(
-                err instanceof Error
-                  ? err.message
-                  : "Löschen nicht möglich (geschützte Historie).",
+                toUserMessage(
+                  err,
+                  "Löschen nicht möglich (geschützte Historie).",
+                ),
               );
             } finally {
               setRuleBusy(false);

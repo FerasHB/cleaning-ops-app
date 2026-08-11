@@ -36,6 +36,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
+import { toUserMessage } from "@/utils/userMessages";
 
 // Vergleicht zwei Mitarbeiter-ID-Mengen ordnungsunabhängig (normalisiert:
 // dedupliziert + sortiert). Reine Umsortierung darf hasChanges NICHT
@@ -321,10 +322,7 @@ export default function EditJobScreen() {
       Alert.alert("Erfolgreich", "Job wurde aktualisiert.");
       router.back();
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Job konnte nicht gespeichert werden.";
+      const msg = toUserMessage(err, "Job konnte nicht gespeichert werden.");
 
       // Teilerfolg: die Mitarbeiterzuweisung wurde bereits gespeichert, auch
       // wenn der Rest fehlgeschlagen ist (siehe PartialUpdateError in
@@ -361,10 +359,10 @@ export default function EditJobScreen() {
             Alert.alert("Erfolgreich", "Job wurde gelöscht.");
             router.back();
           } catch (err: unknown) {
-            const msg =
-              err instanceof Error
-                ? err.message
-                : "Job konnte nicht gelöscht werden.";
+            const msg = toUserMessage(
+              err,
+              "Job konnte nicht gelöscht werden.",
+            );
             Alert.alert("Fehler", msg);
           } finally {
             setSubmitting(false);

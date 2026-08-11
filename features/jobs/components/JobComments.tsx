@@ -11,7 +11,7 @@
 // setzen; ohne dieses Prop hätte der Nutzer ein aktives Senden-Feld, das
 // serverseitig mit einem RLS-Fehler endet.
 
-import { Button, Card, ErrorBanner, Input } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorBanner, Input } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useJobComments } from "@/features/jobs/hooks/useJobComments";
 import { formatDateISO, isSameLocalDate } from "@/utils/date";
@@ -20,6 +20,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { toUserMessage } from "@/utils/userMessages";
 
 // ─────────────────────────────────────────────
 // Datums-/Zeit-Formatierung (analog JobDetailScreen)
@@ -94,9 +95,7 @@ export function JobComments({
         );
       } else {
         setSubmitError(
-          err instanceof Error
-            ? err.message
-            : "Kommentar konnte nicht gesendet werden.",
+          toUserMessage(err, "Kommentar konnte nicht gesendet werden."),
         );
       }
     } finally {
@@ -122,9 +121,16 @@ export function JobComments({
           <ActivityIndicator size="small" color={theme.colors.primary} />
         </View>
       ) : error ? (
-        <Text style={styles.errorText}>{error}</Text>
+        /* Einheitliche Fehlerdarstellung statt nacktem rotem Text — gleiche
+           Optik wie Sende-Fehler direkt darunter und in den Job-Screens. */
+        <ErrorBanner message={error} />
       ) : comments.length === 0 ? (
-        <Text style={styles.emptyText}>Noch keine Kommentare</Text>
+        <EmptyState
+          title="Noch keine Kommentare"
+          message="Schreibe die erste Nachricht zu diesem Auftrag."
+          icon="chatbubble-outline"
+          compact
+        />
       ) : (
         <View style={styles.list}>
           {comments.map((comment) => (
@@ -209,16 +215,6 @@ function createStyles(theme: AppTheme) {
     loadingWrap: {
       paddingVertical: theme.spacing.md,
       alignItems: "center",
-    },
-    errorText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.error,
-    },
-    emptyText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.regular,
-      color: theme.colors.onSurfaceVariant,
     },
 
     // Liste
