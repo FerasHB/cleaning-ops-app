@@ -24,7 +24,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -37,6 +36,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
+import { alertDialog, confirmDialog } from "@/utils/dialogs";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 
 // Vergleicht zwei Mitarbeiter-ID-Mengen ordnungsunabhängig (normalisiert:
 // dedupliziert + sortiert). Reine Umsortierung darf hasChanges NICHT
@@ -242,10 +243,17 @@ export default function EditJobScreen() {
     );
   }, [job, values, assignedEmployeeIds]);
 
-  // ── Speichern (unveränderte Logik)
+  // Warnung vor dem Verlassen mit ungespeicherten Änderungen. Nutzt dieselbe
+  // hasChanges-Berechnung wie der Speichern-Button — es warnt also exakt dann,
+  // wenn auch wirklich etwas zu speichern wäre. Während des Absendens aus.
+  const { leaveWithoutWarning } = useUnsavedChangesGuard(
+    hasChanges && !submitting,
+  );
+
+  // ── Speichern (Business-Logik unverändert)
   const handleSave = async () => {
     if (!job) {
-      Alert.alert("Fehler", "Job wurde nicht gefunden.");
+      await alertDialog("Fehler", "Job wurde nicht gefunden.");
       return;
     }
 
@@ -260,7 +268,7 @@ export default function EditJobScreen() {
     // diesem Zustand stattfinden — auch nicht, falls der Button je über
     // einen anderen Pfad als disabled=false erreichbar wäre.
     if (hasInactiveAssignedEmployees) {
-      Alert.alert(
+      await alertDialog(
         "Bearbeiten nicht möglich",
         "Dieser Auftrag ist mindestens einem inaktiven Mitarbeiter zugewiesen " +
           `(${inactiveAssignedEmployees.map((e) => e.fullName).join(", ")}). ` +
@@ -319,8 +327,12 @@ export default function EditJobScreen() {
             },
       );
 
-      Alert.alert("Erfolgreich", "Job wurde aktualisiert.");
-      router.back();
+      // Erst den Hinweis abwarten, DANN zurück. Vorher lief Alert.alert
+      // fire-and-forget und router.back() feuerte sofort — der Hinweis stand
+      // dann über dem VORHERIGEN Screen bzw. verschwand mit dem Wechsel. Im
+      // Web zeigte Alert.alert ohnehin nichts an.
+      await alertDialog("Gespeichert", "Der Job wurde aktualisiert.");
+      leaveWithoutWarning(() => router.back());
     } catch (err: unknown) {
       const msg = toUserMessage(err, "Job konnte nicht gespeichert werden.");
 
@@ -331,45 +343,45 @@ export default function EditJobScreen() {
       // Fehlschlag/Rollback darstellen, im Formular bleiben (kein
       // router.back()) und NICHT automatisch erneut speichern.
       if (err instanceof PartialUpdateError) {
-        Alert.alert("Teilweise gespeichert", msg);
+        await alertDialog("Teilweise gespeichert", msg);
       } else {
-        Alert.alert("Fehler", msg);
+        await alertDialog("Fehler", msg);
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ── Löschen (unveränderte Logik)
+  // ── Löschen (Business-Logik unverändert)
+  // Dialoge laufen jetzt über confirmDialog/alertDialog statt Alert.alert:
+  // dieselbe Erfolgs-Reihenfolge wie beim Speichern (Hinweis abwarten, dann
+  // navigieren) und im Web überhaupt sichtbar.
   const handleDelete = async () => {
     if (!job) {
-      Alert.alert("Fehler", "Job wurde nicht gefunden.");
+      await alertDialog("Fehler", "Job wurde nicht gefunden.");
       return;
     }
 
-    Alert.alert("Job löschen", "Möchtest du diesen Job wirklich löschen?", [
-      { text: "Abbrechen", style: "cancel" },
-      {
-        text: "Löschen",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            setSubmitting(true);
-            await deleteJob(job.id);
-            Alert.alert("Erfolgreich", "Job wurde gelöscht.");
-            router.back();
-          } catch (err: unknown) {
-            const msg = toUserMessage(
-              err,
-              "Job konnte nicht gelöscht werden.",
-            );
-            Alert.alert("Fehler", msg);
-          } finally {
-            setSubmitting(false);
-          }
-        },
-      },
-    ]);
+    const confirmed = await confirmDialog({
+      title: "Job löschen",
+      message: "Möchtest du diesen Job wirklich löschen?",
+      confirmLabel: "Löschen",
+      destructive: true,
+    });
+
+    if (!confirmed) return;
+
+    try {
+      setSubmitting(true);
+      await deleteJob(job.id);
+      await alertDialog("Gelöscht", "Der Job wurde gelöscht.");
+      leaveWithoutWarning(() => router.back());
+    } catch (err: unknown) {
+      const msg = toUserMessage(err, "Job konnte nicht gelöscht werden.");
+      await alertDialog("Fehler", msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (authLoading || loading) {

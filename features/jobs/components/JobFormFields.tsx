@@ -73,8 +73,8 @@ export function JobFormFields({
       />
 
       <Input
-        label="Ort *"
-        placeholder="z.B. Dortmund"
+        label="Adresse *"
+        placeholder="z. B. Bahnhofstraße 12, 58507 Lüdenscheid"
         value={values.location}
         onChangeText={(val) => onChangeField("location", val)}
         error={errors.location}
@@ -121,10 +121,8 @@ export function JobFormFields({
             placeholder="Datum und Uhrzeit auswählen..."
             value={values.singleDateTime}
             onChange={(val) => onChangeField("singleDateTime", val)}
+            error={errors.singleDateTime}
           />
-          {errors.singleDateTime ? (
-            <Text style={styles.errorText}>{errors.singleDateTime}</Text>
-          ) : null}
         </View>
       ) : (
         /* ── Wiederkehrend: Wochentage + Uhrzeit + aktiv ── */
@@ -162,10 +160,8 @@ export function JobFormFields({
             mode="time"
             value={values.startTime}
             onChange={(val) => onChangeField("startTime", val)}
+            error={errors.startTime}
           />
-          {errors.startTime ? (
-            <Text style={styles.errorText}>{errors.startTime}</Text>
-          ) : null}
 
           <DateTimeField
             label="Startdatum *"
@@ -173,10 +169,8 @@ export function JobFormFields({
             mode="date"
             value={values.recurrenceStartDate}
             onChange={(val) => onChangeField("recurrenceStartDate", val)}
+            error={errors.recurrenceStartDate}
           />
-          {errors.recurrenceStartDate ? (
-            <Text style={styles.errorText}>{errors.recurrenceStartDate}</Text>
-          ) : null}
 
           <DateTimeField
             label="Enddatum (optional)"
@@ -184,10 +178,8 @@ export function JobFormFields({
             mode="date"
             value={values.recurrenceEndDate}
             onChange={(val) => onChangeField("recurrenceEndDate", val)}
+            error={errors.recurrenceEndDate}
           />
-          {errors.recurrenceEndDate ? (
-            <Text style={styles.errorText}>{errors.recurrenceEndDate}</Text>
-          ) : null}
 
           <View style={styles.activeRow}>
             <View style={styles.activeTextWrap}>
@@ -196,6 +188,9 @@ export function JobFormFields({
                 Inaktive Aufträge werden Mitarbeitern nicht angezeigt.
               </Text>
             </View>
+            {/* Thumb/Track explizit setzen: Android zeichnete den Thumb
+                sonst in seiner hellen Standardfarbe, die im Dark Mode auf dem
+                dunklen Track kaum zu unterscheiden war. Verhalten unverändert. */}
             <Switch
               value={values.isActive}
               onValueChange={(val) => onChangeField("isActive", val)}
@@ -203,6 +198,12 @@ export function JobFormFields({
                 false: theme.colors.outlineVariant,
                 true: theme.colors.primary,
               }}
+              thumbColor={
+                values.isActive
+                  ? theme.colors.onPrimaryContainer
+                  : theme.colors.surfaceContainerHighest
+              }
+              ios_backgroundColor={theme.colors.outlineVariant}
             />
           </View>
         </View>
@@ -210,7 +211,7 @@ export function JobFormFields({
 
       {showEmployeePicker ? (
         <>
-          <Text style={styles.sectionLabel}>Mitarbeiter</Text>
+          <Text style={styles.sectionLabel}>Mitarbeiter (optional)</Text>
           <EmployeeMultiSelector
             employees={employees}
             selectedEmployeeIds={values.employeeIds}
@@ -220,11 +221,12 @@ export function JobFormFields({
       ) : null}
 
       <Input
-        label="Notizen"
-        placeholder="Interne Hinweise (optional)"
+        label="Notizen (optional)"
+        placeholder="Interne Hinweise für dein Team"
         value={values.notes}
         onChangeText={(val) => onChangeField("notes", val)}
         multiline
+        numberOfLines={4}
       />
     </>
   );

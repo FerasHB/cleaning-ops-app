@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { JobType } from "@/types/job";
 import type { WeekdayKey } from "@/utils/recurrence";
 
@@ -50,6 +50,40 @@ export function useJobForm(initialValues?: Partial<JobFormValues>) {
 
     const [errors, setErrors] = useState<JobFormErrors>({});
 
+    // Ausgangsstand beim Mount — Basis für isDirty (Warnung vor dem Verlassen
+    // mit ungespeicherten Änderungen).
+    //
+    // NUR für das ERSTELLEN-Formular gedacht: der Bearbeiten-Screen befüllt die
+    // Werte nach dem Laden per setValues und hätte hier eine veraltete Basis.
+    // Er hat dafür eine eigene, job-bezogene hasChanges-Berechnung, die
+    // zusätzlich Datums-/Zeit-Normalisierung berücksichtigt.
+    const baselineRef = useRef<JobFormValues>({
+        ...emptyValues,
+        ...initialValues,
+    });
+
+    const isDirty = useMemo(() => {
+        const base = baselineRef.current;
+        return (
+            values.customerName !== base.customerName ||
+            values.location !== base.location ||
+            values.service !== base.service ||
+            values.notes !== base.notes ||
+            values.jobType !== base.jobType ||
+            values.isActive !== base.isActive ||
+            values.employeeIds.length !== base.employeeIds.length ||
+            values.employeeIds.some((id) => !base.employeeIds.includes(id)) ||
+            values.recurringDays.length !== base.recurringDays.length ||
+            values.recurringDays.some((d) => !base.recurringDays.includes(d)) ||
+            values.singleDateTime?.getTime() !== base.singleDateTime?.getTime() ||
+            values.startTime?.getTime() !== base.startTime?.getTime() ||
+            values.recurrenceStartDate?.getTime() !==
+                base.recurrenceStartDate?.getTime() ||
+            values.recurrenceEndDate?.getTime() !==
+                base.recurrenceEndDate?.getTime()
+        );
+    }, [values]);
+
     const setField = <K extends keyof JobFormValues>(
         field: K,
         value: JobFormValues[K]
@@ -68,31 +102,31 @@ export function useJobForm(initialValues?: Partial<JobFormValues>) {
         const nextErrors: JobFormErrors = {};
 
         if (!values.customerName.trim()) {
-            nextErrors.customerName = "Bitte Kundennamen eingeben.";
+            nextErrors.customerName = "Kunde ist erforderlich.";
         }
 
         if (!values.location.trim()) {
-            nextErrors.location = "Bitte Ort eingeben.";
+            nextErrors.location = "Adresse ist erforderlich.";
         }
 
         if (!values.service.trim()) {
-            nextErrors.service = "Bitte Service eingeben.";
+            nextErrors.service = "Service ist erforderlich.";
         }
 
         // ── Terminierung je nach Auftragstyp ──
         if (values.jobType === "single") {
             if (!values.singleDateTime) {
-                nextErrors.singleDateTime = "Bitte Datum und Uhrzeit wählen.";
+                nextErrors.singleDateTime = "Bitte wähle Datum und Uhrzeit.";
             }
         } else {
             if (values.recurringDays.length === 0) {
-                nextErrors.recurringDays = "Bitte mindestens einen Wochentag wählen.";
+                nextErrors.recurringDays = "Bitte wähle mindestens einen Wochentag.";
             }
             if (!values.startTime) {
-                nextErrors.startTime = "Bitte Uhrzeit wählen.";
+                nextErrors.startTime = "Bitte wähle eine Uhrzeit.";
             }
             if (!values.recurrenceStartDate) {
-                nextErrors.recurrenceStartDate = "Bitte Startdatum wählen.";
+                nextErrors.recurrenceStartDate = "Bitte wähle ein Startdatum.";
             }
             if (
                 values.recurrenceStartDate &&
@@ -110,11 +144,14 @@ export function useJobForm(initialValues?: Partial<JobFormValues>) {
     const reset = () => {
         setValues(emptyValues);
         setErrors({});
+        // Basis mitziehen, sonst gilt das frisch geleerte Formular als geändert.
+        baselineRef.current = emptyValues;
     };
 
     return {
         values,
         errors,
+        isDirty,
         setField,
         validate,
         reset,

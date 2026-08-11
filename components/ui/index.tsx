@@ -190,7 +190,7 @@ interface InputProps extends TextInputProps {
   error?: string;
 }
 
-export function Input({ label, error, style, onFocus, onBlur, ...props }: InputProps) {
+export function Input({ label, error, style, onFocus, onBlur, multiline, ...props }: InputProps) {
   const theme = useAppTheme();
   const [focused, setFocused] = useState(false);
   const styles = useMemo(() => createInputStyles(theme), [theme]);
@@ -199,8 +199,14 @@ export function Input({ label, error, style, onFocus, onBlur, ...props }: InputP
     <View style={styles.wrapper}>
       {label && <Text style={styles.label}>{label}</Text>}
       <TextInput
+        multiline={multiline}
+        // Mehrzeilige Felder sahen bisher aus wie einzeilige: minHeight war der
+        // Tap-Target-Wert und der Text stand vertikal zentriert. Jetzt sichtbar
+        // mehrzeilig (Platz für ~4 Zeilen) und Text startet oben.
+        textAlignVertical={multiline ? "top" : undefined}
         style={[
           styles.input,
+          multiline && styles.inputMultiline,
           focused && styles.inputFocused,
           error && styles.inputError,
           style as any,
@@ -301,6 +307,11 @@ function createInputStyles(theme: AppTheme) {
     },
     inputError: {
       borderColor: theme.colors.error,
+    },
+    inputMultiline: {
+      minHeight: 96,
+      paddingTop: 12,
+      paddingBottom: 12,
     },
     errorText: {
       fontSize: theme.typography.size.xs,
