@@ -75,7 +75,8 @@ export default function AdminTabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          // Deutsch wie überall sonst in der App (siehe Employee-Layout).
+          title: "Profil",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),

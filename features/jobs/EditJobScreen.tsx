@@ -3,7 +3,7 @@
 // Vollständig auf useAppTheme() migriert — Light + Dark Mode.
 // Business-Logik (updateJob, deleteJob, useJobForm, AuthContext, JobContext) unverändert.
 
-import { Button, Card, Divider, ErrorBanner, LoadingScreen } from "@/components/ui";
+import { AppHeader, Button, Card, Divider, ErrorBanner, LoadingScreen } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
@@ -438,33 +438,7 @@ export default function EditJobScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backButton}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={22}
-              color={theme.colors.primary}
-            />
-            <Text style={styles.backLabel}>Zurück</Text>
-          </TouchableOpacity>
-
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Job bearbeiten</Text>
-            {role && (
-              <View style={styles.roleBadge}>
-                <Text style={styles.roleBadgeText}>{role}</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Gegengewicht zum Zurück-Button, damit der Titel mittig bleibt. */}
-          <View style={styles.headerSpacer} />
-        </View>
+        <AppHeader title="Job bearbeiten" showBack />
 
         {/* ── Scroll-Inhalt ── */}
         <ScrollView
@@ -598,60 +572,6 @@ function createStyles(theme: AppTheme) {
     },
 
     // ── Header
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.outlineVariant,
-      backgroundColor: theme.colors.background,
-    },
-    backButton: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 2,
-      paddingVertical: theme.spacing.xs,
-      minWidth: 70,
-    },
-    backLabel: {
-      fontSize: theme.typography.size.md,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.primary,
-    },
-    headerCenter: {
-      flex: 1,
-      alignItems: "center",
-      flexDirection: "row",
-      justifyContent: "center",
-      gap: theme.spacing.sm,
-    },
-    headerTitle: {
-      fontSize: theme.typography.size.md,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onSurface,
-    },
-    roleBadge: {
-      backgroundColor: theme.colors.statusInProgressBg,
-      borderWidth: 1,
-      borderColor: theme.colors.statusInProgressBorder,
-      paddingHorizontal: 8,
-      paddingVertical: 2,
-      borderRadius: theme.radius.full,
-    },
-    roleBadgeText: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.statusInProgress,
-    },
-    headerSpacer: {
-      minWidth: 70,
-    },
-
     // ── Scroll-Container
     scroll: {
       padding: theme.spacing.lg,

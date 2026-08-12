@@ -1,4 +1,4 @@
-import { ErrorBanner, PasswordInput } from "@/components/ui";
+import { AppHeader, ErrorBanner, PasswordInput } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
@@ -17,7 +17,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 
 export default function ChangePasswordScreen() {
   const theme = useAppTheme();
@@ -73,18 +72,7 @@ export default function ChangePasswordScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            activeOpacity={0.8}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="chevron-back" size={18} color={theme.colors.onSurface} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Passwort ändern</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <AppHeader title="Passwort ändern" showBack />
 
         <ScrollView
           contentContainerStyle={styles.content}
@@ -156,35 +144,6 @@ function createStyles(theme: AppTheme) {
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
-    },
-
-    // ── Header
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.outlineVariant,
-    },
-    backButton: {
-      width: 36,
-      height: 36,
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.surfaceContainerHigh,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    headerTitle: {
-      flex: 1,
-      textAlign: "center",
-      fontSize: theme.typography.size.lg,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onSurface,
-    },
-    headerSpacer: {
-      width: 36,
     },
 
     // ── Content

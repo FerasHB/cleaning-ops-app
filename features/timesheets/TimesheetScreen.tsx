@@ -20,7 +20,6 @@ import {
   Card,
   EmptyState,
   ErrorBanner,
-  ScreenContainer,
   SectionHeader,
 } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
@@ -31,11 +30,14 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import {
   ActivityIndicator,
+  ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function TimesheetScreen() {
   const theme = useAppTheme();
@@ -72,12 +74,20 @@ export default function TimesheetScreen() {
   const hasEntries = !!data && data.entries.length > 0;
 
   return (
-    <ScreenContainer>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <StatusBar
+        barStyle={theme.isDark ? "light-content" : "dark-content"}
+        backgroundColor={theme.colors.background}
+      />
       <AppHeader
         title={isAdmin ? "Stundenzettel" : "Meine Arbeitszeit"}
         showBack
       />
 
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
       {/* ── Mitarbeiter wählen (nur Admin) ──
           In der Eigen-Sicht gibt es nichts zu wählen: der Stundenzettel ist
           fest an die angemeldete Person gebunden. */}
@@ -275,7 +285,8 @@ export default function TimesheetScreen() {
       />
 
       <View style={{ height: theme.spacing.xxl }} />
-    </ScreenContainer>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -290,6 +301,15 @@ function formatDayShort(isoDate: string): string {
 
 function createStyles(theme: AppTheme) {
   return StyleSheet.create({
+    safe: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    scroll: {
+      flexGrow: 1,
+      paddingHorizontal: theme.spacing.gutter,
+      paddingBottom: 32,
+    },
     section: {
       marginTop: theme.spacing.lg,
     },
