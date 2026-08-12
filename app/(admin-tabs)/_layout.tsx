@@ -63,6 +63,16 @@ export default function AdminTabsLayout() {
       />
 
       <Tabs.Screen
+        name="kalender"
+        options={{
+          title: "Kalender",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="employees"
         options={{
           title: "Mitarbeiter",
