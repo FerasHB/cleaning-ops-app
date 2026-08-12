@@ -701,6 +701,16 @@ begin
     )
     on conflict (job_id, event_type) do nothing;
 
+    -- Phase 1 Worked Time (20260812000000): eigene Zuweisungszeile
+    -- mitführen. COALESCE hält den Zeitstempel beim Doppel-Tap fest;
+    -- attendance hebt nur EINMAL von 'assigned' auf 'started' an.
+    update public.job_assignments
+    set
+      employee_started_at = coalesce(employee_started_at, started_at_input),
+      attendance = case when attendance = 'assigned' then 'started' else attendance end
+    where job_id = job_id_input
+      and employee_id = auth.uid();
+
     return started_at_input;
   end if;
 
@@ -720,6 +730,18 @@ begin
   if found then
     -- Der Kollege war schneller (oder Doppel-Tap/Retry): die bereits
     -- gesetzte, GETEILTE Startzeit zurückgeben — nie die eigene.
+    --
+    -- Phase 1 Worked Time (20260812000000): trotzdem die EIGENE
+    -- Zuweisungszeile pflegen — ein später beigetretener Mitarbeiter
+    -- (Job bereits von einem Kollegen gestartet/abgeschlossen) erhält so
+    -- seine eigene Startzeit, unabhängig von der geteilten Job-Uhr.
+    update public.job_assignments
+    set
+      employee_started_at = coalesce(employee_started_at, started_at_input),
+      attendance = case when attendance = 'assigned' then 'started' else attendance end
+    where job_id = job_id_input
+      and employee_id = auth.uid();
+
     return coalesce(existing_row.started_at, started_at_input);
   end if;
 
@@ -785,6 +807,16 @@ begin
     )
     on conflict (job_id, event_type) do nothing;
 
+    -- Phase 1 Worked Time (20260812000000): eigene Zuweisungszeile
+    -- mitführen. 'completed' ist terminal und darf immer gesetzt werden —
+    -- ein Mitarbeiter darf abschließen, ohne selbst gestartet zu haben.
+    update public.job_assignments
+    set
+      employee_completed_at = coalesce(employee_completed_at, completed_at_input),
+      attendance = 'completed'
+    where job_id = job_id_input
+      and employee_id = auth.uid();
+
     return completed_at_input;
   end if;
 
@@ -807,6 +839,16 @@ begin
   -- Deckt auch den Wettlauf zweier Zugewiesener ab: der Zweite erhält die
   -- GETEILTE Endzeit des Ersten.
   if existing_row.status = 'completed' then
+    -- Phase 1 Worked Time (20260812000000): trotzdem die EIGENE
+    -- Zuweisungszeile pflegen — ein später abschließender Mitarbeiter
+    -- erhält so seine eigene Abschlusszeit.
+    update public.job_assignments
+    set
+      employee_completed_at = coalesce(employee_completed_at, completed_at_input),
+      attendance = 'completed'
+    where job_id = job_id_input
+      and employee_id = auth.uid();
+
     return coalesce(existing_row.completed_at, completed_at_input);
   end if;
 
@@ -1898,10 +1940,10 @@ comment on function public.clear_my_push_token() is
 'Clears only the current user expo push token. Always succeeds for any authenticated caller (active or not) — used on logout so a shared device never keeps a stale token bound to the previous user.';
 
 comment on function public.start_own_job(uuid, timestamptz) is
-'Setzt einen Auftrag der eigenen Firma auf in_progress. Berechtigt ist JEDER über job_assignments Zugewiesene sowie (Bestand) der Legacy-Primär jobs.assigned_to; nur role=employee, nur job_type=single. Schreibt started_at/started_by und ein job_started-Outbox-Event genau beim echten Übergang open -> in_progress; bereits gestartet/abgeschlossen ist ein idempotenter No-Op und gibt die GETEILTE Startzeit zurück. Fasst job_assignments nicht an (keine Anwesenheitserfassung).';
+'Setzt einen Auftrag der eigenen Firma auf in_progress. Berechtigt ist JEDER über job_assignments Zugewiesene sowie (Bestand) der Legacy-Primär jobs.assigned_to; nur role=employee, nur job_type=single. Schreibt started_at/started_by und ein job_started-Outbox-Event genau beim echten Übergang open -> in_progress; bereits gestartet/abgeschlossen ist ein idempotenter No-Op und gibt die GETEILTE Startzeit zurück. Pflegt zusätzlich (Phase 1 Worked Time, 20260812000000) employee_started_at/attendance auf der EIGENEN job_assignments-Zeile des Aufrufers, sowohl beim echten Übergang als auch beim No-Op — damit erhält auch ein später beigetretener Mitarbeiter seine eigene Startzeit.';
 
 comment on function public.complete_own_job(uuid, timestamptz) is
-'Setzt einen laufenden Auftrag der eigenen Firma auf completed. Berechtigt ist JEDER über job_assignments Zugewiesene sowie (Bestand) der Legacy-Primär; nur role=employee, nur job_type=single. Schreibt completed_at/completed_by und ein job_completed-Outbox-Event genau beim echten Übergang in_progress -> completed; bereits abgeschlossen ist ein idempotenter No-Op. Ein noch nicht gestarteter Auftrag wird abgelehnt (ohne Start gibt es keine Dauer). Fasst job_assignments nicht an (keine Anwesenheitserfassung).';
+'Setzt einen laufenden Auftrag der eigenen Firma auf completed. Berechtigt ist JEDER über job_assignments Zugewiesene sowie (Bestand) der Legacy-Primär; nur role=employee, nur job_type=single. Schreibt completed_at/completed_by und ein job_completed-Outbox-Event genau beim echten Übergang in_progress -> completed; bereits abgeschlossen ist ein idempotenter No-Op. Ein noch nicht gestarteter Auftrag wird abgelehnt (ohne Start gibt es keine Dauer). Pflegt zusätzlich (Phase 1 Worked Time, 20260812000000) employee_completed_at/attendance=''completed'' auf der EIGENEN job_assignments-Zeile des Aufrufers, sowohl beim echten Übergang als auch beim No-Op — damit erhält auch ein später abschließender Mitarbeiter seine eigene Abschlusszeit.';
 
 comment on function public.enforce_active_assignee() is
 'BEFORE INSERT/UPDATE Guard auf jobs: Zuweisung nur an ein aktives Profil mit role=employee derselben company_id. Prüft bei INSERT und bei UPDATE mit geändertem assigned_to oder company_id. Unabhängig vom schreibenden Pfad (RLS oder SECURITY DEFINER RPC).';
