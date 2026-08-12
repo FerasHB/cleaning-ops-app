@@ -150,6 +150,14 @@ export default function AdminScreen() {
     try {
       setSubmitting(true);
 
+      // Rohtext -> positive Ganzzahl oder null (leer/ungültig = keine Dauer
+      // geplant). JobFormFields lässt ohnehin nur Ziffern zu.
+      const parsedDuration = parseInt(values.durationMinutes, 10);
+      const plannedDurationMinutes =
+        Number.isFinite(parsedDuration) && parsedDuration > 0
+          ? parsedDuration
+          : null;
+
       // Gemeinsame Basis
       const base = {
         customerName: values.customerName.trim(),
@@ -157,6 +165,7 @@ export default function AdminScreen() {
         service: values.service.trim(),
         employeeIds: values.employeeIds,
         notes: values.notes.trim() || null,
+        plannedDurationMinutes,
       };
 
       // Terminierung je nach Auftragstyp aufbauen

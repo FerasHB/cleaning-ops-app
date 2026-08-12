@@ -66,6 +66,7 @@ type JobRow = {
   parent_job_id: string | null;
   recurrence_start_date: string | null;
   recurrence_end_date: string | null;
+  planned_duration_minutes: number | null;
   profiles?:
   | {
     id: string;
@@ -111,6 +112,7 @@ type UpdateJobInput = {
   isActive?: boolean;
   recurrenceStartDate?: string | null;
   recurrenceEndDate?: string | null;
+  plannedDurationMinutes?: number | null;
 };
 
 // Validiert & normalisiert die Terminierungs-Felder serverseitig
@@ -259,6 +261,7 @@ const JOB_SELECT = `
   parent_job_id,
   recurrence_start_date,
   recurrence_end_date,
+  planned_duration_minutes,
   assigned_to,
   profiles:assigned_to (
     id,
@@ -420,6 +423,9 @@ function mapJob(row: JobRow): Job {
     isOccurrence: row.parent_job_id != null,
     recurrenceStartDate: row.recurrence_start_date ?? null,
     recurrenceEndDate: row.recurrence_end_date ?? null,
+
+    // Geplante Dauer (Phase 3, Planned Duration Foundation).
+    plannedDurationMinutes: row.planned_duration_minutes ?? null,
   };
 }
 
@@ -614,6 +620,7 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
     // damit Detail-/Monats-Anzeigen weiter funktionieren; recurring → null.
     scheduled_start: input.scheduledStart ?? null,
     scheduled_end: input.scheduledEnd ?? null,
+    planned_duration_minutes: input.plannedDurationMinutes ?? null,
     notes: input.notes?.trim() ? input.notes.trim() : null,
     status: "open" as const,
     ...schedule,
@@ -856,6 +863,7 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     scheduled_start: string | null;
     notes: string | null;
     scheduled_end?: string | null;
+    planned_duration_minutes: number | null;
     job_type: JobType;
     date: string | null;
     start_time: string | null;
@@ -869,6 +877,9 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
     // single: aus date+time abgeleiteter ISO-Wert; recurring: null
     scheduled_start: input.scheduledStart ?? null,
     notes: input.notes?.trim() ? input.notes.trim() : null,
+    // Anders als scheduled_end wird dies vom Formular IMMER mitgeschickt
+    // (siehe useJobForm/JobFormFields) — kein "nur wenn explizit" nötig.
+    planned_duration_minutes: input.plannedDurationMinutes ?? null,
     ...schedule,
   };
 

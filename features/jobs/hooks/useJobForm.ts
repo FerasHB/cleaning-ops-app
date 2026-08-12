@@ -23,6 +23,10 @@ export type JobFormValues = {
     // recurring: Gültigkeitszeitraum (Startdatum Pflicht, Enddatum optional)
     recurrenceStartDate: Date | null;
     recurrenceEndDate:   Date | null;
+    // Geplante Dauer in Minuten, optional (Phase 3 Planned Duration).
+    // Als Rohtext gehalten wie andere Input-Felder; nur Ziffern (siehe
+    // JobFormFields onChangeText), leer = keine Dauer geplant.
+    durationMinutes: string;
 };
 
 export type JobFormErrors = Partial<Record<keyof JobFormValues, string>>;
@@ -40,6 +44,7 @@ const emptyValues: JobFormValues = {
     isActive: true,
     recurrenceStartDate: null,
     recurrenceEndDate: null,
+    durationMinutes: "",
 };
 
 export function useJobForm(initialValues?: Partial<JobFormValues>) {
@@ -80,7 +85,8 @@ export function useJobForm(initialValues?: Partial<JobFormValues>) {
             values.recurrenceStartDate?.getTime() !==
                 base.recurrenceStartDate?.getTime() ||
             values.recurrenceEndDate?.getTime() !==
-                base.recurrenceEndDate?.getTime()
+                base.recurrenceEndDate?.getTime() ||
+            values.durationMinutes !== base.durationMinutes
         );
     }, [values]);
 

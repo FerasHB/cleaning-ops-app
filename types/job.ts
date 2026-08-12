@@ -90,6 +90,14 @@ export type Job = {
   // Nur aktive Aufträge werden Mitarbeitern "heute" angezeigt.
   isActive: boolean;
 
+  // Optionale geplante Dauer in Minuten (Phase 3, Planned Duration
+  // Foundation). NULL/undefined = keine Dauer geplant (Bestand). Zusammen
+  // mit startTime die EINZIGE Quelle der geplanten Terminierung —
+  // scheduledEnd wird hierfür NICHT verwendet. Bei recurring-Parent-Regeln
+  // die Dauer je Occurrence, propagiert über generate_job_occurrences/
+  // update_job_occurrences (siehe lib/schema.sql).
+  plannedDurationMinutes?: number | null;
+
   // True, wenn dieser Job für den aktuellen User ungelesene Kommentare hat
   // (roter Punkt). Wird im JobContext nach getJobs gemerged, nicht in mapJob.
   hasUnreadComments?: boolean;
@@ -133,6 +141,9 @@ export type CreateJobInput = {
   // (hält die bestehenden Detail-/Monats-Anzeigen lauffähig).
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
+  // Optionale geplante Dauer in Minuten (Phase 3, Planned Duration
+  // Foundation). Siehe Hinweis bei Job.plannedDurationMinutes.
+  plannedDurationMinutes?: number | null;
 };
 
 export type EmployeeOption = {
