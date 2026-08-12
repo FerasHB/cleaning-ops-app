@@ -37,6 +37,9 @@ type JobAssignmentRow = {
   employee_id: string | null;
   employee_name_snapshot: string | null;
   assigned_at: string | null;
+  // Individuelle Arbeitszeit (Phase 1 Worked Time) — Anzeige seit Phase B1.
+  employee_started_at: string | null;
+  employee_completed_at: string | null;
   profiles?:
   | { id: string; full_name: string | null }
   | { id: string; full_name: string | null }[]
@@ -272,6 +275,8 @@ const JOB_SELECT = `
     employee_id,
     employee_name_snapshot,
     assigned_at,
+    employee_started_at,
+    employee_completed_at,
     profiles:employee_id (
       id,
       full_name
@@ -313,6 +318,10 @@ function mapAssignees(rows: JobAssignmentRow[] | null | undefined): JobAssignee[
           employeeId: row.employee_id,
           fullName: livingName?.trim() || snapshot || "Unbekannt",
           isDeleted: row.employee_id === null,
+          // 1:1 aus der Zuweisungszeile — NIE aus der geteilten Job-Uhr
+          // abgeleitet (siehe types/job.ts).
+          employeeStartedAt: row.employee_started_at,
+          employeeCompletedAt: row.employee_completed_at,
         } satisfies JobAssignee,
       };
     })

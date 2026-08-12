@@ -41,14 +41,16 @@ type Props = {
    * WorkedTimeCard (siehe Kopfkommentar).
    */
   showPlaceholder: boolean;
+  /** Durchgereicht an WorkedTimeCard: individuelle Zeiten nur für Admins. */
+  isAdmin?: boolean;
 };
 
-export function JobTimelineCard({ job, showPlaceholder }: Props) {
+export function JobTimelineCard({ job, showPlaceholder, isAdmin }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   if (job.startedAt) {
-    return <WorkedTimeCard job={job} />;
+    return <WorkedTimeCard job={job} isAdmin={isAdmin} />;
   }
 
   if (!showPlaceholder) return null;

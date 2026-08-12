@@ -22,6 +22,24 @@ export type JobAssignee = {
   fullName: string;
   /** true, wenn das Konto gelöscht wurde (employeeId === null). */
   isDeleted: boolean;
+
+  /**
+   * INDIVIDUELLE Arbeitszeit dieses Mitarbeiters an diesem Auftrag
+   * (job_assignments.employee_started_at/employee_completed_at, Phase B1).
+   *
+   * Diese Felder waren bewusst entfernt, solange es keinen Konsumenten gab
+   * (siehe Kommentar oben). Mit der Admin-Zeitkorrektur gibt es ihn: die
+   * Auftrags-Detailseite muss zeigen, WER noch keine eigene Zeit erfasst hat.
+   *
+   * NIEMALS aus der geteilten Job-Uhr ableiten. `null` heißt genau eine
+   * Sache — dieser Mitarbeiter hat den Übergang nicht selbst ausgelöst — und
+   * ist damit das Signal, das eine Korrektur überhaupt erst auslöst. Ein
+   * erfundener Wert würde daraus stillschweigend bezahlte Arbeitszeit machen.
+   * Der Legacy-Fallback (buildLegacyAssignees) setzt sie deshalb hart auf
+   * null.
+   */
+  employeeStartedAt: string | null;
+  employeeCompletedAt: string | null;
 };
 
 export type Job = {

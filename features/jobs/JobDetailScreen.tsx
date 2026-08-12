@@ -27,6 +27,10 @@ import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import RecurringRuleDetailScreen from "@/features/jobs/RecurringRuleDetailScreen";
 import { AssignedEmployeesCard } from "@/features/jobs/components/AssignedEmployeesCard";
+import {
+  TimeCorrectionSheet,
+  type TimeCorrectionTarget,
+} from "@/features/timesheets/components/TimeCorrectionSheet";
 import { JobActionFooter } from "@/features/jobs/components/JobActionFooter";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { JobDetailHeader } from "@/features/jobs/components/JobDetailHeader";
@@ -95,7 +99,14 @@ export default function JobDetailScreen() {
     online,
     pendingActions,
     markJobCommentsAsRead,
+    refreshJobs,
   } = useJobs();
+
+  // Ziel des Korrektur-Sheets (Phase B1). Nur Admins können es öffnen — die
+  // Karte blendet die Aktion sonst gar nicht ein, und die RPC prüft die Rolle
+  // zusätzlich serverseitig.
+  const [correctionTarget, setCorrectionTarget] =
+    useState<TimeCorrectionTarget | null>(null);
 
   // Cache-first: zuerst aus dem (ggf. begrenzten) Context-Fenster.
   const cachedJob = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -112,6 +123,17 @@ export default function JobDetailScreen() {
     setFetchedJob(null);
     setFetchAttempted(false);
   }, [id]);
+
+  // Nach einer Zeitkorrektur beide Quellen auffrischen (Phase B1):
+  // refreshJobs deckt den Context-Cache ab, das Zurücksetzen von
+  // fetchAttempted den Direktabruf-Zweig. Ohne Letzteres bliebe ein per
+  // Deep-Link geöffneter Auftrag (nicht im Ladefenster) mit den ALTEN Zeiten
+  // stehen, obwohl die Korrektur gespeichert wurde.
+  const handleCorrected = useCallback(() => {
+    setFetchedJob(null);
+    setFetchAttempted(false);
+    void refreshJobs();
+  }, [refreshJobs]);
 
   useEffect(() => {
     if (!id || cachedJob || fetchAttempted) return;
@@ -370,10 +392,27 @@ export default function JobDetailScreen() {
         />
 
         {/* 3 — Zugewiesene Mitarbeitende */}
-        <AssignedEmployeesCard job={job} />
+        <AssignedEmployeesCard
+          job={job}
+          isAdmin={isAdmin}
+          onCorrectTime={(assignee) =>
+            setCorrectionTarget({
+              assignmentId: assignee.assignmentId,
+              employeeName: assignee.fullName,
+              customerName: job.customerName,
+              remark: job.service,
+              employeeStartedAt: assignee.employeeStartedAt,
+              employeeCompletedAt: assignee.employeeCompletedAt,
+              // Vorschlag aus der GETEILTEN Auftragszeit — im Sheet
+              // ausdrücklich als solcher beschriftet, nie als Arbeitszeit.
+              sharedStartedAt: job.startedAt,
+              sharedCompletedAt: job.completedAt,
+            })
+          }
+        />
 
         {/* 4 — Zeitlicher Verlauf (Start/Ende/Akteure/Dauer bzw. geplant) */}
-        <JobTimelineCard job={job} showPlaceholder />
+        <JobTimelineCard job={job} showPlaceholder isAdmin={isAdmin} />
 
         {/* 5 — Service + Terminierung */}
         <JobServiceDetailsCard service={job.service} />
@@ -418,6 +457,13 @@ export default function JobDetailScreen() {
         onEdit={handleEdit}
       />
       </KeyboardAvoidingView>
+
+      <TimeCorrectionSheet
+        visible={!!correctionTarget}
+        target={correctionTarget}
+        onClose={() => setCorrectionTarget(null)}
+        onCorrected={handleCorrected}
+      />
     </SafeAreaView>
   );
 }

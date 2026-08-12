@@ -39,7 +39,12 @@
 
 import { supabase } from "@/lib/supabase";
 import { buildTimesheetHtml } from "@/services/timesheets/timesheetHtml";
-import type { TimesheetData, TimesheetEntry } from "@/types/timesheet";
+import type {
+  TimesheetData,
+  TimesheetEntry,
+  TimesheetGap,
+  TimesheetGapReason,
+} from "@/types/timesheet";
 import {
   diffInMinutes,
   formatDateISO,
@@ -55,6 +60,8 @@ import * as Sharing from "expo-sharing";
 // `unique (job_id, employee_id)` (Migration 20260725000000) höchstens eine
 // Zeile, ein Auftrag erscheint damit weiterhin nie doppelt.
 type TimesheetAssignmentRow = {
+  /** PK der Zuweisung — Eingabe für admin_correct_assignment_time (Phase B1). */
+  id: string;
   employee_started_at: string | null;
   employee_completed_at: string | null;
   j: {
@@ -166,6 +173,71 @@ function mapEntry(row: TimesheetAssignmentRow): TimesheetEntry | null {
   };
 }
 
+// Lesbare Kurzbeschreibung je Lücken-Art (deutsch, für die Admin-Liste).
+const GAP_LABELS: Record<TimesheetGapReason, string> = {
+  no_time: "Keine eigene Zeit erfasst",
+  start_only: "Beginn erfasst, Abschluss fehlt",
+  end_only: "Abschluss erfasst, Beginn fehlt",
+};
+
+/**
+ * Wandelt eine Zeile, die KEINEN Eintrag ergibt, in einen Korrektur-Hinweis um
+ * (Phase B1). Gibt `null` zurück, wenn die Zeile abrechenbar ist — die
+ * Fallunterscheidung ist damit exakt die Umkehrung von `mapEntry`, ohne dessen
+ * Logik zu duplizieren:
+ *
+ *   mapEntry != null  → abrechenbar          → KEINE Lücke
+ *   mapEntry == null  → nicht abrechenbar    → Lücke
+ *
+ * Erreichbar ist dieser Zweig ausschließlich für Aufträge NACH dem Phase-1-
+ * Cutoff ohne vollständiges eigenes Zeitpaar (Regel 3 im Kopf-Kommentar):
+ * Alt-Aufträge liefern über den Legacy-Fallback immer einen Eintrag und
+ * landen deshalb nie hier — was auch richtig ist, denn korrigierbar sind sie
+ * ohnehin nicht (admin_correct_assignment_time lehnt sie ab).
+ *
+ * WICHTIG: die GETEILTE Auftragszeit wird hier zwar mitgegeben, aber
+ * ausdrücklich als `shared*` benannt. Sie ist ein VORSCHLAG für die Korrektur,
+ * niemals die Arbeitszeit dieses Mitarbeiters — genau diese Verwechslung
+ * verhindert Regel 3.
+ */
+function mapGap(
+  row: TimesheetAssignmentRow,
+  employeeId: string,
+  employeeName: string,
+): TimesheetGap | null {
+  const hasStart = !!row.employee_started_at;
+  const hasEnd = !!row.employee_completed_at;
+
+  // Vollständiges eigenes Paar → abrechenbar, keine Lücke.
+  if (hasStart && hasEnd) return null;
+  // Alt-Auftrag → mapEntry liefert den Fallback-Eintrag, keine Lücke.
+  if (isLegacyJob(row.j.completed_at)) return null;
+
+  const reason: TimesheetGapReason = hasStart
+    ? "start_only"
+    : hasEnd
+      ? "end_only"
+      : "no_time";
+
+  const startedAt = new Date(row.j.started_at);
+
+  return {
+    assignmentId: row.id,
+    employeeId,
+    employeeName,
+    jobId: row.j.id,
+    customerName: row.j.customer_name,
+    remark: buildRemark(row.j.service_name, row.j.location_address),
+    date: formatDateISO(startedAt) ?? row.j.started_at.slice(0, 10),
+    employeeStartedAt: row.employee_started_at,
+    employeeCompletedAt: row.employee_completed_at,
+    sharedStartedAt: row.j.started_at,
+    sharedCompletedAt: row.j.completed_at,
+    reason,
+    reasonLabel: GAP_LABELS[reason],
+  };
+}
+
 /**
  * Lädt die abgeschlossenen Zuweisungen eines Mitarbeiters für einen Monat
  * und baut daraus den vollständigen Stundenzettel.
@@ -241,7 +313,7 @@ export async function getTimesheet(params: {
 
   const { data, error } = await supabase
     .from("job_assignments")
-    .select(`employee_started_at,employee_completed_at` + JOB_EMBED)
+    .select(`id,employee_started_at,employee_completed_at` + JOB_EMBED)
     .eq("employee_id", employeeId)
     .eq("j.status", "completed")
     .eq("j.job_type", "single")
@@ -254,12 +326,18 @@ export async function getTimesheet(params: {
     throw error;
   }
 
+  const rows = (data ?? []) as unknown as TimesheetAssignmentRow[];
+
   // mapEntry liefert null für Zeilen ohne belastbare Dauer (Regel 3, siehe
-  // oben) — diese werden hier herausgefiltert, nicht als 0:00-Zeile gezeigt.
+  // oben) — diese werden weiterhin NICHT als 0:00-Zeile gezeigt. Neu (Phase B1):
+  // statt sie stillschweigend fallen zu lassen, werden genau diese Zeilen über
+  // mapGap als Korrektur-Hinweis mitgeliefert. `entries` und damit der gesamte
+  // PDF-Export bleiben dadurch unverändert — dieselbe Berechnung, dieselbe
+  // Sortierung, dieselbe Summe.
   // Client-seitige Sortierung nach der individuellen Zeitquelle —
   // "YYYY-MM-DD" + "HH:mm" ist lexikographisch chronologisch sortierbar.
-  const entries = (data ?? [])
-    .map((row) => mapEntry(row as unknown as TimesheetAssignmentRow))
+  const entries = rows
+    .map((row) => mapEntry(row))
     .filter((entry): entry is TimesheetEntry => entry !== null)
     .sort((a, b) =>
       a.date + a.beginLabel < b.date + b.beginLabel
@@ -268,6 +346,12 @@ export async function getTimesheet(params: {
           ? 1
           : 0,
     );
+
+  const needsAttention = rows
+    .map((row) => mapGap(row, employeeId, employeeName))
+    .filter((gap): gap is TimesheetGap => gap !== null)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
   const totalMinutes = entries.reduce((sum, e) => sum + e.durationMinutes, 0);
 
   const monthLabel = monthStart.toLocaleDateString("de-DE", {
@@ -286,6 +370,7 @@ export async function getTimesheet(params: {
     totalMinutes,
     totalLabel: formatDurationHm(totalMinutes),
     jobCount: entries.length,
+    needsAttention,
   };
 }
 
