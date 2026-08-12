@@ -4,12 +4,21 @@
 //
 // Vorher war das ein kleiner Kalender-Block über einer Tagesliste — der
 // Monat bekam ein Drittel des Bildschirms, die Zellen trugen nur einen Punkt
-// („irgendwas ist an dem Tag"), und wer wissen wollte, wann und bei wem er
-// arbeitet, musste jeden Tag einzeln antippen.
+// („irgendwas ist an dem Tag"), und wer wissen wollte, wann er arbeitet,
+// musste jeden Tag einzeln antippen.
 //
-// Jetzt ist der Monat der Bildschirm: jede Zelle zeigt die konkreten
-// Aufträge des Tages mit Uhrzeit und Kunde. Ein Blick beantwortet „welche
-// Tage sind belegt, wie voll, ab wann und bei wem".
+// Jetzt ist der Monat der Bildschirm. Er ist bewusst eine PLANUNGS-Ansicht
+// und beantwortet genau vier Fragen:
+//   1. An welchen Tagen ist Arbeit?      → Zelle trägt eine Zusammenfassung
+//   2. Wie viele Aufträge sind es?       → Zahl in der Zelle
+//   3. Wie ist die grobe Statuslage?     → bis zu drei Punkte
+//   4. Welchen Tag sehe ich gerade an?   → Heute-Kreis + Auswahl-Rahmen
+//
+// Was er ausdrücklich NICHT tut: einzelne Aufträge mit Uhrzeit und Kunde in
+// jede Zelle schreiben. Ein erster Anlauf hat das getan; auf dem Gerät wurde
+// daraus optisch eine zusammengepresste Jobliste im Rastergewand. Die
+// vollständigen Auftragsdaten leben in der Tages-Agenda (und künftig im
+// Jobs-Tab), der Kalender bleibt Überblick.
 //
 // Rollen-/Datenlage unverändert:
 // - Datenquelle bleibt `useJobs().jobs` (Employee: RLS-begrenzt auf eigene
@@ -35,8 +44,8 @@ import { MonthGrid } from "@/features/jobs/components/MonthGrid";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
   addMonths,
+  buildDaySummaries,
   formatMonthLabel,
-  getJobDateKey,
   groupJobsByDateKey,
   monthKeyOf,
 } from "@/utils/calendarMonth";
@@ -108,7 +117,13 @@ export default function EmployeeJobsCalendarScreen() {
   );
 
   // Einmal gruppieren statt 42-mal filtern (siehe utils/calendarMonth).
+  // Die Gruppierung versorgt die Tages-Agenda; das Raster bekommt daraus
+  // die verdichteten Zusammenfassungen.
   const jobsByDay = useMemo(() => groupJobsByDateKey(singleJobs), [singleJobs]);
+
+  // Zahl + vorkommende Zustände je Tag — einmal vorberechnet, damit keine
+  // Zelle im Render über Jobs iteriert.
+  const summaries = useMemo(() => buildDaySummaries(jobsByDay), [jobsByDay]);
 
   const selectedJobs = useMemo(
     () => jobsByDay.get(selectedKey) ?? EMPTY_JOBS,
@@ -118,22 +133,11 @@ export default function EmployeeJobsCalendarScreen() {
   // Hat der angezeigte Monat überhaupt Aufträge? Nur für den dezenten
   // Hinweis unter dem Raster — das Raster selbst bleibt IMMER stehen.
   const monthHasJobs = useMemo(() => {
-    for (const key of jobsByDay.keys()) {
+    for (const key of summaries.keys()) {
       if (key.startsWith(monthKey)) return true;
     }
     return false;
-  }, [jobsByDay, monthKey]);
-
-  // Überfällig = offen/in Arbeit UND Datum vor heute. Erledigte nie.
-  const overdueKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const job of singleJobs) {
-      if (job.status !== "open" && job.status !== "in_progress") continue;
-      const key = getJobDateKey(job);
-      if (key && key < todayKey) keys.push(key);
-    }
-    return keys.sort((a, b) => a.localeCompare(b));
-  }, [singleJobs, todayKey]);
+  }, [summaries, monthKey]);
 
   // ── Navigation ───────────────────────────────────────────────
   const goPrevMonth = useCallback(
@@ -161,17 +165,12 @@ export default function EmployeeJobsCalendarScreen() {
     [jobsByDay, monthKey],
   );
 
+  // Job-Detail wird jetzt AUSSCHLIESSLICH aus der Tages-Agenda geöffnet —
+  // im Raster gibt es keine antippbaren Auftragszeilen mehr.
   const handleOpenJob = useCallback((jobId: string) => {
     cameFromDetailRef.current = true;
     router.push(`/jobs/${jobId}`);
   }, []);
-
-  // Zum frühesten überfälligen Tag springen (Monat + Auswahl + Agenda).
-  const handleOverduePress = useCallback(() => {
-    const first = overdueKeys[0];
-    if (!first) return;
-    handleSelectDay(first);
-  }, [overdueKeys, handleSelectDay]);
 
   // ── Aktionen (unverändert über den JobContext) ───────────────
   const handleRefresh = useCallback(async () => {
@@ -285,36 +284,23 @@ export default function EmployeeJobsCalendarScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Überfällig-Hinweis (springt zum frühesten offenen Tag) ── */}
-        {overdueKeys.length > 0 ? (
-          <TouchableOpacity
-            style={styles.overdueBanner}
-            onPress={handleOverduePress}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-          >
-            <Ionicons name="alert-circle" size={16} color={theme.colors.statusOpen} />
-            <Text style={styles.overdueText} numberOfLines={1}>
-              {overdueKeys.length === 1
-                ? "1 überfälliger Auftrag"
-                : `${overdueKeys.length} überfällige Aufträge`}
-            </Text>
-            <Ionicons
-              name="chevron-forward"
-              size={14}
-              color={theme.colors.statusOpen}
-            />
-          </TouchableOpacity>
-        ) : null}
-
-        {/* ── Monatsraster (füllt die Restfläche) ── */}
+        {/* ── Monatsraster (füllt die Restfläche) ──
+            Hier stand bis zuletzt ein „N überfällige Aufträge"-Banner. Es ist
+            in dieser Ansicht bewusst ENTFALLEN: auf einem echten Datenbestand
+            wurde daraus „63 überfällige Aufträge" in Warnfarbe — das
+            dominierte den Bildschirm und machte aus einer Planungsansicht
+            eine Mahnliste. Überfälliges ist Abarbeitung und gehört in die
+            Übersicht bzw. den kommenden Jobs-Tab.
+            Es geht dabei nichts verloren: die Berechnung war rein lokal in
+            diesem Screen. Die geteilte Überfällig-Logik (`getOverdueOccurrences`
+            in services/jobs/jobs.service.ts) und ihre Admin-Flächen
+            (AdminScheduleScreen, AdminDashboardScreen) bleiben unangetastet. */}
         <MonthGrid
           monthKey={monthKey}
           selectedKey={selectedKey}
           todayKey={todayKey}
-          jobsByDay={jobsByDay}
+          summaries={summaries}
           onSelectDay={handleSelectDay}
-          onOpenJob={handleOpenJob}
         />
 
         {/* Leerer Monat: der Kalender bleibt stehen, es kommt nur eine
@@ -356,9 +342,11 @@ function createStyles(theme: AppTheme) {
     scrollContent: {
       flexGrow: 1,
       paddingHorizontal: theme.spacing.sm,
-      paddingTop: theme.spacing.sm,
-      paddingBottom: theme.spacing.sm,
-      gap: theme.spacing.sm,
+      paddingTop: theme.spacing.md,
+      paddingBottom: theme.spacing.md,
+      // Größer als vorher (sm): der Monat soll ruhig wirken, und das Raster
+      // gibt die Höhe über flex:1 bereitwillig her.
+      gap: theme.spacing.md,
     },
 
     // ── Kopfzeile
@@ -402,26 +390,6 @@ function createStyles(theme: AppTheme) {
       justifyContent: "center",
       borderRadius: theme.radius.full,
       backgroundColor: theme.colors.surfaceContainerHigh,
-    },
-
-    // ── Überfällig-Banner (Warn-Farbschema = statusOpen)
-    overdueBanner: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: theme.spacing.xs,
-      backgroundColor: theme.colors.statusOpenBg,
-      borderWidth: 1,
-      borderColor: theme.colors.statusOpenBorder,
-      borderRadius: theme.radius.md,
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: 6,
-    },
-    overdueText: {
-      flex: 1,
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.statusOpen,
     },
 
     emptyMonthHint: {

@@ -14,9 +14,10 @@
 // `formatDateISO` lokal auf einen Kalendertag reduziert.
 // ─────────────────────────────────────────────────────────────────
 
-import type { Job } from "@/types/job";
+import type { Job, JobStatus } from "@/types/job";
 import { formatDateISO } from "@/utils/date";
 import { getJobDisplayTime } from "@/utils/jobSchedule";
+import { JOB_STATUS_ORDER } from "@/utils/jobStatus";
 
 /** Eine Zelle des Monatsrasters. */
 export type MonthCell = {
@@ -133,5 +134,68 @@ export function groupJobsByDateKey(jobs: Job[]): Map<string, Job[]> {
   for (const list of map.values()) {
     list.sort(compareByDisplayTime);
   }
+  return map;
+}
+
+/**
+ * Verdichtete Tagesinformation für EINE Rasterzelle.
+ *
+ * Das ist alles, was eine Zelle noch braucht: eine Zahl und welche Zustände
+ * an dem Tag überhaupt vorkommen. Die Zelle bekommt bewusst NICHT die
+ * Jobliste — die vollständigen Auftragsdaten leben in der Tages-Agenda.
+ */
+export type DaySummary = {
+  total: number;
+  open: number;
+  inProgress: number;
+  completed: number;
+  /**
+   * VORHANDENE Zustände in kanonischer Reihenfolge (offen → in Arbeit →
+   * erledigt), nicht ein Eintrag je Auftrag. Ein Tag mit acht offenen
+   * Aufträgen hat genau EINEN Eintrag — das Signal fasst die Verteilung
+   * zusammen, es zählt sie nicht ab. Dadurch bleiben es höchstens drei.
+   */
+  statuses: JobStatus[];
+};
+
+/**
+ * Tages-Zusammenfassungen aus der bereits gruppierten Tagesliste ableiten —
+ * ein Durchlauf über die Jobs, danach liest jede Zelle nur noch ein fertiges
+ * kleines Objekt. Kein Filtern je Zelle, keine Ableitung im Render.
+ */
+export function buildDaySummaries(
+  jobsByDay: Map<string, Job[]>,
+): Map<string, DaySummary> {
+  const map = new Map<string, DaySummary>();
+
+  for (const [key, list] of jobsByDay) {
+    let open = 0;
+    let inProgress = 0;
+    let completed = 0;
+
+    for (const job of list) {
+      if (job.status === "open") open++;
+      else if (job.status === "in_progress") inProgress++;
+      else if (job.status === "completed") completed++;
+    }
+
+    const countByStatus: Record<JobStatus, number> = {
+      open,
+      in_progress: inProgress,
+      completed,
+    };
+
+    map.set(key, {
+      total: list.length,
+      open,
+      inProgress,
+      completed,
+      // JOB_STATUS_ORDER ist die kanonische Reihenfolge aus utils/jobStatus.ts
+      // — die Punktfolge im Kalender entspricht damit derselben Logik wie
+      // Filterleisten und KPIs.
+      statuses: JOB_STATUS_ORDER.filter((s) => countByStatus[s] > 0),
+    });
+  }
+
   return map;
 }

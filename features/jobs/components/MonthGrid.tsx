@@ -9,32 +9,21 @@
 // Scrollen auf den Bildschirm; ein 6-Wochen-Monat hat einfach flachere
 // Zeilen als ein 5-Wochen-Monat.
 //
-// Wie viele Job-Zeilen eine Zelle zeigt, ergibt sich AUS der gemessenen
-// Zeilenhöhe (siehe `maxVisible`) — nicht aus einer festen Zahl. Nur so
-// verhält sich das Raster auf kleinen Telefonen und in 6-Wochen-Monaten
-// gleich korrekt.
+// Die Zellen bekommen nur noch eine verdichtete `DaySummary` (Anzahl +
+// vorkommende Zustände), nicht mehr die Jobliste des Tages. Damit entfällt
+// auch die frühere Höhenmessung: sie existierte einzig, um auszurechnen, wie
+// viele Auftragszeilen in eine Zelle passen. Eine Zusammenfassung hat feste
+// Höhe und passt in jede Zeilenhöhe — das Raster ist dadurch spürbar
+// einfacher und billiger geworden.
 // ─────────────────────────────────────────────────────────────────
 
 import type { AppTheme } from "@/constants/theme";
 import { CalendarDayCell } from "@/features/jobs/components/CalendarDayCell";
-import { CALENDAR_JOB_ITEM_HEIGHT } from "@/features/jobs/components/CalendarJobItem";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import type { Job } from "@/types/job";
-import { buildMonthMatrix } from "@/utils/calendarMonth";
+import { buildMonthMatrix, type DaySummary } from "@/utils/calendarMonth";
 import { WEEKDAYS } from "@/utils/recurrence";
-import React, { useCallback, useMemo, useState } from "react";
-import { StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
-
-/** Höhe des Tageszahl-Bereichs einer Zelle (dateRow + Innenabstand). */
-const DATE_ROW_HEIGHT = 25;
-/** Eintragshöhe inkl. 1 px Abstand zum nächsten Eintrag. */
-const ITEM_SLOT_HEIGHT = CALENDAR_JOB_ITEM_HEIGHT + 1;
-/** Höhe der „+N weitere"-Zeile inkl. Abstand (schmaler als ein Eintrag). */
-const OVERFLOW_SLOT_HEIGHT = 15;
-/** Obergrenze: mehr als drei Einträge werden in einer Zelle unleserlich. */
-const MAX_ITEMS_PER_CELL = 3;
-
-const EMPTY_JOBS: Job[] = [];
+import React, { useMemo } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
   /** Angezeigter Monat als "YYYY-MM". */
@@ -43,59 +32,22 @@ type Props = {
   selectedKey: string;
   /** Heute als "YYYY-MM-DD". */
   todayKey: string;
-  /** Jobs je Kalendertag, bereits nach Uhrzeit sortiert. */
-  jobsByDay: Map<string, Job[]>;
+  /** Verdichtete Tagesinfo je Kalendertag (fehlt = keine Aufträge). */
+  summaries: Map<string, DaySummary>;
   onSelectDay: (key: string) => void;
-  onOpenJob: (jobId: string) => void;
 };
 
 export function MonthGrid({
   monthKey,
   selectedKey,
   todayKey,
-  jobsByDay,
+  summaries,
   onSelectDay,
-  onOpenJob,
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const weeks = useMemo(() => buildMonthMatrix(monthKey), [monthKey]);
-
-  // Gemessene Höhe des Rasterbereichs. 0 = noch nicht gemessen; bis dahin
-  // greift der Standardwert unten (ein Frame, danach exakt).
-  const [gridHeight, setGridHeight] = useState(0);
-  const handleLayout = useCallback((e: LayoutChangeEvent) => {
-    setGridHeight(e.nativeEvent.layout.height);
-  }, []);
-
-  // Wie viele Einträge passen in eine Zelle dieses Monats?
-  //
-  // Zwei Werte, weil die „+N weitere"-Zeile selbst Platz kostet:
-  //   maxVisible             → wenn ALLE Jobs des Tages passen (keine Zeile nötig)
-  //   maxVisibleWithOverflow → wenn zusätzlich die Überlaufzeile stehen muss
-  // Ohne diese Trennung würde ein Tag mit 4 Jobs unnötig „2 + weitere 2"
-  // zeigen, obwohl 3 Einträge und die Überlaufzeile zusammen hineinpassen.
-  const { maxVisible, maxVisibleWithOverflow } = useMemo(() => {
-    if (gridHeight <= 0) {
-      return {
-        maxVisible: MAX_ITEMS_PER_CELL,
-        maxVisibleWithOverflow: MAX_ITEMS_PER_CELL,
-      };
-    }
-    const free = gridHeight / weeks.length - DATE_ROW_HEIGHT;
-    // Mindestens 1: eine Zelle, die gar nichts zeigt, wäre schlechter als
-    // eine, die einen Eintrag zeigt und den Rest als „+N weitere" meldet.
-    const fits = Math.min(
-      Math.max(Math.floor(free / ITEM_SLOT_HEIGHT), 1),
-      MAX_ITEMS_PER_CELL,
-    );
-    const fitsWithOverflow = Math.min(
-      Math.max(Math.floor((free - OVERFLOW_SLOT_HEIGHT) / ITEM_SLOT_HEIGHT), 1),
-      fits,
-    );
-    return { maxVisible: fits, maxVisibleWithOverflow: fitsWithOverflow };
-  }, [gridHeight, weeks.length]);
 
   return (
     <View style={styles.container}>
@@ -109,9 +61,12 @@ export function MonthGrid({
       </View>
 
       {/* ── Wochenzeilen ── */}
-      <View style={styles.grid} onLayout={handleLayout}>
+      <View style={styles.grid}>
         {weeks.map((week, wi) => (
-          <View key={week[0].key} style={[styles.weekRow, wi > 0 && styles.weekRowDivider]}>
+          <View
+            key={week[0].key}
+            style={[styles.weekRow, wi > 0 && styles.weekRowDivider]}
+          >
             {week.map((cell) => (
               <CalendarDayCell
                 key={cell.key}
@@ -120,11 +75,8 @@ export function MonthGrid({
                 inMonth={cell.inMonth}
                 isToday={cell.key === todayKey}
                 isSelected={cell.key === selectedKey}
-                jobs={jobsByDay.get(cell.key) ?? EMPTY_JOBS}
-                maxVisible={maxVisible}
-                maxVisibleWithOverflow={maxVisibleWithOverflow}
+                summary={summaries.get(cell.key)}
                 onSelectDay={onSelectDay}
-                onOpenJob={onOpenJob}
               />
             ))}
           </View>
@@ -143,7 +95,7 @@ function createStyles(theme: AppTheme) {
     // ── Wochentags-Kopf
     weekHeader: {
       flexDirection: "row",
-      paddingBottom: 6,
+      paddingBottom: theme.spacing.sm,
     },
     weekHeaderCell: {
       flex: 1,
@@ -165,7 +117,7 @@ function createStyles(theme: AppTheme) {
     weekRow: {
       flex: 1,
       flexDirection: "row",
-      gap: 1,
+      gap: 2,
     },
     // Haarlinie zwischen den Wochen (wie im System-Kalender), statt eines
     // vollen Gitters — das wirkt bei diesen Zellgrößen ruhiger.
