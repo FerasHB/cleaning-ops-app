@@ -71,3 +71,25 @@ export function getRecurringDaysLabel(job: Job): string {
   if (job.jobType !== "recurring") return "";
   return formatRecurringDays(job.recurringDays);
 }
+
+/**
+ * Geplantes Ende "HH:mm", abgeleitet aus startTime + plannedDurationMinutes
+ * (Phase 3, Planned Duration Foundation). NULL, wenn eines der beiden fehlt —
+ * KEIN Rückgriff auf scheduledEnd (siehe CLAUDE.md: start_time + Dauer ist
+ * die einzige Quelle der geplanten Terminierung).
+ */
+export function getPlannedEndTime(
+  job: Pick<Job, "startTime" | "plannedDurationMinutes">,
+): string | null {
+  const start = normalizeTime(job.startTime);
+  const duration = job.plannedDurationMinutes;
+  if (!start || !duration || duration <= 0) return null;
+
+  const [h, m] = start.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+
+  const totalMinutes = (h * 60 + m + duration) % (24 * 60);
+  const endH = Math.floor(totalMinutes / 60);
+  const endM = totalMinutes % 60;
+  return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+}

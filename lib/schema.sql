@@ -104,6 +104,11 @@ create table if not exists public.jobs (
   start_time time,
   recurring_days text[],
   is_active boolean not null default true,
+  -- Optionale geplante Dauer in Minuten (Phase 3 Planned Duration,
+  -- 20260813000000). NULL = keine Dauer geplant (Bestand). Zusammen mit
+  -- start_time die EINZIGE Quelle der geplanten Terminierung —
+  -- scheduled_end wird hierfür bewusst NICHT verwendet.
+  planned_duration_minutes integer,
   -- ── Recurring-Job-Materialisierung ──
   -- Gesetzt wenn dieser Job eine generierte Occurrence eines Recurring-Parents ist.
   -- NULL bei normalen Single-Jobs und bei Recurring-Parent-Regeln selbst.
@@ -129,6 +134,7 @@ alter table public.jobs add column if not exists is_active boolean not null defa
 alter table public.jobs add column if not exists parent_job_id uuid references public.jobs(id) on delete cascade;
 alter table public.jobs add column if not exists recurrence_start_date date;
 alter table public.jobs add column if not exists recurrence_end_date   date;
+alter table public.jobs add column if not exists planned_duration_minutes integer;
 
 -- Constraint: Enddatum darf nicht vor Startdatum liegen (NULL-Werte ausgenommen).
 alter table public.jobs
@@ -139,6 +145,13 @@ alter table public.jobs
     or recurrence_start_date is null
     or recurrence_end_date >= recurrence_start_date
   );
+
+-- Constraint: geplante Dauer, wenn gesetzt, muss positiv sein.
+alter table public.jobs
+  drop constraint if exists chk_jobs_planned_duration_positive;
+alter table public.jobs
+  add constraint chk_jobs_planned_duration_positive
+  check (planned_duration_minutes is null or planned_duration_minutes > 0);
 
 -- Job-Kommentare (append-only): Mitarbeiter schreiben kurze Nachrichten zu
 -- ihren Jobs, Admins lesen (und schreiben optional) firmenweit.
@@ -1832,12 +1845,13 @@ begin
       insert into public.jobs (
         company_id, parent_job_id, customer_name, service_name,
         location_address, notes, status, assigned_to,
-        job_type, date, start_time, scheduled_start, is_active, created_by
+        job_type, date, start_time, planned_duration_minutes,
+        scheduled_start, is_active, created_by
       )
       values (
         parent.company_id, parent.id, parent.customer_name, parent.service_name,
         parent.location_address, parent.notes, 'open', effective_assigned_to,
-        'single', check_date, parent.start_time,
+        'single', check_date, parent.start_time, parent.planned_duration_minutes,
         case
           when parent.start_time is not null
           then (check_date::text || ' ' || parent.start_time::text)::timestamptz

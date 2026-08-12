@@ -192,6 +192,10 @@ export default function EditJobScreen() {
       recurrenceEndDate: job.recurrenceEndDate
         ? new Date(job.recurrenceEndDate)
         : null,
+      durationMinutes:
+        job.plannedDurationMinutes != null
+          ? String(job.plannedDurationMinutes)
+          : "",
     });
 
     setErrors({});
@@ -200,6 +204,11 @@ export default function EditJobScreen() {
   const hasChanges = useMemo(() => {
     if (!job) return false;
 
+    const originalDurationMinutes =
+      job.plannedDurationMinutes != null
+        ? String(job.plannedDurationMinutes)
+        : "";
+
     // Basisfelder
     const basicsChanged =
       values.customerName !== job.customerName ||
@@ -207,7 +216,8 @@ export default function EditJobScreen() {
       values.service !== job.service ||
       !sameIdSet(values.employeeIds, assignedEmployeeIds) ||
       values.notes !== (job.notes ?? "") ||
-      values.jobType !== (job.jobType ?? "single");
+      values.jobType !== (job.jobType ?? "single") ||
+      values.durationMinutes !== originalDurationMinutes;
 
     if (basicsChanged) return true;
 
@@ -297,6 +307,14 @@ export default function EditJobScreen() {
         activeEmployeeIds.has(id),
       );
 
+      // Rohtext -> positive Ganzzahl oder null (leer/ungültig = keine Dauer
+      // geplant). JobFormFields lässt ohnehin nur Ziffern zu.
+      const parsedDuration = parseInt(values.durationMinutes, 10);
+      const plannedDurationMinutes =
+        Number.isFinite(parsedDuration) && parsedDuration > 0
+          ? parsedDuration
+          : null;
+
       const base = {
         jobId: job.id,
         customerName: values.customerName.trim(),
@@ -304,6 +322,7 @@ export default function EditJobScreen() {
         service: values.service.trim(),
         employeeIds: submittableEmployeeIds,
         notes: values.notes.trim() || null,
+        plannedDurationMinutes,
       };
 
       await updateJob(

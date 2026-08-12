@@ -209,6 +209,16 @@ export function JobFormFields({
         </View>
       )}
 
+      <Input
+        label="Geplante Dauer in Minuten (optional)"
+        placeholder="z. B. 90"
+        keyboardType="number-pad"
+        value={values.durationMinutes}
+        onChangeText={(val) =>
+          onChangeField("durationMinutes", val.replace(/[^0-9]/g, ""))
+        }
+      />
+
       {showEmployeePicker ? (
         <>
           <Text style={styles.sectionLabel}>Mitarbeiter (optional)</Text>
