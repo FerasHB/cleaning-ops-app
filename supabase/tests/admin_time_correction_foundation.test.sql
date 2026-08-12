@@ -73,13 +73,22 @@ create temporary table _atc (
 --   J2 = {Ahmad},        Alt-Auftrag, abgeschlossen VOR dem Cutoff
 --   J3 = {Ahmad},        bleibt offen (nicht korrigierbar)
 --   J4 = Firma B, {Bea}, abgeschlossen NACH Cutoff (Firmengrenze)
+--   J5 = RECURRING-PARENT, {Maria}, kuenstlich auf 'completed' gesetzt
+--   J6 = {Ahmad}, abgeschlossen NACH Cutoff, Zuweisung wird anonymisiert
 insert into public.jobs (id, company_id, assigned_to, created_by, customer_name, service_name,
                          location_address, status, job_type, date, start_time,
                          is_active, created_at, updated_at) values
   ('a4000000-0000-0000-0000-0000000000c1','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Mueller','Unterhaltsreinigung','Hauptstr. 1','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
   ('a4000000-0000-0000-0000-0000000000c2','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Altkunde','Grundreinigung','Altweg 2','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
   ('a4000000-0000-0000-0000-0000000000c3','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Offen','Fensterreinigung','Offenweg 3','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
-  ('a4000000-0000-0000-0000-0000000000c4','a1000000-0000-0000-0000-0000000000c2',null,'a2000000-0000-0000-0000-0000000000c4','Fremd','Glasreinigung','Fremdweg 4','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00');
+  ('a4000000-0000-0000-0000-0000000000c4','a1000000-0000-0000-0000-0000000000c2',null,'a2000000-0000-0000-0000-0000000000c4','Fremd','Glasreinigung','Fremdweg 4','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
+  ('a4000000-0000-0000-0000-0000000000c6','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Anonym','Grundreinigung','Anonymweg 6','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00');
+
+-- J5: Recurring-PARENT-Regel (traegt seit Phase 4 selbst Zuweisungen).
+insert into public.jobs (id, company_id, assigned_to, created_by, customer_name, service_name,
+                         location_address, status, job_type, recurring_days, start_time,
+                         is_active, recurrence_start_date, created_at, updated_at) values
+  ('a4000000-0000-0000-0000-0000000000c5','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Dauerkunde','Unterhaltsreinigung','Dauerweg 5','open','recurring',array['mon','tue','wed','thu','fri','sat','sun'],'08:00',true,current_date - 1,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00');
 
 -- Zuweisungen ueber den echten App-Pfad (set_job_assignments).
 do $$
@@ -91,6 +100,11 @@ begin
   perform public.set_job_assignments('a4000000-0000-0000-0000-0000000000c2',
     array['a2000000-0000-0000-0000-0000000000c2']::uuid[]);
   perform public.set_job_assignments('a4000000-0000-0000-0000-0000000000c3',
+    array['a2000000-0000-0000-0000-0000000000c2']::uuid[]);
+  -- Recurring-PARENT traegt eine Zuweisung als Vorlage (Phase 4).
+  perform public.set_job_assignments('a4000000-0000-0000-0000-0000000000c5',
+    array['a2000000-0000-0000-0000-0000000000c3']::uuid[]);
+  perform public.set_job_assignments('a4000000-0000-0000-0000-0000000000c6',
     array['a2000000-0000-0000-0000-0000000000c2']::uuid[]);
   execute 'reset role';
 
@@ -128,7 +142,33 @@ begin
   perform public.start_own_job   ('a4000000-0000-0000-0000-0000000000c4', timestamptz '2026-08-20 09:00+00');
   perform public.complete_own_job('a4000000-0000-0000-0000-0000000000c4', timestamptz '2026-08-20 13:00+00');
   execute 'reset role';
+
+  -- J6: Ahmad erledigt, NACH dem Cutoff (Basis fuer die Anonymisierung).
+  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c2');
+  execute 'set local role authenticated';
+  perform public.start_own_job   ('a4000000-0000-0000-0000-0000000000c6', timestamptz '2026-08-20 09:00+00');
+  perform public.complete_own_job('a4000000-0000-0000-0000-0000000000c6', timestamptz '2026-08-20 12:30+00');
+  execute 'reset role';
 end $$;
+
+-- J5 (Recurring-PARENT) kuenstlich in den korrigierbar AUSSEHENDEN Zustand
+-- bringen: status='completed' + vollstaendige geteilte Uhr NACH dem Cutoff.
+-- Genau dieser Zustand ist real erreichbar — die Policy "admin update jobs
+-- in own company" kennt keine Spalten-/Statusgrenze und
+-- trg_jobs_protect_recurring_history greift nur BEFORE DELETE.
+-- start_own_job/complete_own_job koennen ihn NICHT herstellen (die lehnen
+-- job_type='recurring' ab), deshalb hier direkt.
+update public.jobs
+set status       = 'completed',
+    started_at   = timestamptz '2026-08-20 08:00+00',
+    completed_at = timestamptz '2026-08-20 12:00+00'
+where id = 'a4000000-0000-0000-0000-0000000000c5';
+
+-- J6-Zuweisung anonymisieren, exakt wie eine Kontoloeschung es tut
+-- (ON DELETE SET NULL auf employee_id). Die Zeile bleibt als Nachweis.
+update public.job_assignments
+set employee_id = null
+where job_id = 'a4000000-0000-0000-0000-0000000000c6';
 
 -- CASE 20 (Regression): start_own_job hat geteilte Uhr UND Marias
 -- Eigenzeit gesetzt — unveraendertes Phase-1-Verhalten.
@@ -366,10 +406,13 @@ declare
   v_assignment uuid := current_setting('atc.ahmad_assignment')::uuid;
   r_leer boolean := false; r_blank boolean := false; r_reihenfolge boolean := false;
   r_beide_null boolean := false; r_legacy boolean := false; r_offen boolean := false;
-  v_a2 uuid; v_a3 uuid;
+  r_recurring boolean := false; r_anonym boolean := false;
+  v_a2 uuid; v_a3 uuid; v_a5 uuid; v_a6 uuid;
 begin
   select id into v_a2 from public.job_assignments where job_id='a4000000-0000-0000-0000-0000000000c2';
   select id into v_a3 from public.job_assignments where job_id='a4000000-0000-0000-0000-0000000000c3';
+  select id into v_a5 from public.job_assignments where job_id='a4000000-0000-0000-0000-0000000000c5';
+  select id into v_a6 from public.job_assignments where job_id='a4000000-0000-0000-0000-0000000000c6';
 
   perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c1');
   execute 'set local role authenticated';
@@ -394,6 +437,15 @@ begin
   begin perform public.admin_correct_assignment_time(v_a3, timestamptz '2026-08-20 08:00+00', timestamptz '2026-08-20 12:00+00', 'Offener Auftrag');
   exception when others then r_offen := true; end;
 
+  -- Recurring-PARENT-Regel: sieht vollstaendig korrigierbar aus (completed,
+  -- geteilte Uhr, nach Cutoff), erscheint aber NIE im Stundenzettel.
+  begin perform public.admin_correct_assignment_time(v_a5, timestamptz '2026-08-20 08:00+00', timestamptz '2026-08-20 12:00+00', 'Dauerauftrag-Regel');
+  exception when others then r_recurring := true; end;
+
+  -- Anonymisierte Zuweisung (employee_id IS NULL nach Kontoloeschung).
+  begin perform public.admin_correct_assignment_time(v_a6, timestamptz '2026-08-20 09:00+00', timestamptz '2026-08-20 12:30+00', 'Geloeschtes Konto');
+  exception when others then r_anonym := true; end;
+
   execute 'reset role';
 
   insert into _atc values
@@ -402,8 +454,30 @@ begin
     (17, 'Ende vor/gleich Beginn wird abgelehnt',                    'ABGELEHNT', case when r_reihenfolge then 'ABGELEHNT' else 'AKZEPTIERT' end),
     (18, 'Beide Zeitstempel NULL wird abgelehnt',                    'ABGELEHNT', case when r_beide_null  then 'ABGELEHNT' else 'AKZEPTIERT' end),
     (19, 'Alt-Auftrag vor Phase-1-Cutoff wird abgelehnt',            'ABGELEHNT', case when r_legacy      then 'ABGELEHNT' else 'AKZEPTIERT' end),
-    (22, 'Nicht abgeschlossener Auftrag wird abgelehnt',             'ABGELEHNT', case when r_offen       then 'ABGELEHNT' else 'AKZEPTIERT' end);
+    (22, 'Nicht abgeschlossener Auftrag wird abgelehnt',             'ABGELEHNT', case when r_offen       then 'ABGELEHNT' else 'AKZEPTIERT' end),
+    (29, 'Recurring-PARENT-Regel wird abgelehnt (job_type<>single)',  'ABGELEHNT', case when r_recurring   then 'ABGELEHNT' else 'AKZEPTIERT' end),
+    (30, 'Anonymisierte Zuweisung (employee_id NULL) wird abgelehnt', 'ABGELEHNT', case when r_anonym      then 'ABGELEHNT' else 'AKZEPTIERT' end);
 end $$;
+
+-- CASE 31: die abgelehnte Parent-Regel ist unveraendert — insbesondere
+-- traegt ihre Zuweisung weiterhin KEINE Eigenzeit.
+insert into _atc
+select 31, 'Parent-Regel-Zuweisung nach Ablehnung ohne Eigenzeit', 'OK',
+  case when (select employee_started_at from public.job_assignments
+             where job_id='a4000000-0000-0000-0000-0000000000c5') is null
+        and (select employee_completed_at from public.job_assignments
+             where job_id='a4000000-0000-0000-0000-0000000000c5') is null
+       then 'OK' else 'VERAENDERT' end;
+
+-- CASE 32: die anonymisierte Zeile behaelt die Zeiten, die der Mitarbeiter
+-- vor der Kontoloeschung selbst erfasst hat (Nachweis bleibt unberuehrt).
+insert into _atc
+select 32, 'Anonymisierte Zuweisung nach Ablehnung unveraendert', 'OK',
+  case when (select employee_started_at from public.job_assignments
+             where job_id='a4000000-0000-0000-0000-0000000000c6') = timestamptz '2026-08-20 09:00+00'
+        and (select employee_completed_at from public.job_assignments
+             where job_id='a4000000-0000-0000-0000-0000000000c6') = timestamptz '2026-08-20 12:30+00'
+       then 'OK' else 'VERAENDERT' end;
 
 -- CASE 23: Nach allen abgelehnten Versuchen existiert weiterhin GENAU EIN
 -- Audit-Eintrag — kein abgelehnter Aufruf hat geschrieben.

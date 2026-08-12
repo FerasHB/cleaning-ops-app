@@ -225,14 +225,22 @@ using (
 --   ein redundanter Schreibvorgang und ein zweites Realtime-Event fuer
 --   dieselbe Aenderung. Der Test weist nach, dass updated_at steigt.
 --
--- WARUM NUR ABGESCHLOSSENE AUFTRAEGE KORRIGIERBAR SIND:
---   Der Stundenzettel filtert serverseitig auf
+-- WARUM NUR BESTIMMTE ZEILEN KORRIGIERBAR SIND (drei Ablehnungen):
+--   Der Stundenzettel selektiert serverseitig ueber
+--   job_assignments.employee_id und filtert j.job_type='single' AND
 --   j.status='completed' AND j.started_at IS NOT NULL AND
---   j.completed_at IS NOT NULL (timesheet.service.ts). Eine Korrektur an
---   einem Auftrag, der diese Bedingungen nicht erfuellt, wuerde die
+--   j.completed_at IS NOT NULL (timesheet.service.ts). Jede Korrektur an
+--   einer Zeile, die diesen Filter nicht passiert, wuerde die
 --   Zuweisungszeile zwar veraendern, im Stundenzettel aber WIRKUNGSLOS
---   bleiben — eine stille Nulloperation auf einer Abrechnungskorrektur.
---   Sie wird deshalb hart abgelehnt statt scheinbar zu gelingen.
+--   bleiben — eine stille Nulloperation auf einer Abrechnungskorrektur,
+--   bei der der Admin von einer erfolgreichen Korrektur ausgeht. Alle drei
+--   Faelle werden deshalb hart abgelehnt statt scheinbar zu gelingen:
+--     a) job_type <> 'single' — Recurring-PARENT-Regeln tragen seit Phase 4
+--        Zuweisungen und koennen ueber einen direkten Admin-UPDATE auf jobs
+--        durchaus 'completed' samt Zeitstempeln werden.
+--     b) Auftrag nicht abgeschlossen bzw. geteilte Uhr unvollstaendig.
+--     c) employee_id IS NULL — anonymisierte Zeile einer Kontoloeschung;
+--        der Stundenzettel filtert immer auf eine konkrete employee_id.
 --
 -- WARUM ALT-AUFTRAEGE (VOR PHASE 1) ABGELEHNT WERDEN:
 --   Fuer sie liest der Stundenzettel ueber isLegacyJob() die GETEILTE
@@ -342,7 +350,38 @@ begin
       using errcode = '42501';
   end if;
 
+  -- Anonymisierte Zeile (Konto geloescht, employee_id per ON DELETE SET NULL
+  -- auf NULL) ist NICHT korrigierbar. Der Stundenzettel selektiert immer
+  -- ueber employee_id (timesheet.service.ts) — eine Korrektur an einer
+  -- solchen Zeile koennte fuer NIEMANDEN je erscheinen und haette zudem
+  -- einen Pruefpfad-Eintrag ohne zuordenbare Person zur Folge. Der
+  -- Guard-Trigger enforce_active_assignment laesst dieses UPDATE durch
+  -- (must_check ist false, solange employee_id/job_id unveraendert
+  -- bleiben) — die Ablehnung muss deshalb hier passieren.
+  if v_assignment.employee_id is null then
+    raise exception
+      'Cannot correct an anonymised assignment (employee account was deleted)'
+      using errcode = '22023';
+  end if;
+
   -- ── Fachliche Vorbedingungen am Auftrag ──────────────────────────
+  -- job_type = 'single' ist EIGENSTAENDIGE Bedingung, exakt wie in
+  -- start_own_job/complete_own_job. Recurring-PARENT-Regeln tragen seit
+  -- Phase 4 selbst Zuweisungen (sie sind die Vorlage) und koennen ueber
+  -- einen direkten Admin-UPDATE auf jobs durchaus status='completed' samt
+  -- Zeitstempeln erreichen (die Admin-UPDATE-Policy kennt keine Spalten-
+  -- oder Statusgrenze, und trg_jobs_protect_recurring_history greift nur
+  -- BEFORE DELETE). Ohne diese Bedingung wuerde eine Korrektur an einer
+  -- Parent-Regel vollstaendig gelingen — der Stundenzettel filtert aber
+  -- j.job_type='single' (timesheet.service.ts) und zeigt sie NIE an. Genau
+  -- diese stille Nulloperation auf einer Abrechnungskorrektur soll die RPC
+  -- verhindern; sie wird deshalb hart abgelehnt.
+  if v_job.job_type is distinct from 'single' then
+    raise exception
+      'Only single jobs can be corrected (recurring parent rules never appear in a timesheet)'
+      using errcode = '22023';
+  end if;
+
   if v_job.status is distinct from 'completed'
      or v_job.started_at is null
      or v_job.completed_at is null then
@@ -414,10 +453,15 @@ comment on function public.admin_correct_assignment_time(uuid, timestamptz, time
 'an. Faesst jobs.started_at/completed_at NIEMALS an — die geteilte Job-Uhr '
 'und damit die Zeiten aller uebrigen Zugewiesenen bleiben unveraendert. '
 'Verlangt einen nicht-leeren Grund, mindestens einen der beiden neuen '
-'Zeitstempel und (falls beide gesetzt) Ende nach Beginn. Nur abgeschlossene '
-'Auftraege mit vollstaendiger geteilter Uhr sind korrigierbar; Auftraege, die '
-'vor dem Worked-Time-Grenzwert 2026-08-12 abgeschlossen wurden, werden '
-'abgelehnt (dort gilt weiterhin der Legacy-Fallback des Stundenzettels). '
+'Zeitstempel und (falls beide gesetzt) Ende nach Beginn. Korrigierbar sind '
+'ausschliesslich Auftraege mit job_type=''single'' (Recurring-Parent-Regeln '
+'erscheinen nie im Stundenzettel) und Status ''completed'' mit vollstaendiger '
+'geteilter Uhr; Auftraege, die vor dem Worked-Time-Grenzwert 2026-08-12 '
+'abgeschlossen wurden, werden abgelehnt (dort gilt weiterhin der '
+'Legacy-Fallback des Stundenzettels). Anonymisierte Zuweisungen '
+'(employee_id IS NULL nach Kontoloeschung) werden ebenfalls abgelehnt — eine '
+'Korrektur koennte dort fuer niemanden erscheinen. Alle drei Ablehnungen '
+'verhindern eine stille Nulloperation auf einer Abrechnungskorrektur. '
 'Sperrreihenfolge Auftrag -> Zuweisung, identisch zu set_job_assignments.';
 
 -- Nur eingeloggte Nutzer duerfen die RPC ueberhaupt aufrufen; die
