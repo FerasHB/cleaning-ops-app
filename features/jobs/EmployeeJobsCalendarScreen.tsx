@@ -1,26 +1,64 @@
 // features/jobs/EmployeeJobsCalendarScreen.tsx
-// Kalender-Ansicht des Employee-Jobs-Tabs (ersetzt die lange Liste für Mitarbeiter).
-// Oben: Eigenbau-Monatskalender (MonthCalendar) mit markierten Job-Tagen.
-// Darunter: nur die Jobs des ausgewählten Tags, nach Uhrzeit sortiert.
-// Start/Complete laufen unverändert über die bestehende JobCard (JobContext).
-// Admin nutzt weiterhin JobsListScreen — dieser Screen ist Employee-only.
+// ─────────────────────────────────────────────────────────────────
+// Mitarbeiter-Jobs-Tab: VOLLFLÄCHIGER Monatskalender.
+//
+// Vorher war das ein kleiner Kalender-Block über einer Tagesliste — der
+// Monat bekam ein Drittel des Bildschirms, die Zellen trugen nur einen Punkt
+// („irgendwas ist an dem Tag"), und wer wissen wollte, wann er arbeitet,
+// musste jeden Tag einzeln antippen.
+//
+// Jetzt ist der Monat der Bildschirm. Er ist bewusst eine PLANUNGS-Ansicht
+// und beantwortet genau vier Fragen:
+//   1. An welchen Tagen ist Arbeit?      → Zelle trägt eine Zusammenfassung
+//   2. Wie viele Aufträge sind es?       → Zahl in der Zelle
+//   3. Wie ist die grobe Statuslage?     → bis zu drei Punkte
+//   4. Welchen Tag sehe ich gerade an?   → Heute-Kreis + Auswahl-Rahmen
+//
+// Was er ausdrücklich NICHT tut: einzelne Aufträge mit Uhrzeit und Kunde in
+// jede Zelle schreiben. Ein erster Anlauf hat das getan; auf dem Gerät wurde
+// daraus optisch eine zusammengepresste Jobliste im Rastergewand. Die
+// vollständigen Auftragsdaten leben in der Tages-Agenda (und künftig im
+// Jobs-Tab), der Kalender bleibt Überblick.
+//
+// Rollen-/Datenlage unverändert:
+// - Datenquelle bleibt `useJobs().jobs` (Employee: RLS-begrenzt auf eigene
+//   Aufträge, keine Firmen-Abfrage, keine eigene Query in diesem Screen).
+// - Es werden weiterhin ausschließlich `jobType === "single"` gezeigt, also
+//   echte Einzelaufträge UND materialisierte Occurrences von Daueraufträgen.
+//   Parent-Regeln haben keinen Kalendertag und bleiben draußen.
+// - Start/Abschließen laufen unverändert über den JobContext; das Gating
+//   bleibt `canRunJobActions` (nicht neu gebaut, nicht gelockert).
+//
+// Aufbau:
+//   Kopf   → Monat + Jahr, „Heute", Monat vor/zurück
+//   Raster → MonthGrid (füllt die Restfläche, 4–6 Wochenzeilen)
+//   Sheet  → DayAgendaSheet mit der VOLLSTÄNDIGEN Tagesliste
+// ─────────────────────────────────────────────────────────────────
 
-import { EmptyState, ErrorBanner, LoadingScreen, OfflineBanner } from "@/components/ui";
-import JobCard from "@/components/JobCard";
-import { MonthCalendar } from "@/features/jobs/components/MonthCalendar";
+import { LoadingScreen, OfflineBanner } from "@/components/ui";
+import type { AppTheme } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
-import { canRunJobActions } from "@/utils/jobAssignees";
+import { DayAgendaSheet } from "@/features/jobs/components/DayAgendaSheet";
+import { MonthGrid } from "@/features/jobs/components/MonthGrid";
+import { MonthYearPickerSheet } from "@/features/jobs/components/MonthYearPickerSheet";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { formatDateISO } from "@/utils/date";
-import { getJobDisplayTime } from "@/utils/jobSchedule";
-import type { Job } from "@/types/job";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
 import {
-  FlatList,
+  addMonths,
+  buildDaySummaries,
+  formatMonthLabel,
+  groupJobsByDateKey,
+  monthKeyOf,
+} from "@/utils/calendarMonth";
+import { formatDateISO } from "@/utils/date";
+import { canRunJobActions } from "@/utils/jobAssignees";
+import { toUserMessage } from "@/utils/userMessages";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import {
   RefreshControl,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -28,29 +66,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import type { AppTheme } from "@/constants/theme";
-import { toUserMessage } from "@/utils/userMessages";
 
-// Datums-Key "YYYY-MM-DD" eines Jobs.
-// single hat date; Fallback scheduledStart (Alt-Daten / single ohne date).
-function getJobDateKey(job: Job): string | null {
-  if (job.date) return job.date.slice(0, 10);
-  return formatDateISO(job.scheduledStart ? new Date(job.scheduledStart) : null);
-}
-
-// "YYYY-MM-DD" → lokales Date (ohne Zeitzonen-Verschiebung).
-function keyToDate(key: string): Date {
-  const [y, m, d] = key.split("-").map((n) => parseInt(n, 10));
-  return new Date(y, (m || 1) - 1, d || 1);
-}
-
-// Überfällig = (offen ODER in Arbeit) UND Datum vor heute.
-// Erledigte (completed) Jobs sind NIEMALS überfällig.
-function isOverdue(job: Job, todayKey: string): boolean {
-  if (job.status !== "open" && job.status !== "in_progress") return false;
-  const key = getJobDateKey(job);
-  return key !== null && key < todayKey;
-}
+const EMPTY_JOBS: never[] = [];
 
 export default function EmployeeJobsCalendarScreen() {
   const theme = useAppTheme();
@@ -60,30 +77,116 @@ export default function EmployeeJobsCalendarScreen() {
   const { jobs, startJob, completeJob, loading, refreshJobs } = useJobs();
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
-  const [selectedKey, setSelectedKey] = useState<string>(todayKey);
+  const todayMonthKey = useMemo(() => monthKeyOf(new Date()), []);
+
+  // Angezeigter Monat und ausgewählter Tag sind BEWUSST getrennter State.
+  // In der alten Ansicht war der Monat aus der Auswahl abgeleitet — dadurch
+  // verschob Blättern zwangsweise auch die Auswahl. In einer Vollbild-Ansicht
+  // will man einen Monat ansehen können, ohne die Auswahl zu verlieren.
+  const [monthKey, setMonthKey] = useState(todayMonthKey);
+  const [selectedKey, setSelectedKey] = useState(todayKey);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [actionError, setActionError] = useState("");
 
-  // Einzige Quelle der Wahrheit ist selectedKey — der angezeigte Monat
-  // wird daraus abgeleitet. So können Kalender-Monat und Tagesliste
-  // niemals auseinanderlaufen.
-  const visibleMonth = useMemo(() => keyToDate(selectedKey), [selectedKey]);
+  // Merkt sich, dass wir selbst in ein Job-Detail navigiert haben. Beim
+  // Zurückkommen bleibt der betrachtete Monat dann stehen (sonst wäre der
+  // Weg „Tag im Dezember → Job öffnen → zurück" jedes Mal zurückgesetzt).
+  // Kommt der Fokus dagegen von einem anderen Tab — etwa über „alle
+  // anzeigen" aus der Übersicht —, startet der Kalender wieder auf heute.
+  const cameFromDetailRef = useRef(false);
 
-  // Monat vor/zurück: Auswahl in den Zielmonat verschieben (gleicher Tag,
-  // bei kürzeren Monaten geklemmt). Hält Monat + Auswahl konsistent.
-  const handleChangeMonth = useCallback(
-    (next: Date) => {
-      const day = keyToDate(selectedKey).getDate();
-      const y = next.getFullYear();
-      const m = next.getMonth();
-      const daysInTarget = new Date(y, m + 1, 0).getDate();
-      const clamped = Math.min(day, daysInTarget);
-      const nextKey = formatDateISO(new Date(y, m, clamped));
-      if (nextKey) setSelectedKey(nextKey);
-    },
-    [selectedKey],
+  useFocusEffect(
+    useCallback(() => {
+      if (cameFromDetailRef.current) {
+        cameFromDetailRef.current = false;
+        return;
+      }
+      setMonthKey(todayMonthKey);
+      setSelectedKey(todayKey);
+      setSheetOpen(false);
+    }, [todayMonthKey, todayKey]),
   );
 
+  // ── Daten ────────────────────────────────────────────────────
+  // Nur konkrete Einzeltermine (echte Single-Jobs + Occurrences).
+  // Parent-Recurring-Regeln fallen raus — zusätzlich zur serverseitigen RLS
+  // als Client-Schutz, unverändert zur bisherigen Ansicht.
+  const singleJobs = useMemo(
+    () => jobs.filter((j) => j.jobType === "single"),
+    [jobs],
+  );
+
+  // Einmal gruppieren statt 42-mal filtern (siehe utils/calendarMonth).
+  // Die Gruppierung versorgt die Tages-Agenda; das Raster bekommt daraus
+  // die verdichteten Zusammenfassungen.
+  const jobsByDay = useMemo(() => groupJobsByDateKey(singleJobs), [singleJobs]);
+
+  // Zahl + vorkommende Zustände je Tag — einmal vorberechnet, damit keine
+  // Zelle im Render über Jobs iteriert.
+  const summaries = useMemo(() => buildDaySummaries(jobsByDay), [jobsByDay]);
+
+  const selectedJobs = useMemo(
+    () => jobsByDay.get(selectedKey) ?? EMPTY_JOBS,
+    [jobsByDay, selectedKey],
+  );
+
+  // Hat der angezeigte Monat überhaupt Aufträge? Nur für den dezenten
+  // Hinweis unter dem Raster — das Raster selbst bleibt IMMER stehen.
+  const monthHasJobs = useMemo(() => {
+    for (const key of summaries.keys()) {
+      if (key.startsWith(monthKey)) return true;
+    }
+    return false;
+  }, [summaries, monthKey]);
+
+  // ── Navigation ───────────────────────────────────────────────
+  // Drei Wege, alle mit derselben Semantik: sie ändern NUR den angezeigten
+  // Monat. Die Auswahl bleibt, wo sie ist — es wird nie ein Tag „erfunden".
+  // Einzige Ausnahme ist „Heute", das ausdrücklich beides setzt.
+  // Der Wechsel erfolgt ohne Übergang — der neue Monat steht sofort.
+  const goPrevMonth = useCallback(() => {
+    setMonthKey((m) => addMonths(m, -1));
+  }, []);
+
+  const goNextMonth = useCallback(() => {
+    setMonthKey((m) => addMonths(m, 1));
+  }, []);
+
+  const goToday = useCallback(() => {
+    setMonthKey(todayMonthKey);
+    setSelectedKey(todayKey);
+  }, [todayMonthKey, todayKey]);
+
+  // Sprung aus der Monats-/Jahresauswahl. Gleiche Regel wie die Pfeile:
+  // nur der Monat wechselt, die Auswahl bleibt unangetastet.
+  const handlePickMonth = useCallback((next: string) => {
+    setMonthKey(next);
+  }, []);
+
+  // Tag auswählen. Ein Tag mit Aufträgen öffnet zusätzlich die vollständige
+  // Tages-Agenda — für einen leeren Tag wäre ein Sheet nur ein Klick, den
+  // man wieder wegtippen muss, deshalb bleibt es dort aus.
+  const handleSelectDay = useCallback(
+    (key: string) => {
+      setSelectedKey(key);
+      // Tag aus einem Nachbarmonat angetippt → in diesen Monat wechseln.
+      const keyMonth = key.slice(0, 7);
+      if (keyMonth !== monthKey) setMonthKey(keyMonth);
+      if ((jobsByDay.get(key)?.length ?? 0) > 0) setSheetOpen(true);
+    },
+    [jobsByDay, monthKey],
+  );
+
+  // Job-Detail wird jetzt AUSSCHLIESSLICH aus der Tages-Agenda geöffnet —
+  // im Raster gibt es keine antippbaren Auftragszeilen mehr.
+  const handleOpenJob = useCallback((jobId: string) => {
+    cameFromDetailRef.current = true;
+    router.push(`/jobs/${jobId}`);
+  }, []);
+
+  // ── Aktionen (unverändert über den JobContext) ───────────────
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -93,73 +196,13 @@ export default function EmployeeJobsCalendarScreen() {
     }
   }, [refreshJobs]);
 
-  // Nur konkrete Einzel-Jobs (Occurrences + echte Single-Jobs).
-  // Parent-Recurring-Regeln (jobType 'recurring') fallen hier raus —
-  // zusätzlich zur server-seitigen RLS als Client-Schutz.
-  const singleJobs = useMemo(
-    () => jobs.filter((j) => j.jobType === "single"),
-    [jobs],
-  );
-
-  // Tage mit Jobs → Punkt im Kalender.
-  const markedKeys = useMemo(() => {
-    const set = new Set<string>();
-    for (const job of singleJobs) {
-      const key = getJobDateKey(job);
-      if (key) set.add(key);
-    }
-    return set;
-  }, [singleJobs]);
-
-  // Tage mit mindestens einem offenen/laufenden Job → primärer Punkt (Handlungsbedarf).
-  const activeMarkedKeys = useMemo(() => {
-    const set = new Set<string>();
-    for (const job of singleJobs) {
-      if (job.status === "open" || job.status === "in_progress") {
-        const key = getJobDateKey(job);
-        if (key) set.add(key);
-      }
-    }
-    return set;
-  }, [singleJobs]);
-
-  // Jobs des ausgewählten Tags, sortiert nach Uhrzeit (ohne Zeit ans Ende).
-  const dayJobs = useMemo(() => {
-    const list = singleJobs.filter((j) => getJobDateKey(j) === selectedKey);
-    return list.sort((a, b) => {
-      const ta = getJobDisplayTime(a);
-      const tb = getJobDisplayTime(b);
-      if (!ta && !tb) return 0;
-      if (!ta) return 1;
-      if (!tb) return -1;
-      return ta.localeCompare(tb);
-    });
-  }, [singleJobs, selectedKey]);
-
-  // Überfällig: offene/laufende Jobs mit Datum vor heute (completed nie).
-  const overdueJobs = useMemo(
-    () => singleJobs.filter((j) => isOverdue(j, todayKey)),
-    [singleJobs, todayKey],
-  );
-
-  // Frühester überfälliger Tag (für den Tipp-Sprung).
-  const firstOverdueKey = useMemo(() => {
-    const keys = overdueJobs
-      .map((j) => getJobDateKey(j))
-      .filter((k): k is string => !!k)
-      .sort((a, b) => a.localeCompare(b));
-    return keys[0] ?? null;
-  }, [overdueJobs]);
-
   const handleStart = useCallback(
     async (jobId: string) => {
       setActionError("");
       try {
         await startJob(jobId);
       } catch (err: unknown) {
-        setActionError(
-          toUserMessage(err, "Job konnte nicht gestartet werden."),
-        );
+        setActionError(toUserMessage(err, "Job konnte nicht gestartet werden."));
       }
     },
     [startJob],
@@ -179,23 +222,13 @@ export default function EmployeeJobsCalendarScreen() {
     [completeJob],
   );
 
-  // Ersten überfälligen Tag auswählen — der Kalender springt automatisch
-  // mit, weil visibleMonth aus selectedKey abgeleitet ist.
-  const handleOverduePress = useCallback(() => {
-    if (!firstOverdueKey) return;
-    setSelectedKey(firstOverdueKey);
-  }, [firstOverdueKey]);
-
-  const selectedLabel = useMemo(
-    () =>
-      keyToDate(selectedKey).toLocaleDateString("de-DE", {
-        weekday: "long",
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      }),
-    [selectedKey],
+  const canRunActions = useCallback(
+    (job: Parameters<typeof canRunJobActions>[0]) =>
+      canRunJobActions(job, role, profile?.id),
+    [role, profile?.id],
   );
+
+  const isOnTodayMonth = monthKey === todayMonthKey;
 
   if (loading) return <LoadingScreen />;
 
@@ -206,12 +239,13 @@ export default function EmployeeJobsCalendarScreen() {
         backgroundColor={theme.colors.background}
       />
 
-      <FlatList
-        data={dayJobs}
-        keyExtractor={(item) => item.id}
+      {/* Der Kalender scrollt nicht (er füllt genau den Bildschirm) — die
+          ScrollView ist ausschließlich Träger des Pull-to-Refresh, das die
+          bisherige Listenansicht hatte. */}
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -220,110 +254,110 @@ export default function EmployeeJobsCalendarScreen() {
             colors={[theme.colors.primary]}
           />
         }
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <OfflineBanner />
+      >
+        <OfflineBanner />
 
-            <Text style={styles.title}>Jobs</Text>
+        {/* ── Kopf: Monat + Jahr, Heute, Blättern ── */}
+        <View style={styles.header}>
+          {/* Der Titel ist der Einstieg in die Monats-/Jahresauswahl — der
+              schnelle Weg über mehrere Monate hinweg. Das Chevron macht
+              sichtbar, dass hier etwas passiert; Rolle und Label machen es
+              für den Screenreader eindeutig. */}
+          <TouchableOpacity
+            style={styles.monthTitleBtn}
+            onPress={() => setPickerOpen(true)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Monat und Jahr auswählen"
+            accessibilityValue={{ text: formatMonthLabel(monthKey) }}
+          >
+            <Text style={styles.monthLabel} numberOfLines={1} maxFontSizeMultiplier={1.4}>
+              {formatMonthLabel(monthKey)}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color={theme.colors.primary} />
+          </TouchableOpacity>
 
-            <MonthCalendar
-              visibleMonth={visibleMonth}
-              onChangeMonth={handleChangeMonth}
-              selectedKey={selectedKey}
-              onSelectDay={setSelectedKey}
-              markedKeys={markedKeys}
-              activeMarkedKeys={activeMarkedKeys}
-              todayKey={todayKey}
-            />
+          <TouchableOpacity
+            style={[styles.todayBtn, isOnTodayMonth && styles.todayBtnQuiet]}
+            onPress={goToday}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Zu heute springen"
+          >
+            <Text style={styles.todayBtnText} maxFontSizeMultiplier={1.3}>
+              Heute
+            </Text>
+          </TouchableOpacity>
 
-            {/* ── Überfällig-Hinweis (tippbar → springt zum ersten Tag) ── */}
-            {overdueJobs.length > 0 ? (
-              <TouchableOpacity
-                style={styles.overdueBanner}
-                onPress={handleOverduePress}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="alert-circle"
-                  size={18}
-                  color={theme.colors.statusOpen}
-                />
-                <Text style={styles.overdueText}>
-                  {overdueJobs.length}{" "}
-                  {overdueJobs.length === 1
-                    ? "überfälliger Job"
-                    : "überfällige Jobs"}
-                </Text>
-                <Ionicons
-                  name="chevron-forward"
-                  size={16}
-                  color={theme.colors.statusOpen}
-                  style={styles.overdueChevron}
-                />
-              </TouchableOpacity>
-            ) : null}
+          <TouchableOpacity
+            style={styles.navBtn}
+            onPress={goPrevMonth}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+            accessibilityRole="button"
+            accessibilityLabel="Vorheriger Monat"
+          >
+            <Ionicons name="chevron-back" size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
 
-            {/* ── Aktionsfehler (Start/Complete) ── */}
-            {actionError ? (
-              <ErrorBanner
-                message={actionError}
-                onDismiss={() => setActionError("")}
-              />
-            ) : null}
+          <TouchableOpacity
+            style={styles.navBtn}
+            onPress={goNextMonth}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Nächster Monat"
+          >
+            <Ionicons name="chevron-forward" size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View>
 
-            {/* ── Titel: ausgewähltes Datum + Anzahl ──
-                Die Anzahl macht sichtbar, dass die Liste darunter VOLLSTÄNDIG
-                ist (der Tag wird nie gekürzt). */}
-            <View style={styles.dayTitleRow}>
-              <Text style={styles.dayTitle} numberOfLines={2}>
-                {selectedLabel}
-              </Text>
-              {dayJobs.length > 0 ? (
-                <Text style={styles.dayCount}>
-                  {dayJobs.length === 1 ? "1 Auftrag" : `${dayJobs.length} Aufträge`}
-                </Text>
-              ) : null}
-            </View>
-          </View>
-        }
-        // Leer-Zustand sagt jetzt, WELCHER Tag leer ist und was als Nächstes
-        // hilft. "Keine Jobs für diesen Tag" + "Wähle einen markierten Tag"
-        // war für den häufigsten Fall (heute ist frei) unnötig technisch.
-        ListEmptyComponent={
-          <EmptyState
-            title={
-              selectedKey === todayKey
-                ? "Heute keine Aufträge"
-                : "Keine Aufträge an diesem Tag"
-            }
-            message={
-              markedKeys.size > 0
-                ? "Tage mit Aufträgen sind im Kalender markiert."
-                : "In diesem Monat sind dir keine Aufträge zugewiesen."
-            }
-            icon="calendar-outline"
-          />
-        }
-        renderItem={({ item }) => (
-          <JobCard
-            job={item}
-            // Start/Fertig sind Employee-Aktionen (RPCs start_own_job/
-            // complete_own_job). JobCard zeigt je Status genau eine Action.
-            // Seit Phase 7 für JEDEN Zugewiesenen — siehe canRunJobActions.
-            onStart={
-              canRunJobActions(item, role, profile?.id)
-                ? () => handleStart(item.id)
-                : undefined
-            }
-            onComplete={
-              canRunJobActions(item, role, profile?.id)
-                ? () => handleComplete(item.id)
-                : undefined
-            }
-            onPress={() => router.push(`/jobs/${item.id}`)}
-          />
-        )}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        {/* ── Monatsraster (füllt die Restfläche) ──
+            Hier stand bis zuletzt ein „N überfällige Aufträge"-Banner. Es ist
+            in dieser Ansicht bewusst ENTFALLEN: auf einem echten Datenbestand
+            wurde daraus „63 überfällige Aufträge" in Warnfarbe — das
+            dominierte den Bildschirm und machte aus einer Planungsansicht
+            eine Mahnliste. Überfälliges ist Abarbeitung und gehört in die
+            Übersicht bzw. den kommenden Jobs-Tab.
+            Es geht dabei nichts verloren: die Berechnung war rein lokal in
+            diesem Screen. Die geteilte Überfällig-Logik (`getOverdueOccurrences`
+            in services/jobs/jobs.service.ts) und ihre Admin-Flächen
+            (AdminScheduleScreen, AdminDashboardScreen) bleiben unangetastet. */}
+        <MonthGrid
+          monthKey={monthKey}
+          selectedKey={selectedKey}
+          todayKey={todayKey}
+          summaries={summaries}
+          onSelectDay={handleSelectDay}
+        />
+
+        {/* Leerer Monat: der Kalender bleibt stehen, es kommt nur eine
+            ruhige Zeile dazu — kein EmptyState, der das Raster ersetzt. */}
+        {!monthHasJobs ? (
+          <Text style={styles.emptyMonthHint} numberOfLines={2}>
+            In diesem Monat sind dir keine Aufträge zugewiesen.
+          </Text>
+        ) : null}
+      </ScrollView>
+
+      <MonthYearPickerSheet
+        visible={pickerOpen}
+        monthKey={monthKey}
+        onSelect={handlePickMonth}
+        onClose={() => setPickerOpen(false)}
+      />
+
+      <DayAgendaSheet
+        visible={sheetOpen}
+        dayKey={selectedKey}
+        jobs={selectedJobs}
+        onClose={() => setSheetOpen(false)}
+        onOpenJob={handleOpenJob}
+        canRunActions={canRunActions}
+        onStart={handleStart}
+        onComplete={handleComplete}
+        errorMessage={actionError}
+        onDismissError={() => setActionError("")}
       />
     </SafeAreaView>
   );
@@ -335,70 +369,78 @@ function createStyles(theme: AppTheme) {
       flex: 1,
       backgroundColor: theme.colors.background,
     },
-    listContent: {
-      paddingHorizontal: theme.spacing.lg,
-      paddingBottom: 96,
-      flexGrow: 1,
+    flex: {
+      flex: 1,
     },
-    header: {
-      paddingTop: theme.spacing.xl,
-      marginBottom: theme.spacing.lg,
+    // flexGrow statt fester Höhe: der Inhalt füllt mindestens den Bildschirm,
+    // damit MonthGrid seine `flex: 1`-Restfläche bekommt.
+    scrollContent: {
+      flexGrow: 1,
+      paddingHorizontal: theme.spacing.sm,
+      paddingTop: theme.spacing.md,
+      paddingBottom: theme.spacing.md,
+      // Größer als vorher (sm): der Monat soll ruhig wirken, und das Raster
+      // gibt die Höhe über flex:1 bereitwillig her.
       gap: theme.spacing.md,
     },
-    title: {
-      fontSize: theme.typography.size.xxl,
+
+    // ── Kopfzeile
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.xs,
+      paddingHorizontal: theme.spacing.xs,
+    },
+    // Titel + Chevron als ein Tippziel; flex:1 schiebt die restlichen
+    // Bedienelemente wie bisher nach rechts.
+    monthTitleBtn: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingVertical: 4,
+    },
+    monthLabel: {
+      flexShrink: 1,
+      fontSize: theme.typography.size.xl,
       fontFamily: theme.typography.family.bold,
       fontWeight: theme.typography.weight.bold,
       color: theme.colors.onSurface,
       letterSpacing: theme.typography.letterSpacing.tight,
-    },
-
-    // ── Überfällig-Banner (Warn-Farbschema = statusOpen)
-    overdueBanner: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: theme.spacing.sm,
-      backgroundColor: theme.colors.statusOpenBg,
-      borderWidth: 1,
-      borderColor: theme.colors.statusOpenBorder,
-      borderRadius: theme.radius.md,
-      paddingHorizontal: theme.spacing.md,
-      paddingVertical: theme.spacing.sm,
-    },
-    overdueText: {
-      fontSize: theme.typography.size.sm,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.statusOpen,
-    },
-    overdueChevron: {
-      marginLeft: "auto",
-    },
-
-    // ── Titel des ausgewählten Tags
-    dayTitleRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: theme.spacing.sm,
-    },
-    dayCount: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.onSurfaceVariant,
-    },
-    dayTitle: {
-      flexShrink: 1,
-      fontSize: theme.typography.size.md,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onSurface,
       textTransform: "capitalize",
     },
+    todayBtn: {
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 7,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+    },
+    // Auf dem aktuellen Monat bleibt „Heute" bedienbar (es setzt dann noch
+    // die Auswahl zurück), tritt optisch aber zurück.
+    todayBtnQuiet: {
+      borderColor: theme.colors.outlineVariant,
+    },
+    todayBtnText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.primary,
+    },
+    navBtn: {
+      width: 32,
+      height: 32,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.surfaceContainerHigh,
+    },
 
-    separator: {
-      height: theme.spacing.sm,
+    emptyMonthHint: {
+      textAlign: "center",
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
     },
   });
 }
