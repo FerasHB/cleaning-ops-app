@@ -186,6 +186,85 @@ create table if not exists public.job_photos (
   created_at timestamptz not null default now()
 );
 
+-- Prüfpfad für manuelle Korrekturen der Mitarbeiter-Arbeitszeit (Phase A,
+-- 20260814000000). Append-only: eine Zeile je Korrektur-Ereignis mit Alt-/
+-- Neuwerten, korrigierendem Admin, Pflicht-Begründung und Zeitpunkt.
+-- Geschrieben ausschließlich von admin_correct_assignment_time(); es gibt
+-- weder UPDATE- noch DELETE-Policy (wie job_comments/job_photos).
+-- Die abgerechnete Zeit selbst steht IMMER in job_assignments — diese
+-- Tabelle trägt keine Abrechnungsbedeutung.
+-- job_id/assignment_id kaskadieren (mit dem Auftrag entfällt auch der
+-- Nachweis); employee_id/changed_by sind ON DELETE SET NULL, damit eine
+-- Kontolöschung nicht blockiert wird (siehe job_photos.uploaded_by).
+--
+-- HINWEIS ZUR REFERENZ-DATEI: der Fremdschlüssel unten zeigt auf
+-- public.job_assignments. Diese Tabelle wird in dieser Datei NICHT
+-- definiert — sie entstand mit Migration 20260725000000 und wurde hier nie
+-- nachgetragen (bestehende Drift, gilt ebenso für ihre Policies und die
+-- RPCs der Phasen 3–7). Diese Datei ist laut CLAUDE.md ausdrücklich nur
+-- REFERENZ und kein ausführbares Bootstrap-Skript; maßgeblich sind die
+-- Migrationen unter supabase/migrations/. Der FK ist hier bewusst
+-- vollständig dokumentiert statt weggelassen — das Nachtragen von
+-- job_assignments selbst gehört in eine eigene Aufräum-Änderung.
+create table if not exists public.employee_time_adjustments (
+  id uuid primary key default gen_random_uuid(),
+  assignment_id uuid not null references public.job_assignments(id) on delete cascade,
+  job_id uuid not null references public.jobs(id) on delete cascade,
+  employee_id uuid references public.profiles(id) on delete set null,
+  old_started_at timestamptz,
+  old_completed_at timestamptz,
+  new_started_at timestamptz,
+  new_completed_at timestamptz,
+  changed_by uuid references public.profiles(id) on delete set null,
+  reason text not null,
+  created_at timestamptz not null default now(),
+  constraint chk_employee_time_adjustments_reason
+    check (length(btrim(reason)) > 0),
+  constraint chk_employee_time_adjustments_new_order
+    check (
+      new_started_at is null
+      or new_completed_at is null
+      or new_completed_at > new_started_at
+    )
+);
+
+-- Leserichtungen: Korrektur-Historie eines Auftrags bzw. einer Zuweisung.
+create index if not exists idx_employee_time_adjustments_job
+  on public.employee_time_adjustments (job_id, created_at desc);
+create index if not exists idx_employee_time_adjustments_assignment
+  on public.employee_time_adjustments (assignment_id, created_at desc);
+-- FK-Rückwärtsindizes, damit eine Kontolöschung (ON DELETE SET NULL) nicht
+-- über einen Seq Scan läuft.
+create index if not exists idx_employee_time_adjustments_employee
+  on public.employee_time_adjustments (employee_id) where employee_id is not null;
+create index if not exists idx_employee_time_adjustments_changed_by
+  on public.employee_time_adjustments (changed_by) where changed_by is not null;
+
+-- Zugriff (identisch zu Migration 20260814000000): RLS an, NUR SELECT für
+-- Admins der eigenen Firma. INSERT/UPDATE/DELETE bleiben ohne Grant UND ohne
+-- Policy — geschrieben wird ausschließlich über die SECURITY-DEFINER-RPC
+-- admin_correct_assignment_time(). Mitarbeiter sehen bewusst keine
+-- Korrektur-Einträge (das Feld reason kann interne Bewertungen enthalten);
+-- die korrigierte ZEIT selbst sehen sie in ihrem eigenen Stundenzettel.
+--
+-- REIHENFOLGE IST SICHERHEITSRELEVANT: Supabase vergibt über
+-- ALTER DEFAULT PRIVILEGES auf neue Tabellen im public-Schema automatisch
+-- ALLE Rechte an anon und authenticated. Erst vollständig entziehen, dann
+-- gezielt SELECT vergeben.
+alter table public.employee_time_adjustments enable row level security;
+revoke all on public.employee_time_adjustments from anon, authenticated;
+grant select on public.employee_time_adjustments to authenticated;
+
+drop policy if exists "admin read time adjustments in own company" on public.employee_time_adjustments;
+create policy "admin read time adjustments in own company"
+on public.employee_time_adjustments
+for select
+to authenticated
+using (
+  public.current_user_role() = 'admin'
+  and public.job_in_current_company(job_id)
+);
+
 -- Admin-Push bei Job-Statuswechsel — Event-Log + Pro-Empfänger-Zustandsmaschine.
 -- notification_outbox: EIN Event pro echtem Statusübergang (transaktional von
 --   start_own_job/complete_own_job geschrieben). fanned_out_at markiert die
