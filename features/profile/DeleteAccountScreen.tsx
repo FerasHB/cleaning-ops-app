@@ -7,7 +7,7 @@
 // Backend: services/account/deleteAccount.ts → Edge Function delete-account.
 // Nach Erfolg: lokale Caches leeren, lokal abmelden, zurück zum Login.
 
-import { Card } from "@/components/ui";
+import { AppHeader, Card } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -113,29 +113,18 @@ export default function DeleteAccountScreen() {
         backgroundColor={theme.colors.background}
       />
 
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          activeOpacity={0.8}
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-              return;
-            }
-            router.replace("/");
-          }}
-          disabled={loading}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={18}
-            color={theme.colors.onSurface}
-          />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Konto löschen</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <AppHeader
+        title="Konto löschen"
+        showBack
+        onBack={() => {
+          if (loading) return;
+          if (router.canGoBack()) {
+            router.back();
+            return;
+          }
+          router.replace("/");
+        }}
+      />
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -358,35 +347,6 @@ function createStyles(theme: AppTheme) {
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
-    },
-
-    // ── Header
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.outlineVariant,
-    },
-    backButton: {
-      width: 36,
-      height: 36,
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.surfaceContainerHigh,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    headerTitle: {
-      flex: 1,
-      textAlign: "center",
-      fontSize: theme.typography.size.lg,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onSurface,
-    },
-    headerSpacer: {
-      width: 36,
     },
 
     // ── Content

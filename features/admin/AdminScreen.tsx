@@ -3,7 +3,7 @@
 // Vollständig auf useAppTheme() migriert — Light + Dark Mode.
 // Business-Logik (createJob, useJobForm, AuthContext, JobContext) unverändert.
 
-import { Button, LoadingScreen } from "@/components/ui";
+import { AppHeader, Button, LoadingScreen } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
@@ -11,7 +11,6 @@ import { JobFormFields } from "@/features/jobs/components/JobFormFields";
 import { useJobForm } from "@/features/jobs/hooks/useJobForm";
 import { formatDateISO, formatTimeHHmm, formatToISO } from "@/utils/date";
 import type { CreateJobInput } from "@/types/job";
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -21,7 +20,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -101,7 +99,7 @@ export default function AdminScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { createJob, employees, loading } = useJobs();
-  const { role, loading: authLoading } = useAuth();
+  const { loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   // Synchrone Re-Entrancy-Sperre gegen Doppel-Absendung. setSubmitting(true)
   // wirkt erst beim nächsten Render — zwei sehr schnelle Taps könnten daher
@@ -229,40 +227,17 @@ export default function AdminScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace("/(admin-tabs)/jobs");
-              }
-            }}
-            style={styles.backBtn}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={22}
-              color={theme.colors.primary}
-            />
-            <Text style={styles.backLabel}>Zurück</Text>
-          </TouchableOpacity>
-
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Neuer Job</Text>
-            {role ? (
-              <View style={styles.rolePill}>
-                <View style={styles.roleDot} />
-                <Text style={styles.rolePillText}>{role}</Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Gegengewicht zum Zurück-Button, damit der Titel mittig bleibt. */}
-          <View style={styles.headerSpacer} />
-        </View>
+        <AppHeader
+          title="Neuer Job"
+          showBack
+          onBack={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/(admin-tabs)/jobs");
+            }
+          }}
+        />
 
         {/* ── Scroll-Inhalt ── */}
         <Animated.ScrollView
@@ -308,72 +283,6 @@ function createStyles(theme: AppTheme) {
     },
     flex: {
       flex: 1,
-    },
-
-    // Header
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.outlineVariant,
-      backgroundColor: theme.colors.background,
-    },
-    backBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 2,
-      minWidth: 72,
-    },
-    backLabel: {
-      fontSize: theme.typography.size.md,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.primary,
-    },
-    headerCenter: {
-      flex: 1,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: theme.spacing.sm,
-    },
-    headerTitle: {
-      fontSize: theme.typography.size.md,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onSurface,
-    },
-
-    // Rolle-Pill (z.B. "admin")
-    rolePill: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      backgroundColor: theme.colors.statusInProgressBg,
-      borderWidth: 1,
-      borderColor: theme.colors.statusInProgressBorder,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: theme.radius.full,
-    },
-    roleDot: {
-      width: 5,
-      height: 5,
-      borderRadius: theme.radius.full,
-      backgroundColor: theme.colors.statusInProgress,
-    },
-    rolePillText: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.medium,
-      fontWeight: theme.typography.weight.medium,
-      color: theme.colors.statusInProgress,
-    },
-
-    headerSpacer: {
-      minWidth: 72,
     },
 
     // Scroll-Container

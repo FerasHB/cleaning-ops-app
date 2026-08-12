@@ -216,7 +216,6 @@ function RootNavigator() {
           <Stack.Screen name="jobs/create" />
           <Stack.Screen name="jobs/[id]/edit" />
           <Stack.Screen name="employees/[id]/index" />
-          <Stack.Screen name="timesheets/index" />
         </Stack.Protected>
 
         {/* Employee-Bereich: nur die eigenen Tabs. */}
@@ -225,10 +224,13 @@ function RootNavigator() {
         </Stack.Protected>
 
         {/* Von beiden Rollen genutzt: Job-Detail (rollenabhängige UI innerhalb
-            des Screens) und Passwort ändern. */}
+            des Screens), Passwort ändern und Stundenzettel (Admin sieht alle
+            Mitarbeiter, Mitarbeitende nur die eigene Zeit — siehe
+            TimesheetScreen). */}
         <Stack.Protected guard={isAuthed}>
           <Stack.Screen name="jobs/[id]/index" />
           <Stack.Screen name="change-password" />
+          <Stack.Screen name="timesheets/index" />
         </Stack.Protected>
       </Stack>
     </JobProvider>
