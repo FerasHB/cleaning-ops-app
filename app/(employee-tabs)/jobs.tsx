@@ -1,7 +1,8 @@
-import EmployeeJobsCalendarScreen from "@/features/jobs/EmployeeJobsCalendarScreen";
+import EmployeeSmartJobsScreen from "@/features/jobs/EmployeeSmartJobsScreen";
 
-// Employee-Jobs-Tab: Kalender-Ansicht (markierte Job-Tage + Tagesliste).
-// Admin nutzt den getrennten Zeitplan/Daueraufträge-Screen (AdminJobsScreen).
+// Employee-Jobs-Tab: intelligente operative Warteschlange (Aktiv/Überfällig/
+// Als Nächstes/Heute/Zukunft). Der Kalender lebt seit diesem PR im
+// eigenständigen Tab "Kalender" (app/(employee-tabs)/kalender.tsx).
 export default function EmployeeJobsTab() {
-  return <EmployeeJobsCalendarScreen />;
+  return <EmployeeSmartJobsScreen />;
 }
