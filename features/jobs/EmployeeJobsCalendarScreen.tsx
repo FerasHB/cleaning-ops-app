@@ -271,17 +271,35 @@ export default function EmployeeJobsCalendarScreen() {
               />
             ) : null}
 
-            {/* ── Titel: ausgewähltes Datum ── */}
-            <Text style={styles.dayTitle}>{selectedLabel}</Text>
+            {/* ── Titel: ausgewähltes Datum + Anzahl ──
+                Die Anzahl macht sichtbar, dass die Liste darunter VOLLSTÄNDIG
+                ist (der Tag wird nie gekürzt). */}
+            <View style={styles.dayTitleRow}>
+              <Text style={styles.dayTitle} numberOfLines={2}>
+                {selectedLabel}
+              </Text>
+              {dayJobs.length > 0 ? (
+                <Text style={styles.dayCount}>
+                  {dayJobs.length === 1 ? "1 Auftrag" : `${dayJobs.length} Aufträge`}
+                </Text>
+              ) : null}
+            </View>
           </View>
         }
+        // Leer-Zustand sagt jetzt, WELCHER Tag leer ist und was als Nächstes
+        // hilft. "Keine Jobs für diesen Tag" + "Wähle einen markierten Tag"
+        // war für den häufigsten Fall (heute ist frei) unnötig technisch.
         ListEmptyComponent={
           <EmptyState
-            title="Keine Jobs für diesen Tag"
+            title={
+              selectedKey === todayKey
+                ? "Heute keine Aufträge"
+                : "Keine Aufträge an diesem Tag"
+            }
             message={
               markedKeys.size > 0
-                ? "Wähle einen markierten Tag im Kalender aus."
-                : "Keine Jobs in diesem Monat."
+                ? "Tage mit Aufträgen sind im Kalender markiert."
+                : "In diesem Monat sind dir keine Aufträge zugewiesen."
             }
             icon="calendar-outline"
           />
@@ -358,7 +376,20 @@ function createStyles(theme: AppTheme) {
     },
 
     // ── Titel des ausgewählten Tags
+    dayTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: theme.spacing.sm,
+    },
+    dayCount: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurfaceVariant,
+    },
     dayTitle: {
+      flexShrink: 1,
       fontSize: theme.typography.size.md,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,

@@ -67,7 +67,9 @@ export default function EmployeeTabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          // Deutsch wie der Rest der App ("Übersicht", "Jobs") — "Profile" war
+          // das einzige englische Tab-Label.
+          title: "Profil",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),

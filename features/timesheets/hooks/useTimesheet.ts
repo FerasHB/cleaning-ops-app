@@ -40,12 +40,39 @@ function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
 }
 
-export function useTimesheet(): UseTimesheetResult {
+/**
+ * @param selfEmployee Eigener Mitarbeiter-Datensatz, wenn der Screen die
+ *   EIGENE Arbeitszeit zeigt (Mitarbeiter-Sicht). Dann entfällt die Auswahl:
+ *   der Stundenzettel ist fest auf diese Person gebunden. Für Admins bleibt
+ *   der Parameter leer und alles verhält sich unverändert.
+ *
+ *   Nötig, weil `useJobs().employees` nur für Admins gefüllt ist — der Name
+ *   für die Kopfzeile/PDF muss in der Mitarbeiter-Sicht aus dem eigenen
+ *   Profil kommen. Die Abfrage selbst (getTimesheet) ist unverändert; RLS
+ *   erlaubt Mitarbeitenden das Lesen der eigenen zugewiesenen Jobs
+ *   ("employee read own assigned jobs" + "employee read assignments on
+ *   assigned jobs").
+ */
+export function useTimesheet(
+  selfEmployee?: { id: string; fullName: string } | null,
+): UseTimesheetResult {
   const { employees } = useJobs();
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
-    null,
+    selfEmployee?.id ?? null,
   );
+
+  // Profil kann nach dem ersten Render eintreffen (Auth-Bootstrap) — dann die
+  // Auswahl nachziehen. Greift nur in der Eigen-Sicht.
+  // Bewusst als primitive Werte gehalten: `selfEmployee` ist ein Objekt-Literal
+  // und wäre bei jedem Render neu — als Effect-Dependency würde es den
+  // Stundenzettel endlos neu laden.
+  const selfId = selfEmployee?.id ?? null;
+  const selfName = selfEmployee?.fullName ?? null;
+
+  useEffect(() => {
+    if (selfId) setSelectedEmployeeId(selfId);
+  }, [selfId]);
   const [monthDate, setMonthDate] = useState<Date>(() =>
     startOfMonth(new Date()),
   );
@@ -96,7 +123,10 @@ export function useTimesheet(): UseTimesheetResult {
     }
 
     const employee = employees.find((e) => e.id === selectedEmployeeId);
-    const employeeName = employee?.fullName ?? "Mitarbeiter";
+    const employeeName =
+      employee?.fullName ??
+      (selfId === selectedEmployeeId ? selfName : null) ??
+      "Mitarbeiter";
 
     let cancelled = false;
     setLoading(true);
@@ -130,7 +160,7 @@ export function useTimesheet(): UseTimesheetResult {
     return () => {
       cancelled = true;
     };
-  }, [selectedEmployeeId, monthDate, employees]);
+  }, [selectedEmployeeId, monthDate, employees, selfId, selfName]);
 
   const exportPdf = useCallback(async () => {
     if (!data || data.entries.length === 0) return;

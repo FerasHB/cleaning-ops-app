@@ -3,10 +3,12 @@
 // Vollständig theme-aware (Light + Dark Mode).
 // Business-Logik unverändert: nutzt nur profile/role/user/signOut aus AuthContext.
 //
-// Hinweis: Die meisten Rows sind bewusst UI-only ("Bald"). Echte Funktion haben:
-// - "Team verwalten" (Admin) → navigiert zu /(admin-tabs)/employees
-// - "Abmelden" → bestehende signOut-Funktion
-// - "Erscheinungsbild" → Info, dass die App der Systemeinstellung folgt (kein eigener Toggle)
+// JEDE Zeile mit Chevron führt auch wirklich irgendwohin. Früher waren sieben
+// der elf Zeilen reine Attrappen ("Bald"): sie sahen aus wie Navigation, ein
+// Tap brachte aber nur ein "Diese Funktion kommt später."-Alert — das im Web
+// nicht einmal erschien (Alert.alert ist dort eine leere Attrappe). Die
+// Attrappen sind entfernt; rein informative Werte (E-Mail, Sprache) stehen
+// jetzt als nicht tippbare Info-Zeilen ohne Chevron.
 
 import { Card, InitialsAvatar } from "@/components/ui";
 import { alertDialog, confirmDialog } from "@/utils/dialogs";
@@ -18,7 +20,6 @@ import Constants from "expo-constants";
 import { router } from "expo-router";
 import React, { useMemo } from "react";
 import {
-  Alert,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -33,12 +34,6 @@ const APP_VERSION =
   Constants.expoConfig?.version ??
   (Constants as any).manifest?.version ??
   "1.0.0";
-
-const COMING_SOON_MSG = "Diese Funktion kommt später.";
-
-function showComingSoon() {
-  Alert.alert("Bald verfügbar", COMING_SOON_MSG);
-}
 
 export default function ProfileScreen({
   showBack = false,
@@ -156,22 +151,30 @@ export default function ProfileScreen({
           </View>
         </Card>
 
+        {/* ── Meine Arbeit (nur Mitarbeiter) ──
+            Die eigene erfasste Arbeitszeit war bisher überhaupt nicht
+            erreichbar: /timesheets war nur über das Admin-Dashboard und den
+            Admin-Bereich dieses Screens verlinkt. Mitarbeitende kommen jetzt
+            hier an ihre eigenen Zeiten (gleiche Berechnung, eigene Sicht). */}
+        {!isAdmin && (
+          <SettingsSection title="Meine Arbeit" styles={styles} theme={theme}>
+            <SettingsRow
+              icon="time-outline"
+              label="Meine Arbeitszeit"
+              onPress={() => router.push("/timesheets")}
+              isLast
+              styles={styles}
+              theme={theme}
+            />
+          </SettingsSection>
+        )}
+
         {/* ── Account ── */}
         <SettingsSection title="Account" styles={styles} theme={theme}>
-          <SettingsRow
-            icon="person-outline"
-            label="Profil bearbeiten"
-            comingSoon
-            onPress={showComingSoon}
-            styles={styles}
-            theme={theme}
-          />
           <SettingsRow
             icon="mail-outline"
             label="E-Mail"
             value={email}
-            comingSoon
-            onPress={showComingSoon}
             styles={styles}
             theme={theme}
           />
@@ -191,29 +194,21 @@ export default function ProfileScreen({
             icon="language-outline"
             label="Sprache"
             value="Deutsch"
-            comingSoon
-            onPress={showComingSoon}
             styles={styles}
             theme={theme}
           />
-          <SettingsRow
-            icon="notifications-outline"
-            label="Benachrichtigungen"
-            comingSoon
-            onPress={showComingSoon}
-            styles={styles}
-            theme={theme}
-          />
+          {/* alertDialog statt Alert.alert: Alert ist im Web eine leere
+              Attrappe — der Hinweis erschien dort nie. */}
           <SettingsRow
             icon="contrast-outline"
             label="Erscheinungsbild"
             value="Systemeinstellung"
-            onPress={() =>
-              Alert.alert(
+            onPress={() => {
+              void alertDialog(
                 "Erscheinungsbild",
                 "Die App folgt automatisch der Hell-/Dunkel-Einstellung deines Geräts.",
-              )
-            }
+              );
+            }}
             isLast
             styles={styles}
             theme={theme}
@@ -228,14 +223,6 @@ export default function ProfileScreen({
             theme={theme}
           >
             <SettingsRow
-              icon="business-outline"
-              label="Firmenprofil"
-              comingSoon
-              onPress={showComingSoon}
-              styles={styles}
-              theme={theme}
-            />
-            <SettingsRow
               icon="people-outline"
               label="Team verwalten"
               onPress={() => router.push("/(admin-tabs)/employees")}
@@ -246,14 +233,6 @@ export default function ProfileScreen({
               icon="document-text-outline"
               label="Stundenzettel"
               onPress={() => router.push("/timesheets")}
-              styles={styles}
-              theme={theme}
-            />
-            <SettingsRow
-              icon="options-outline"
-              label="App-Einstellungen"
-              comingSoon
-              onPress={showComingSoon}
               isLast
               styles={styles}
               theme={theme}
@@ -261,24 +240,8 @@ export default function ProfileScreen({
           </SettingsSection>
         )}
 
-        {/* ── Support ── */}
-        <SettingsSection title="Support" styles={styles} theme={theme}>
-          <SettingsRow
-            icon="help-circle-outline"
-            label="Hilfe & Support"
-            comingSoon
-            onPress={showComingSoon}
-            styles={styles}
-            theme={theme}
-          />
-          <SettingsRow
-            icon="shield-checkmark-outline"
-            label="Datenschutz"
-            comingSoon
-            onPress={showComingSoon}
-            styles={styles}
-            theme={theme}
-          />
+        {/* ── Konto & App-Info ── */}
+        <SettingsSection title="Sonstiges" styles={styles} theme={theme}>
           <SettingsRow
             icon="trash-outline"
             label="Konto löschen"
@@ -339,11 +302,12 @@ function SettingsSection({
 // ─────────────────────────────────────────────
 // SettingsRow
 // ─────────────────────────────────────────────
+// Ohne `onPress` ist die Zeile eine reine Info-Zeile: kein Touchable, kein
+// Chevron — sie sieht damit nicht mehr aus wie etwas, das irgendwohin führt.
 function SettingsRow({
   icon,
   label,
   value,
-  comingSoon = false,
   onPress,
   isLast = false,
   styles,
@@ -352,7 +316,6 @@ function SettingsRow({
   icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
   value?: string;
-  comingSoon?: boolean;
   onPress?: () => void;
   isLast?: boolean;
   styles: ReturnType<typeof createStyles>;
@@ -375,12 +338,7 @@ function SettingsRow({
       </Text>
 
       <View style={styles.rowRight}>
-        {comingSoon && (
-          <View style={styles.soonBadge}>
-            <Text style={styles.soonText}>Bald</Text>
-          </View>
-        )}
-        {value && !comingSoon ? (
+        {value ? (
           <Text style={styles.rowValue} numberOfLines={1}>
             {value}
           </Text>
@@ -556,21 +514,6 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurfaceVariant,
       flexShrink: 1,
-    },
-    soonBadge: {
-      backgroundColor: theme.colors.surfaceContainerHigh,
-      borderWidth: 1,
-      borderColor: theme.colors.outlineVariant,
-      borderRadius: theme.radius.full,
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: 2,
-    },
-    soonText: {
-      fontSize: theme.typography.size.xs,
-      fontFamily: theme.typography.family.semibold,
-      fontWeight: theme.typography.weight.semibold,
-      color: theme.colors.onSurfaceVariant,
-      letterSpacing: theme.typography.letterSpacing.wide,
     },
 
     // ── Logout
