@@ -186,6 +186,38 @@ create table if not exists public.job_photos (
   created_at timestamptz not null default now()
 );
 
+-- Prüfpfad für manuelle Korrekturen der Mitarbeiter-Arbeitszeit (Phase A,
+-- 20260814000000). Append-only: eine Zeile je Korrektur-Ereignis mit Alt-/
+-- Neuwerten, korrigierendem Admin, Pflicht-Begründung und Zeitpunkt.
+-- Geschrieben ausschließlich von admin_correct_assignment_time(); es gibt
+-- weder UPDATE- noch DELETE-Policy (wie job_comments/job_photos).
+-- Die abgerechnete Zeit selbst steht IMMER in job_assignments — diese
+-- Tabelle trägt keine Abrechnungsbedeutung.
+-- job_id/assignment_id kaskadieren (mit dem Auftrag entfällt auch der
+-- Nachweis); employee_id/changed_by sind ON DELETE SET NULL, damit eine
+-- Kontolöschung nicht blockiert wird (siehe job_photos.uploaded_by).
+create table if not exists public.employee_time_adjustments (
+  id uuid primary key default gen_random_uuid(),
+  assignment_id uuid not null references public.job_assignments(id) on delete cascade,
+  job_id uuid not null references public.jobs(id) on delete cascade,
+  employee_id uuid references public.profiles(id) on delete set null,
+  old_started_at timestamptz,
+  old_completed_at timestamptz,
+  new_started_at timestamptz,
+  new_completed_at timestamptz,
+  changed_by uuid references public.profiles(id) on delete set null,
+  reason text not null,
+  created_at timestamptz not null default now(),
+  constraint chk_employee_time_adjustments_reason
+    check (length(btrim(reason)) > 0),
+  constraint chk_employee_time_adjustments_new_order
+    check (
+      new_started_at is null
+      or new_completed_at is null
+      or new_completed_at > new_started_at
+    )
+);
+
 -- Admin-Push bei Job-Statuswechsel — Event-Log + Pro-Empfänger-Zustandsmaschine.
 -- notification_outbox: EIN Event pro echtem Statusübergang (transaktional von
 --   start_own_job/complete_own_job geschrieben). fanned_out_at markiert die
