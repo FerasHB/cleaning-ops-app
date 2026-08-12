@@ -23,6 +23,19 @@
 // KEIN neuer Kartentyp: alle Sektionen nutzen dieselbe `JobCard` wie
 // Übersicht/Kalender. Hervorhebung passiert ausschließlich über
 // Sektions-Überschriften, nicht über eine zweite Karten-Implementierung.
+//
+// PERFORMANCE (wichtig, siehe PR-Nachbesserung):
+// Mitarbeiter mit einer langen Auftragshistorie (real beobachtet: 855
+// einzelne Aufträge, davon 823 offen über ~360 Kalendertage verteilt)
+// erzeugten in der ersten Fassung dieses Screens über 750 gleichzeitig
+// gemountete JobCards in einer einzigen ScrollView — mehrere Sekunden
+// blockierter JS-/UI-Thread bei jedem Tab-/Filter-Wechsel, auf dem echten
+// Gerät reproduziert. `buildJobQueueSections` selbst ist dabei NICHT das
+// Problem (gemessen <1ms für 855 Jobs) — das eager gerenderte DOM war es.
+// Der Screen rendert deshalb über eine `SectionList` (Virtualisierung statt
+// ScrollView + `.map()`): nur die sichtbaren Zeilen (+ Fenster) werden
+// tatsächlich gemountet, ein Filter-Wechsel tauscht nur die Datenquelle der
+// Liste aus statt hunderte Kartenbäume neu zu bauen.
 // ─────────────────────────────────────────────────────────────────
 
 import {
@@ -52,7 +65,16 @@ import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  type ListRenderItemInfo,
+  type SectionListData,
+} from "react-native";
 
 // Gleiche Quelle/Reihenfolge wie die Filter-Chips der Übersicht — Wortlaut
 // darf nicht auseinanderlaufen (utils/jobStatus.ts ist kanonisch).
@@ -83,6 +105,17 @@ const EMPTY_MESSAGES: Record<JobStatusFilter, { title: string; message: string }
     title: "Noch keine erledigten Aufträge",
     message: "Abgeschlossene Aufträge erscheinen hier.",
   },
+};
+
+// Eine Zeile der SectionList — ein "Auftrags-Tagesblock" ODER eine
+// hervorgehobene Einzel-Sektion (Aktiv/Überfällig/Nächstes). `showMoreCount`
+// existiert nur auf der Überfällig-Sektion (progressive Anzeige).
+type JobListSection = {
+  key: string;
+  title: string;
+  subtitle?: string;
+  showMoreCount?: number;
+  data: Job[];
 };
 
 export default function EmployeeSmartJobsScreen() {
@@ -169,6 +202,11 @@ export default function EmployeeSmartJobsScreen() {
     [jobs, now],
   );
 
+  // Teure Ableitung (gemessen <1ms selbst bei 855 Jobs — nicht der
+  // Engpass, siehe Datei-Kopf) hängt NUR an jobs/now/role/profile/filter,
+  // nicht am "Weitere anzeigen"-Toggle — die Sektions-BERECHNUNG bleibt
+  // stabil, während `showAllOverdue` nur bestimmt, wie viel davon sichtbar
+  // ist (siehe listSections unten).
   const sections = useMemo(
     () => buildJobQueueSections(jobs, now, role, profile?.id, filter),
     [jobs, now, role, profile?.id, filter],
@@ -179,49 +217,115 @@ export default function EmployeeSmartJobsScreen() {
     : sections.overdue.slice(0, INITIAL_OVERDUE_COUNT);
   const hiddenOverdueCount = sections.overdue.length - visibleOverdue.length;
 
-  const futureJobCount = sections.future.reduce(
-    (sum, group) => sum + group.jobs.length,
-    0,
-  );
-  const pastCompletedJobCount = sections.pastCompleted.reduce(
-    (sum, group) => sum + group.jobs.length,
-    0,
-  );
-
-  const totalVisibleCount =
-    sections.active.length +
-    sections.overdue.length +
-    (sections.next ? 1 : 0) +
-    (sections.today?.jobs.length ?? 0) +
-    futureJobCount +
-    (filter === "completed" ? pastCompletedJobCount : 0);
-
   const emptyMessage = EMPTY_MESSAGES[filter];
 
-  const renderJobCard = useCallback(
-    (job: Job) => (
+  // ── Flache Sektionsliste für die SectionList ──
+  // Jede Karte erscheint hier in GENAU einer Sektion (siehe Dedup-Regeln in
+  // buildJobQueueSections). Historie (pastCompleted) nur im "Erledigt"-
+  // Filter, damit "Alle" nicht von alten Abschlüssen dominiert wird.
+  const listSections = useMemo<JobListSection[]>(() => {
+    const result: JobListSection[] = [];
+
+    if (sections.active.length > 0) {
+      result.push({ key: "active", title: "In Arbeit", data: sections.active });
+    }
+
+    if (sections.overdue.length > 0) {
+      result.push({
+        key: "overdue",
+        title: "Überfällig",
+        subtitle:
+          sections.overdue.length === 1
+            ? "1 überfälliger Auftrag"
+            : `${sections.overdue.length} überfällige Aufträge`,
+        data: visibleOverdue,
+        showMoreCount: hiddenOverdueCount > 0 ? hiddenOverdueCount : undefined,
+      });
+    }
+
+    if (sections.next) {
+      result.push({ key: "next", title: "Als Nächstes", data: [sections.next] });
+    }
+
+    if (sections.today) {
+      result.push({
+        key: `day-${sections.today.key}`,
+        title: sections.today.label,
+        data: sections.today.jobs,
+      });
+    }
+
+    for (const group of sections.future) {
+      result.push({ key: `day-${group.key}`, title: group.label, data: group.jobs });
+    }
+
+    if (filter === "completed") {
+      for (const group of sections.pastCompleted) {
+        result.push({ key: `past-${group.key}`, title: group.label, data: group.jobs });
+      }
+    }
+
+    return result;
+  }, [sections, visibleOverdue, hiddenOverdueCount, filter]);
+
+  const keyExtractor = useCallback((job: Job) => job.id, []);
+
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<Job>) => (
       <JobCard
-        key={job.id}
-        job={job}
-        dueToday={isJobToday(job, now)}
-        onPress={() => router.push(`/jobs/${job.id}`)}
-        onStart={canRunActions(job) ? () => handleStart(job.id) : undefined}
-        onComplete={canRunActions(job) ? () => handleComplete(job.id) : undefined}
+        job={item}
+        dueToday={isJobToday(item, now)}
+        onPress={() => router.push(`/jobs/${item.id}`)}
+        onStart={canRunActions(item) ? () => handleStart(item.id) : undefined}
+        onComplete={canRunActions(item) ? () => handleComplete(item.id) : undefined}
       />
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [now, canRunActions, handleStart, handleComplete],
   );
 
-  if (loading) return <LoadingScreen />;
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: SectionListData<Job, JobListSection> }) => (
+      <View style={styles.sectionHeaderWrap}>
+        <SectionHeader title={section.title} subtitle={section.subtitle} />
+      </View>
+    ),
+    [styles],
+  );
 
-  return (
-    <ScreenContainer
-      refreshing={refreshing}
-      onRefresh={() => {
-        void handleRefresh();
-      }}
-    >
+  const renderSectionFooter = useCallback(
+    ({ section }: { section: SectionListData<Job, JobListSection> }) => (
+      <View style={styles.sectionFooterWrap}>
+        {section.showMoreCount ? (
+          <TouchableOpacity
+            style={styles.showMoreButton}
+            activeOpacity={0.8}
+            onPress={() => setShowAllOverdue(true)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.showMoreText}>
+              {`Weitere ${section.showMoreCount} anzeigen`}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color={theme.colors.primary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    ),
+    [styles, theme.colors.primary],
+  );
+
+  const itemSeparator = useCallback(
+    () => <View style={styles.itemSeparator} />,
+    [styles],
+  );
+
+  // ── Kopf: Titel + kompakte Heute-Zusammenfassung + Status-Filter ──
+  // Als ListHeaderComponent, damit er mit der Liste scrollt statt eine
+  // zweite, verschachtelte Scroll-Fläche zu erzeugen (SectionList/
+  // VirtualizedList darf NICHT in eine ScrollView verschachtelt werden —
+  // das hebt die Virtualisierung wieder auf).
+  const listHeader = (
+    <>
       <OfflineBanner />
 
       {dataError ? (
@@ -240,10 +344,9 @@ export default function EmployeeSmartJobsScreen() {
         <ErrorBanner message={actionError} onDismiss={() => setActionError("")} />
       ) : null}
 
-      {/* ── Kopf: Titel + kompakte Heute-Zusammenfassung ──
-          Bewusst KEIN eigenes Dashboard — nur so viel, wie beim ersten Blick
-          hilft. Zahlen sind klar "Heute" beschriftet, damit sie sich nicht
-          mit dem darunterliegenden Status-Filter vermischen. */}
+      {/* Bewusst KEIN eigenes Dashboard — nur so viel, wie beim ersten
+          Blick hilft. Zahlen sind klar "Heute" beschriftet, damit sie sich
+          nicht mit dem darunterliegenden Status-Filter vermischen. */}
       <View style={styles.header}>
         <Text style={styles.title}>Meine Aufträge</Text>
         {todayCounts.total > 0 ? (
@@ -282,7 +385,6 @@ export default function EmployeeSmartJobsScreen() {
         )}
       </View>
 
-      {/* ── Status-Filter ── */}
       <View style={styles.filterRow}>
         {FILTERS.map((f) => {
           const active = filter === f.key;
@@ -302,110 +404,68 @@ export default function EmployeeSmartJobsScreen() {
           );
         })}
       </View>
+    </>
+  );
 
-      {totalVisibleCount === 0 ? (
-        <Card>
-          <EmptyState
-            title={emptyMessage.title}
-            message={emptyMessage.message}
-            icon="calendar-outline"
+  const listEmpty = (
+    <Card>
+      <EmptyState
+        title={emptyMessage.title}
+        message={emptyMessage.message}
+        icon="calendar-outline"
+      />
+    </Card>
+  );
+
+  if (loading) return <LoadingScreen />;
+
+  return (
+    <ScreenContainer scrollable={false}>
+      <SectionList
+        style={styles.list}
+        sections={listSections}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        renderSectionFooter={renderSectionFooter}
+        ItemSeparatorComponent={itemSeparator}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={listEmpty}
+        ListFooterComponent={<View style={{ height: theme.spacing.xl }} />}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        stickySectionHeadersEnabled={false}
+        // Nur so viel initial rendern, wie für den ersten Bildschirm nötig
+        // ist — der eigentliche Fix ist die Virtualisierung selbst
+        // (SectionList statt ScrollView + .map über alle Jobs), nicht diese
+        // Feinjustierung. RN-Defaults für maxToRenderPerBatch/windowSize
+        // bleiben bewusst unangetastet (keine Übertunung ohne Messung).
+        initialNumToRender={12}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              void handleRefresh();
+            }}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+            progressBackgroundColor={theme.colors.surface}
           />
-        </Card>
-      ) : (
-        <>
-          {/* ── In Arbeit ── */}
-          {sections.active.length > 0 ? (
-            <View style={styles.section}>
-              <SectionHeader title="In Arbeit" />
-              <View style={styles.jobList}>
-                {sections.active.map(renderJobCard)}
-              </View>
-            </View>
-          ) : null}
-
-          {/* ── Überfällig (progressiv) ── */}
-          {sections.overdue.length > 0 ? (
-            <View style={styles.section}>
-              <SectionHeader
-                title="Überfällig"
-                subtitle={
-                  sections.overdue.length === 1
-                    ? "1 überfälliger Auftrag"
-                    : `${sections.overdue.length} überfällige Aufträge`
-                }
-              />
-              <View style={styles.jobList}>
-                {visibleOverdue.map(renderJobCard)}
-                {hiddenOverdueCount > 0 ? (
-                  <TouchableOpacity
-                    style={styles.showMoreButton}
-                    activeOpacity={0.8}
-                    onPress={() => setShowAllOverdue(true)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.showMoreText}>
-                      {`Weitere ${hiddenOverdueCount} anzeigen`}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
-                      color={theme.colors.primary}
-                    />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </View>
-          ) : null}
-
-          {/* ── Als Nächstes ── */}
-          {sections.next ? (
-            <View style={styles.section}>
-              <SectionHeader title="Als Nächstes" />
-              <View style={styles.jobList}>{renderJobCard(sections.next)}</View>
-            </View>
-          ) : null}
-
-          {/* ── Heute (verbleibend) ── */}
-          {sections.today ? (
-            <View style={styles.section}>
-              <SectionHeader title={sections.today.label} />
-              <View style={styles.jobList}>
-                {sections.today.jobs.map(renderJobCard)}
-              </View>
-            </View>
-          ) : null}
-
-          {/* ── Morgen / weitere Tage ── */}
-          {sections.future.map((group) => (
-            <View key={group.key} style={styles.section}>
-              <SectionHeader title={group.label} />
-              <View style={styles.jobList}>{group.jobs.map(renderJobCard)}</View>
-            </View>
-          ))}
-
-          {/* ── Historie (nur im "Erledigt"-Filter erreichbar) ──
-              Im Standardfall ("Alle") bleibt Vergangenes bewusst draußen,
-              damit alte Abschlüsse die aktuelle Arbeit nicht verdrängen. */}
-          {filter === "completed" && sections.pastCompleted.length > 0
-            ? sections.pastCompleted.map((group) => (
-                <View key={group.key} style={styles.section}>
-                  <SectionHeader title={group.label} />
-                  <View style={styles.jobList}>
-                    {group.jobs.map(renderJobCard)}
-                  </View>
-                </View>
-              ))
-            : null}
-        </>
-      )}
-
-      <View style={{ height: theme.spacing.xl }} />
+        }
+      />
     </ScreenContainer>
   );
 }
 
 function createStyles(theme: AppTheme) {
   return StyleSheet.create({
+    list: {
+      flex: 1,
+    },
+    listContent: {
+      flexGrow: 1,
+      paddingBottom: 32,
+    },
     loadErrorWrap: {
       marginBottom: theme.spacing.md,
     },
@@ -502,12 +562,15 @@ function createStyles(theme: AppTheme) {
       fontWeight: theme.typography.weight.semibold,
     },
 
-    // ── Sektionen
-    section: {
+    // ── Sektionen (SectionList: Header/Footer statt umschließendem View)
+    sectionHeaderWrap: {
+      backgroundColor: theme.colors.background,
+    },
+    sectionFooterWrap: {
       marginBottom: theme.spacing.xl,
     },
-    jobList: {
-      gap: theme.spacing.sm,
+    itemSeparator: {
+      height: theme.spacing.sm,
     },
 
     // ── "Weitere N anzeigen" (Überfällig, progressiv)
@@ -516,7 +579,7 @@ function createStyles(theme: AppTheme) {
       alignItems: "center",
       justifyContent: "center",
       gap: 6,
-      marginTop: 2,
+      marginTop: theme.spacing.sm,
       paddingVertical: theme.spacing.md,
       minHeight: theme.spacing.tapTarget,
       borderRadius: theme.radius.md,
