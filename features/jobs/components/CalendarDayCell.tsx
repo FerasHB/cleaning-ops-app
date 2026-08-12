@@ -5,20 +5,26 @@
 //
 // Aufbau (von oben):
 //   [ Tageszahl ]     — bei „heute" in gefülltem Kreis
-//   [ 3  ● ● ]        — Auftragszahl + vorkommende Zustände
+//   [ 3 Jobs ] ● ●    — Anzahl als Pille + vorkommende Zustände
 //
-// WARUM NUR EINE ZAHL (und nicht „3 Aufträge"):
+// WARUM EINE PILLE MIT WORT (und nicht die nackte Zahl):
+// Vorher stand hier nur die Ziffer. Auf dem Gerät las sich „22" über „3"
+// wie zwei Datumsangaben untereinander — die Anzahl war nicht als Anzahl
+// erkennbar. Die Pille nimmt der Zahl diese Mehrdeutigkeit: eigener
+// Hintergrund, eigenes Wort, klar abgesetzt von der Tageszahl darüber.
+//
+// WARUM „Jobs" UND NICHT „Aufträge":
 // Eine Rasterspalte ist auf dem schmalsten gängigen Gerät (375 pt) rund
-// 46 pt breit. „3 Aufträge" braucht bei 9 px schon ~47 pt und wäre damit
-// schon am Anschlag — „12 Aufträge" liefe über. Und 9 px ist genau die
-// Größe, bei der eine Zahl nicht mehr „auf einen Blick" lesbar ist. Die
-// nackte Zahl passt dagegen bei 13 px bequem und ist sofort scanbar.
+// 46 pt nutzbar. „3 Aufträge" braucht dort schon bei 9 px ~47 pt und
+// „12 Aufträge" läuft über. „12 Jobs" bleibt mit Pillen-Polsterung bei
+// 10 px unter 44 pt — die Pille kann also nie in die Nachbarzelle laufen.
 //
-// WARUM ZAHL UND PUNKTE IN EINER ZEILE:
-// Untereinander stünden zwei nackte Zahlen direkt übereinander (Tageszahl
-// und Anzahl) — das liest sich wie zwei Datumsangaben. Neben den farbigen
-// Punkten ist sofort klar, dass die zweite Zahl zu den Aufträgen gehört.
-// Nebenbei spart es eine Zeile Höhe, was dem Raster Luft gibt.
+// WARUM DIE PUNKTE UMBRECHEN DÜRFEN:
+// Neben der Pille bleiben je nach Beschriftung nur ein bis zwei Punkte
+// Platz. Statt Punkte wegzulassen (= Bedeutungsverlust) darf die Zeile
+// umbrechen: passende Punkte stehen neben der Pille, sonst rutschen sie in
+// die Zeile darunter. Höhe ist in diesen Zellen reichlich vorhanden,
+// Breite nicht.
 //
 // STATUS-PUNKTE: ein Punkt je VORKOMMENDEM Zustand (nicht je Auftrag) —
 // also höchstens drei. Die Farben kommen aus `utils/jobStatus.ts`
@@ -47,6 +53,15 @@ type Props = {
   summary: DaySummary | undefined;
   onSelectDay: (key: string) => void;
 };
+
+/**
+ * Beschriftung der Zähl-Pille: „1 Job" / „2 Jobs".
+ * Bewusst kurz gehalten — siehe Breiten-Begründung im Dateikopf. Die
+ * ausgeschriebene deutsche Form steht im Screenreader-Label.
+ */
+function formatJobCountLabel(total: number): string {
+  return total === 1 ? "1 Job" : `${total} Jobs`;
+}
 
 // Screenreader bekommt die Verteilung ausgeschrieben, die die Punkte nur
 // andeuten. Genau dafür trägt DaySummary die einzelnen Zähler.
@@ -106,9 +121,18 @@ function CalendarDayCellBase({
       {/* ── Zusammenfassung: Anzahl + vorkommende Zustände ── */}
       {summary ? (
         <View style={[styles.summaryRow, !inMonth && styles.summaryMuted]}>
-          <Text style={styles.countText} maxFontSizeMultiplier={1.2}>
-            {summary.total}
-          </Text>
+          <View style={styles.countPill}>
+            <Text
+              style={styles.countPillText}
+              numberOfLines={1}
+              // Große Systemschrift darf die Pille nicht über die Spalte
+              // hinaus wachsen lassen.
+              maxFontSizeMultiplier={1.15}
+            >
+              {formatJobCountLabel(summary.total)}
+            </Text>
+          </View>
+
           <View style={styles.dots}>
             {summary.statuses.map((status) => (
               <View
@@ -189,29 +213,53 @@ function createStyles(theme: AppTheme) {
     },
 
     // ── Zusammenfassung
+    // flexWrap: passen die Punkte nicht mehr neben die Pille, rutschen sie
+    // in die Zeile darunter, statt die Spalte zu sprengen.
     summaryRow: {
       flexDirection: "row",
+      flexWrap: "wrap",
       alignItems: "center",
-      gap: 4,
+      justifyContent: "center",
+      // Bewusst knapp (vorher 4): jeder Punkt Abstand entscheidet mit, ob
+      // die Statuspunkte noch neben der Pille Platz finden.
+      gap: 2,
     },
     summaryMuted: {
       opacity: 0.45,
     },
-    countText: {
-      fontSize: 13,
-      lineHeight: 16,
+
+    // Zähl-Pille: rein tonal — kein Rahmen, kein Schatten, keine
+    // Akzentfarbe. Sie soll die Zahl von der Tageszahl trennen, nicht wie
+    // ein Button aussehen.
+    countPill: {
+      // surfaceContainerHighest steht eine Stufe über der Tönung der
+      // ausgewählten Zelle (surfaceContainerHigh) — die Pille bleibt damit
+      // auch auf dem ausgewählten Tag sichtbar, ohne dass die Auswahl-
+      // Gestaltung angefasst werden muss.
+      backgroundColor: theme.colors.surfaceContainerHighest,
+      borderRadius: theme.radius.full,
+      paddingHorizontal: 4,
+      paddingVertical: 1,
+      // Schützt die Nachbarspalte, falls die Beschriftung wider Erwarten
+      // doch breiter wird als die Zelle.
+      maxWidth: "100%",
+    },
+    countPillText: {
+      fontSize: 10,
+      lineHeight: 13,
       fontFamily: theme.typography.family.semibold,
       fontWeight: theme.typography.weight.semibold,
       color: theme.colors.onSurfaceVariant,
     },
+
     dots: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 3,
+      gap: 2,
     },
     dot: {
-      width: 5,
-      height: 5,
+      width: 4.5,
+      height: 4.5,
       borderRadius: theme.radius.full,
     },
   });
