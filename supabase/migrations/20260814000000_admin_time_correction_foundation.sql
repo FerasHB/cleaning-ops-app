@@ -242,6 +242,14 @@ using (
 --     c) employee_id IS NULL — anonymisierte Zeile einer Kontoloeschung;
 --        der Stundenzettel filtert immer auf eine konkrete employee_id.
 --
+--   Aus demselben Grund verlangt die RPC BEIDE neuen Zeitstempel: sie
+--   schreibt beide Spalten unbedingt, ein einzeln uebergebener Wert wuerde
+--   den anderen also auf NULL setzen. Weil mapEntry nach dem Cutoff beide
+--   Werte verlangt, liesse eine solche "Teilkorrektur" die bereits korrekt
+--   erfasste Zeile des Mitarbeiters vollstaendig verschwinden — derselbe
+--   stille Verlust, nur in die Gegenrichtung. Wer nur einen Wert aendern
+--   will, schickt den anderen unveraendert mit.
+--
 -- WARUM ALT-AUFTRAEGE (VOR PHASE 1) ABGELEHNT WERDEN:
 --   Fuer sie liest der Stundenzettel ueber isLegacyJob() die GETEILTE
 --   Job-Uhr. Wuerde man dort employee_started_at/completed_at setzen,
@@ -265,7 +273,6 @@ declare
   v_assignment    public.job_assignments%rowtype;
   v_job           public.jobs%rowtype;
   v_reason        text;
-  v_attendance    public.attendance_state;
   -- Entspricht PHASE1_CUTOFF_ISO in services/timesheets/timesheet.service.ts
   -- (Migration 20260812000000, "Phase 1 Worked Time"). Bewusst dieselbe
   -- Konstante: Client und Server duerfen bei der Frage "gilt hier noch der
@@ -291,18 +298,29 @@ begin
       using errcode = '23514';
   end if;
 
-  -- Beide NULL waere keine Korrektur, sondern ein Loeschen der erfassten
-  -- Zeit — dafuer gibt es weder einen definierten attendance-Zustand noch
-  -- einen fachlichen Anlass (eine faelschlich zugewiesene Person wird aus
-  -- der Zuweisungsmenge entfernt, nicht auf NULL korrigiert).
-  if new_started_at is null and new_completed_at is null then
-    raise exception 'At least one of new_started_at / new_completed_at must be set'
+  -- BEIDE Zeitstempel sind PFLICHT — eine Korrektur beschreibt immer ein
+  -- VOLLSTAENDIGES Arbeitsintervall.
+  --
+  -- Warum keine Teilkorrektur: die UPDATE-Anweisung unten schreibt beide
+  -- Spalten unbedingt (Ueberschreiben ist gewollt, siehe dort). Ein Aufruf
+  -- mit nur einem Zeitstempel wuerde den anderen also auf NULL setzen. Da
+  -- der Stundenzettel fuer Auftraege nach dem Cutoff BEIDE Werte verlangt
+  -- (mapEntry: hasOwnTimes), verschwindet die Zeile des Mitarbeiters damit
+  -- vollstaendig — aus einer beabsichtigten Teilkorrektur wird ein stiller
+  -- Verlust bereits korrekt erfasster, bezahlter Arbeitszeit.
+  --
+  -- Das Loeschen einer Erfassung bleibt fachlich denkbar ("war doch nicht
+  -- da"), ist aber bewusst NICHT ueber diese RPC moeglich: es waere von
+  -- einer versehentlichen Teilkorrektur nicht zu unterscheiden. Wer nur
+  -- einen der beiden Werte aendern will, schickt den anderen unveraendert
+  -- mit.
+  if new_started_at is null or new_completed_at is null then
+    raise exception
+      'Both new_started_at and new_completed_at are required (a partial correction would clear the other value and remove the timesheet entry)'
       using errcode = '23514';
   end if;
 
-  if new_started_at is not null
-     and new_completed_at is not null
-     and new_completed_at <= new_started_at then
+  if new_completed_at <= new_started_at then
     raise exception 'new_completed_at must be after new_started_at'
       using errcode = '23514';
   end if;
@@ -396,32 +414,29 @@ begin
       using errcode = '22023';
   end if;
 
-  -- ── 3) Neuer attendance-Zustand ──────────────────────────────────
-  -- KEIN neuer Enum-Wert: die Herkunft der Zeit ("vom Admin korrigiert")
-  -- steht im Pruefpfad, nicht im Zustand. Wichtig ist, dass attendance
-  -- ueberhaupt mitgezogen wird: counts_for_timesheet ist eine GENERIERTE
-  -- Spalte auf attendance/review (Phase 1) und bliebe bei 'assigned'
-  -- dauerhaft false — eine korrigierte Zeile waere damit fuer jede kuenftige
-  -- Abrechnungs-Berechtigung unsichtbar.
-  v_attendance := case
-    when new_started_at is not null and new_completed_at is not null then 'completed'
-    when new_completed_at is not null                                then 'completed'
-    else                                                                  'started'
-  end::public.attendance_state;
-
-  -- ── 4) NUR die eigene Zuweisungszeile aktualisieren ───────────────
+  -- ── 3) NUR die eigene Zuweisungszeile aktualisieren ───────────────
   -- Ueberschreibt bewusst (kein COALESCE): eine Korrektur MUSS einen
   -- bestehenden, falschen Wert ersetzen koennen — anders als
   -- start_own_job/complete_own_job, wo "der Erste gewinnt" gilt.
   -- jobs.started_at/completed_at werden hier NICHT angefasst.
+  --
+  -- attendance ist unbedingt 'completed': beide Zeitstempel sind ab hier
+  -- garantiert gesetzt (Validierung oben), die Korrektur beschreibt also
+  -- immer ein abgeschlossenes Arbeitsintervall. KEIN neuer Enum-Wert — die
+  -- Herkunft der Zeit ("vom Admin korrigiert") steht im Pruefpfad, nicht im
+  -- Zustand. Dass attendance ueberhaupt mitgezogen wird, ist wesentlich:
+  -- counts_for_timesheet ist eine GENERIERTE Spalte auf attendance/review
+  -- (Phase 1) und bliebe bei 'assigned' dauerhaft false — eine korrigierte
+  -- Zeile waere damit fuer jede kuenftige Abrechnungs-Berechtigung
+  -- unsichtbar.
   update public.job_assignments
   set
     employee_started_at   = new_started_at,
     employee_completed_at = new_completed_at,
-    attendance            = v_attendance
+    attendance            = 'completed'
   where id = assignment_id_input;
 
-  -- ── 5) Pruefpfad in DERSELBEN Transaktion ────────────────────────
+  -- ── 4) Pruefpfad in DERSELBEN Transaktion ────────────────────────
   insert into public.employee_time_adjustments (
     assignment_id, job_id, employee_id,
     old_started_at, old_completed_at,
@@ -435,7 +450,7 @@ begin
     auth.uid(), v_reason
   );
 
-  -- ── 6) Ergebnis ──────────────────────────────────────────────────
+  -- ── 5) Ergebnis ──────────────────────────────────────────────────
   -- jobs.updated_at wurde durch touch_job_on_assignment_change_trg bereits
   -- angehoben (siehe Kopf) — kein zusaetzlicher Schreibvorgang noetig.
   return query
@@ -452,8 +467,12 @@ comment on function public.admin_correct_assignment_time(uuid, timestamptz, time
 'derselben Transaktion einen Pruefpfad-Eintrag in employee_time_adjustments '
 'an. Faesst jobs.started_at/completed_at NIEMALS an — die geteilte Job-Uhr '
 'und damit die Zeiten aller uebrigen Zugewiesenen bleiben unveraendert. '
-'Verlangt einen nicht-leeren Grund, mindestens einen der beiden neuen '
-'Zeitstempel und (falls beide gesetzt) Ende nach Beginn. Korrigierbar sind '
+'Verlangt einen nicht-leeren Grund sowie BEIDE neuen Zeitstempel mit Ende '
+'nach Beginn — eine Korrektur beschreibt immer ein vollstaendiges '
+'Arbeitsintervall. Teilkorrekturen werden abgelehnt: da beide Spalten '
+'unbedingt geschrieben werden, wuerde ein einzelner Zeitstempel den anderen '
+'auf NULL setzen und die Stundenzettel-Zeile des Mitarbeiters restlos '
+'entfernen (mapEntry verlangt nach dem Cutoff beide Werte). Korrigierbar sind '
 'ausschliesslich Auftraege mit job_type=''single'' (Recurring-Parent-Regeln '
 'erscheinen nie im Stundenzettel) und Status ''completed'' mit vollstaendiger '
 'geteilter Uhr; Auftraege, die vor dem Worked-Time-Grenzwert 2026-08-12 '

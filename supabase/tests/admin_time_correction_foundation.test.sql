@@ -495,40 +495,99 @@ select 24, 'Alt-Auftrag bleibt nach Ablehnung unveraendert', 'OK',
 
 
 -- =========================================================
--- TEILKORREKTUR + UEBERSCHREIBEN
+-- TEILKORREKTUR ABGELEHNT + UEBERSCHREIBEN
 -- =========================================================
--- CASE 25: nur Beginn gesetzt -> attendance='started'.
--- CASE 26: eine ZWEITE Korrektur ueberschreibt (kein COALESCE) und legt
---          eine zweite Audit-Zeile an, deren Altwerte die vorherigen
---          Neuwerte sind — die Kette bleibt luecken los nachvollziehbar.
+-- CASE 25: eine Teilkorrektur (nur Beginn ODER nur Ende) wird abgelehnt UND
+--          laesst die bestehenden Zeitstempel unveraendert. Vor der
+--          Verschaerfung des RPC-Vertrags war genau das der gefaehrlichste
+--          Pfad: die Anweisung schreibt beide Spalten unbedingt, ein
+--          einzelner Wert setzte den anderen also auf NULL — und weil
+--          mapEntry nach dem Cutoff BEIDE Werte verlangt, verschwand die
+--          bereits korrekt erfasste, bezahlte Zeile des Mitarbeiters
+--          restlos aus dem Stundenzettel.
+-- CASE 26: eine ZWEITE, VOLLSTAENDIGE Korrektur ueberschreibt (kein
+--          COALESCE) und legt eine zweite Audit-Zeile an, deren Altwerte die
+--          vorherigen Neuwerte sind — die Kette bleibt lueckenlos
+--          nachvollziehbar.
+do $$
+declare
+  v_assignment uuid := current_setting('atc.ahmad_assignment')::uuid;
+  r_nur_beginn boolean := false;
+  r_nur_ende   boolean := false;
+  s_nach timestamptz; e_nach timestamptz;
+begin
+  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c1');
+  execute 'set local role authenticated';
+
+  begin perform public.admin_correct_assignment_time(
+    v_assignment, timestamptz '2026-08-20 07:30+00', null, 'Nur Beginn bekannt.');
+  exception when others then r_nur_beginn := true; end;
+
+  begin perform public.admin_correct_assignment_time(
+    v_assignment, null, timestamptz '2026-08-20 12:30+00', 'Nur Ende bekannt.');
+  exception when others then r_nur_ende := true; end;
+
+  execute 'reset role';
+
+  select employee_started_at, employee_completed_at into s_nach, e_nach
+  from public.job_assignments where id = v_assignment;
+
+  insert into _atc values
+    (25, 'Teilkorrektur abgelehnt, bestehende Zeiten unveraendert',
+     'nur_beginn=ABGELEHNT/nur_ende=ABGELEHNT/zeiten=08:00-12:00',
+     'nur_beginn=' || (case when r_nur_beginn then 'ABGELEHNT' else 'AKZEPTIERT' end)
+     || '/nur_ende=' || (case when r_nur_ende then 'ABGELEHNT' else 'AKZEPTIERT' end)
+     || '/zeiten='
+     || (case when s_nach = timestamptz '2026-08-20 08:00+00'
+                   and e_nach = timestamptz '2026-08-20 12:00+00'
+              then '08:00-12:00' else 'VERAENDERT' end));
+end $$;
+
+-- Zweite, VOLLSTAENDIGE Korrektur (07:30-12:30).
 do $$
 declare v_assignment uuid := current_setting('atc.ahmad_assignment')::uuid;
 begin
   perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c1');
   execute 'set local role authenticated';
   perform public.admin_correct_assignment_time(
-    v_assignment, timestamptz '2026-08-20 07:30+00', null, 'Nur Beginn bekannt.');
+    v_assignment, timestamptz '2026-08-20 07:30+00', timestamptz '2026-08-20 12:30+00',
+    'Beginn und Ende nachtraeglich bestaetigt.');
   execute 'reset role';
 end $$;
-
-insert into _atc
-select 25, 'Nur Beginn gesetzt -> attendance=started, Ende NULL', 'started/NULL',
-  coalesce((select attendance::text || '/' || coalesce(employee_completed_at::text,'NULL')
-            from public.job_assignments where id = current_setting('atc.ahmad_assignment')::uuid), 'KEINE_ZEILE');
 
 insert into _atc
 select 26, 'Zweite Korrektur ueberschreibt und protokolliert die Altwerte', 'OK',
   case when (select employee_started_at from public.job_assignments
              where id = current_setting('atc.ahmad_assignment')::uuid) = timestamptz '2026-08-20 07:30+00'
+        and (select employee_completed_at from public.job_assignments
+             where id = current_setting('atc.ahmad_assignment')::uuid) = timestamptz '2026-08-20 12:30+00'
         and exists (
           select 1 from public.employee_time_adjustments
           where assignment_id    = current_setting('atc.ahmad_assignment')::uuid
             and old_started_at   = timestamptz '2026-08-20 08:00+00'
             and old_completed_at = timestamptz '2026-08-20 12:00+00'
             and new_started_at   = timestamptz '2026-08-20 07:30+00'
-            and new_completed_at is null
+            and new_completed_at = timestamptz '2026-08-20 12:30+00'
         )
        then 'OK' else 'FALSCH' end;
+
+-- CASE 33: nach der zweiten Korrektur bleibt der Mitarbeiter abrechenbar —
+-- der Nachweis, dass eine vollstaendige Korrektur die Stundenzettel-Zeile
+-- NICHT entfernt (Gegenprobe zu CASE 25). Repliziert den Filter aus
+-- services/timesheets/timesheet.service.ts.
+insert into _atc
+select 33, 'Nach vollstaendiger Korrektur bleibt die Stundenzettel-Zeile bestehen', '1',
+  (select count(*)::text
+     from public.job_assignments ja
+     join public.jobs j on j.id = ja.job_id
+    where ja.employee_id = 'a2000000-0000-0000-0000-0000000000c2'
+      and j.id           = 'a4000000-0000-0000-0000-0000000000c1'
+      and j.status       = 'completed'
+      and j.job_type     = 'single'
+      and j.started_at   is not null
+      and j.completed_at is not null
+      and ja.employee_started_at   is not null
+      and ja.employee_completed_at is not null);
 
 -- CASE 27: die geteilte Uhr ist AUCH nach der zweiten Korrektur unberuehrt.
 insert into _atc
