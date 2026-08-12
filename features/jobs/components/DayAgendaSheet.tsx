@@ -111,6 +111,15 @@ export function DayAgendaSheet({
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
+            {/* Kann eintreten, wenn der letzte Auftrag des Tages bei offenem
+                Sheet per Realtime verschwindet — dann hier eine ruhige Zeile
+                statt einer leeren Fläche. */}
+            {jobs.length === 0 ? (
+              <Text style={styles.emptyHint}>
+                Für diesen Tag sind dir keine Aufträge zugewiesen.
+              </Text>
+            ) : null}
+
             {jobs.map((job) => (
               <JobCard
                 key={job.id}
@@ -193,6 +202,13 @@ function createStyles(theme: AppTheme) {
     scrollContent: {
       gap: theme.spacing.sm,
       paddingBottom: theme.spacing.xs,
+    },
+    emptyHint: {
+      paddingVertical: theme.spacing.md,
+      textAlign: "center",
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
     },
   });
 }
