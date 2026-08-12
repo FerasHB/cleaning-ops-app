@@ -57,8 +57,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-  Animated,
-  PanResponder,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -66,31 +64,10 @@ import {
   Text,
   TouchableOpacity,
   View,
-  type GestureResponderEvent,
-  type PanResponderGestureState,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const EMPTY_JOBS: never[] = [];
-
-// ── Wisch-Schwellen ──────────────────────────────────────────────
-// Zwei getrennte Werte, und das ist Absicht:
-//   ACTIVATE = ab wann die Geste überhaupt als Wischen gilt (früh, damit
-//              der Kalender sie der ScrollView abnehmen kann)
-//   COMMIT   = ab wann der Monat tatsächlich wechselt (deutlich später)
-// Dazwischen darf man sich frei bewegen und wieder zurückziehen, ohne dass
-// etwas passiert. Ein Tipp bewegt sich um ~0 px und löst nie aus.
-// 18 px statt knapper: sobald der Kalender die Geste übernimmt, bricht der
-// Tipp auf der berührten Tageszelle ab. Ein etwas verwackelter Tipp (bis ~10 px)
-// soll deshalb sicher noch als Tipp durchgehen. Später zu übernehmen ist hier
-// unkritisch, weil die ScrollView faktisch nicht scrollt — ihr Inhalt füllt
-// genau den Bildschirm, sie trägt nur das Pull-to-Refresh.
-const SWIPE_ACTIVATE_DX = 18;
-const SWIPE_COMMIT_DX = 56;
-/** Waagerecht muss die Senkrechte klar dominieren (Faktor, nicht Differenz). */
-const SWIPE_DOMINANCE = 1.6;
-/** Selbst eine weite Waagerechte zählt nicht, wenn stark mitgescrollt wurde. */
-const SWIPE_MAX_DY = 70;
 
 export default function EmployeeJobsCalendarScreen() {
   const theme = useAppTheme();
@@ -112,34 +89,6 @@ export default function EmployeeJobsCalendarScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [actionError, setActionError] = useState("");
-
-  // Kurzes Einschieben beim Monatswechsel — reine Rückmeldung „es hat
-  // gewechselt". Bewusst NICHT an den Finger gekoppelt: eine mitlaufende
-  // Animation müsste den Wisch abbrechen und zurückfedern können, und
-  // korrekte Interaktion ist hier wichtiger als ein mitziehender Monat.
-  const slide = useRef(new Animated.Value(0)).current;
-  const fade = useRef(new Animated.Value(1)).current;
-
-  const animateMonthChange = useCallback(
-    (direction: 1 | -1) => {
-      // Vorwärts kommt der neue Monat von rechts herein, rückwärts von links.
-      slide.setValue(direction * 22);
-      fade.setValue(0.55);
-      Animated.parallel([
-        Animated.timing(slide, {
-          toValue: 0,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fade, {
-          toValue: 1,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    },
-    [slide, fade],
-  );
 
   // Merkt sich, dass wir selbst in ein Job-Detail navigiert haben. Beim
   // Zurückkommen bleibt der betrachtete Monat dann stehen (sonst wäre der
@@ -196,75 +145,25 @@ export default function EmployeeJobsCalendarScreen() {
   // Drei Wege, alle mit derselben Semantik: sie ändern NUR den angezeigten
   // Monat. Die Auswahl bleibt, wo sie ist — es wird nie ein Tag „erfunden".
   // Einzige Ausnahme ist „Heute", das ausdrücklich beides setzt.
+  // Der Wechsel erfolgt ohne Übergang — der neue Monat steht sofort.
   const goPrevMonth = useCallback(() => {
     setMonthKey((m) => addMonths(m, -1));
-    animateMonthChange(-1);
-  }, [animateMonthChange]);
+  }, []);
 
   const goNextMonth = useCallback(() => {
     setMonthKey((m) => addMonths(m, 1));
-    animateMonthChange(1);
-  }, [animateMonthChange]);
+  }, []);
 
-  // Die Animation wird bewusst NEBEN dem State-Update ausgelöst und nicht in
-  // der Updater-Funktion: React darf Updater doppelt ausführen (StrictMode),
-  // ein Seiteneffekt darin liefe dann zweimal.
   const goToday = useCallback(() => {
-    if (monthKey !== todayMonthKey) {
-      animateMonthChange(monthKey < todayMonthKey ? 1 : -1);
-    }
     setMonthKey(todayMonthKey);
     setSelectedKey(todayKey);
-  }, [monthKey, todayMonthKey, todayKey, animateMonthChange]);
+  }, [todayMonthKey, todayKey]);
 
-  // Sprung aus der Monats-/Jahresauswahl. Gleiche Regel wie Pfeile und
-  // Wischen: nur der Monat wechselt, die Auswahl bleibt unangetastet.
-  const handlePickMonth = useCallback(
-    (next: string) => {
-      if (next !== monthKey) animateMonthChange(monthKey < next ? 1 : -1);
-      setMonthKey(next);
-    },
-    [monthKey, animateMonthChange],
-  );
-
-  // ── Wischen zwischen Monaten ─────────────────────────────────
-  // PanResponder ist Bordmittel von React Native — keine neue Abhängigkeit,
-  // und vor allem kein `GestureHandlerRootView` in der App-Wurzel (das
-  // Projekt montiert keines; react-native-gesture-handler wäre ohne diesen
-  // Eingriff gar nicht nutzbar).
-  //
-  // Warum auch die *Capture*-Variante gesetzt ist: die Tageszellen sind
-  // TouchableOpacity und greifen den Responder bereits beim Berühren. Ohne
-  // Capture käme ein Wisch, der auf einer Zelle beginnt, nie beim Kalender
-  // an — also genau der Normalfall, weil das Raster den ganzen Bildschirm
-  // füllt. Die Capture-Prüfung ist dieselbe strenge Bedingung, ein Tipp
-  // erfüllt sie nie.
-  const panResponder = useMemo(() => {
-    const shouldClaim = (
-      _e: GestureResponderEvent,
-      g: PanResponderGestureState,
-    ) =>
-      Math.abs(g.dx) > SWIPE_ACTIVATE_DX &&
-      Math.abs(g.dx) > Math.abs(g.dy) * SWIPE_DOMINANCE;
-
-    return PanResponder.create({
-      // Beim blossen Berühren NIE greifen — sonst wäre jeder Tag-Tipp
-      // gefährdet.
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponder: shouldClaim,
-      onMoveShouldSetPanResponderCapture: shouldClaim,
-      // Einmal übernommen, nicht wieder abgeben (sonst zieht die ScrollView
-      // die Geste mitten im Wisch zurück).
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderRelease: (_e, g) => {
-        // Zu viel Senkrechte im Spiel → war eher ein schräges Scrollen.
-        if (Math.abs(g.dy) > SWIPE_MAX_DY) return;
-        if (g.dx <= -SWIPE_COMMIT_DX) goNextMonth();
-        else if (g.dx >= SWIPE_COMMIT_DX) goPrevMonth();
-      },
-    });
-  }, [goPrevMonth, goNextMonth]);
+  // Sprung aus der Monats-/Jahresauswahl. Gleiche Regel wie die Pfeile:
+  // nur der Monat wechselt, die Auswahl bleibt unangetastet.
+  const handlePickMonth = useCallback((next: string) => {
+    setMonthKey(next);
+  }, []);
 
   // Tag auswählen. Ein Tag mit Aufträgen öffnet zusätzlich die vollständige
   // Tages-Agenda — für einen leeren Tag wäre ein Sheet nur ein Klick, den
@@ -424,21 +323,13 @@ export default function EmployeeJobsCalendarScreen() {
             diesem Screen. Die geteilte Überfällig-Logik (`getOverdueOccurrences`
             in services/jobs/jobs.service.ts) und ihre Admin-Flächen
             (AdminScheduleScreen, AdminDashboardScreen) bleiben unangetastet. */}
-        <Animated.View
-          style={[
-            styles.gridWrap,
-            { opacity: fade, transform: [{ translateX: slide }] },
-          ]}
-          {...panResponder.panHandlers}
-        >
-          <MonthGrid
-            monthKey={monthKey}
-            selectedKey={selectedKey}
-            todayKey={todayKey}
-            summaries={summaries}
-            onSelectDay={handleSelectDay}
-          />
-        </Animated.View>
+        <MonthGrid
+          monthKey={monthKey}
+          selectedKey={selectedKey}
+          todayKey={todayKey}
+          summaries={summaries}
+          onSelectDay={handleSelectDay}
+        />
 
         {/* Leerer Monat: der Kalender bleibt stehen, es kommt nur eine
             ruhige Zeile dazu — kein EmptyState, der das Raster ersetzt. */}
@@ -543,12 +434,6 @@ function createStyles(theme: AppTheme) {
       justifyContent: "center",
       borderRadius: theme.radius.full,
       backgroundColor: theme.colors.surfaceContainerHigh,
-    },
-
-    // Träger der Wischgeste und der Wechsel-Animation. Muss flex:1 haben,
-    // damit das Raster wie bisher die Restfläche bekommt.
-    gridWrap: {
-      flex: 1,
     },
 
     emptyMonthHint: {
