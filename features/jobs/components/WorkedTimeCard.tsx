@@ -139,10 +139,11 @@ export function WorkedTimeCard({ job }: Props) {
           </View>
           <Text style={styles.headerTitle}>Arbeitszeit</Text>
         </View>
-        <StatusBadge
-          status={isRunning ? "in_progress" : "completed"}
-          labels={{ in_progress: "In Arbeit", completed: "Abgeschlossen" }}
-        />
+        {/* Kanonischer Wortlaut (Offen/In Arbeit/Erledigt). Die frühere
+            labels-Prop beschriftete `completed` hier als „Abgeschlossen" —
+            direkt über der Spalte „ERLEDIGT" und abweichend von jeder
+            Job-Karte. Siehe utils/jobStatus.ts. */}
+        <StatusBadge status={isRunning ? "in_progress" : "completed"} />
       </View>
 
       <View style={styles.divider} />

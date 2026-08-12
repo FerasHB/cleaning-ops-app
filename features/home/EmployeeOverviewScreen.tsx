@@ -25,6 +25,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
 import { isJobToday } from "@/utils/jobSchedule";
+import { getJobStatusLabel, JOB_STATUS_ORDER } from "@/utils/jobStatus";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,11 +35,11 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Filter = "all" | JobStatus;
 
+// Beschriftungen aus der kanonischen Status-Quelle — identisch zu den Badges
+// auf den Karten darunter und zu den Chips im Jobs-Tab (utils/jobStatus.ts).
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "Alle" },
-  { key: "open", label: "Offen" },
-  { key: "in_progress", label: "In Arbeit" },
-  { key: "completed", label: "Erledigt" },
+  ...JOB_STATUS_ORDER.map((key) => ({ key, label: getJobStatusLabel(key) })),
 ];
 
 // Sortier-Priorität für "Heute anstehend": offen zuerst, dann in Arbeit, dann erledigt
@@ -316,7 +317,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label="Offen"
+              label={getJobStatusLabel("open")}
               value={todayOpen}
               icon="folder-open-outline"
               accentColor={theme.colors.statusOpen}
@@ -325,7 +326,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label="In Arbeit"
+              label={getJobStatusLabel("in_progress")}
               value={todayInProgress}
               icon="time-outline"
               accentColor={theme.colors.statusInProgress}
@@ -334,7 +335,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label="Erledigt"
+              label={getJobStatusLabel("completed")}
               value={todayCompleted}
               icon="checkmark-done-outline"
               accentColor={theme.colors.statusCompleted}
@@ -360,9 +361,15 @@ export default function EmployeeOverviewScreen() {
               style={styles.activeNavArea}
             >
               <View style={styles.activeTopRow}>
+                {/* Derselbe Status wie das in_progress-Badge auf den Karten —
+                    also auch derselbe Wortlaut. „Läuft" war ein viertes Wort
+                    für denselben Zustand; der Puls-Punkt trägt das „jetzt
+                    gerade" ohnehin. */}
                 <View style={styles.activeBadge}>
                   <View style={styles.activePulse} />
-                  <Text style={styles.activeBadgeText}>Läuft</Text>
+                  <Text style={styles.activeBadgeText}>
+                    {getJobStatusLabel("in_progress")}
+                  </Text>
                 </View>
                 <Ionicons
                   name="chevron-forward"
@@ -496,7 +503,7 @@ export default function EmployeeOverviewScreen() {
         <View style={styles.kpiGrid}>
           <View style={styles.kpiItem}>
             <KPICard
-              label="Erledigt"
+              label={getJobStatusLabel("completed")}
               value={monthCompleted}
               icon="checkmark-done-outline"
               accentColor={theme.colors.statusCompleted}
@@ -505,7 +512,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label="In Arbeit"
+              label={getJobStatusLabel("in_progress")}
               value={monthInProgress}
               icon="time-outline"
               accentColor={theme.colors.statusInProgress}
@@ -514,7 +521,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label="Offen"
+              label={getJobStatusLabel("open")}
               value={monthOpen}
               icon="folder-open-outline"
               accentColor={theme.colors.statusOpen}

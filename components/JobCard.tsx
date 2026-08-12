@@ -4,9 +4,10 @@
 //
 // Design-Prinzip:
 // - Card ist Navigations-Tile zum DetailScreen — onPress macht ganze Karte tappable
-// - Nur die wichtigsten Felder sichtbar (Kunde, Service, Ort, Zeit)
+// - Nur die wichtigsten Felder sichtbar, in Feld-Lesereihenfolge:
+//   Kunde → Ort → Service → Zeit → Status → Aktion
 // - Mitarbeiter-Zeile nur wenn `showEmployeeName` gesetzt ist (i.d.R. nur Admin)
-// - Genau EINE kontextuelle Quick-Action: "Start" bei open, "Fertig" bei in_progress
+// - Genau EINE kontextuelle Quick-Action: "Start" bei open, "Abschließen" bei in_progress
 // - Notizen, Edit, ausführliche Felder → leben im DetailScreen
 //
 // Tap-Verhalten:
@@ -27,6 +28,13 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
+import { getJobStatusMeta } from "@/utils/jobStatus";
+import {
+  formatDateISO,
+  formatDateOnlyDE,
+  formatTimeHHmm,
+  parseToDate,
+} from "@/utils/date";
 
 type Props = {
   job: Job;
@@ -39,7 +47,7 @@ type Props = {
    */
   onStart?: () => void | Promise<void>;
   /**
-   * Inline-Quick-Action "Fertig" — wird nur gezeigt, wenn übergeben UND job.status === "in_progress".
+   * Inline-Quick-Action "Abschließen" — wird nur gezeigt, wenn übergeben UND job.status === "in_progress".
    * Darf ein Promise zurückgeben; die Karte sperrt dann bis zum Abschluss.
    */
   onComplete?: () => void | Promise<void>;
@@ -63,66 +71,24 @@ type Props = {
 // ─────────────────────────────────────────────
 // Zeit-Formatierung
 // ─────────────────────────────────────────────
-function formatTime(iso?: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (isNaN(date.getTime())) return null;
-  return date.toLocaleTimeString("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+// Die Karte hatte hier drei eigene Formatter (formatTime/formatDate/
+// formatDateOnly), die dasselbe taten wie utils/date.ts. Jetzt werden die
+// zentralen Helfer genutzt — gleiche Ausgabe, gleiche lokale Datums-Semantik,
+// aber ein Ort für Änderungen. `formatDateOnlyDE` erwartet "YYYY-MM-DD"
+// (zeitzonenfrei); ein ISO-Zeitstempel wird vorher lokal auf einen
+// Kalendertag reduziert.
+function formatIsoDateDE(iso?: string | null): string | null {
+  return formatDateOnlyDE(formatDateISO(parseToDate(iso)));
 }
 
-function formatDate(iso?: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-// Formatiert "YYYY-MM-DD" → "dd.mm.yyyy" (ohne Zeitzonen-Verschiebung).
-function formatDateOnly(value?: string | null): string | null {
-  if (!value) return null;
-  const [y, m, d] = value.slice(0, 10).split("-");
-  if (!y || !m || !d) return null;
-  return `${d}.${m}.${y}`;
+function formatIsoTimeDE(iso?: string | null): string | null {
+  return formatTimeHHmm(parseToDate(iso));
 }
 
 // Ist dieser Job eine Parent-Recurring-Regel (keine konkrete Ausführung)?
 // Parent = job_type 'recurring' ohne parentJobId — nur Vorlage, kein startbarer Termin.
 function isParentRecurringJob(job: Job): boolean {
   return job.jobType === "recurring" && !job.parentJobId;
-}
-
-// ── Status-Farben aus Theme (jeder Status hat sein Farbtripel)
-function getStatusConfig(theme: AppTheme, status: Job["status"]) {
-  switch (status) {
-    case "open":
-      return {
-        label: "Offen",
-        textColor: theme.colors.statusOpen,
-        bgColor: theme.colors.statusOpenBg,
-        borderColor: theme.colors.statusOpenBorder,
-      };
-    case "in_progress":
-      return {
-        label: "In Arbeit",
-        textColor: theme.colors.statusInProgress,
-        bgColor: theme.colors.statusInProgressBg,
-        borderColor: theme.colors.statusInProgressBorder,
-      };
-    case "completed":
-      return {
-        label: "Erledigt",
-        textColor: theme.colors.statusCompleted,
-        bgColor: theme.colors.statusCompletedBg,
-        borderColor: theme.colors.statusCompletedBorder,
-      };
-  }
 }
 
 export default function JobCard({
@@ -136,7 +102,8 @@ export default function JobCard({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const status = getStatusConfig(theme, job.status);
+  // Beschriftung + Farben zentral — dieselbe Quelle wie StatusBadge im Detail.
+  const status = getJobStatusMeta(job.status, theme.colors);
 
   // Doppel-Tap-Schutz für die Quick-Actions. Der Ref sperrt SYNCHRON (setBusy
   // wirkt erst beim nächsten Render, zwei schnelle Taps kämen sonst beide
@@ -179,8 +146,8 @@ export default function JobCard({
     const days = getRecurringDaysLabel(job);
     scheduleText = startTime ? `${days} · ${startTime} Uhr` : days;
   } else {
-    const date = formatDateOnly(job.date) ?? formatDate(job.scheduledStart);
-    const endTime = formatTime(job.scheduledEnd);
+    const date = formatDateOnlyDE(job.date) ?? formatIsoDateDE(job.scheduledStart);
+    const endTime = formatIsoTimeDE(job.scheduledEnd);
     if (date && startTime && endTime) {
       scheduleText = `${date} · ${startTime} – ${endTime} Uhr`;
     } else if (date && startTime) {
@@ -200,8 +167,11 @@ export default function JobCard({
     if (job.status === "open") hints.push("Noch nicht gestartet");
   }
 
-  // Service · Ort (kompakte Einzeiler-Subline)
-  const subline = [job.service, job.location].filter(Boolean).join(" · ");
+  // Ort · Service (kompakte Einzeiler-Subline).
+  // Ort steht ZUERST: im Feld ist „wohin muss ich?" die Frage direkt nach
+  // „zu wem?" — der Service beantwortet erst danach „was mache ich dort?".
+  // Bewusst weiterhin EINE Zeile statt zwei: die Karte soll nicht wachsen.
+  const subline = [job.location, job.service].filter(Boolean).join(" · ");
 
   // Quick-Action — exakt EINE, abhängig von Status (oder gar keine).
   // Bei Parent-Recurring-Regeln grundsätzlich keine Quick-Actions.
@@ -221,31 +191,28 @@ export default function JobCard({
   // Footer wird nur gerendert, wenn Mitarbeiter ODER Action vorhanden
   const hasFooter = !!employeeText || showStartAction || showCompleteAction;
 
-  // ── Root: TouchableOpacity wenn navigierbar, sonst stiller View
-  const CardRoot: React.ComponentType<{
-    style: any;
-    children: React.ReactNode;
-  }> = onPress
-    ? (props) => (
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={onPress}
-          {...props}
-        />
-      )
-    : (props) => <View {...props} />;
+  // ── Root-Style: farbige Statuskante links
+  const cardStyle = [
+    styles.card,
+    {
+      borderColor: status.border,
+      borderLeftColor: status.border,
+      borderLeftWidth: 4,
+    },
+  ];
 
-  return (
-    <CardRoot
-      style={[
-        styles.card,
-        {
-          borderColor: status.borderColor,
-          borderLeftColor: status.borderColor,
-          borderLeftWidth: 4,
-        },
-      ]}
-    >
+  // Inhalt einmal bauen und je nach Navigierbarkeit in TouchableOpacity oder
+  // View hängen.
+  //
+  // Vorher stand hier eine im Render definierte Komponente (`const CardRoot =
+  // onPress ? (props) => <TouchableOpacity …/> : …`). Deren Identität war bei
+  // JEDEM Render neu → React sah einen anderen Komponententyp, unmountete den
+  // kompletten Karten-Teilbaum und baute ihn neu auf. Praktische Folge: der
+  // lokale busy-State überlebte zwar (er sitzt im JobCard selbst), aber jeder
+  // Render der Liste warf Press-States und Layout der Karte weg. Zwei feste
+  // Zweige haben stabile Typen — kein Remount, identisches Verhalten.
+  const content = (
+    <>
       {/* ── Header: Kunde + Status + Chevron ── */}
       <View style={styles.header}>
         <Text style={styles.customerName} numberOfLines={1}>
@@ -276,12 +243,12 @@ export default function JobCard({
               style={[
                 styles.statusBadge,
                 {
-                  backgroundColor: status.bgColor,
-                  borderColor: status.borderColor,
+                  backgroundColor: status.bg,
+                  borderColor: status.border,
                 },
               ]}
             >
-              <Text style={[styles.statusText, { color: status.textColor }]}>
+              <Text style={[styles.statusText, { color: status.text }]}>
                 {status.label}
               </Text>
             </View>
@@ -412,13 +379,27 @@ export default function JobCard({
                 size={14}
                 color={theme.colors.statusCompleted}
               />
-              <Text style={styles.quickActionSuccessText}>Fertig</Text>
+              {/* Verb, nicht Status: „Fertig" stand hier direkt neben dem
+                  Status-Badge „Erledigt" und las sich wie ein zweites,
+                  abweichendes Statuswort. „Abschließen" ist derselbe Wortlaut
+                  wie im Detail-Footer und im Bestätigungsdialog. */}
+              <Text style={styles.quickActionSuccessText}>Abschließen</Text>
             </TouchableOpacity>
           ) : null}
         </View>
       ) : null}
-    </CardRoot>
+    </>
   );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity style={cardStyle} activeOpacity={0.85} onPress={onPress}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+
+  return <View style={cardStyle}>{content}</View>;
 }
 
 function createStyles(theme: AppTheme) {
@@ -600,7 +581,7 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onPrimaryContainer,
     },
 
-    // Quick-Action "Fertig" (success-Outline)
+    // Quick-Action "Abschließen" (success-Outline)
     quickActionSuccess: {
       flexDirection: "row",
       alignItems: "center",

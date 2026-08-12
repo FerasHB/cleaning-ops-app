@@ -2,73 +2,43 @@
 // ─────────────────────────────────────────────────────────────────
 // Job-Status-Badge mit farbigem Dot-Indikator.
 // Unterstützt alle drei Job-Status (open, in_progress, completed).
-// Lesbarer und semantisch korrekter als die generische Badge-Komponente.
+//
+// Beschriftung UND Farben kommen aus `utils/jobStatus.ts` — der einzigen
+// Quelle für Job-Status-Darstellung (siehe dortigen Kopfkommentar).
+// Die frühere `labels`-Prop (custom Beschriftungen) ist entfallen: sie war der
+// Weg, über den die Arbeitszeit-Karte „Abgeschlossen" statt „Erledigt" zeigte.
+// Wer den Wortlaut ändern will, ändert ihn in JOB_STATUS_LABELS — für alle.
 // ─────────────────────────────────────────────────────────────────
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import type { ColorPalette } from "@/constants/colors";
+import { getJobStatusMeta, type JobStatusMeta } from "@/utils/jobStatus";
+import type { JobStatus } from "@/types/job";
 
-export type JobStatus = "open" | "in_progress" | "completed";
+export type { JobStatus };
 
 interface StatusBadgeProps {
   status: JobStatus;
-  /** Optionale custom Labels (Standard: Deutsch) */
-  labels?: { open?: string; in_progress?: string; completed?: string };
 }
 
-const DEFAULT_LABELS = {
-  open:        "Offen",
-  in_progress: "In Arbeit",
-  completed:   "Erledigt",
-};
-
-function getStatusColors(status: JobStatus, colors: ColorPalette) {
-  switch (status) {
-    case "open":
-      return {
-        text:   colors.statusOpen,
-        bg:     colors.statusOpenBg,
-        border: colors.statusOpenBorder,
-        dot:    colors.statusOpen,
-      };
-    case "in_progress":
-      return {
-        text:   colors.statusInProgress,
-        bg:     colors.statusInProgressBg,
-        border: colors.statusInProgressBorder,
-        dot:    colors.statusInProgress,
-      };
-    case "completed":
-      return {
-        text:   colors.statusCompleted,
-        bg:     colors.statusCompletedBg,
-        border: colors.statusCompletedBorder,
-        dot:    colors.statusCompleted,
-      };
-  }
-}
-
-export function StatusBadge({ status, labels }: StatusBadgeProps) {
+export function StatusBadge({ status }: StatusBadgeProps) {
   const theme = useAppTheme();
-  const statusColors = useMemo(
-    () => getStatusColors(status, theme.colors),
-    [status, theme.colors]
+  const meta = useMemo(
+    () => getJobStatusMeta(status, theme.colors),
+    [status, theme.colors],
   );
-  const styles = useMemo(() => createStyles(statusColors), [statusColors]);
-
-  const label = { ...DEFAULT_LABELS, ...labels }[status];
+  const styles = useMemo(() => createStyles(meta), [meta]);
 
   return (
     <View style={styles.badge}>
       <View style={styles.dot} />
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>{meta.label}</Text>
     </View>
   );
 }
 
-function createStyles(statusColors: ReturnType<typeof getStatusColors>) {
+function createStyles(meta: JobStatusMeta) {
   return StyleSheet.create({
     badge: {
       flexDirection: "row",
@@ -77,21 +47,21 @@ function createStyles(statusColors: ReturnType<typeof getStatusColors>) {
       paddingHorizontal: 10,
       paddingVertical: 5,
       borderRadius: 9999,
-      backgroundColor: statusColors.bg,
+      backgroundColor: meta.bg,
       borderWidth: 1,
-      borderColor: statusColors.border,
+      borderColor: meta.border,
       alignSelf: "flex-start",
     },
     dot: {
       width: 6,
       height: 6,
       borderRadius: 9999,
-      backgroundColor: statusColors.dot,
+      backgroundColor: meta.text,
     },
     label: {
       fontSize: 12,
       fontWeight: "600" as const,
-      color: statusColors.text,
+      color: meta.text,
       letterSpacing: 0.3,
     },
   });
