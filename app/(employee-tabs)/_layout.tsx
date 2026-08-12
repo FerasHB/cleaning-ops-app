@@ -65,6 +65,16 @@ export default function EmployeeTabsLayout() {
       />
 
       <Tabs.Screen
+        name="kalender"
+        options={{
+          title: "Kalender",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="profile"
         options={{
           // Deutsch wie der Rest der App ("Übersicht", "Jobs") — "Profile" war
