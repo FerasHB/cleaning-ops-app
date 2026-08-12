@@ -29,9 +29,48 @@ export type MonthCell = {
   inMonth: boolean;
 };
 
+/**
+ * Deutsche Monatsnamen, Index 0 = Januar.
+ *
+ * Bewusst als feste Liste statt über `toLocaleDateString`: die Namen sind
+ * damit unabhängig davon, welche ICU-/Intl-Daten die jeweilige Runtime
+ * mitbringt (Hermes liefert das auf Android nicht überall gleich). Monats-
+ * Titel und Monatsauswahl greifen auf dieselbe Quelle zu und können nicht
+ * auseinanderlaufen.
+ */
+export const MONTH_NAMES_DE = [
+  "Januar",
+  "Februar",
+  "März",
+  "April",
+  "Mai",
+  "Juni",
+  "Juli",
+  "August",
+  "September",
+  "Oktober",
+  "November",
+  "Dezember",
+] as const;
+
 /** Monats-Schlüssel "YYYY-MM" eines Datums. */
 export function monthKeyOf(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Monats-Schlüssel aus Jahr + Monatsindex (0 = Januar). */
+export function monthKeyOfParts(year: number, monthIndex: number): string {
+  return monthKeyOf(new Date(year, monthIndex, 1));
+}
+
+/** Jahr eines Monats-Schlüssels ("2026-08" → 2026). */
+export function yearOfMonthKey(monthKey: string): number {
+  return keyToDate(monthKey).getFullYear();
+}
+
+/** Monatsindex eines Monats-Schlüssels ("2026-08" → 7). */
+export function monthIndexOfMonthKey(monthKey: string): number {
+  return keyToDate(monthKey).getMonth();
 }
 
 /** "YYYY-MM" oder "YYYY-MM-DD" → lokales Date (1. des Monats bzw. der Tag). */
@@ -48,10 +87,8 @@ export function addMonths(monthKey: string, delta: number): string {
 
 /** Deutsches Monats-Label, z. B. „August 2026". */
 export function formatMonthLabel(monthKey: string): string {
-  return keyToDate(monthKey).toLocaleDateString("de-DE", {
-    month: "long",
-    year: "numeric",
-  });
+  const d = keyToDate(monthKey);
+  return `${MONTH_NAMES_DE[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 /** Ausgeschriebenes Tages-Label, z. B. „Mittwoch, 12. August 2026". */
