@@ -1,7 +1,18 @@
 // features/timesheets/TimesheetScreen.tsx
-// Stundenzettel-Screen (nur Admin): Mitarbeiter + Monat wählen, Vorschau der
-// abgeschlossenen Jobs, Summe und PDF-Export (expo-print + expo-sharing).
-// Vollständig theme-aware (Light + Dark Mode).
+// Stundenzettel-Screen: Monat wählen, Vorschau der abgeschlossenen Jobs, Summe
+// und PDF-Export (expo-print + expo-sharing). Vollständig theme-aware.
+//
+// ZWEI SICHTEN, EINE BERECHNUNG:
+//  • Admin      — "Stundenzettel": Mitarbeiter frei wählbar (unverändert).
+//  • Mitarbeiter— "Meine Arbeitszeit": fest auf die EIGENE Person gebunden,
+//                 ohne Auswahlliste.
+//
+// Vorher stand hier für Mitarbeitende eine Sperre ("Nur für Admins"). Damit
+// hatte ein Mitarbeiter KEINE Möglichkeit, die eigene erfasste Arbeitszeit zu
+// sehen — obwohl genau diese Zeit aus seinen eigenen Aufträgen stammt.
+// Geändert hat sich nur die Sichtbarkeit: Abfrage (getTimesheet), Berechnung
+// und PDF-Aufbau sind unverändert, und RLS liefert Mitarbeitenden ohnehin nur
+// die eigenen zugewiesenen Aufträge ("employee read own assigned jobs").
 
 import {
   AppHeader,
@@ -30,7 +41,18 @@ export default function TimesheetScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
+  const isAdmin = role === "admin";
+
+  // Mitarbeiter-Sicht: fest auf die eigene Person gebunden (keine Auswahl).
+  const selfEmployee = useMemo(
+    () =>
+      !isAdmin && profile?.id
+        ? { id: profile.id, fullName: profile.full_name?.trim() || "Ich" }
+        : null,
+    [isAdmin, profile?.id, profile?.full_name],
+  );
+
   const {
     employees,
     selectedEmployeeId,
@@ -45,76 +67,68 @@ export default function TimesheetScreen() {
     exporting,
     exportError,
     exportPdf,
-  } = useTimesheet();
-
-  // Route ist Teil des authed-Stacks (Admin + Employee). Stundenzettel ist aber
-  // ein reines Admin-Feature → Mitarbeiter sehen einen klaren Hinweis.
-  if (role !== "admin") {
-    return (
-      <ScreenContainer scrollable={false}>
-        <AppHeader title="Stundenzettel" showBack />
-        <EmptyState
-          title="Nur für Admins"
-          message="Stundenzettel können nur von Administratoren erstellt werden."
-          icon="lock-closed-outline"
-        />
-      </ScreenContainer>
-    );
-  }
+  } = useTimesheet(selfEmployee);
 
   const hasEntries = !!data && data.entries.length > 0;
 
   return (
     <ScreenContainer>
-      <AppHeader title="Stundenzettel" showBack />
+      <AppHeader
+        title={isAdmin ? "Stundenzettel" : "Meine Arbeitszeit"}
+        showBack
+      />
 
-      {/* ── Mitarbeiter wählen ── */}
-      <View style={styles.section}>
-        <SectionHeader
-          title="Mitarbeiter"
-          subtitle="Für wen soll der Nachweis erstellt werden?"
-        />
-        {employees.length === 0 ? (
-          <Card>
-            <EmptyState
-              title="Keine Mitarbeiter"
-              message="Lege zuerst Mitarbeiter an, um einen Nachweis zu erstellen."
-              icon="people-outline"
-              compact
-            />
-          </Card>
-        ) : (
-          <Card padding={0}>
-            {employees.map((emp, idx) => {
-              const selected = emp.id === selectedEmployeeId;
-              return (
-                <TouchableOpacity
-                  key={emp.id}
-                  activeOpacity={0.7}
-                  onPress={() => setSelectedEmployeeId(emp.id)}
-                  style={[styles.empRow, idx > 0 && styles.rowDivider]}
-                >
-                  <View style={styles.empInfo}>
-                    <Text style={styles.empName} numberOfLines={1}>
-                      {emp.fullName}
-                    </Text>
-                    {emp.isActive === false && (
-                      <Text style={styles.empInactive}>Inaktiv</Text>
-                    )}
-                  </View>
-                  <Ionicons
-                    name={selected ? "radio-button-on" : "radio-button-off"}
-                    size={22}
-                    color={
-                      selected ? theme.colors.primary : theme.colors.outline
-                    }
-                  />
-                </TouchableOpacity>
-              );
-            })}
-          </Card>
-        )}
-      </View>
+      {/* ── Mitarbeiter wählen (nur Admin) ──
+          In der Eigen-Sicht gibt es nichts zu wählen: der Stundenzettel ist
+          fest an die angemeldete Person gebunden. */}
+      {isAdmin ? (
+        <View style={styles.section}>
+          <SectionHeader
+            title="Mitarbeiter"
+            subtitle="Für wen soll der Nachweis erstellt werden?"
+          />
+          {employees.length === 0 ? (
+            <Card>
+              <EmptyState
+                title="Keine Mitarbeiter"
+                message="Lege zuerst Mitarbeiter an, um einen Nachweis zu erstellen."
+                icon="people-outline"
+                compact
+              />
+            </Card>
+          ) : (
+            <Card padding={0}>
+              {employees.map((emp, idx) => {
+                const selected = emp.id === selectedEmployeeId;
+                return (
+                  <TouchableOpacity
+                    key={emp.id}
+                    activeOpacity={0.7}
+                    onPress={() => setSelectedEmployeeId(emp.id)}
+                    style={[styles.empRow, idx > 0 && styles.rowDivider]}
+                  >
+                    <View style={styles.empInfo}>
+                      <Text style={styles.empName} numberOfLines={1}>
+                        {emp.fullName}
+                      </Text>
+                      {emp.isActive === false && (
+                        <Text style={styles.empInactive}>Inaktiv</Text>
+                      )}
+                    </View>
+                    <Ionicons
+                      name={selected ? "radio-button-on" : "radio-button-off"}
+                      size={22}
+                      color={
+                        selected ? theme.colors.primary : theme.colors.outline
+                      }
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </Card>
+          )}
+        </View>
+      ) : null}
 
       {/* ── Monat wählen ── */}
       <View style={styles.section}>
@@ -160,7 +174,7 @@ export default function TimesheetScreen() {
       {/* ── Vorschau ── */}
       <View style={styles.section}>
         <SectionHeader
-          title="Vorschau"
+          title={isAdmin ? "Vorschau" : "Deine Zeiten"}
           subtitle="Abgeschlossene Aufträge im Zeitraum"
         />
 
@@ -185,7 +199,11 @@ export default function TimesheetScreen() {
           <Card>
             <EmptyState
               title="Keine Einträge"
-              message="Keine abgeschlossenen Jobs in diesem Zeitraum"
+              message={
+                isAdmin
+                  ? "Keine abgeschlossenen Jobs in diesem Zeitraum"
+                  : "In diesem Monat hast du noch keinen Auftrag abgeschlossen."
+              }
               icon="calendar-clear-outline"
             />
           </Card>

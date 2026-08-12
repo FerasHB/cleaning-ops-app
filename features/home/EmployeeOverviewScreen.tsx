@@ -22,6 +22,7 @@ import { useAuth } from "@/context/AuthContext";
 import { canRunJobActions } from "@/utils/jobAssignees";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
 import { isJobToday } from "@/utils/jobSchedule";
@@ -41,6 +42,25 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "Alle" },
   ...JOB_STATUS_ORDER.map((key) => ({ key, label: getJobStatusLabel(key) })),
 ];
+
+// Wie viele Aufträge die Übersicht als Vorschau zeigt. Alles darüber bleibt
+// erreichbar — siehe "Alle … Aufträge anzeigen" unter der Liste.
+const UPCOMING_PREVIEW_COUNT = 5;
+
+// Platzhalter für useJobWorkedTime, wenn gerade kein Job läuft (siehe unten).
+const NO_ACTIVE_JOB_TIME = {
+  status: "open",
+  startedAt: null,
+  completedAt: null,
+} satisfies Pick<Job, "status" | "startedAt" | "completedAt">;
+
+// Filter-Key → Label, für den Leer-Zustand ("keine Aufträge mit Status X").
+const FILTER_LABEL_BY_KEY: Record<Filter, string> = {
+  all: "Alle",
+  open: getJobStatusLabel("open"),
+  in_progress: getJobStatusLabel("in_progress"),
+  completed: getJobStatusLabel("completed"),
+};
 
 // Sortier-Priorität für "Heute anstehend": offen zuerst, dann in Arbeit, dann erledigt
 const STATUS_ORDER: Record<JobStatus, number> = {
@@ -225,16 +245,40 @@ export default function EmployeeOverviewScreen() {
     [jobs, role, profile?.id],
   );
 
-  // ── "Heute anstehend": gefiltert + nach Status sortiert, max. 5
-  const upcomingJobs = useMemo(() => {
+  // Laufzeit des aktiven Jobs. Der Hook muss unbedingt bei JEDEM Render
+  // aufgerufen werden (Hook-Regeln) — ohne aktiven Job wird ein neutraler
+  // Platzhalter übergeben, der nie tickt (status "open").
+  const { label: activeWorkedLabel } = useJobWorkedTime(
+    activeJob ?? NO_ACTIVE_JOB_TIME,
+  );
+  const activeScheduledTime = activeJob
+    ? (activeJob.startTime ?? formatTime(activeJob.scheduledStart))
+    : null;
+
+  // ── "Heute anstehend": gefiltert + nach Status sortiert.
+  //
+  // Die Liste war vorher hart auf `.slice(0, 5)` gekappt — ohne jeden Hinweis.
+  // Wer heute sechs Aufträge hatte, sah fünf und hatte keine Möglichkeit zu
+  // erkennen, dass überhaupt etwas fehlt. Jetzt wird weiterhin gekürzt (die
+  // Übersicht soll eine Übersicht bleiben), aber die Gesamtzahl ist bekannt
+  // und der Rest ist über einen sichtbaren Verweis in den Jobs-Tab erreichbar.
+  const filteredTodayJobs = useMemo(() => {
     const base =
       filter === "all"
         ? todayJobs
         : todayJobs.filter((j) => j.status === filter);
-    return [...base]
-      .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])
-      .slice(0, 5);
+    return [...base].sort(
+      (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status],
+    );
   }, [todayJobs, filter]);
+
+  const upcomingJobs = useMemo(
+    () => filteredTodayJobs.slice(0, UPCOMING_PREVIEW_COUNT),
+    [filteredTodayJobs],
+  );
+
+  // Wie viele Aufträge liegen hinter der Vorschau? 0 = nichts verborgen.
+  const hiddenJobCount = filteredTodayJobs.length - upcomingJobs.length;
 
   // ── Monatsaktivität (mit Datum-Fallback)
   const monthJobs = useMemo(() => {
@@ -400,7 +444,23 @@ export default function EmployeeOverviewScreen() {
                     </Text>
                   </View>
                 ) : null}
-                {activeJob.startTime ?? formatTime(activeJob.scheduledStart) ? (
+                {/* Bei einem LAUFENDEN Auftrag ist die geplante Startzeit die
+                    unwichtigere Zahl — interessant ist, wie lange er schon
+                    läuft. Gleicher Hook wie JobCard/WorkedTimeCard (minütlicher
+                    Tick, keine neue Timer-Architektur). Fehlt startedAt
+                    (Alt-/Offline-Daten), bleibt es bei der geplanten Zeit. */}
+                {activeWorkedLabel ? (
+                  <View style={styles.activeMetaItem}>
+                    <Ionicons
+                      name="hourglass-outline"
+                      size={14}
+                      color={theme.colors.onPrimaryContainer}
+                    />
+                    <Text style={styles.activeMetaText}>
+                      Läuft seit {activeWorkedLabel}
+                    </Text>
+                  </View>
+                ) : activeScheduledTime ? (
                   <View style={styles.activeMetaItem}>
                     <Ionicons
                       name="time-outline"
@@ -408,7 +468,7 @@ export default function EmployeeOverviewScreen() {
                       color={theme.colors.onPrimaryContainer}
                     />
                     <Text style={styles.activeMetaText}>
-                      {activeJob.startTime ?? formatTime(activeJob.scheduledStart)}
+                      {activeScheduledTime}
                     </Text>
                   </View>
                 ) : null}
@@ -436,9 +496,15 @@ export default function EmployeeOverviewScreen() {
 
       {/* ── Heute anstehend ── */}
       <View style={styles.section}>
+        {/* Untertitel nennt die tatsächliche Anzahl — die Liste darunter ist
+            eine Vorschau, das darf nicht verschwiegen werden. */}
         <SectionHeader
           title="Heute anstehend"
-          subtitle="Deine wichtigsten Aufträge"
+          subtitle={
+            todayTotal === 1
+              ? "1 Auftrag heute"
+              : `${todayTotal} Aufträge heute`
+          }
         />
 
         {/* Filter-Chips (wirken nur auf diese Liste) */}
@@ -462,13 +528,25 @@ export default function EmployeeOverviewScreen() {
           })}
         </View>
 
+        {/* Leer-Zustand unterscheidet jetzt zwischen "heute nichts geplant"
+            und "der aktive Filter trifft nichts" — vorher stand in beiden
+            Fällen "Du hast heute keine geplanten Aufträge.", was bei gesetztem
+            Filter schlicht falsch war. */}
         {upcomingJobs.length === 0 ? (
           <Card>
-            <EmptyState
-              title="Keine Jobs für heute"
-              message="Du hast heute keine geplanten Aufträge."
-              icon="calendar-outline"
-            />
+            {filter === "all" ? (
+              <EmptyState
+                title="Heute keine Aufträge"
+                message="Für heute sind keine Aufträge für dich geplant."
+                icon="calendar-outline"
+              />
+            ) : (
+              <EmptyState
+                title="Keine passenden Aufträge"
+                message={`Heute hast du keine Aufträge mit dem Status „${FILTER_LABEL_BY_KEY[filter]}“. Wähle „Alle“, um alle ${todayTotal} zu sehen.`}
+                icon="funnel-outline"
+              />
+            )}
           </Card>
         ) : (
           <View style={styles.jobList}>
@@ -490,6 +568,29 @@ export default function EmployeeOverviewScreen() {
                 }
               />
             ))}
+
+            {/* Nichts wird still unterschlagen: sobald die Vorschau kürzt,
+                steht hier, wie viele Aufträge noch folgen — mit direktem Weg
+                in den Jobs-Tab (Kalender startet auf heute). */}
+            {hiddenJobCount > 0 ? (
+              <TouchableOpacity
+                style={styles.showAllButton}
+                activeOpacity={0.8}
+                onPress={() => router.push("/(employee-tabs)/jobs")}
+                accessibilityRole="button"
+              >
+                <Text style={styles.showAllText}>
+                  {hiddenJobCount === 1
+                    ? "1 weiterer Auftrag heute — alle anzeigen"
+                    : `${hiddenJobCount} weitere Aufträge heute — alle anzeigen`}
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={theme.colors.primary}
+                />
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
       </View>
@@ -714,6 +815,27 @@ function createStyles(theme: AppTheme) {
     // ── Job-Liste
     jobList: {
       gap: theme.spacing.sm,
+    },
+
+    // ── "Alle anzeigen" unter der gekürzten Vorschau
+    showAllButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      marginTop: 2,
+      paddingVertical: theme.spacing.md,
+      minHeight: theme.spacing.tapTarget,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      backgroundColor: theme.colors.surface,
+    },
+    showAllText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.primary,
     },
   });
 }
