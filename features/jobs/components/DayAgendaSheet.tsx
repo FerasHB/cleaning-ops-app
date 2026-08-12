@@ -53,6 +53,17 @@ type Props = {
   /** Fehler der letzten Aktion — im Sheet sichtbar, weil er hier entsteht. */
   errorMessage?: string;
   onDismissError?: () => void;
+  /**
+   * Mitarbeiter-Zeile auf jeder Karte zeigen (`JobCard.showEmployeeName`).
+   * Default `false` — die bestehende Mitarbeiter-Ansicht bleibt unverändert.
+   * Für den Admin-Kalender: Admin sieht IMMER, wer zugewiesen ist.
+   */
+  showEmployeeName?: boolean;
+  /**
+   * Text für einen leeren Tag. Default ist der bisherige Mitarbeiter-Text
+   * ("dir keine Aufträge zugewiesen") — unverändert, wenn nicht übergeben.
+   */
+  emptyMessage?: string;
 };
 
 export function DayAgendaSheet({
@@ -66,6 +77,8 @@ export function DayAgendaSheet({
   onComplete,
   errorMessage,
   onDismissError,
+  showEmployeeName = false,
+  emptyMessage = "Für diesen Tag sind dir keine Aufträge zugewiesen.",
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -115,9 +128,7 @@ export function DayAgendaSheet({
                 Sheet per Realtime verschwindet — dann hier eine ruhige Zeile
                 statt einer leeren Fläche. */}
             {jobs.length === 0 ? (
-              <Text style={styles.emptyHint}>
-                Für diesen Tag sind dir keine Aufträge zugewiesen.
-              </Text>
+              <Text style={styles.emptyHint}>{emptyMessage}</Text>
             ) : null}
 
             {jobs.map((job) => (
@@ -125,6 +136,7 @@ export function DayAgendaSheet({
                 key={job.id}
                 job={job}
                 onPress={() => onOpenJob(job.id)}
+                showEmployeeName={showEmployeeName}
                 // Start/Abschließen laufen unverändert über den JobContext;
                 // das Gating kommt vom Screen (canRunJobActions).
                 onStart={canRunActions(job) ? () => onStart(job.id) : undefined}
