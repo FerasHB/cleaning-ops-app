@@ -23,12 +23,15 @@ import {
   getAssignees,
   isCorrectableAssignment,
 } from "@/utils/jobAssignees";
+import { isCorrectableJob } from "@/utils/jobCorrection";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Props = {
-  job: Pick<Job, "assignees">;
+  // status/startedAt/completedAt sind für die Korrektur-Sichtbarkeit nötig
+  // (siehe jobIsCorrectable unten) — NICHT für die Zuweisungsanzeige selbst.
+  job: Pick<Job, "assignees" | "status" | "startedAt" | "completedAt">;
   /**
    * Admin-Sicht: Zeitstatus + Korrektur-Aktion einblenden. Default false,
    * damit jede bestehende Aufrufstelle unverändert weiterläuft.
@@ -64,6 +67,23 @@ export function AssignedEmployeesCard({
   const assignees = getAssignees(job);
   const label = assignees.length > 1 ? "Mitarbeitende" : "Mitarbeiter";
 
+  // ENTSCHEIDET ÜBER DEN GESAMTEN ADMIN-ZUSATZ (Status-Zeile UND Aktion).
+  //
+  // Ohne diese Prüfung meldete die Karte an JEDEM offenen Auftrag rot „Keine
+  // eigene Zeit erfasst" — was dort kein Mangel ist, sondern der Normalfall:
+  // der Auftrag wurde schlicht noch nicht ausgeführt. In der Produktions-
+  // datenbank betraf das ~93 % aller Zuweisungen; das rote Signal wäre damit
+  // der Regelzustand gewesen und für die wenigen echten Lücken wertlos.
+  // Ebenso bei laufenden Aufträgen (Beginn erfasst, Ende erwartungsgemäß
+  // offen) und bei Alt-Aufträgen vor dem Phase-1-Grenzwert, für die der
+  // Stundenzettel weiterhin über die geteilte Job-Uhr abrechnet — dort ist
+  // eine fehlende Eigenzeit weder Mangel noch korrigierbar.
+  //
+  // Deckungsgleich mit admin_correct_assignment_time: was hier sichtbar ist,
+  // kann die RPC auch tatsächlich annehmen.
+  const jobIsCorrectable = isCorrectableJob(job);
+  const showAdminTimeInfo = isAdmin && jobIsCorrectable;
+
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
       <View style={styles.labelRow}>
@@ -87,12 +107,13 @@ export function AssignedEmployeesCard({
             const timeLabel = ownTimeLabel(assignee);
             const isComplete =
               !!assignee.employeeStartedAt && !!assignee.employeeCompletedAt;
-            // Korrigierbar heißt hier nur: die Zeile taugt als RPC-Eingabe.
-            // Ob der AUFTRAG korrigierbar ist (single, abgeschlossen, nach
-            // Cutoff), entscheidet die RPC — ein Fehlversuch endet mit einer
-            // verständlichen Meldung statt mit einer stillen Nulloperation.
+            // Zwei Ebenen: der AUFTRAG muss korrigierbar sein
+            // (showAdminTimeInfo, siehe oben) UND die ZEILE als RPC-Eingabe
+            // taugen — Legacy-/anonymisierte Zeilen fallen hier heraus.
             const showAction =
-              isAdmin && !!onCorrectTime && isCorrectableAssignment(assignee);
+              showAdminTimeInfo &&
+              !!onCorrectTime &&
+              isCorrectableAssignment(assignee);
 
             return (
               <View
@@ -106,8 +127,9 @@ export function AssignedEmployeesCard({
                 <View style={styles.nameWrap}>
                   <Text style={styles.name}>{displayName}</Text>
 
-                  {/* Zeitstatus nur für Admins (siehe Kopf-Kommentar). */}
-                  {isAdmin ? (
+                  {/* Zeitstatus nur für Admins UND nur an korrigierbaren
+                      Aufträgen (siehe jobIsCorrectable oben). */}
+                  {showAdminTimeInfo ? (
                     isComplete ? (
                       <Text style={styles.timeOk}>{timeLabel}</Text>
                     ) : (

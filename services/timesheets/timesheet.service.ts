@@ -51,6 +51,7 @@ import {
   formatDurationHm,
   formatTimeHHmm,
 } from "@/utils/date";
+import { isLegacyJob } from "@/utils/jobCorrection";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 
@@ -106,13 +107,13 @@ const JOB_EMBED = `,j:jobs!inner(id,customer_name,service_name,location_address,
 // würden dann auch Aufträge, die nach diesem Zeitpunkt real abgeschlossen
 // wurden, ohne Eintrag bleiben, bis die Migration nachgezogen ist. Die
 // Migration muss deshalb vor dem Rollout dieses PRs angewendet werden.
-const PHASE1_CUTOFF_ISO = "2026-08-12T00:00:00.000Z";
-
-// true, wenn dieser Auftrag VOR Phase 1 abgeschlossen wurde — nur für solche
-// Aufträge ist der Fallback auf die geteilte Job-Uhr laut Regel 2 erlaubt.
-function isLegacyJob(jobCompletedAtIso: string): boolean {
-  return new Date(jobCompletedAtIso).getTime() < Date.parse(PHASE1_CUTOFF_ISO);
-}
+//
+// KONSTANTE UND PRÄDIKAT LIEGEN SEIT PHASE B1 IN utils/jobCorrection.ts —
+// unverändert in Wert und Verhalten, nur verschoben: auch die UI braucht den
+// Grenzwert (darf die Korrektur-Aktion überhaupt erscheinen?). Ein
+// abrechnungsrelevanter Schwellwert darf nicht zweimal im Code stehen, sonst
+// laufen Stundenzettel und Oberfläche irgendwann auseinander.
+// → isLegacyJob wird oben importiert.
 
 // Baut die Bemerkung aus Service + Ort: "Fensterreinigung · Hauptstr. 1".
 function buildRemark(service: string | null, location: string | null): string {
