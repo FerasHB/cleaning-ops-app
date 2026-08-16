@@ -162,6 +162,13 @@ export default function ProfileScreen({
               icon="time-outline"
               label="Meine Arbeitszeit"
               onPress={() => router.push("/timesheets")}
+              styles={styles}
+              theme={theme}
+            />
+            <SettingsRow
+              icon="calendar-outline"
+              label="Abwesenheiten"
+              onPress={() => router.push("/absences")}
               isLast
               styles={styles}
               theme={theme}
