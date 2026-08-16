@@ -9,29 +9,13 @@ import { DateTimeField } from "@/components/ui/DateTimeField";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Absence } from "@/types/absence";
+import { formatAbsenceDateRange } from "@/utils/absenceFormat";
 import { formatDateISO } from "@/utils/date";
 import { confirmDialog } from "@/utils/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { AbsenceStatusBadge } from "./AbsenceStatusBadge";
-
-/** "YYYY-MM-DD" → "DD.MM." (ohne Jahr, wie in den Kartenbeispielen). */
-function formatDayMonth(dateIso: string): string {
-  const [, m, d] = dateIso.split("-");
-  return `${d}.${m}.`;
-}
-
-function formatDateRangeLabel(absence: Absence): string {
-  if (absence.type === "vacation") {
-    return `${formatDayMonth(absence.startDate)}–${formatDayMonth(absence.endDate!)}`;
-  }
-  // Krankheit: mit Ende ein Bereich, ohne Ende "Seit ...".
-  if (absence.endDate) {
-    return `${formatDayMonth(absence.startDate)}–${formatDayMonth(absence.endDate)}`;
-  }
-  return `Seit ${formatDayMonth(absence.startDate)}`;
-}
 
 const today = () => formatDateISO(new Date())!;
 
@@ -124,7 +108,7 @@ export function AbsenceCard({
             <Text style={styles.typeLabel}>
               {isVacation ? "Urlaub" : "Krankheit"}
             </Text>
-            <Text style={styles.dateRange}>{formatDateRangeLabel(absence)}</Text>
+            <Text style={styles.dateRange}>{formatAbsenceDateRange(absence)}</Text>
           </View>
         </View>
         <AbsenceStatusBadge status={absence.status} />

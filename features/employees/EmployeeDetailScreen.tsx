@@ -12,6 +12,7 @@ import {
   Button,
   Card,
   EmptyState,
+  ErrorBanner,
   InfoRow,
   InitialsAvatar,
   KPICard,
@@ -29,10 +30,22 @@ import { isAssignedTo } from "@/utils/jobAssignees";
 import { getJobStatusLabel } from "@/utils/jobStatus";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { toUserMessage } from "@/utils/userMessages";
+import { AdminAbsenceRow } from "@/features/absences/admin/components/AdminAbsenceRow";
+import { useEmployeeAbsences } from "@/features/absences/admin/hooks/useEmployeeAbsences";
+import { groupAbsences } from "@/utils/absenceGrouping";
+
+// Abwesenheiten-Abschnitt: kompakter Ausschnitt hier, volle Historie unter
+// "Alle anzeigen" (app/employees/[id]/absences.tsx). Aktuell wird immer
+// gezeigt (kein Cap), Bevorstehend/Vergangen je bis zu 3 Zeilen — spiegelt
+// EmployeeDetailScreen's bestehendes "Cap bei 5, Meta-Zähler"-Muster für
+// Jobs, nur enger, da Abwesenheiten seltener sind als Jobs.
+const ABSENCE_SECTION_LIMIT = 6;
+const ABSENCE_ROWS_PER_GROUP = 3;
 
 // Reihenfolge für die Job-Liste: laufend → offen → erledigt
 const STATUS_ORDER: Record<JobStatus, number> = {
@@ -80,6 +93,30 @@ export default function EmployeeDetailScreen() {
     () => employees.find((e) => e.id === id),
     [employees, id],
   );
+
+  // ── Abwesenheiten (Phase C — Admin Absence Workflow) ──
+  const {
+    absences,
+    loadError: absenceLoadError,
+    load: loadAbsences,
+    busyId: absenceBusyId,
+    error: absenceActionError,
+    clearError: clearAbsenceError,
+    approve: approveVacation,
+    reject: rejectVacation,
+  } = useEmployeeAbsences(employee?.id, ABSENCE_SECTION_LIMIT);
+
+  const hasLoadedAbsencesOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!employee?.id) return;
+      loadAbsences({ silent: hasLoadedAbsencesOnceRef.current });
+      hasLoadedAbsencesOnceRef.current = true;
+    }, [employee?.id, loadAbsences]),
+  );
+
+  const { current: currentAbsences, upcoming: upcomingAbsences, past: pastAbsences } =
+    useMemo(() => groupAbsences(absences), [absences]);
 
   // Alle Jobs dieses Mitarbeiters — über die Zuweisungsmenge, damit auch
   // Aufträge zählen, bei denen er nicht der Legacy-Primär ist.
@@ -407,6 +444,86 @@ export default function EmployeeDetailScreen() {
               ))}
             </View>
           )}
+        </View>
+
+        {/* ── Abwesenheiten ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionLabel}>ABWESENHEITEN</Text>
+            {absences.length >= ABSENCE_SECTION_LIMIT ? (
+              <Text
+                style={styles.sectionMeta}
+                onPress={() => router.push(`/employees/${employee.id}/absences`)}
+              >
+                Alle anzeigen
+              </Text>
+            ) : null}
+          </View>
+
+          {absenceLoadError ? (
+            <ErrorBanner
+              message={absenceLoadError}
+              actionLabel="Erneut versuchen"
+              onAction={() => loadAbsences()}
+            />
+          ) : null}
+
+          {absenceActionError ? (
+            <ErrorBanner message={absenceActionError} onDismiss={clearAbsenceError} />
+          ) : null}
+
+          {absences.length === 0 && !absenceLoadError ? (
+            <Card padding={theme.spacing.lg}>
+              <EmptyState
+                title="Keine Abwesenheiten erfasst"
+                message="Urlaub oder Krankheit dieses Mitarbeiters erscheinen hier."
+                icon="calendar-outline"
+              />
+            </Card>
+          ) : (
+            <View style={styles.jobList}>
+              {currentAbsences.map((absence) => (
+                <AdminAbsenceRow
+                  key={absence.id}
+                  absence={absence}
+                  busy={absenceBusyId === absence.id}
+                  showEmployeeName={false}
+                  onApprove={approveVacation}
+                  onReject={rejectVacation}
+                />
+              ))}
+              {upcomingAbsences.slice(0, ABSENCE_ROWS_PER_GROUP).map((absence) => (
+                <AdminAbsenceRow
+                  key={absence.id}
+                  absence={absence}
+                  busy={absenceBusyId === absence.id}
+                  showEmployeeName={false}
+                  onApprove={approveVacation}
+                  onReject={rejectVacation}
+                />
+              ))}
+              {pastAbsences.slice(0, ABSENCE_ROWS_PER_GROUP).map((absence) => (
+                <AdminAbsenceRow
+                  key={absence.id}
+                  absence={absence}
+                  busy={absenceBusyId === absence.id}
+                  showEmployeeName={false}
+                  onApprove={approveVacation}
+                  onReject={rejectVacation}
+                />
+              ))}
+            </View>
+          )}
+
+          <Button
+            label="Abwesenheit erfassen"
+            variant="secondary"
+            icon="calendar-outline"
+            onPress={() =>
+              router.push(`/admin/absences/create?employeeId=${employee.id}`)
+            }
+            style={{ marginTop: theme.spacing.sm }}
+          />
         </View>
 
         {/* ── Aktionen ── */}

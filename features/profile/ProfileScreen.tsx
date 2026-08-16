@@ -237,6 +237,13 @@ export default function ProfileScreen({
               theme={theme}
             />
             <SettingsRow
+              icon="calendar-outline"
+              label="Abwesenheiten verwalten"
+              onPress={() => router.push("/admin/absences")}
+              styles={styles}
+              theme={theme}
+            />
+            <SettingsRow
               icon="document-text-outline"
               label="Stundenzettel"
               onPress={() => router.push("/timesheets")}
