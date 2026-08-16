@@ -36,6 +36,7 @@ begin;
 -- Mitarbeiter D (wird geloescht) = e2…5
 -- Admin F (fremde Firma) = e2…6
 -- Mitarbeiter F (fremde Firma) = e2…7
+-- Admin H (reviewt und wird DANACH geloescht, Regressionsfall reviewed_by) = e2…8
 do $$
 begin
   insert into auth.users (instance_id, id, aud, role, email, raw_user_meta_data) values
@@ -45,7 +46,8 @@ begin
     ('00000000-0000-0000-0000-000000000000','e2000000-0000-0000-0000-000000000004','authenticated','authenticated','abs-c-inaktiv@example.test','{"full_name":"Cora Inaktiv"}'),
     ('00000000-0000-0000-0000-000000000000','e2000000-0000-0000-0000-000000000005','authenticated','authenticated','abs-d-del@example.test','{"full_name":"Dirk Loeschbar"}'),
     ('00000000-0000-0000-0000-000000000000','e2000000-0000-0000-0000-000000000006','authenticated','authenticated','abs-adminF@example.test','{"full_name":"Admin F"}'),
-    ('00000000-0000-0000-0000-000000000000','e2000000-0000-0000-0000-000000000007','authenticated','authenticated','abs-f@example.test','{"full_name":"Finn Fremd"}');
+    ('00000000-0000-0000-0000-000000000000','e2000000-0000-0000-0000-000000000007','authenticated','authenticated','abs-f@example.test','{"full_name":"Finn Fremd"}'),
+    ('00000000-0000-0000-0000-000000000000','e2000000-0000-0000-0000-000000000008','authenticated','authenticated','abs-adminH-del@example.test','{"full_name":"Admin H"}');
 end $$;
 
 insert into public.profiles (id, full_name) values
@@ -55,14 +57,15 @@ insert into public.profiles (id, full_name) values
   ('e2000000-0000-0000-0000-000000000004','Cora Inaktiv'),
   ('e2000000-0000-0000-0000-000000000005','Dirk Loeschbar'),
   ('e2000000-0000-0000-0000-000000000006','Admin F'),
-  ('e2000000-0000-0000-0000-000000000007','Finn Fremd')
+  ('e2000000-0000-0000-0000-000000000007','Finn Fremd'),
+  ('e2000000-0000-0000-0000-000000000008','Admin H')
 on conflict (id) do nothing;
 
 insert into public.companies (id, name, slug) values
   ('e1000000-0000-0000-0000-000000000001','Abs Firma E','abs-firma-e-test'),
   ('e1000000-0000-0000-0000-000000000002','Abs Firma F','abs-firma-f-test');
 
-update public.profiles set company_id='e1000000-0000-0000-0000-000000000001', role='admin',    is_active=true  where id='e2000000-0000-0000-0000-000000000001';
+update public.profiles set company_id='e1000000-0000-0000-0000-000000000001', role='admin',    is_active=true  where id in ('e2000000-0000-0000-0000-000000000001','e2000000-0000-0000-0000-000000000008');
 update public.profiles set company_id='e1000000-0000-0000-0000-000000000001', role='employee', is_active=true  where id in ('e2000000-0000-0000-0000-000000000002','e2000000-0000-0000-0000-000000000003','e2000000-0000-0000-0000-000000000005');
 update public.profiles set company_id='e1000000-0000-0000-0000-000000000001', role='employee', is_active=false where id='e2000000-0000-0000-0000-000000000004';
 update public.profiles set company_id='e1000000-0000-0000-0000-000000000002', role='admin',    is_active=true  where id='e2000000-0000-0000-0000-000000000006';
@@ -189,17 +192,25 @@ begin
   raise notice 'CASE 7 -> %', v;
 end $$;
 
--- CASE 8: reviewed_by/reviewed_at muessen im Gleichschritt gesetzt sein.
+-- CASE 8: reviewed_by/reviewed_at-Gleichschritt ist NICHT (mehr) per CHECK
+-- erzwungen — das war chk_employee_absences_review_pair, entfernt, weil es
+-- mit reviewed_by ON DELETE SET NULL kollidierte (siehe Migrationskommentar
+-- bei den Spalten reviewed_by/reviewed_at). Der Gleichschritt wird
+-- ausschliesslich von den beiden schreibenden RPCs garantiert (Faelle
+-- weiter unten). Diese Zeile dokumentiert bewusst, dass ein direkter Insert
+-- mit nur reviewed_by (kein Client-Pfad, nur zur Schema-Doku) jetzt
+-- durchgeht — eine Regression zurueck zum alten Constraint waere die
+-- Deletion-Blockade von vorher.
 do $$
 declare v text;
 begin
   begin
     insert into public.employee_absences (company_id, employee_id, employee_name_snapshot, type, status, start_date, end_date, created_by, reviewed_by)
     values ('e1000000-0000-0000-0000-000000000001','e2000000-0000-0000-0000-000000000002','Anna A','vacation','approved', current_date+50, current_date+51, 'e2000000-0000-0000-0000-000000000002','e2000000-0000-0000-0000-000000000001');
-    v := 'AKZEPTIERT';
-  exception when others then v := 'ABGELEHNT';
+    v := 'OK';
+  exception when others then v := 'ABGELEHNT('||sqlstate||')';
   end;
-  insert into _abs values (8,'reviewed_by ohne reviewed_at wird abgelehnt','ABGELEHNT',v);
+  insert into _abs values (8,'reviewed_by ohne reviewed_at ist NICHT per CHECK blockiert (Fix: Deletion-Blockade)','OK',v);
   raise notice 'CASE 8 -> %', v;
 end $$;
 
@@ -718,6 +729,73 @@ begin
     'rows=1/emp=NULL/name=Dirk Loeschbar/status=requested', v);
   raise notice 'CASE 36 -> %', v;
 end $$;
+
+-- CASE 37: REGRESSION fuer den Review-Fix. Ein Admin (H) reviewt eine
+-- Urlaubsanfrage (reviewed_by/reviewed_at gemeinsam gesetzt), wird DANACH
+-- geloescht. Vor dem Fix schlug genau diese Loeschung mit 23514
+-- (chk_employee_absences_review_pair) fehl, weil ON DELETE SET NULL nur
+-- reviewed_by nullt, nicht reviewed_at. Erwartet jetzt: Loeschung gelingt,
+-- die Zeile bleibt vollstaendig erhalten (reviewed_by=NULL, reviewed_at
+-- UNVERAENDERT gesetzt, status weiterhin approved, employee_id/Snapshot
+-- unberuehrt weil NUR der Reviewer geloescht wurde, nicht der Mitarbeiter),
+-- Admin E (dieselbe Firma, weiterhin aktiv) kann die Zeile lesen, Admin F
+-- (fremde Firma) weiterhin nicht.
+do $$
+declare v text; v_id uuid; v_reviewed_at_vorher timestamptz;
+begin
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000002');
+  set local role authenticated;
+  select id into v_id from public.request_own_vacation(current_date+160, current_date+162, 'Regressionsfall Review-Loeschung');
+  reset role;
+
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000008');
+  set local role authenticated;
+  perform public.admin_review_vacation(v_id, 'approved', 'Regressionstest');
+  reset role;
+
+  select reviewed_at into v_reviewed_at_vorher from public.employee_absences where id = v_id;
+  if v_reviewed_at_vorher is null then
+    raise exception 'Testfehler: reviewed_at wurde von admin_review_vacation nicht gesetzt';
+  end if;
+
+  begin
+    delete from auth.users where id = 'e2000000-0000-0000-0000-000000000008';
+    v := 'DELETED';
+  exception when others then v := 'BLOCKED('||sqlstate||')';
+  end;
+
+  if v = 'DELETED' then
+    select 'loeschung=DELETED'
+           ||'/reviewed_by='||coalesce(reviewed_by::text,'NULL')
+           ||'/reviewed_at_erhalten='||(reviewed_at = v_reviewed_at_vorher)::text
+           ||'/status='||status::text
+           ||'/emp='||employee_id::text
+           ||'/name='||employee_name_snapshot
+      into v
+    from public.employee_absences where id = v_id;
+  end if;
+
+  insert into _abs values (37,'Loeschung eines reviewenden Admins gelingt; Zeile bleibt mit reviewed_at erhalten (Review-Fix)',
+    'loeschung=DELETED/reviewed_by=NULL/reviewed_at_erhalten=true/status=approved/emp=e2000000-0000-0000-0000-000000000002/name=Anna A', v);
+  raise notice 'CASE 37 -> %', v;
+
+  -- Lesezugriffe NACH der Loeschung.
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000001');
+  set local role authenticated;
+  select count(*)::text into v from public.employee_absences where id = v_id;
+  reset role;
+  insert into _abs values (38,'Gleiche Firma (Admin E) kann die Zeile nach Reviewer-Loeschung weiterhin lesen','1',v);
+  raise notice 'CASE 38 -> %', v;
+
+  perform pg_temp.act_as('e2000000-0000-0000-0000-000000000006');
+  set local role authenticated;
+  select count(*)::text into v from public.employee_absences where id = v_id;
+  reset role;
+  insert into _abs values (39,'Fremde Firma (Admin F) kann die Zeile weiterhin nicht lesen','0',v);
+  raise notice 'CASE 39 -> %', v;
+end $$;
+
+delete from public.employee_absences where employee_id = 'e2000000-0000-0000-0000-000000000002';
 
 
 -- =========================================================

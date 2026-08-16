@@ -46,6 +46,17 @@
 --   Wie alle Schemaaenderungen hier MANUELL im Supabase SQL Editor
 --   ausfuehren (siehe CLAUDE.md). Diese Migration wurde NICHT auf der
 --   Produktionsdatenbank ausgefuehrt.
+--
+-- KORREKTUR (noch vor jeder Anwendung, PR-Review):
+--   Eine fruehere Version dieser Migration hatte ein CHECK-Constraint
+--   chk_employee_absences_review_pair ((reviewed_by is null) = (reviewed_at
+--   is null)). Es kollidierte mit reviewed_by ON DELETE SET NULL: die
+--   Loeschung eines Admin-Profils, das irgendeine Zeile reviewed hatte,
+--   schlug fehl (23514), weil die FK-Aktion nur reviewed_by nullt und
+--   reviewed_at unangetastet laesst. Entfernt — siehe Kommentar bei den
+--   Spalten reviewed_by/reviewed_at fuer die Begruendung, warum die
+--   Konsistenz stattdessen ausschliesslich durch die beiden schreibenden
+--   RPCs (admin_review_vacation, admin_create_absence) garantiert wird.
 -- =========================================================
 
 
@@ -119,6 +130,25 @@ create table if not exists public.employee_absences (
   -- telefonische Krankmeldung, ausserhalb der App vereinbarter Urlaub).
   created_by uuid references public.profiles(id) on delete set null,
 
+  -- reviewed_by/reviewed_at werden IMMER gemeinsam von den Review-RPCs
+  -- gesetzt (admin_review_vacation, admin_create_absence) — es gibt
+  -- absichtlich KEIN CHECK-Constraint, das dieses Gleichschritt-Paar
+  -- erzwingt. Ein solcher Constraint (chk_employee_absences_review_pair,
+  -- Vorversion dieser Migration) kollidiert mit reviewed_by ON DELETE SET
+  -- NULL: loescht man das Profil eines Admins, der irgendeine Zeile
+  -- reviewed hat, setzt Postgres NUR reviewed_by auf NULL — reviewed_at
+  -- bleibt unangetastet stehen. Genau dieses "nur eine Spalte des Paares
+  -- wird genullt" verletzt einen Gleichschritt-Constraint und macht die
+  -- Konto-Loeschung fehlschlagen (23514) — derselbe Fehler-Typ wie der
+  -- historische job_photos.uploaded_by-Vorfall (RESTRICT+NOT NULL
+  -- blockierte Kontoloeschung, siehe 20260722000000/...0001), nur ueber
+  -- einen CHECK statt eine FK-Aktion ausgeloest. Da jeder Schreibpfad
+  -- ausschliesslich ueber die beiden Review-RPCs laeuft (siehe unten —
+  -- keine INSERT/UPDATE-Policy existiert), ist die Konsistenz dort
+  -- garantiert; nach einer Kontoloeschung ist reviewed_at=<Zeitpunkt> bei
+  -- reviewed_by=NULL bewusst der gueltige Endzustand ("wurde reviewt,
+  -- aber von wem ist nicht mehr rekonstruierbar" — reviewed_at bleibt als
+  -- Nachweis DASS und WANN reviewt wurde).
   reviewed_by uuid references public.profiles(id) on delete set null,
   reviewed_at timestamptz,
 
@@ -129,11 +159,6 @@ create table if not exists public.employee_absences (
   -- chk_job_assignments_name_snapshot.
   constraint chk_employee_absences_name_snapshot
     check (length(btrim(employee_name_snapshot)) > 0),
-
-  -- reviewed_by und reviewed_at muessen im Gleichschritt gesetzt/NULL sein
-  -- — gleiche Bauform wie chk_job_assignments_review_pair.
-  constraint chk_employee_absences_review_pair
-    check ((reviewed_by is null) = (reviewed_at is null)),
 
   -- Datumsregeln (Abschnitt 3 der Spezifikation):
   --   Urlaub: end_date PFLICHT, end_date >= start_date.
@@ -758,9 +783,11 @@ begin
     v_company_id, employee_id_input, coalesce(nullif(btrim(v_full_name), ''), 'Unbekannt'),
     type_input, v_status, start_date_input, end_date_input, note_input, auth.uid(),
     -- Urlaub geht direkt auf 'approved' -> der erfassende Admin ist damit
-    -- auch der Pruefende. Krankheit hat keinen Genehmigungsschritt, also
-    -- bleibt reviewed_by/at dort NULL (chk_employee_absences_review_pair
-    -- erlaubt genau diese Kombination fuer beide Faelle).
+    -- auch der Pruefende, BEIDE Spalten gemeinsam gesetzt. Krankheit hat
+    -- keinen Genehmigungsschritt, also bleiben reviewed_by/at dort BEIDE
+    -- NULL — die RPC ist die einzige Stelle, die dieses Paar schreibt, und
+    -- haelt es hier bewusst im Gleichschritt (siehe Kommentar bei der
+    -- Spaltendefinition oben, warum das nicht per CHECK erzwungen wird).
     case when type_input = 'vacation' then auth.uid() else null end,
     case when type_input = 'vacation' then now() else null end
   )
