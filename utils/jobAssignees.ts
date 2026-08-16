@@ -152,6 +152,32 @@ export function canRunJobActions(
  *    existiert keine echte job_assignments-ID. Wird nur als React-Key genutzt
  *    und ist am Präfix als abgeleitet erkennbar.
  */
+/**
+ * Darf für diese Zuweisung eine Admin-Zeitkorrektur angeboten werden?
+ * (Phase B1 — spiegelt die Vorbedingungen von admin_correct_assignment_time,
+ * soweit sie auf der Zuweisung selbst erkennbar sind.)
+ *
+ * Zwei Ausschlüsse:
+ *  1. LEGACY-Zeilen aus buildLegacyAssignees tragen eine synthetische
+ *     `legacy:<jobId>:<employeeId>`-Kennung statt einer echten UUID. Ein
+ *     Aufruf damit wäre ein Typfehler auf der RPC, kein fachlicher Fehler —
+ *     der Button darf dort gar nicht erst erscheinen.
+ *  2. Anonymisierte Zeilen (gelöschtes Konto, employeeId === null) lehnt die
+ *     RPC ausdrücklich ab: eine Korrektur könnte für niemanden im
+ *     Stundenzettel erscheinen.
+ *
+ * Die Auftrags-Bedingungen (job_type='single', abgeschlossen, nach dem
+ * Phase-1-Cutoff) prüft weiterhin allein die RPC — sie sind hier nicht
+ * zuverlässig bekannt.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isCorrectableAssignment(assignee: JobAssignee): boolean {
+  if (!assignee.employeeId) return false;
+  return UUID_RE.test(assignee.assignmentId);
+}
+
 export function buildLegacyAssignees(
   job: Pick<Job, "id" | "employeeId" | "employeeName">,
 ): JobAssignee[] {
@@ -163,6 +189,14 @@ export function buildLegacyAssignees(
       employeeId: job.employeeId,
       fullName: job.employeeName?.trim() || "Unbekannt",
       isDeleted: false,
+      // HART null (Phase B1): dieser Zweig kennt die echte Zuweisungszeile
+      // nicht. Die geteilte Job-Uhr hier einzusetzen würde einem Mitarbeiter
+      // eine individuelle Arbeitszeit andichten, die er nie erfasst hat —
+      // genau die Abrechnungs-Falle, die types/job.ts beschreibt.
+      // Folge: die Korrektur-Aktion bleibt für solche Zeilen ausgeblendet
+      // (die synthetische assignmentId ist ohnehin keine echte UUID).
+      employeeStartedAt: null,
+      employeeCompletedAt: null,
     },
   ];
 }

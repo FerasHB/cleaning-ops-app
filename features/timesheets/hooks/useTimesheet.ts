@@ -33,6 +33,8 @@ export type UseTimesheetResult = {
   exporting: boolean;
   exportError: string | null;
   exportPdf: () => Promise<void>;
+  /** Lädt den aktuellen Monat neu — z. B. nach einer Zeitkorrektur (Phase B1). */
+  reload: () => void;
 };
 
 // Erster Tag des Monats von `date` (lokal, auf Mitternacht normalisiert).
@@ -83,6 +85,12 @@ export function useTimesheet(
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  // Zähler als Lade-Auslöser: nach einer Korrektur muss derselbe Monat für
+  // denselben Mitarbeiter neu geladen werden — ohne dass sich eine der
+  // bestehenden Dependencies ändert.
+  const [reloadToken, setReloadToken] = useState(0);
+  const reload = useCallback(() => setReloadToken((n) => n + 1), []);
 
   const monthLabel = useMemo(
     () =>
@@ -160,7 +168,7 @@ export function useTimesheet(
     return () => {
       cancelled = true;
     };
-  }, [selectedEmployeeId, monthDate, employees, selfId, selfName]);
+  }, [selectedEmployeeId, monthDate, employees, selfId, selfName, reloadToken]);
 
   const exportPdf = useCallback(async () => {
     if (!data || data.entries.length === 0) return;
@@ -192,5 +200,6 @@ export function useTimesheet(
     exporting,
     exportError,
     exportPdf,
+    reload,
   };
 }

@@ -24,10 +24,15 @@ import {
 } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
+import {
+  TimeCorrectionSheet,
+  type TimeCorrectionTarget,
+} from "@/features/timesheets/components/TimeCorrectionSheet";
 import { useTimesheet } from "@/features/timesheets/hooks/useTimesheet";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import type { TimesheetGap } from "@/types/timesheet";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -69,9 +74,31 @@ export default function TimesheetScreen() {
     exporting,
     exportError,
     exportPdf,
+    reload,
   } = useTimesheet(selfEmployee);
 
   const hasEntries = !!data && data.entries.length > 0;
+
+  // Korrektur-Ziel des offenen Sheets. Nur Admins bekommen die Liste
+  // überhaupt zu sehen (siehe unten) — die RPC prüft die Rolle zusätzlich
+  // serverseitig und lehnt Mitarbeitende mit 42501 ab.
+  const [correctionTarget, setCorrectionTarget] =
+    useState<TimeCorrectionTarget | null>(null);
+
+  const gaps: TimesheetGap[] = isAdmin ? (data?.needsAttention ?? []) : [];
+
+  const openCorrection = (gap: TimesheetGap) => {
+    setCorrectionTarget({
+      assignmentId: gap.assignmentId,
+      employeeName: gap.employeeName,
+      customerName: gap.customerName,
+      remark: gap.remark,
+      employeeStartedAt: gap.employeeStartedAt,
+      employeeCompletedAt: gap.employeeCompletedAt,
+      sharedStartedAt: gap.sharedStartedAt,
+      sharedCompletedAt: gap.sharedCompletedAt,
+    });
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -181,6 +208,53 @@ export default function TimesheetScreen() {
         </Card>
       </View>
 
+      {/* ── Zeitkorrekturen erforderlich (nur Admin) ──
+          Bewusst ÜBER der Vorschau: diese Zuweisungen erzeugen keinen Eintrag
+          und fehlen daher in der Summe darunter. Wer erst die Summe sieht,
+          hält sie für vollständig. */}
+      {isAdmin && gaps.length > 0 ? (
+        <View style={styles.section}>
+          <SectionHeader
+            title="Zeitkorrekturen erforderlich"
+            subtitle="Diese Aufträge zählen noch nicht zur Arbeitszeit"
+          />
+          <Card padding={0}>
+            {gaps.map((gap, idx) => (
+              <View
+                key={gap.assignmentId}
+                style={[styles.gapRow, idx > 0 && styles.rowDivider]}
+              >
+                <View style={styles.gapIconWrap}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={18}
+                    color={theme.colors.error}
+                  />
+                </View>
+                <View style={styles.gapInfo}>
+                  <Text style={styles.gapCustomer} numberOfLines={1}>
+                    {formatDayShort(gap.date)} · {gap.customerName}
+                  </Text>
+                  <Text style={styles.gapProblem}>{gap.reasonLabel}</Text>
+                  {gap.remark ? (
+                    <Text style={styles.gapMeta} numberOfLines={1}>
+                      {gap.remark}
+                    </Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  style={styles.gapButton}
+                  onPress={() => openCorrection(gap)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.gapButtonText}>Zeit korrigieren</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </Card>
+        </View>
+      ) : null}
+
       {/* ── Vorschau ── */}
       <View style={styles.section}>
         <SectionHeader
@@ -286,6 +360,13 @@ export default function TimesheetScreen() {
 
       <View style={{ height: theme.spacing.xxl }} />
       </ScrollView>
+
+      <TimeCorrectionSheet
+        visible={!!correctionTarget}
+        target={correctionTarget}
+        onClose={() => setCorrectionTarget(null)}
+        onCorrected={reload}
+      />
     </SafeAreaView>
   );
 }
@@ -454,6 +535,54 @@ function createStyles(theme: AppTheme) {
 
     exportBtn: {
       marginTop: theme.spacing.lg,
+    },
+
+    // ── Zeitkorrekturen erforderlich (Phase B1)
+    gapRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      padding: theme.spacing.md,
+      minHeight: theme.spacing.tapTarget,
+    },
+    gapIconWrap: {
+      width: 28,
+      alignItems: "center",
+    },
+    gapInfo: {
+      flex: 1,
+      gap: 2,
+    },
+    gapCustomer: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
+    },
+    gapProblem: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.error,
+    },
+    gapMeta: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+    },
+    gapButton: {
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 8,
+      borderRadius: theme.radius.full,
+      backgroundColor: theme.colors.primaryContainer,
+      minHeight: 36,
+      justifyContent: "center",
+    },
+    gapButtonText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onPrimaryContainer,
     },
   });
 }

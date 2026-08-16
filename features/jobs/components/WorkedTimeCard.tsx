@@ -1,7 +1,20 @@
 // features/jobs/components/WorkedTimeCard.tsx
-// Premium-Karte für die Arbeitszeit eines Jobs — Start/Ende + große
-// Gesamtdauer als visueller Fokus. Ersetzt die schlichte "Arbeitszeit"-
-// InfoRow im JobDetailScreen.
+// Premium-Karte für die GESAMTZEIT DES AUFTRAGS — Start/Ende + große
+// Gesamtdauer als visueller Fokus.
+//
+// TITEL UND TEXT SIND BEWUSST EINDEUTIG (Phase B1): diese Karte zeigt die
+// GETEILTE Job-Uhr (jobs.started_at/completed_at), also wie lange der Auftrag
+// insgesamt lief — NICHT die individuelle Arbeitszeit einer Person. Seit der
+// Admin-Zeitkorrektur können beide auseinanderfallen: der Stundenzettel
+// rechnet mit job_assignments.employee_started_at/employee_completed_at, und
+// eine Korrektur ändert nur diese. Hieß die Karte weiterhin nur
+// „Arbeitszeit", läse ein Mitarbeiter hier eine andere Zahl als in seinem
+// eigenen Stundenzettel — ohne Erklärung.
+//
+// SICHTEN:
+//  • Admin        — zusätzlich die individuellen Zeiten je zugewiesener Person.
+//  • Mitarbeiter  — nur die Auftrags-Gesamtzeit (plus ggf. die EIGENE Zeit).
+//    Fremde Individualzeiten sind Personaldaten und werden nicht angezeigt.
 //
 // Reine Präsentationskomponente: die gesamte Berechnung/Ticking-Logik
 // kommt aus useJobWorkedTime (derselbe Hook, den auch JobCard nutzt) —
@@ -28,6 +41,12 @@ type Props = {
     | "completedBy"
     | "assignees"
   >;
+  /**
+   * Admin-Sicht: individuelle Arbeitszeiten aller Zugewiesenen einblenden.
+   * Default false — Mitarbeitende sehen nur die Auftrags-Gesamtzeit und
+   * höchstens ihre eigene Zeit (siehe Kopf-Kommentar).
+   */
+  isAdmin?: boolean;
 };
 
 /**
@@ -67,7 +86,7 @@ function formatBlockDate(iso: string | null | undefined): string | null {
   });
 }
 
-export function WorkedTimeCard({ job }: Props) {
+export function WorkedTimeCard({ job, isAdmin = false }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { profile } = useAuth();
@@ -112,6 +131,33 @@ export function WorkedTimeCard({ job }: Props) {
   // unten relevant; bei einem einzigen Mitarbeiter wäre er Ballast.
   const isShared = (job.assignees ?? []).length > 1;
 
+  // Individuelle Zeiten: Admin sieht alle, Mitarbeiter ausschließlich sich
+  // selbst. Zeilen ohne jede eigene Zeit erscheinen mit klarem Hinweis statt
+  // mit einer erfundenen Zahl — die geteilte Uhr wird hier NIE eingesetzt.
+  const individualRows = (job.assignees ?? [])
+    .filter((a) => (isAdmin ? true : !!profile?.id && a.employeeId === profile.id))
+    .map((a) => {
+      const start = a.employeeStartedAt
+        ? formatTimeHHmm(new Date(a.employeeStartedAt))
+        : null;
+      const end = a.employeeCompletedAt
+        ? formatTimeHHmm(new Date(a.employeeCompletedAt))
+        : null;
+      const complete = !!start && !!end;
+      return {
+        assignmentId: a.assignmentId,
+        fullName: a.fullName,
+        complete,
+        timeLabel: complete
+          ? `${start} – ${end}`
+          : start
+            ? `ab ${start} · unvollständig`
+            : end
+              ? `bis ${end} · unvollständig`
+              : "nicht erfasst",
+      };
+    });
+
   const startedByName = actorName(job.startedBy, job.assignees, profile?.id);
   const completedByName = actorName(
     job.completedBy,
@@ -137,7 +183,7 @@ export function WorkedTimeCard({ job }: Props) {
           <View style={styles.headerIconWrap}>
             <Ionicons name="time-outline" size={16} color={theme.colors.primary} />
           </View>
-          <Text style={styles.headerTitle}>Arbeitszeit</Text>
+          <Text style={styles.headerTitle}>Gesamtzeit Auftrag</Text>
         </View>
         {/* Kanonischer Wortlaut (Offen/In Arbeit/Erledigt). Die frühere
             labels-Prop beschriftete `completed` hier als „Abgeschlossen" —
@@ -201,6 +247,29 @@ export function WorkedTimeCard({ job }: Props) {
         <Text style={styles.highlightSubtitle}>{minutes} Minuten</Text>
       </View>
 
+      {/* ── Individuelle Zeiten ──
+          Admin: alle Zugewiesenen. Mitarbeiter: nur die EIGENE Zeile —
+          fremde Individualzeiten sind Personaldaten (siehe Kopf-Kommentar). */}
+      {individualRows.length > 0 ? (
+        <View style={styles.individualBox}>
+          <Text style={styles.individualHeading}>
+            {isAdmin ? "INDIVIDUELLE ARBEITSZEIT" : "DEINE ARBEITSZEIT"}
+          </Text>
+          {individualRows.map((row) => (
+            <View key={row.assignmentId} style={styles.individualRow}>
+              <Text style={styles.individualName} numberOfLines={1}>
+                {row.fullName}
+              </Text>
+              <Text
+                style={row.complete ? styles.individualTime : styles.individualMissing}
+              >
+                {row.timeLabel}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {/* ── Hinweis ── */}
       <View style={styles.infoBox}>
         <Ionicons
@@ -209,11 +278,10 @@ export function WorkedTimeCard({ job }: Props) {
           color={theme.colors.outline}
         />
         <Text style={styles.infoText}>
-          Die Arbeitszeit wird automatisch aus Start- und Endzeit berechnet.
+          Dies ist die Gesamtlaufzeit des Auftrags — sie kann von der
+          individuellen Arbeitszeit einzelner Mitarbeitender abweichen.
           {isShared
-            ? // Geteilte Job-Uhr (Phase 7): erklärt, warum jemand Zeit
-              // erhält, die ein Kollege gestartet hat.
-              " Sie gilt für alle zugewiesenen Mitarbeitenden — unabhängig davon, wer Start und Abschluss gedrückt hat."
+            ? " Sie wird aus Start und Abschluss des Auftrags berechnet, unabhängig davon, wer sie gedrückt hat."
             : ""}
         </Text>
       </View>
@@ -339,6 +407,45 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.medium,
       fontWeight: theme.typography.weight.medium,
       color: theme.colors.onSurfaceVariant,
+    },
+
+    // Individuelle Arbeitszeiten (Phase B1)
+    individualBox: {
+      gap: 6,
+      backgroundColor: theme.colors.surfaceContainer,
+      borderRadius: theme.radius.md,
+      padding: theme.spacing.md,
+    },
+    individualHeading: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.outline,
+      letterSpacing: theme.typography.letterSpacing.wider,
+    },
+    individualRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: theme.spacing.sm,
+    },
+    individualName: {
+      flex: 1,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurface,
+    },
+    individualTime: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurface,
+    },
+    individualMissing: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.error,
     },
 
     // Info-Hinweis
