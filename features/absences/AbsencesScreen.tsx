@@ -15,8 +15,9 @@ import {
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { AbsenceCard } from "./components/AbsenceCard";
 import { useAbsences } from "./hooks/useAbsences";
@@ -30,6 +31,7 @@ export default function AbsencesScreen() {
     absences,
     loading,
     loadError,
+    load,
     refreshing,
     refresh,
     actionBusyId,
@@ -39,6 +41,21 @@ export default function AbsencesScreen() {
     cancelSickness,
     updateSicknessEnd,
   } = useAbsences();
+
+  // Lädt bei JEDEM Fokussieren neu, nicht nur beim Mounten — Urlaub
+  // beantragen/Krank melden sind eigene Root-Stack-Screens (app/absences/
+  // request-vacation, report-sickness), die diesen Screen beim
+  // Zurücknavigieren NICHT neu mounten. Gleiches Muster wie
+  // AdminRecurringRulesScreen/JobDetailScreen: erstes Fokussieren lädt mit
+  // vollem Spinner, jedes weitere still im Hintergrund (RefreshControl bleibt
+  // unberührt, kein zusätzlicher Request beim allerersten Mount).
+  const hasLoadedOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      load({ silent: hasLoadedOnceRef.current });
+      hasLoadedOnceRef.current = true;
+    }, [load]),
+  );
 
   const { current, upcoming, past } = useMemo(
     () => groupAbsences(absences),
@@ -155,7 +172,7 @@ function AbsenceGroupSection({
   actionBusyId: string | null;
   onCancelVacation: (id: string) => void;
   onCancelSickness: (id: string) => void;
-  onUpdateSicknessEnd: (id: string, newEndDate: string | null) => void;
+  onUpdateSicknessEnd: (id: string, newEndDate: string | null) => Promise<unknown>;
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);

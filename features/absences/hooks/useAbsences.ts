@@ -3,6 +3,14 @@
 // Gleiches Muster wie andere Feature-Hooks (z. B. useJobComments): eigener
 // Ladezustand, eigener Fehlerzustand, kein globaler Context — Abwesenheiten
 // sind bewusst online-only, keine Offline-Queue (siehe Backend-Migration).
+//
+// `load` wird bewusst NICHT mehr per Mount-Effect selbst aufgerufen — das ist
+// jetzt Sache des Aufrufers via `useFocusEffect` (siehe AbsencesScreen), exakt
+// das Muster aus AdminRecurringRulesScreen/JobDetailScreen: `app/absences/
+// request-vacation` bzw. `report-sickness` sind eigene Stack-Screens, die
+// beim Zurücknavigieren AbsencesScreen NICHT neu mounten. Ein reiner
+// Mount-Effect würde die Liste nach einem erfolgreichen Antrag/Meldung
+// dauerhaft veraltet stehen lassen.
 
 import {
   cancelOwnSickness,
@@ -52,10 +60,6 @@ export function useAbsences() {
       if (mountedRef.current && !opts?.silent) setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -144,6 +148,7 @@ export function useAbsences() {
     absences,
     loading,
     loadError,
+    load,
     refreshing,
     refresh,
     actionBusyId,

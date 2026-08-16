@@ -40,7 +40,8 @@ interface AbsenceCardProps {
   busy: boolean;
   onCancelVacation: () => void;
   onCancelSickness: () => void;
-  onUpdateSicknessEnd: (newEndDate: string | null) => void;
+  /** Resolves to the updated absence on success, or null on failure. */
+  onUpdateSicknessEnd: (newEndDate: string | null) => Promise<unknown>;
 }
 
 export function AbsenceCard({
@@ -88,9 +89,17 @@ export function AbsenceCard({
     if (confirmed) onCancelSickness();
   };
 
-  const handleSaveEnd = () => {
-    onUpdateSicknessEnd(draftEndDate ? formatDateISO(draftEndDate) : null);
-    setEditingEnd(false);
+  // Erst NACH erfolgreichem Update einklappen — schlägt die RPC fehl (z. B.
+  // Enddatum vor Beginn), bleibt der Editor offen und der Fehler erscheint im
+  // ErrorBanner des Screens, statt den Eingabeversuch kommentarlos zu
+  // verwerfen.
+  const handleSaveEnd = async () => {
+    const result = await onUpdateSicknessEnd(
+      draftEndDate ? formatDateISO(draftEndDate) : null,
+    );
+    if (result) {
+      setEditingEnd(false);
+    }
   };
 
   return (
