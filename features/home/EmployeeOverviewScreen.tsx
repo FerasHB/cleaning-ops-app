@@ -340,10 +340,30 @@ export default function EmployeeOverviewScreen() {
           (anderer Zeilenumbruch/Abschnitt) — sichtbares Zappeln im Kopfbereich.
           Der Badge ist entfallen; aussagekräftige Zustände zeigt das Banner. */}
       <View style={styles.header}>
-        <Text style={styles.greeting} numberOfLines={1}>
-          {getGreeting(now)}, {firstName}
-        </Text>
-        <Text style={styles.dateText}>{dateLabel}</Text>
+        <View style={styles.headerTopRow}>
+          <View style={styles.headerTextCol}>
+            <Text style={styles.greeting} numberOfLines={1}>
+              {getGreeting(now)}, {firstName}
+            </Text>
+            <Text style={styles.dateText}>{dateLabel}</Text>
+          </View>
+
+          {/* Kleine Quick-Action, kein neues Dashboard-Card — Urlaub bewusst
+              NICHT hier (nur Krankmeldung ist ein spontaner "jetzt gerade"-
+              Vorgang, Urlaub bleibt im Abwesenheiten-Screen). */}
+          <TouchableOpacity
+            style={styles.sickShortcut}
+            activeOpacity={0.8}
+            onPress={() => router.push("/absences/report-sickness")}
+          >
+            <Ionicons
+              name="medkit-outline"
+              size={14}
+              color={theme.colors.statusOpen}
+            />
+            <Text style={styles.sickShortcutText}>Krank melden</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Heute-Übersicht (2×2) ── */}
@@ -652,6 +672,32 @@ function createStyles(theme: AppTheme) {
     header: {
       paddingTop: theme.spacing.md,
       marginBottom: theme.spacing.xl,
+    },
+    headerTopRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: theme.spacing.sm,
+    },
+    headerTextCol: {
+      flex: 1,
+    },
+    sickShortcut: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: 7,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      backgroundColor: theme.colors.surface,
+    },
+    sickShortcutText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onSurface,
     },
     greeting: {
       fontSize: theme.typography.size.xxl,
