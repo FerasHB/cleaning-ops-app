@@ -4,14 +4,25 @@
 // bewusst kein Pflichtfeld, siehe Architektur-Audit Phase C Abschnitt 4.
 // Eigenes Sheet statt Alert.alert, weil Alert keinen Freitext-Input kennt und
 // auf Web ohnehin eine leere Attrappe ist (siehe utils/dialogs.ts).
-
+//
+// Tastatur-Handling: gleiche Bauform wie
+// features/timesheets/components/TimeCorrectionSheet.tsx (das einzige andere
+// Modal-Sheet mit Texteingabe in der App) — Modal > Overlay-View
+// (justifyContent: flex-end) > KeyboardAvoidingView (behavior "padding" nur
+// auf iOS) > Sheet-View. Ohne KeyboardAvoidingView schiebt sich das am
+// unteren Rand angepinnte Sheet auf iOS NICHT über die Tastatur, die dann das
+// Notizfeld verdeckt — Modals hängen an einem eigenen nativen Fenster und
+// erben keinen KeyboardAvoidingView/SafeAreaView vom umgebenden Screen.
 import { Button } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import React, { useMemo, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -55,40 +66,51 @@ export function RejectVacationSheet({
       onRequestClose={handleClose}
     >
       <Pressable style={styles.backdrop} onPress={handleClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
-          <View style={styles.grabber} />
-          <Text style={styles.title}>Urlaub ablehnen</Text>
-          <Text style={styles.subtitle}>
-            Antrag von {employeeName} ablehnen. Eine Notiz ist optional.
-          </Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.kav}
+        >
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <ScrollView
+              contentContainerStyle={styles.scroll}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.grabber} />
+              <Text style={styles.title}>Urlaub ablehnen</Text>
+              <Text style={styles.subtitle}>
+                Antrag von {employeeName} ablehnen. Eine Notiz ist optional.
+              </Text>
 
-          <TextInput
-            style={styles.input}
-            value={note}
-            onChangeText={setNote}
-            placeholder="Notiz für den Mitarbeiter (optional)"
-            placeholderTextColor={theme.colors.outline}
-            multiline
-            editable={!busy}
-          />
+              <TextInput
+                style={styles.input}
+                value={note}
+                onChangeText={setNote}
+                placeholder="Notiz für den Mitarbeiter (optional)"
+                placeholderTextColor={theme.colors.outline}
+                multiline
+                editable={!busy}
+              />
 
-          <View style={styles.actions}>
-            <Button
-              label="Abbrechen"
-              variant="secondary"
-              onPress={handleClose}
-              disabled={busy}
-              style={styles.actionBtn}
-            />
-            <Button
-              label="Ablehnen"
-              variant="danger"
-              onPress={handleConfirm}
-              loading={busy}
-              style={styles.actionBtn}
-            />
-          </View>
-        </Pressable>
+              <View style={styles.actions}>
+                <Button
+                  label="Abbrechen"
+                  variant="secondary"
+                  onPress={handleClose}
+                  disabled={busy}
+                  style={styles.actionBtn}
+                />
+                <Button
+                  label="Ablehnen"
+                  variant="danger"
+                  onPress={handleConfirm}
+                  loading={busy}
+                  style={styles.actionBtn}
+                />
+              </View>
+            </ScrollView>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Pressable>
     </Modal>
   );
@@ -101,10 +123,16 @@ function createStyles(theme: AppTheme) {
       backgroundColor: "rgba(0,0,0,0.4)",
       justifyContent: "flex-end",
     },
+    kav: {
+      width: "100%",
+    },
     sheet: {
       backgroundColor: theme.colors.surface,
       borderTopLeftRadius: theme.radius.lg,
       borderTopRightRadius: theme.radius.lg,
+      maxHeight: "92%",
+    },
+    scroll: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.sm,
       paddingBottom: theme.spacing.xl,

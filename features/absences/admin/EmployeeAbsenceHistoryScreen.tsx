@@ -12,7 +12,6 @@ import {
   EmptyState,
   ErrorBanner,
   LoadingScreen,
-  ScreenContainer,
   SectionHeader,
 } from "@/components/ui";
 import { useJobs } from "@/context/JobContext";
@@ -20,7 +19,8 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { groupAbsences } from "@/utils/absenceGrouping";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useMemo, useRef } from "react";
-import { View } from "react-native";
+import { RefreshControl, ScrollView, StatusBar, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { AdminAbsenceRow } from "./components/AdminAbsenceRow";
 import { useEmployeeAbsences } from "./hooks/useEmployeeAbsences";
 
@@ -65,17 +65,38 @@ export default function EmployeeAbsenceHistoryScreen({
   if (loading) return <LoadingScreen />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
+      edges={["top"]}
+    >
+      <StatusBar
+        barStyle={theme.isDark ? "light-content" : "dark-content"}
+        backgroundColor={theme.colors.background}
+      />
       <AppHeader
         title={employee ? `Abwesenheiten — ${employee.fullName}` : "Abwesenheiten"}
         showBack
       />
 
-      <ScreenContainer
-        refreshing={refreshing}
-        onRefresh={() => {
-          void refresh();
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingHorizontal: theme.spacing.gutter,
+          paddingTop: theme.spacing.lg,
+          paddingBottom: 32,
         }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              void refresh();
+            }}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
       >
         {loadError ? (
           <View style={{ marginBottom: theme.spacing.md }}>
@@ -129,8 +150,8 @@ export default function EmployeeAbsenceHistoryScreen({
         )}
 
         <View style={{ height: theme.spacing.xl }} />
-      </ScreenContainer>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

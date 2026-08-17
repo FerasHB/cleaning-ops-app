@@ -15,13 +15,21 @@ import {
   EmptyState,
   ErrorBanner,
   LoadingScreen,
-  ScreenContainer,
 } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { AdminAbsenceRow } from "./components/AdminAbsenceRow";
 import { useAdminAbsences } from "./hooks/useAdminAbsences";
 
@@ -70,14 +78,27 @@ export default function AdminAbsencesScreen({
   const list = segment === "vacation" ? pendingVacations : sicknessReports;
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <StatusBar
+        barStyle={theme.isDark ? "light-content" : "dark-content"}
+        backgroundColor={theme.colors.background}
+      />
       <AppHeader title="Abwesenheiten verwalten" showBack />
 
-      <ScreenContainer
-        refreshing={refreshing}
-        onRefresh={() => {
-          void refresh();
-        }}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              void refresh();
+            }}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
       >
         {loadError ? (
           <View style={styles.bannerWrap}>
@@ -155,8 +176,8 @@ export default function AdminAbsencesScreen({
         )}
 
         <View style={{ height: theme.spacing.xl }} />
-      </ScreenContainer>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -165,6 +186,12 @@ function createStyles(theme: AppTheme) {
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
+    },
+    scrollContent: {
+      flexGrow: 1,
+      paddingHorizontal: theme.spacing.gutter,
+      paddingTop: theme.spacing.lg,
+      paddingBottom: 32,
     },
     bannerWrap: {
       marginBottom: theme.spacing.md,
