@@ -38,6 +38,7 @@
 // angezeigt (kein 0:00-Eintrag, kein Fallback), siehe mapEntry.
 
 import { supabase } from "@/lib/supabase";
+import { buildTimesheetAbsence } from "@/services/timesheets/timesheetAbsence.service";
 import { buildTimesheetHtml } from "@/services/timesheets/timesheetHtml";
 import type {
   TimesheetData,
@@ -360,6 +361,29 @@ export async function getTimesheet(params: {
     year: "numeric",
   });
 
+  // ── Abwesenheiten (Phase E) ──────────────────────────────────────────
+  // Vollständig ADDITIV und von der obigen Ist-Zeit-Berechnung entkoppelt:
+  // eigene Datei, eigene Abfragen (employee_absences + Occurrences), eigenes
+  // Ergebnis, das hier nur noch ins zurückgegebene Objekt gemerged wird.
+  // `entries`/`totalMinutes`/`needsAttention` oben sind zu diesem Zeitpunkt
+  // bereits vollständig berechnet und werden durch diesen Block nicht mehr
+  // verändert. Dieselben lokalen Monatsgrenzen wie oben, nur als
+  // "YYYY-MM-DD"-Strings (Absenzen/Occurrences sind zeitzonenfreie
+  // Kalendertage, siehe utils/resolveEffectiveAbsenceDays.ts).
+  const monthStartKey = formatDateISO(monthStart)!;
+  // new Date(year, month, 0): `month` ist hier bereits 1-basiert (Parameter),
+  // der Date-Konstruktor erwartet 0-basierte Monate — `month` als Index
+  // adressiert damit bereits den FOLGEMONAT, Tag 0 davon ist der letzte Tag
+  // des gewählten Monats (Standard-JS-Idiom für "letzter Tag des Monats").
+  const monthEndKey = formatDateISO(new Date(year, month, 0))!;
+
+  const { summary: absenceSummary, notices } = await buildTimesheetAbsence({
+    employeeId,
+    from: monthStartKey,
+    to: monthEndKey,
+    entries,
+  });
+
   return {
     companyName,
     employeeId,
@@ -372,6 +396,8 @@ export async function getTimesheet(params: {
     totalLabel: formatDurationHm(totalMinutes),
     jobCount: entries.length,
     needsAttention,
+    absenceSummary,
+    notices,
   };
 }
 

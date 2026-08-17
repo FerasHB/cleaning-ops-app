@@ -196,6 +196,47 @@ export async function getOwnAbsencesInRange(params: {
   return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
 }
 
+/**
+ * Abwesenheiten EINES Mitarbeiters mit echter Zeitraum-Überschneidung zu
+ * [from, to] (Phase E, Stundenzettel-Abwesenheiten) — bewusst KEIN
+ * `activeOnly`-Filter hier: resolveEffectiveAbsenceDays() filtert selbst
+ * nach dem operativen Aktiv-Prädikat (siehe dort), diese Abfrage liefert
+ * bewusst alle Status, damit ein künftig anderes Prädikat ohne Änderung
+ * dieser Funktion greifen kann.
+ *
+ * FUNKTIONIERT UNVERÄNDERT FÜR BEIDE ROLLEN — keine Rollen-Verzweigung
+ * nötig: RLS beschränkt Mitarbeitende ohnehin auf `employee_id = auth.uid()`
+ * ("employee read own absences"), unabhängig vom hier übergebenen
+ * `employeeId` — ein Mitarbeiter, der (fälschlich) eine fremde ID übergibt,
+ * bekommt schlicht ein leeres Ergebnis. Admins sind firmenweit gelesen
+ * ("admin read company absences"), der `employeeId`-Filter grenzt hier nur
+ * client-seitig auf den gewählten Mitarbeiter ein. Siehe
+ * supabase/migrations/20260816000000_absences_foundation.sql (RLS-Policies).
+ */
+export async function getEmployeeAbsencesInRange(params: {
+  employeeId: string;
+  /** "YYYY-MM-DD", inklusive */
+  from: string;
+  /** "YYYY-MM-DD", inklusive */
+  to: string;
+}): Promise<Absence[]> {
+  const { data, error } = await supabase
+    .from("employee_absences")
+    .select(ABSENCE_SELECT)
+    .eq("employee_id", params.employeeId)
+    .lte("start_date", params.to)
+    .or(`end_date.is.null,end_date.gte.${params.from}`)
+    .order("start_date", { ascending: true });
+
+  if (error) {
+    throw new Error(
+      translateRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+    );
+  }
+
+  return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
+}
+
 function firstRow(data: AbsenceRow[] | null): Absence {
   const row = data?.[0];
   if (!row) {

@@ -28,6 +28,7 @@ import {
   TimeCorrectionSheet,
   type TimeCorrectionTarget,
 } from "@/features/timesheets/components/TimeCorrectionSheet";
+import { TimesheetAbsenceSection } from "@/features/timesheets/components/TimesheetAbsenceSection";
 import { useTimesheet } from "@/features/timesheets/hooks/useTimesheet";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { TimesheetGap } from "@/types/timesheet";
@@ -253,6 +254,15 @@ export default function TimesheetScreen() {
             ))}
           </Card>
         </View>
+      ) : null}
+
+      {/* ── Hinweise + Abwesenheiten (Phase E) ──
+          Für Admin und Mitarbeiter identisch — beide sehen die
+          Abwesenheiten/Hinweise des gewählten Mitarbeiters (in der
+          Eigen-Sicht immer die eigenen). Rendert nichts, solange kein
+          Mitarbeiter/Monat mit Daten geladen ist. */}
+      {data ? (
+        <TimesheetAbsenceSection summary={data.absenceSummary} notices={data.notices} />
       ) : null}
 
       {/* ── Vorschau ── */}

@@ -9,7 +9,8 @@ import {
 } from "@/services/timesheets/timesheet.service";
 import type { TimesheetData } from "@/types/timesheet";
 import type { EmployeeOption } from "@/types/job";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toUserMessage } from "@/utils/userMessages";
 
 // In Version 1 neutraler, fest hinterlegter Firmenname (kein company.name-Fetch).
@@ -91,6 +92,24 @@ export function useTimesheet(
   // bestehenden Dependencies ändert.
   const [reloadToken, setReloadToken] = useState(0);
   const reload = useCallback(() => setReloadToken((n) => n + 1), []);
+
+  // ── Focus-Refresh (Phase E) ──────────────────────────────────────────
+  // Abwesenheiten können auf einem anderen Screen entstehen/sich ändern
+  // (z. B. Admin genehmigt einen Urlaubsantrag) — beim Zurückkehren auf den
+  // Stundenzettel soll das ohne neue Realtime-Verbindung sichtbar werden.
+  // Gleiches Muster wie AbsencesScreen (useFocusEffect + Ref, um den ERSTEN
+  // Fokus beim initialen Mount zu überspringen): der normale Lade-Effekt
+  // unten feuert bereits beim ersten Render — ein zusätzlicher reload() beim
+  // allerersten Fokus wäre ein redundanter Doppel-Request/Flackern.
+  const hasFocusedOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (hasFocusedOnceRef.current) {
+        reload();
+      }
+      hasFocusedOnceRef.current = true;
+    }, [reload]),
+  );
 
   const monthLabel = useMemo(
     () =>
