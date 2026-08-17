@@ -10,7 +10,9 @@
 // bereits auf die eigenen Zeilen ("employee read own absences").
 //
 // Admin-RPCs (admin_review_vacation, admin_create_absence) sind bewusst NICHT
-// hier verdrahtet — Admin-Workflow ist eine spätere Phase.
+// hier verdrahtet — Admin-Workflow lebt in services/absences/adminAbsences.service.ts
+// (Phase C), das AbsenceRow/mapAbsence/ABSENCE_SELECT von hier importiert statt
+// sie zu duplizieren.
 
 import { supabase } from "@/lib/supabase";
 import {
@@ -22,7 +24,11 @@ import {
 } from "@/types/absence";
 import { toUserMessage } from "@/utils/userMessages";
 
-type AbsenceRow = {
+// Exportiert für services/absences/adminAbsences.service.ts — Zeilenform und
+// Mapping sind für Mitarbeiter- und Admin-Lesezugriff identisch (dieselbe
+// Tabelle, dieselbe SELECT-Projektion), nur die WHERE-Bedingungen und RPCs
+// unterscheiden sich. Keine zweite Kopie dieser Typen/Funktion pflegen.
+export type AbsenceRow = {
   id: string;
   company_id: string;
   employee_id: string | null;
@@ -38,7 +44,7 @@ type AbsenceRow = {
   updated_at: string;
 };
 
-function mapAbsence(row: AbsenceRow): Absence {
+export function mapAbsence(row: AbsenceRow): Absence {
   return {
     id: row.id,
     companyId: row.company_id,
@@ -126,7 +132,7 @@ function translateRpcError(err: unknown, fallback: string): string {
   return toUserMessage(err, fallback);
 }
 
-const ABSENCE_SELECT =
+export const ABSENCE_SELECT =
   "id, company_id, employee_id, employee_name_snapshot, type, status, start_date, end_date, employee_note, admin_note, reviewed_at, created_at, updated_at";
 
 /** Lädt die eigenen Abwesenheiten des aktuellen Mitarbeiters (RLS-skopiert). */

@@ -24,16 +24,21 @@ import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Job } from "@/types/job";
+import type { Absence } from "@/types/absence";
 import {
   getScheduleKpis,
   type ScheduleKpis,
 } from "@/services/jobs/jobs.service";
+import {
+  getCurrentCompanyAbsences,
+  getPendingVacationCount,
+} from "@/services/absences/adminAbsences.service";
 import { formatDateISO } from "@/utils/date";
 import { isAssignedTo } from "@/utils/jobAssignees";
 import { getJobStatusLabel } from "@/utils/jobStatus";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -143,6 +148,51 @@ export default function AdminDashboardScreen() {
     void loadKpis();
   }, [loadKpis]);
 
+  // ── Abwesenheiten (Phase C — Admin Absence Workflow) ──────────────────────
+  // Zwei leichte Signale, keine Zeilenlisten: die Anzahl offener Urlaubs-
+  // anträge (Dashboard-Chip) und die firmenweit heute aktiven Abwesenheiten
+  // (genehmigter Urlaub / gemeldete Krankheit — NICHT requested, siehe
+  // getCurrentCompanyAbsences). Eine Abfrage für die ganze Firma, kein Loop
+  // pro Mitarbeiter. useFocusEffect statt Mount-Effect: nach einem Review auf
+  // AdminAbsencesScreen soll der Chip beim Zurücknavigieren sofort stimmen.
+  const [pendingVacationCount, setPendingVacationCount] = useState<number | null>(null);
+  const [currentAbsences, setCurrentAbsences] = useState<Absence[]>([]);
+  const absenceLoadingRef = useRef(false);
+
+  const loadAbsenceSignals = useCallback(async () => {
+    if (!todayKey || absenceLoadingRef.current) return;
+    absenceLoadingRef.current = true;
+    try {
+      const [count, active] = await Promise.all([
+        getPendingVacationCount(),
+        getCurrentCompanyAbsences(todayKey),
+      ]);
+      setPendingVacationCount(count);
+      setCurrentAbsences(active);
+    } catch {
+      // Stiller Fehlschlag: Chip/Aktivitäts-Status bleiben einfach auf dem
+      // vorherigen Stand stehen. Ein eigenes Banner für zwei Nebeninfos wäre
+      // unverhältnismäßig — Dashboard-KPIs haben bereits eines für den
+      // wichtigeren Fall.
+    } finally {
+      absenceLoadingRef.current = false;
+    }
+  }, [todayKey]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadAbsenceSignals();
+    }, [loadAbsenceSignals]),
+  );
+
+  const absenceByEmployeeId = useMemo(() => {
+    const map = new Map<string, Absence>();
+    for (const absence of currentAbsences) {
+      if (absence.employeeId) map.set(absence.employeeId, absence);
+    }
+    return map;
+  }, [currentAbsences]);
+
   // ── Pull-to-Refresh ──────────────────────────────────────────────────────
   // Aktualisiert Jobs, Mitarbeiter und KPIs gemeinsam. Bewusst KEIN
   // loading-Gate: der LoadingScreen darf den Screen dabei nicht ersetzen,
@@ -155,12 +205,17 @@ export default function AdminDashboardScreen() {
     refreshingRef.current = true;
     setRefreshing(true);
     try {
-      await Promise.all([refreshJobs(), refreshEmployees(), loadKpis()]);
+      await Promise.all([
+        refreshJobs(),
+        refreshEmployees(),
+        loadKpis(),
+        loadAbsenceSignals(),
+      ]);
     } finally {
       refreshingRef.current = false;
       setRefreshing(false);
     }
-  }, [refreshJobs, refreshEmployees, loadKpis]);
+  }, [refreshJobs, refreshEmployees, loadKpis, loadAbsenceSignals]);
 
   const openCount = kpis?.offen ?? null;
   const inProgressCount = kpis?.inArbeit ?? null;
@@ -168,7 +223,11 @@ export default function AdminDashboardScreen() {
   const todayCount = kpis?.heute ?? null;
   const overdueCount = kpis?.ueberfaellig ?? 0;
 
-  // ── Mitarbeiter-Aktivität: aktiver (in_progress) Job pro Mitarbeiter
+  // ── Mitarbeiter-Aktivität: aktiver (in_progress) Job ODER aktive
+  // Abwesenheit pro Mitarbeiter, in dieser Priorität. Ein laufender Job zählt
+  // immer als das dringlichere Signal — kommt in der Praxis kaum vor
+  // (schlechte Datenlage, keine strukturelle Garantie), gewinnt aber bewusst
+  // visuell, siehe Architektur-Audit Phase C Abschnitt 16 (Risiken).
   const employeeActivity = useMemo(
     () =>
       employees
@@ -177,9 +236,10 @@ export default function AdminDashboardScreen() {
           const activeJob = jobs.find(
             (j) => isAssignedTo(j, emp.id) && j.status === "in_progress",
           );
-          return { id: emp.id, name: emp.fullName, activeJob };
+          const activeAbsence = absenceByEmployeeId.get(emp.id) ?? null;
+          return { id: emp.id, name: emp.fullName, activeJob, activeAbsence };
         }),
-    [employees, jobs],
+    [employees, jobs, absenceByEmployeeId],
   );
 
   // ── Letzte Aktivitäten: nach Zeitstempel absteigend, dann pro
@@ -332,6 +392,26 @@ export default function AdminDashboardScreen() {
         </TouchableOpacity>
       ) : null}
 
+      {/* ── Urlaubsanträge (nur wenn welche offen sind) ── */}
+      {pendingVacationCount && pendingVacationCount > 0 ? (
+        <TouchableOpacity
+          style={styles.pendingVacationCard}
+          activeOpacity={0.8}
+          onPress={() => router.push("/admin/absences?tab=vacation")}
+        >
+          <View style={styles.pendingVacationIcon}>
+            <Ionicons name="sunny-outline" size={20} color={theme.colors.primary} />
+          </View>
+          <View style={styles.timesheetInfo}>
+            <Text style={styles.timesheetTitle}>Urlaubsanträge</Text>
+            <Text style={styles.timesheetSub}>
+              {pendingVacationCount} offen
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.outline} />
+        </TouchableOpacity>
+      ) : null}
+
       {/* ── Mitarbeiter-Aktivität ── */}
       <View style={styles.section}>
         <SectionHeader
@@ -350,6 +430,23 @@ export default function AdminDashboardScreen() {
           <Card padding={0}>
             {employeeActivity.map((emp, idx) => {
               const isActive = !!emp.activeJob;
+              // Priorität: laufender Job > aktive Abwesenheit > "Kein aktiver Job".
+              // Nur genehmigter Urlaub/gemeldete Krankheit zählen als aktive
+              // Abwesenheit (siehe getCurrentCompanyAbsences) — eine
+              // angefragte Abwesenheit macht niemanden "abwesend".
+              const isAbsent = !isActive && !!emp.activeAbsence;
+              const activityLabel = isActive
+                ? emp.activeJob?.customerName ?? emp.activeJob?.service ?? "Aktiver Job"
+                : isAbsent
+                  ? emp.activeAbsence!.type === "sickness"
+                    ? "Krank gemeldet"
+                    : "Im Urlaub"
+                  : "Kein aktiver Job";
+              const dotColor = isActive
+                ? theme.colors.statusInProgress
+                : isAbsent
+                  ? theme.colors.statusOpen
+                  : theme.colors.outline;
               return (
                 <TouchableOpacity
                   key={emp.id}
@@ -366,22 +463,11 @@ export default function AdminDashboardScreen() {
                       {emp.name}
                     </Text>
                     <Text style={styles.empJob} numberOfLines={1}>
-                      {isActive
-                        ? emp.activeJob?.customerName ??
-                          emp.activeJob?.service ??
-                          "Aktiver Job"
-                        : "Kein aktiver Job"}
+                      {activityLabel}
                     </Text>
                   </View>
                   <View
-                    style={[
-                      styles.statusDot,
-                      {
-                        backgroundColor: isActive
-                          ? theme.colors.statusInProgress
-                          : theme.colors.outline,
-                      },
-                    ]}
+                    style={[styles.statusDot, { backgroundColor: dotColor }]}
                   />
                 </TouchableOpacity>
               );
@@ -649,6 +735,28 @@ function createStyles(theme: AppTheme) {
     },
     timesheetInfo: {
       flex: 1,
+    },
+
+    // ── Urlaubsanträge-Karte (gleiche Bauform wie Stundenzettel-Karte)
+    pendingVacationCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.md,
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusOpenBorder,
+      padding: theme.spacing.md,
+      marginBottom: theme.spacing.xl,
+      ...theme.shadows.sm,
+    },
+    pendingVacationIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.primaryContainer,
+      alignItems: "center",
+      justifyContent: "center",
     },
     timesheetTitle: {
       fontSize: theme.typography.size.md,
