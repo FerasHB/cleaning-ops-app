@@ -20,6 +20,7 @@
 import type { AppTheme } from "@/constants/theme";
 import { CalendarDayCell } from "@/features/jobs/components/CalendarDayCell";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import type { AbsenceType } from "@/types/absence";
 import { buildMonthMatrix, type DaySummary } from "@/utils/calendarMonth";
 import { WEEKDAYS } from "@/utils/recurrence";
 import React, { useMemo } from "react";
@@ -34,6 +35,12 @@ type Props = {
   todayKey: string;
   /** Verdichtete Tagesinfo je Kalendertag (fehlt = keine Aufträge). */
   summaries: Map<string, DaySummary>;
+  /**
+   * Phase D — vorkommende Abwesenheits-TYPEN je Kalendertag (fehlt = keine
+   * aktive Abwesenheit). Additiv: Aufrufer ohne diese Prop verhalten sich
+   * unverändert (Employee-Kalender kann sie weglassen).
+   */
+  absenceMarkers?: Map<string, AbsenceType[]>;
   onSelectDay: (key: string) => void;
 };
 
@@ -42,6 +49,7 @@ export function MonthGrid({
   selectedKey,
   todayKey,
   summaries,
+  absenceMarkers,
   onSelectDay,
 }: Props) {
   const theme = useAppTheme();
@@ -76,6 +84,7 @@ export function MonthGrid({
                 isToday={cell.key === todayKey}
                 isSelected={cell.key === selectedKey}
                 summary={summaries.get(cell.key)}
+                absenceTypes={absenceMarkers?.get(cell.key)}
                 onSelectDay={onSelectDay}
               />
             ))}

@@ -412,6 +412,28 @@ export default function AdminDashboardScreen() {
         </TouchableOpacity>
       ) : null}
 
+      {/* ── Heute abwesend (nur wenn welche aktiv sind) ──
+          Wiederverwendet `currentAbsences` (bereits für Mitarbeiter-Aktivität
+          geladen, siehe loadAbsenceSignals) — keine zweite/eigene Abfrage. */}
+      {currentAbsences.length > 0 ? (
+        <TouchableOpacity
+          style={styles.absentTodayCard}
+          activeOpacity={0.8}
+          onPress={() => router.push("/admin/absences?tab=absent")}
+        >
+          <View style={styles.absentTodayIcon}>
+            <Ionicons name="walk-outline" size={20} color={theme.colors.statusOpen} />
+          </View>
+          <View style={styles.timesheetInfo}>
+            <Text style={styles.timesheetTitle}>Heute abwesend</Text>
+            <Text style={styles.timesheetSub}>
+              {currentAbsences.length} Mitarbeiter
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.outline} />
+        </TouchableOpacity>
+      ) : null}
+
       {/* ── Mitarbeiter-Aktivität ── */}
       <View style={styles.section}>
         <SectionHeader
@@ -755,6 +777,28 @@ function createStyles(theme: AppTheme) {
       height: 40,
       borderRadius: theme.radius.md,
       backgroundColor: theme.colors.primaryContainer,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    // ── Heute-abwesend-Karte (gleiche Bauform wie Urlaubsanträge-Karte)
+    absentTodayCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.md,
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      padding: theme.spacing.md,
+      marginBottom: theme.spacing.xl,
+      ...theme.shadows.sm,
+    },
+    absentTodayIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.statusOpenBg,
       alignItems: "center",
       justifyContent: "center",
     },

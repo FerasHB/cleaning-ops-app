@@ -32,6 +32,11 @@
 import { ErrorBanner, LoadingScreen } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useJobs } from "@/context/JobContext";
+import {
+  AbsenceFilterRow,
+  absenceSelectionLabel,
+  type AbsenceSelection,
+} from "@/features/jobs/components/AbsenceFilterRow";
 import { DayAgendaSheet } from "@/features/jobs/components/DayAgendaSheet";
 import {
   EmployeeFilterControl,
@@ -46,8 +51,14 @@ import {
   type StatusSelection,
 } from "@/features/jobs/components/StatusFilterRow";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { getCompanyAbsencesInRange } from "@/services/absences/adminAbsences.service";
 import { getScheduleOccurrences } from "@/services/jobs/jobs.service";
+import type { Absence } from "@/types/absence";
 import type { Job } from "@/types/job";
+import {
+  absenceTypesForDay,
+  buildAbsenceDayIndex,
+} from "@/utils/absenceCalendarMarkers";
 import {
   addMonths,
   buildDaySummaries,
@@ -80,6 +91,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const EMPTY_JOBS: never[] = [];
+const EMPTY_ABSENCES: never[] = [];
 // Deckt die größte bekannte Firma (≈90 Aufträge/60-Tage-Fenster, Stand
 // Prod-Stichprobe) großzügig ab — dient nur als Sicherheitsdeckel, kein
 // erwarteter Regelfall. Wird erreicht → Hinweis statt stiller Untertreibung.
@@ -101,8 +113,10 @@ export default function AdminJobsCalendarScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [employeeSel, setEmployeeSel] = useState<EmployeeSelection>("all");
   const [statusSel, setStatusSel] = useState<StatusSelection>("all");
+  const [absenceSel, setAbsenceSel] = useState<AbsenceSelection>("all");
 
   const [rawJobs, setRawJobs] = useState<Job[]>([]);
+  const [rawAbsences, setRawAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,13 +156,23 @@ export default function AdminJobsCalendarScreen() {
       if (!isRefresh) setLoading(true);
       setError(null);
       try {
-        const items = await getScheduleOccurrences({
-          from: gridRange.from,
-          to: gridRange.to,
-          limit: OCCURRENCE_LIMIT,
-        });
+        // Genau ein Job- und EIN Abwesenheits-Query für den sichtbaren
+        // Rasterbereich (Phase D) — keine Abfrage je Tag/Mitarbeiter.
+        const [items, absenceItems] = await Promise.all([
+          getScheduleOccurrences({
+            from: gridRange.from,
+            to: gridRange.to,
+            limit: OCCURRENCE_LIMIT,
+          }),
+          getCompanyAbsencesInRange({
+            from: gridRange.from,
+            to: gridRange.to,
+            activeOnly: true,
+          }),
+        ]);
         setRawJobs(items);
         setPossiblyIncomplete(items.length >= OCCURRENCE_LIMIT);
+        setRawAbsences(absenceItems);
       } catch (err: unknown) {
         setError(toUserMessage(err, "Kalender konnte nicht geladen werden."));
       } finally {
@@ -234,6 +258,37 @@ export default function AdminJobsCalendarScreen() {
     [jobsByDay, selectedKey],
   );
 
+  // ── Phase D: Abwesenheits-Filter — rein clientseitig, wie Mitarbeiter-/
+  // Status-Filter. Der Mitarbeiter-Filter gilt AUCH für Abwesenheits-Zeilen
+  // (Anforderung: "Employee = Lena + Absence = Urlaub" zeigt nur Lenas
+  // Urlaub). "unassigned" hat für Abwesenheiten keine Entsprechung — zeigt
+  // dann bewusst keine Abwesenheiten.
+  const visibleAbsences = useMemo(() => {
+    return rawAbsences.filter((absence) => {
+      if (absenceSel === "vacation" && absence.type !== "vacation") return false;
+      if (absenceSel === "sickness" && absence.type !== "sickness") return false;
+      if (employeeSel === "all") return true;
+      if (employeeSel === "unassigned") return false;
+      return absence.employeeId === employeeSel;
+    });
+  }, [rawAbsences, absenceSel, employeeSel]);
+
+  const absencesByDay = useMemo(
+    () => buildAbsenceDayIndex(visibleAbsences, gridRange),
+    [visibleAbsences, gridRange],
+  );
+  const absenceMarkers = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof absenceTypesForDay>>();
+    for (const [key, list] of absencesByDay) {
+      map.set(key, absenceTypesForDay(list));
+    }
+    return map;
+  }, [absencesByDay]);
+  const selectedAbsences = useMemo(
+    () => absencesByDay.get(selectedKey) ?? EMPTY_ABSENCES,
+    [absencesByDay, selectedKey],
+  );
+
   const monthHasJobs = useMemo(() => {
     for (const key of summaries.keys()) {
       if (key.startsWith(monthKey)) return true;
@@ -241,7 +296,13 @@ export default function AdminJobsCalendarScreen() {
     return false;
   }, [summaries, monthKey]);
 
-  const hasActiveFilter = employeeSel !== "all" || statusSel !== "all";
+  // Getrennt von hasActiveFilter (steuert nur die entfernbaren Filter-Chips):
+  // der Abwesenheits-Filter beeinflusst NIE die Auftragsliste (siehe
+  // AbsenceFilterRow-Kommentar) — "Keine Aufträge für diesen Tag/Monat mit
+  // der aktuellen Filterauswahl" darf also nicht allein wegen absenceSel
+  // erscheinen, das wäre irreführend.
+  const hasJobFilter = employeeSel !== "all" || statusSel !== "all";
+  const hasActiveFilter = hasJobFilter || absenceSel !== "all";
 
   // Nur aktive Mitarbeiter zur Auswahl — deckungsgleich mit der Vorauswahl in
   // app/(admin-tabs)/employees.tsx.
@@ -255,6 +316,7 @@ export default function AdminJobsCalendarScreen() {
     [employeeSel, employees],
   );
   const statusLabel = useMemo(() => statusSelectionLabel(statusSel), [statusSel]);
+  const absenceLabel = useMemo(() => absenceSelectionLabel(absenceSel), [absenceSel]);
 
   // ── Navigation (identisch zum Mitarbeiter-Kalender: kein Swipe) ──
   const goPrevMonth = useCallback(() => setMonthKey((m) => addMonths(m, -1)), []);
@@ -270,15 +332,32 @@ export default function AdminJobsCalendarScreen() {
       setSelectedKey(key);
       const keyMonth = key.slice(0, 7);
       if (keyMonth !== monthKey) setMonthKey(keyMonth);
-      if ((jobsByDay.get(key)?.length ?? 0) > 0) setSheetOpen(true);
+      // Phase D: die Tages-Agenda öffnet auch für einen Tag OHNE Aufträge,
+      // wenn er Abwesenheiten hat — sonst wäre ein reiner Abwesenheits-Tag
+      // nie einsehbar.
+      const hasJobs = (jobsByDay.get(key)?.length ?? 0) > 0;
+      const hasAbsences = (absencesByDay.get(key)?.length ?? 0) > 0;
+      if (hasJobs || hasAbsences) setSheetOpen(true);
     },
-    [jobsByDay, monthKey],
+    [jobsByDay, absencesByDay, monthKey],
   );
 
   const handleOpenJob = useCallback((jobId: string) => {
     cameFromDetailRef.current = true;
     setSheetOpen(false);
     router.push(`/jobs/${jobId}`);
+  }, []);
+
+  // Phase D: Tippen auf eine Abwesenheits-Zeile → Mitarbeiter-Detail (dort
+  // liegt auch die "Job zuweisen"-Aktion — kein neuer, eigener Ziel-Screen
+  // für Phase D). Kein employeeId → Konto gelöscht, dann nicht antippbar
+  // (siehe DayAgendaSheet: onOpenAbsence bleibt für diese Zeile undefiniert
+  // wäre sauberer, aber Absence.employeeId ist hier bereits geprüft nötig).
+  const handleOpenAbsence = useCallback((absence: Absence) => {
+    if (!absence.employeeId) return;
+    cameFromDetailRef.current = true;
+    setSheetOpen(false);
+    router.push(`/employees/${absence.employeeId}`);
   }, []);
 
   const handleRefresh = useCallback(() => {
@@ -291,7 +370,7 @@ export default function AdminJobsCalendarScreen() {
   const canRunActions = useCallback(() => false, []);
   const noopAction = useCallback(() => {}, []);
 
-  const dayAgendaEmptyMessage = hasActiveFilter
+  const dayAgendaEmptyMessage = hasJobFilter
     ? "Keine Aufträge für diesen Tag mit der aktuellen Filterauswahl."
     : "Keine Aufträge an diesem Tag.";
 
@@ -386,6 +465,14 @@ export default function AdminJobsCalendarScreen() {
           </View>
         </View>
 
+        {/* ── Phase D: Abwesenheits-Filter — eigene Zeile, GETRENNT vom
+            Mitarbeiter-/Status-Filter oben. Steuert ausschließlich
+            Abwesenheits-Marker/-Agenda-Zeilen, blendet nie Aufträge aus
+            (siehe AbsenceFilterRow-Kommentar). ── */}
+        <View style={styles.absenceFilterRow}>
+          <AbsenceFilterRow value={absenceSel} onChange={setAbsenceSel} />
+        </View>
+
         {/* ── Aktive Filter: entfernbare Chips ── */}
         {hasActiveFilter ? (
           <View style={styles.activeFilterRow}>
@@ -426,6 +513,27 @@ export default function AdminJobsCalendarScreen() {
                 </TouchableOpacity>
               </View>
             ) : null}
+
+            {absenceSel !== "all" ? (
+              <View style={styles.activeFilterChip}>
+                <Ionicons
+                  name={absenceSel === "vacation" ? "sunny-outline" : "medkit-outline"}
+                  size={13}
+                  color={theme.colors.onPrimaryContainer}
+                />
+                <Text style={styles.activeFilterText} numberOfLines={1}>
+                  Abwesenheit: {absenceLabel}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setAbsenceSel("all")}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Abwesenheits-Filter ${absenceLabel} entfernen`}
+                >
+                  <Ionicons name="close" size={14} color={theme.colors.onPrimaryContainer} />
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -435,12 +543,13 @@ export default function AdminJobsCalendarScreen() {
           selectedKey={selectedKey}
           todayKey={todayKey}
           summaries={summaries}
+          absenceMarkers={absenceMarkers}
           onSelectDay={handleSelectDay}
         />
 
         {!monthHasJobs ? (
           <Text style={styles.emptyMonthHint} numberOfLines={2}>
-            {hasActiveFilter
+            {hasJobFilter
               ? "Keine Aufträge für die aktuelle Filterauswahl in diesem Monat."
               : "In diesem Monat sind keine Aufträge geplant."}
           </Text>
@@ -472,6 +581,8 @@ export default function AdminJobsCalendarScreen() {
         onComplete={noopAction}
         showEmployeeName
         emptyMessage={dayAgendaEmptyMessage}
+        absences={selectedAbsences}
+        onOpenAbsence={handleOpenAbsence}
       />
     </SafeAreaView>
   );
@@ -551,6 +662,11 @@ function createStyles(theme: AppTheme) {
     },
     statusFilterWrap: {
       flex: 1,
+    },
+
+    // ── Phase D: Abwesenheits-Filter — eigene Zeile unter Mitarbeiter/Status
+    absenceFilterRow: {
+      paddingHorizontal: theme.spacing.xs,
     },
 
     // ── Aktive Filter: entfernbare Chips (Muster aus AdminScheduleScreen)

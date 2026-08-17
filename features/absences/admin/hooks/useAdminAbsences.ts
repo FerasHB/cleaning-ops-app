@@ -6,10 +6,12 @@
 // Screen aufgerufen (nicht per Mount-Effect) — siehe dortige Begründung.
 
 import {
+  getCurrentCompanyAbsences,
   getPendingVacationRequests,
   getSicknessReports,
 } from "@/services/absences/adminAbsences.service";
 import type { Absence } from "@/types/absence";
+import { formatDateISO } from "@/utils/date";
 import { toUserMessage } from "@/utils/userMessages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVacationReview } from "./useVacationReview";
@@ -22,6 +24,12 @@ const SICKNESS_STATUSES: Absence["status"][] = ["reported", "cancelled"];
 export function useAdminAbsences() {
   const [pendingVacations, setPendingVacations] = useState<Absence[]>([]);
   const [sicknessReports, setSicknessReports] = useState<Absence[]>([]);
+  // "Abwesend"-Reiter: firmenweit heute aktive Abwesenheiten (genehmigter
+  // Urlaub / gemeldete Krankheit — NICHT requested/rejected/cancelled, siehe
+  // getCurrentCompanyAbsences). Dieselbe Abfrage/Semantik wie der Dashboard-
+  // Chip "Heute abwesend" — dort wird bewusst dieselbe bereits geladene
+  // Liste wiederverwendet statt hier UND dort je eine eigene zu halten.
+  const [activeToday, setActiveToday] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -38,13 +46,16 @@ export function useAdminAbsences() {
     if (!opts?.silent) setLoading(true);
     setLoadError("");
     try {
-      const [vacations, sickness] = await Promise.all([
+      const todayKey = formatDateISO(new Date()) ?? "";
+      const [vacations, sickness, active] = await Promise.all([
         getPendingVacationRequests(),
         getSicknessReports({ status: SICKNESS_STATUSES }),
+        getCurrentCompanyAbsences(todayKey),
       ]);
       if (mountedRef.current) {
         setPendingVacations(vacations);
         setSicknessReports(sickness);
+        setActiveToday(active);
       }
     } catch (err) {
       if (mountedRef.current) {
@@ -77,6 +88,7 @@ export function useAdminAbsences() {
   return {
     pendingVacations,
     sicknessReports,
+    activeToday,
     loading,
     loadError,
     load,

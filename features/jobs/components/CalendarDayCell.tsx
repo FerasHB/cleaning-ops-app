@@ -35,6 +35,7 @@
 
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import type { AbsenceType } from "@/types/absence";
 import type { DaySummary } from "@/utils/calendarMonth";
 import { getJobStatusMeta } from "@/utils/jobStatus";
 import React, { useMemo } from "react";
@@ -51,6 +52,13 @@ type Props = {
   isSelected: boolean;
   /** Verdichtete Tagesinfo — `undefined` = keine Aufträge. */
   summary: DaySummary | undefined;
+  /**
+   * Phase D — vorkommende Abwesenheits-TYPEN dieses Tages (höchstens
+   * ["vacation","sickness"], nie ein Eintrag je Mitarbeiter). `undefined`/
+   * leer = keine aktive Abwesenheit an diesem Tag. Additiv: Aufrufer, die
+   * das nicht übergeben (z. B. bestehende Tests), verhalten sich unverändert.
+   */
+  absenceTypes?: AbsenceType[];
   onSelectDay: (key: string) => void;
 };
 
@@ -69,9 +77,14 @@ function buildA11yLabel(
   dayNumber: number,
   isToday: boolean,
   summary: DaySummary | undefined,
+  absenceTypes: AbsenceType[] | undefined,
 ): string {
   const head = `${dayNumber}.${isToday ? " Heute." : ""}`;
-  if (!summary) return `${head} Keine Aufträge`;
+  const absenceSuffix = absenceTypes?.length
+    ? ` ${absenceTypes.map((t) => (t === "vacation" ? "Urlaub" : "Krank")).join(", ")}.`
+    : "";
+
+  if (!summary) return `${head} Keine Aufträge.${absenceSuffix}`;
 
   const parts: string[] = [];
   if (summary.open > 0) parts.push(`${summary.open} offen`);
@@ -79,7 +92,7 @@ function buildA11yLabel(
   if (summary.completed > 0) parts.push(`${summary.completed} erledigt`);
 
   const total = summary.total === 1 ? "1 Auftrag" : `${summary.total} Aufträge`;
-  return `${head} ${total}: ${parts.join(", ")}`;
+  return `${head} ${total}: ${parts.join(", ")}.${absenceSuffix}`;
 }
 
 function CalendarDayCellBase({
@@ -89,10 +102,12 @@ function CalendarDayCellBase({
   isToday,
   isSelected,
   summary,
+  absenceTypes,
   onSelectDay,
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const hasAbsence = !!absenceTypes?.length;
 
   return (
     <TouchableOpacity
@@ -100,7 +115,7 @@ function CalendarDayCellBase({
       activeOpacity={0.7}
       onPress={() => onSelectDay(dayKey)}
       accessibilityRole="button"
-      accessibilityLabel={buildA11yLabel(dayNumber, isToday, summary)}
+      accessibilityLabel={buildA11yLabel(dayNumber, isToday, summary, absenceTypes)}
       accessibilityState={{ selected: isSelected }}
     >
       {/* ── Tageszahl (heute im gefüllten Kreis) ── */}
@@ -144,6 +159,26 @@ function CalendarDayCellBase({
               />
             ))}
           </View>
+        </View>
+      ) : null}
+
+      {/* ── Phase D: Abwesenheits-Marker ── unabhängig von `summary`, ein
+          Tag kann Abwesenheiten OHNE Aufträge haben. Höchstens zwei Punkte
+          (Urlaub, Krank) — nie einer je Mitarbeiter. */}
+      {hasAbsence ? (
+        <View style={[styles.absenceRow, !inMonth && styles.summaryMuted]}>
+          {absenceTypes!.map((type) => (
+            <View
+              key={type}
+              style={[
+                styles.absenceDot,
+                {
+                  backgroundColor:
+                    type === "vacation" ? theme.colors.primary : theme.colors.statusOpen,
+                },
+              ]}
+            />
+          ))}
         </View>
       ) : null}
     </TouchableOpacity>
@@ -260,6 +295,22 @@ function createStyles(theme: AppTheme) {
     dot: {
       width: 4.5,
       height: 4.5,
+      borderRadius: theme.radius.full,
+    },
+
+    // ── Phase D: Abwesenheits-Marker (eigene Zeile, unabhängig von `summary`)
+    absenceRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 3,
+    },
+    // Etwas größer als die Status-Punkte: sie stehen ohne Pille daneben und
+    // sollen trotzdem als eigenes Signal erkennbar bleiben, nicht als
+    // vierter Status-Punkt missverstanden werden.
+    absenceDot: {
+      width: 5.5,
+      height: 5.5,
       borderRadius: theme.radius.full,
     },
   });

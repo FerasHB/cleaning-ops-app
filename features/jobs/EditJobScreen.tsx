@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { EmployeeMultiSelector } from "@/features/jobs/components/EmployeeMultiSelector";
 import { JobFormFields } from "@/features/jobs/components/JobFormFields";
+import { useAssignmentAbsenceGuard } from "@/features/jobs/hooks/useAssignmentAbsenceGuard";
 import { useJobForm } from "@/features/jobs/hooks/useJobForm";
 import {
   formatDateISO,
@@ -137,6 +138,7 @@ export default function EditJobScreen() {
 
   const { values, errors, setField, validate, setValues, setErrors } =
     useJobForm();
+  const { guardSave } = useAssignmentAbsenceGuard();
 
   const isAdmin = role === "admin";
 
@@ -289,69 +291,87 @@ export default function EditJobScreen() {
       return;
     }
 
+    // Zusätzliche Absicherung (defense-in-depth): inaktive Mitarbeiter
+    // dürfen NIE an set_job_assignments gesendet werden (siehe Sperre
+    // oben). Da das Speichern bereits vollständig blockiert ist, solange
+    // hasInactiveAssignedEmployees zutrifft, sollte values.employeeIds an
+    // dieser Stelle nie mehr eine inaktive ID enthalten — dieser Filter
+    // fängt trotzdem den Fall ab, dass sich der Aktiv-Status eines
+    // Mitarbeiters zwischen Prüfung und Absenden ändert (z. B. durch
+    // gleichzeitige Deaktivierung in einer anderen Sitzung).
+    const activeEmployeeIds = new Set(
+      employees.filter((e) => e.isActive !== false).map((e) => e.id),
+    );
+    const submittableEmployeeIds = values.employeeIds.filter((id) =>
+      activeEmployeeIds.has(id),
+    );
+
     try {
       setSubmitting(true);
 
-      // Zusätzliche Absicherung (defense-in-depth): inaktive Mitarbeiter
-      // dürfen NIE an set_job_assignments gesendet werden (siehe Sperre
-      // oben). Da das Speichern bereits vollständig blockiert ist, solange
-      // hasInactiveAssignedEmployees zutrifft, sollte values.employeeIds an
-      // dieser Stelle nie mehr eine inaktive ID enthalten — dieser Filter
-      // fängt trotzdem den Fall ab, dass sich der Aktiv-Status eines
-      // Mitarbeiters zwischen Prüfung und Absenden ändert (z. B. durch
-      // gleichzeitige Deaktivierung in einer anderen Sitzung).
-      const activeEmployeeIds = new Set(
-        employees.filter((e) => e.isActive !== false).map((e) => e.id),
+      // Zuweisung × Abwesenheit VOR dem eigentlichen Speichern prüfen
+      // (Phase D) — mit dem CURRENT Formularstand (Datum/Wochentage/
+      // Zuweisung können sich hier gegenüber dem geladenen Job geändert
+      // haben). Bei Konflikten zeigt guardSave EINE Warnung; performSave
+      // läuft nur bei Bestätigung (oder ganz ohne Konflikt).
+      await guardSave(
+        {
+          employeeIds: submittableEmployeeIds,
+          employees,
+          jobType: values.jobType,
+          singleDate: formatDateISO(values.singleDateTime),
+          recurringDays: values.recurringDays,
+          recurrenceStartDate: formatDateISO(values.recurrenceStartDate),
+          recurrenceEndDate: formatDateISO(values.recurrenceEndDate),
+        },
+        async () => {
+          // Rohtext -> positive Ganzzahl oder null (leer/ungültig = keine Dauer
+          // geplant). JobFormFields lässt ohnehin nur Ziffern zu.
+          const parsedDuration = parseInt(values.durationMinutes, 10);
+          const plannedDurationMinutes =
+            Number.isFinite(parsedDuration) && parsedDuration > 0
+              ? parsedDuration
+              : null;
+
+          const base = {
+            jobId: job.id,
+            customerName: values.customerName.trim(),
+            location: values.location.trim(),
+            service: values.service.trim(),
+            employeeIds: submittableEmployeeIds,
+            notes: values.notes.trim() || null,
+            plannedDurationMinutes,
+          };
+
+          await updateJob(
+            values.jobType === "single"
+              ? {
+                  ...base,
+                  jobType: "single",
+                  date: formatDateISO(values.singleDateTime),
+                  startTime: formatTimeHHmm(values.singleDateTime),
+                  scheduledStart: formatToISO(values.singleDateTime),
+                }
+              : {
+                  ...base,
+                  jobType: "recurring",
+                  startTime: formatTimeHHmm(values.startTime),
+                  recurringDays: values.recurringDays,
+                  isActive: values.isActive,
+                  recurrenceStartDate: formatDateISO(values.recurrenceStartDate),
+                  recurrenceEndDate: formatDateISO(values.recurrenceEndDate),
+                  scheduledStart: null,
+                },
+          );
+
+          // Erst den Hinweis abwarten, DANN zurück. Vorher lief Alert.alert
+          // fire-and-forget und router.back() feuerte sofort — der Hinweis stand
+          // dann über dem VORHERIGEN Screen bzw. verschwand mit dem Wechsel. Im
+          // Web zeigte Alert.alert ohnehin nichts an.
+          await alertDialog("Gespeichert", "Der Job wurde aktualisiert.");
+          leaveWithoutWarning(() => router.back());
+        },
       );
-      const submittableEmployeeIds = values.employeeIds.filter((id) =>
-        activeEmployeeIds.has(id),
-      );
-
-      // Rohtext -> positive Ganzzahl oder null (leer/ungültig = keine Dauer
-      // geplant). JobFormFields lässt ohnehin nur Ziffern zu.
-      const parsedDuration = parseInt(values.durationMinutes, 10);
-      const plannedDurationMinutes =
-        Number.isFinite(parsedDuration) && parsedDuration > 0
-          ? parsedDuration
-          : null;
-
-      const base = {
-        jobId: job.id,
-        customerName: values.customerName.trim(),
-        location: values.location.trim(),
-        service: values.service.trim(),
-        employeeIds: submittableEmployeeIds,
-        notes: values.notes.trim() || null,
-        plannedDurationMinutes,
-      };
-
-      await updateJob(
-        values.jobType === "single"
-          ? {
-              ...base,
-              jobType: "single",
-              date: formatDateISO(values.singleDateTime),
-              startTime: formatTimeHHmm(values.singleDateTime),
-              scheduledStart: formatToISO(values.singleDateTime),
-            }
-          : {
-              ...base,
-              jobType: "recurring",
-              startTime: formatTimeHHmm(values.startTime),
-              recurringDays: values.recurringDays,
-              isActive: values.isActive,
-              recurrenceStartDate: formatDateISO(values.recurrenceStartDate),
-              recurrenceEndDate: formatDateISO(values.recurrenceEndDate),
-              scheduledStart: null,
-            },
-      );
-
-      // Erst den Hinweis abwarten, DANN zurück. Vorher lief Alert.alert
-      // fire-and-forget und router.back() feuerte sofort — der Hinweis stand
-      // dann über dem VORHERIGEN Screen bzw. verschwand mit dem Wechsel. Im
-      // Web zeigte Alert.alert ohnehin nichts an.
-      await alertDialog("Gespeichert", "Der Job wurde aktualisiert.");
-      leaveWithoutWarning(() => router.back());
     } catch (err: unknown) {
       const msg = toUserMessage(err, "Job konnte nicht gespeichert werden.");
 
