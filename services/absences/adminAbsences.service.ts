@@ -18,6 +18,7 @@
 import { supabase } from "@/lib/supabase";
 import {
   ABSENCE_SELECT,
+  ACTIVE_ABSENCE_FILTER_OR,
   mapAbsence,
   type AbsenceRow,
 } from "@/services/absences/absences.service";
@@ -139,6 +140,49 @@ export async function getCompanyAbsences(params?: {
   if (params?.to) query = query.lte("start_date", params.to);
   if (params?.type) query = query.eq("type", params.type);
   if (params?.status?.length) query = query.in("status", params.status);
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(
+      translateAdminRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+    );
+  }
+  return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
+}
+
+/**
+ * Firmenweite Abwesenheiten mit ECHTER Zeitraum-Überschneidung zu [from, to]
+ * (Phase D, Admin-Kalender) — bewusst additiv neben getCompanyAbsences()
+ * statt dessen from/to zu verändern (bestehende Aufrufer bleiben unberührt).
+ *
+ * WARUM NICHT getCompanyAbsences({from, to}) WIEDERVERWENDEN:
+ * dessen from/to filtert NUR start_date (Zeilen mit start_date >= from UND
+ * <= to). Ein Urlaub, der VOR dem sichtbaren Monat begann und noch andauert,
+ * würde damit für die Kalenderansicht fälschlich unsichtbar. Das korrekte
+ * Überschneidungs-Prädikat (identisch zu getCurrentCompanyAbsences(), nur
+ * über einen Zeitraum statt einen einzelnen Tag):
+ *   start_date <= to AND (end_date IS NULL OR end_date >= from)
+ */
+export async function getCompanyAbsencesInRange(params: {
+  /** "YYYY-MM-DD", inklusive */
+  from: string;
+  /** "YYYY-MM-DD", inklusive */
+  to: string;
+  /** true = nur genehmigter Urlaub / gemeldete Krankheit (siehe ACTIVE_ABSENCE_FILTER_OR). */
+  activeOnly?: boolean;
+  limit?: number;
+}): Promise<Absence[]> {
+  let query = supabase
+    .from("employee_absences")
+    .select(ABSENCE_SELECT)
+    .lte("start_date", params.to)
+    .or(`end_date.is.null,end_date.gte.${params.from}`)
+    .order("start_date", { ascending: true })
+    .limit(params.limit ?? COMPANY_ABSENCES_LIMIT);
+
+  if (params.activeOnly) {
+    query = query.or(ACTIVE_ABSENCE_FILTER_OR);
+  }
 
   const { data, error } = await query;
   if (error) {

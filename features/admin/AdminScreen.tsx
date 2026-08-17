@@ -8,6 +8,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { JobFormFields } from "@/features/jobs/components/JobFormFields";
+import { useAssignmentAbsenceGuard } from "@/features/jobs/hooks/useAssignmentAbsenceGuard";
 import { useJobForm } from "@/features/jobs/hooks/useJobForm";
 import { formatDateISO, formatTimeHHmm, formatToISO } from "@/utils/date";
 import type { CreateJobInput } from "@/types/job";
@@ -114,6 +115,7 @@ export default function AdminScreen() {
   );
 
   const { values, errors, isDirty, setField, validate, reset } = useJobForm();
+  const { guardSave } = useAssignmentAbsenceGuard();
 
   // Warnung vor dem Verlassen mit ungespeicherten Eingaben. Deckt eigenen
   // Zurück-Button, Android-Hardware-Zurück und iOS-Swipe ab (siehe Hook).
@@ -150,67 +152,84 @@ export default function AdminScreen() {
     try {
       setSubmitting(true);
 
-      // Rohtext -> positive Ganzzahl oder null (leer/ungültig = keine Dauer
-      // geplant). JobFormFields lässt ohnehin nur Ziffern zu.
-      const parsedDuration = parseInt(values.durationMinutes, 10);
-      const plannedDurationMinutes =
-        Number.isFinite(parsedDuration) && parsedDuration > 0
-          ? parsedDuration
-          : null;
+      // Zuweisung × Abwesenheit VOR dem eigentlichen Speichern prüfen
+      // (Phase D). Bei Konflikten zeigt guardSave EINE Warnung und ruft
+      // performSave nur bei Bestätigung (oder ganz ohne Konflikt) auf — die
+      // Prüfung selbst speichert nie.
+      await guardSave(
+        {
+          employeeIds: values.employeeIds,
+          employees: activeEmployees,
+          jobType: values.jobType,
+          singleDate: formatDateISO(values.singleDateTime),
+          recurringDays: values.recurringDays,
+          recurrenceStartDate: formatDateISO(values.recurrenceStartDate),
+          recurrenceEndDate: formatDateISO(values.recurrenceEndDate),
+        },
+        async () => {
+          // Rohtext -> positive Ganzzahl oder null (leer/ungültig = keine Dauer
+          // geplant). JobFormFields lässt ohnehin nur Ziffern zu.
+          const parsedDuration = parseInt(values.durationMinutes, 10);
+          const plannedDurationMinutes =
+            Number.isFinite(parsedDuration) && parsedDuration > 0
+              ? parsedDuration
+              : null;
 
-      // Gemeinsame Basis
-      const base = {
-        customerName: values.customerName.trim(),
-        location: values.location.trim(),
-        service: values.service.trim(),
-        employeeIds: values.employeeIds,
-        notes: values.notes.trim() || null,
-        plannedDurationMinutes,
-      };
+          // Gemeinsame Basis
+          const base = {
+            customerName: values.customerName.trim(),
+            location: values.location.trim(),
+            service: values.service.trim(),
+            employeeIds: values.employeeIds,
+            notes: values.notes.trim() || null,
+            plannedDurationMinutes,
+          };
 
-      // Terminierung je nach Auftragstyp aufbauen
-      const input: CreateJobInput =
-        values.jobType === "single"
-          ? {
-              ...base,
-              jobType: "single",
-              date: formatDateISO(values.singleDateTime),
-              startTime: formatTimeHHmm(values.singleDateTime),
-              // scheduled_start für Detail-/Monats-Anzeigen zusätzlich befüllen
-              scheduledStart: formatToISO(values.singleDateTime),
-            }
-          : {
-              ...base,
-              jobType: "recurring",
-              startTime: formatTimeHHmm(values.startTime),
-              recurringDays: values.recurringDays,
-              isActive: values.isActive,
-              recurrenceStartDate: formatDateISO(values.recurrenceStartDate),
-              recurrenceEndDate: formatDateISO(values.recurrenceEndDate),
-              // recurring hat keinen einzelnen Termin
-              scheduledStart: null,
-            };
+          // Terminierung je nach Auftragstyp aufbauen
+          const input: CreateJobInput =
+            values.jobType === "single"
+              ? {
+                  ...base,
+                  jobType: "single",
+                  date: formatDateISO(values.singleDateTime),
+                  startTime: formatTimeHHmm(values.singleDateTime),
+                  // scheduled_start für Detail-/Monats-Anzeigen zusätzlich befüllen
+                  scheduledStart: formatToISO(values.singleDateTime),
+                }
+              : {
+                  ...base,
+                  jobType: "recurring",
+                  startTime: formatTimeHHmm(values.startTime),
+                  recurringDays: values.recurringDays,
+                  isActive: values.isActive,
+                  recurrenceStartDate: formatDateISO(values.recurrenceStartDate),
+                  recurrenceEndDate: formatDateISO(values.recurrenceEndDate),
+                  // recurring hat keinen einzelnen Termin
+                  scheduledStart: null,
+                };
 
-      const { recurringOccurrencesFailed } = await createJob(input);
+          const { recurringOccurrencesFailed } = await createJob(input);
 
-      // Formular vor dem Erfolgshinweis zurücksetzen (setzt auch isDirty zurück).
-      reset();
+          // Formular vor dem Erfolgshinweis zurücksetzen (setzt auch isDirty zurück).
+          reset();
 
-      // Erst den Hinweis abwarten, DANN navigieren — über alertDialog, weil
-      // Alert.alert im Web nichts anzeigt und der onPress-Callback dort nie
-      // liefe (die Navigation wäre unerreichbar). Der Job ist bereits angelegt,
-      // deshalb navigieren wir auch bei fehlgeschlagener Occurrence-Generierung
-      // — dann aber mit Teil-Erfolg-Hinweis statt vollem Erfolg.
-      if (recurringOccurrencesFailed) {
-        await alertDialog(
-          "Job angelegt",
-          "Der Job wurde angelegt, aber die Termine konnten nicht vollständig erzeugt werden. Bitte prüfe die Terminierung.",
-        );
-      } else {
-        await alertDialog("Erstellt", "Der Job wurde erfolgreich angelegt.");
-      }
+          // Erst den Hinweis abwarten, DANN navigieren — über alertDialog, weil
+          // Alert.alert im Web nichts anzeigt und der onPress-Callback dort nie
+          // liefe (die Navigation wäre unerreichbar). Der Job ist bereits angelegt,
+          // deshalb navigieren wir auch bei fehlgeschlagener Occurrence-Generierung
+          // — dann aber mit Teil-Erfolg-Hinweis statt vollem Erfolg.
+          if (recurringOccurrencesFailed) {
+            await alertDialog(
+              "Job angelegt",
+              "Der Job wurde angelegt, aber die Termine konnten nicht vollständig erzeugt werden. Bitte prüfe die Terminierung.",
+            );
+          } else {
+            await alertDialog("Erstellt", "Der Job wurde erfolgreich angelegt.");
+          }
 
-      leaveWithoutWarning(() => router.replace("/(admin-tabs)/jobs"));
+          leaveWithoutWarning(() => router.replace("/(admin-tabs)/jobs"));
+        },
+      );
     } catch (err: unknown) {
       // Bei einem Fehler wird NICHT navigiert — der Admin bleibt im Formular.
       const msg = toUserMessage(err, "Job konnte nicht erstellt werden.");

@@ -43,9 +43,16 @@ import { DayAgendaSheet } from "@/features/jobs/components/DayAgendaSheet";
 import { MonthGrid } from "@/features/jobs/components/MonthGrid";
 import { MonthYearPickerSheet } from "@/features/jobs/components/MonthYearPickerSheet";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { getOwnAbsencesInRange } from "@/services/absences/absences.service";
+import type { Absence } from "@/types/absence";
+import {
+  absenceTypesForDay,
+  buildAbsenceDayIndex,
+} from "@/utils/absenceCalendarMarkers";
 import {
   addMonths,
   buildDaySummaries,
+  buildMonthMatrix,
   formatMonthLabel,
   groupJobsByDateKey,
   monthKeyOf,
@@ -55,7 +62,7 @@ import { canRunJobActions } from "@/utils/jobAssignees";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -68,6 +75,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const EMPTY_JOBS: never[] = [];
+const EMPTY_ABSENCES: never[] = [];
 
 export default function EmployeeJobsCalendarScreen() {
   const theme = useAppTheme();
@@ -89,6 +97,13 @@ export default function EmployeeJobsCalendarScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [actionError, setActionError] = useState("");
+
+  // ── Phase D: eigene aktive Abwesenheiten (genehmigter Urlaub / gemeldete
+  // Krankheit) für den sichtbaren Rasterbereich. Eigener, kleiner Datenpfad
+  // — bewusst NICHT in JobContext, wie beim Admin-Kalender (siehe dortigen
+  // Dateikopf): reiner Screen-lokaler Zustand, RLS beschränkt die Abfrage
+  // bereits auf die eigenen Zeilen ("employee read own absences").
+  const [rawAbsences, setRawAbsences] = useState<Absence[]>([]);
 
   // Merkt sich, dass wir selbst in ein Job-Detail navigiert haben. Beim
   // Zurückkommen bleibt der betrachtete Monat dann stehen (sonst wäre der
@@ -141,6 +156,45 @@ export default function EmployeeJobsCalendarScreen() {
     return false;
   }, [summaries, monthKey]);
 
+  // ── Phase D: eigene aktive Abwesenheiten für den sichtbaren Rasterbereich
+  // (inkl. Vor-/Nachlauftage aus Nachbarmonaten, wie beim Admin-Kalender). ──
+  const gridRange = useMemo(() => {
+    const weeks = buildMonthMatrix(monthKey);
+    return { from: weeks[0][0].key, to: weeks[weeks.length - 1][6].key };
+  }, [monthKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOwnAbsencesInRange({ from: gridRange.from, to: gridRange.to, activeOnly: true })
+      .then((items) => {
+        if (!cancelled) setRawAbsences(items);
+      })
+      .catch(() => {
+        // Bewusst still: die Abwesenheits-Marker sind eine Zusatzinfo, kein
+        // Fehler dieses Screens rechtfertigt einen eigenen ErrorBanner hier
+        // (die Job-Ansicht bleibt in jedem Fall funktionsfähig).
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gridRange]);
+
+  const absencesByDay = useMemo(
+    () => buildAbsenceDayIndex(rawAbsences, gridRange),
+    [rawAbsences, gridRange],
+  );
+  const absenceMarkers = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof absenceTypesForDay>>();
+    for (const [key, list] of absencesByDay) {
+      map.set(key, absenceTypesForDay(list));
+    }
+    return map;
+  }, [absencesByDay]);
+  const selectedAbsences = useMemo(
+    () => absencesByDay.get(selectedKey) ?? EMPTY_ABSENCES,
+    [absencesByDay, selectedKey],
+  );
+
   // ── Navigation ───────────────────────────────────────────────
   // Drei Wege, alle mit derselben Semantik: sie ändern NUR den angezeigten
   // Monat. Die Auswahl bleibt, wo sie ist — es wird nie ein Tag „erfunden".
@@ -174,9 +228,13 @@ export default function EmployeeJobsCalendarScreen() {
       // Tag aus einem Nachbarmonat angetippt → in diesen Monat wechseln.
       const keyMonth = key.slice(0, 7);
       if (keyMonth !== monthKey) setMonthKey(keyMonth);
-      if ((jobsByDay.get(key)?.length ?? 0) > 0) setSheetOpen(true);
+      // Phase D: auch ein Tag OHNE Aufträge öffnet die Agenda, wenn er
+      // eigene Abwesenheiten hat.
+      const hasJobs = (jobsByDay.get(key)?.length ?? 0) > 0;
+      const hasAbsences = (absencesByDay.get(key)?.length ?? 0) > 0;
+      if (hasJobs || hasAbsences) setSheetOpen(true);
     },
-    [jobsByDay, monthKey],
+    [jobsByDay, absencesByDay, monthKey],
   );
 
   // Job-Detail wird jetzt AUSSCHLIESSLICH aus der Tages-Agenda geöffnet —
@@ -190,11 +248,23 @@ export default function EmployeeJobsCalendarScreen() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refreshJobs();
+      // Phase D: Pull-to-Refresh aktualisiert auch die eigenen Abwesenheiten
+      // für den sichtbaren Bereich — best-effort wie der Hintergrund-Load
+      // oben, kein eigener Fehlerzustand für diesen Nebendatenpfad.
+      await Promise.all([
+        refreshJobs(),
+        getOwnAbsencesInRange({
+          from: gridRange.from,
+          to: gridRange.to,
+          activeOnly: true,
+        })
+          .then(setRawAbsences)
+          .catch(() => {}),
+      ]);
     } finally {
       setRefreshing(false);
     }
-  }, [refreshJobs]);
+  }, [refreshJobs, gridRange]);
 
   const handleStart = useCallback(
     async (jobId: string) => {
@@ -328,6 +398,7 @@ export default function EmployeeJobsCalendarScreen() {
           selectedKey={selectedKey}
           todayKey={todayKey}
           summaries={summaries}
+          absenceMarkers={absenceMarkers}
           onSelectDay={handleSelectDay}
         />
 
@@ -358,6 +429,10 @@ export default function EmployeeJobsCalendarScreen() {
         onComplete={handleComplete}
         errorMessage={actionError}
         onDismissError={() => setActionError("")}
+        absences={selectedAbsences}
+        // Kein onOpenAbsence: im Mitarbeiter-Kalender ist die Zeile rein
+        // lesend (eigene Abwesenheit, "Meine Abwesenheiten" bleibt der
+        // eigentliche Ort dafür) — kein zusätzliches Tipp-Ziel nötig.
       />
     </SafeAreaView>
   );

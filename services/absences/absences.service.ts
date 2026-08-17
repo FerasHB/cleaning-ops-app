@@ -135,6 +135,15 @@ function translateRpcError(err: unknown, fallback: string): string {
 export const ABSENCE_SELECT =
   "id, company_id, employee_id, employee_name_snapshot, type, status, start_date, end_date, employee_note, admin_note, reviewed_at, created_at, updated_at";
 
+// "Aktive Abwesenheit" (Phase D, Kalender/Zuweisungs-Warnung): NUR
+// genehmigter Urlaub oder gemeldete Krankheit — dieselbe Definition wie in
+// getCurrentCompanyAbsences() (adminAbsences.service.ts, Architektur-Audit
+// Phase C, Abschnitt 3B). Als Konstante exportiert statt den literalen
+// PostgREST-.or()-Ausdruck an drei Stellen zu wiederholen (hier,
+// adminAbsences.service.ts, absenceConflicts.ts).
+export const ACTIVE_ABSENCE_FILTER_OR =
+  "and(type.eq.vacation,status.eq.approved),and(type.eq.sickness,status.eq.reported)";
+
 /** Lädt die eigenen Abwesenheiten des aktuellen Mitarbeiters (RLS-skopiert). */
 export async function getMyAbsences(): Promise<Absence[]> {
   const { data, error } = await supabase
@@ -142,6 +151,42 @@ export async function getMyAbsences(): Promise<Absence[]> {
     .select(ABSENCE_SELECT)
     .order("start_date", { ascending: false });
 
+  if (error) {
+    throw new Error(
+      translateRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+    );
+  }
+
+  return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
+}
+
+/**
+ * Eigene Abwesenheiten mit ECHTER Zeitraum-Überschneidung zu [from, to]
+ * (Phase D, Kalenderansicht) — anders als getMyAbsences() (unbegrenzt, kein
+ * Zeitraum) oder ein naiver start_date-Filter (siehe getCompanyAbsencesInRange
+ * für die ausführliche Begründung des Überschneidungs-Prädikats). RLS
+ * beschränkt bereits auf die eigenen Zeilen ("employee read own absences").
+ */
+export async function getOwnAbsencesInRange(params: {
+  /** "YYYY-MM-DD", inklusive */
+  from: string;
+  /** "YYYY-MM-DD", inklusive */
+  to: string;
+  /** true = nur genehmigter Urlaub / gemeldete Krankheit (siehe ACTIVE_ABSENCE_FILTER_OR). */
+  activeOnly?: boolean;
+}): Promise<Absence[]> {
+  let query = supabase
+    .from("employee_absences")
+    .select(ABSENCE_SELECT)
+    .lte("start_date", params.to)
+    .or(`end_date.is.null,end_date.gte.${params.from}`)
+    .order("start_date", { ascending: true });
+
+  if (params.activeOnly) {
+    query = query.or(ACTIVE_ABSENCE_FILTER_OR);
+  }
+
+  const { data, error } = await query;
   if (error) {
     throw new Error(
       translateRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
