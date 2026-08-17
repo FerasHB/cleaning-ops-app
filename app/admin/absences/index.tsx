@@ -3,9 +3,7 @@ import { useLocalSearchParams } from "expo-router";
 
 export default function AdminAbsencesRoute() {
   const { tab } = useLocalSearchParams<{ tab?: string }>();
-  return (
-    <AdminAbsencesScreen
-      initialSegment={tab === "sickness" ? "sickness" : "vacation"}
-    />
-  );
+  const initialSegment =
+    tab === "absent" ? "absent" : tab === "sickness" ? "sickness" : "vacation";
+  return <AdminAbsencesScreen initialSegment={initialSegment} />;
 }

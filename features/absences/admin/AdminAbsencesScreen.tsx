@@ -30,12 +30,14 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AbsentTodayRow } from "./components/AbsentTodayRow";
 import { AdminAbsenceRow } from "./components/AdminAbsenceRow";
 import { useAdminAbsences } from "./hooks/useAdminAbsences";
 
-type Segment = "vacation" | "sickness";
+type Segment = "absent" | "vacation" | "sickness";
 
 const SEGMENTS: { key: Segment; label: string }[] = [
+  { key: "absent", label: "Abwesend" },
   { key: "vacation", label: "Urlaubsanträge" },
   { key: "sickness", label: "Krankmeldungen" },
 ];
@@ -53,6 +55,7 @@ export default function AdminAbsencesScreen({
   const {
     pendingVacations,
     sicknessReports,
+    activeToday,
     loading,
     loadError,
     load,
@@ -75,7 +78,12 @@ export default function AdminAbsencesScreen({
 
   if (loading) return <LoadingScreen />;
 
-  const list = segment === "vacation" ? pendingVacations : sicknessReports;
+  const list =
+    segment === "vacation"
+      ? pendingVacations
+      : segment === "sickness"
+        ? sicknessReports
+        : activeToday;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -122,6 +130,10 @@ export default function AdminAbsencesScreen({
         <View style={styles.segment}>
           {SEGMENTS.map((opt) => {
             const active = segment === opt.key;
+            // Nur der Urlaubsanträge-Reiter trägt eine Zähl-Badge (Warte-
+            // schlange, die abgearbeitet werden muss) — "Abwesend" ist eine
+            // Momentaufnahme, keine Warteschlange, daher bewusst ohne Zahl im
+            // Segment (die Dashboard-Karte trägt die Zahl bereits).
             const count = opt.key === "vacation" ? pendingVacations.length : null;
             return (
               <TouchableOpacity
@@ -156,11 +168,35 @@ export default function AdminAbsencesScreen({
               title={
                 segment === "vacation"
                   ? "Keine offenen Urlaubsanträge."
-                  : "Keine Krankmeldungen."
+                  : segment === "sickness"
+                    ? "Keine Krankmeldungen."
+                    : "Heute sind keine Mitarbeiter abwesend."
               }
-              icon={segment === "vacation" ? "sunny-outline" : "medkit-outline"}
+              icon={
+                segment === "vacation"
+                  ? "sunny-outline"
+                  : segment === "sickness"
+                    ? "medkit-outline"
+                    : "walk-outline"
+              }
             />
           </Card>
+        ) : segment === "absent" ? (
+          <View style={styles.cardList}>
+            {activeToday.map((absence) => (
+              <AbsentTodayRow
+                key={absence.id}
+                absence={absence}
+                // Gelöschtes Konto (employeeId null) → nicht antippbar, bleibt
+                // aber lesbar über employee_name_snapshot (siehe mapAbsence).
+                onPress={
+                  absence.employeeId
+                    ? () => router.push(`/employees/${absence.employeeId}`)
+                    : undefined
+                }
+              />
+            ))}
+          </View>
         ) : (
           <View style={styles.cardList}>
             {list.map((absence) => (
