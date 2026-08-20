@@ -3,6 +3,8 @@
 // Quelle ist ausschließlich die jobs-Tabelle (abgeschlossene Aufträge) — es gibt
 // keine eigene Timesheet-Tabelle. Aggregation passiert clientseitig.
 
+import type { TimesheetAbsenceSummary, TimesheetNotice } from "@/types/timesheetAbsence";
+
 /**
  * Eine Zeile im Stundenzettel = ein abgeschlossener Job.
  * Mehrere Jobs am selben Tag ergeben mehrere Einträge (mehrere Zeilen).
@@ -95,4 +97,18 @@ export type TimesheetData = {
    * sie sind nicht abrechenbar, solange sie nicht korrigiert wurden.
    */
   needsAttention: TimesheetGap[];
+
+  /**
+   * Abwesenheits-Zusammenfassung (Urlaub/Krankheit) für denselben Zeitraum
+   * (Phase E). ADDITIV — beeinflusst `entries`/`totalMinutes` nicht. Optional,
+   * damit ältere Aufrufer/Tests ohne dieses Feld weiter kompilieren.
+   */
+  absenceSummary?: TimesheetAbsenceSummary;
+
+  /**
+   * Informative Hinweise (z. B. "Arbeit trotz Abwesenheit"), bewusst GETRENNT
+   * von `needsAttention` — keine Korrektur-Aktion, kein Eingriff in die
+   * Ist-Zeit-Berechnung (Phase E).
+   */
+  notices?: TimesheetNotice[];
 };
