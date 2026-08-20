@@ -8,7 +8,6 @@ import {
 } from "@/types/job";
 import { normalizeTime } from "@/utils/date";
 import { buildLegacyAssignees } from "@/utils/jobAssignees";
-import { buildAssignedPushBody } from "@/utils/jobNotificationContent";
 
 // Wird von updateJob() geworfen, wenn set_job_assignments bereits
 // erfolgreich committed wurde, das nachfolgende jobs-UPDATE und/oder
@@ -731,62 +730,13 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
     }
   }
 
-  // Push-Benachrichtigung: WICHTIG — vorübergehend weiterhin nur EIN
-  // Empfänger (der erste gewählte Mitarbeiter), exakt wie vor Phase 6, wo
-  // ohnehin nur ein einzelner assigned_to existierte. Der Job ist nach dem
-  // erfolgreichen Insert + erfolgreicher Zuweisung oben bereits vollständig
-  // angelegt — ein Fehler beim Push-Versand (Netzwerk, Expo-Service down,
-  // etc.) darf createJob NICHT fehlschlagen lassen, sonst zeigt die UI
-  // "Fehler" bei einem in Wahrheit bereits erfolgreich erstellten Job an
-  // (Risiko: Admin tippt erneut → Duplikat). Daher: eigenes try/catch, nur
-  // loggen, niemals werfen.
-  //
-  // TODO(Phase 8): an ALLE gewählten Mitarbeiter fächern, sobald der
-  // client-seitige Push-Fetch hier durch die notification_outbox/
-  // Dispatcher-Pipeline mit recipient_id ersetzt wird (siehe Roadmap).
-  const primaryEmployeeId = employeeIds[0] ?? null;
-  if (primaryEmployeeId) {
-    try {
-      const { data: employee } = await supabase
-        .from("profiles")
-        .select("expo_push_token, full_name")
-        .eq("id", primaryEmployeeId)
-        .single();
-
-      // Nur senden, wenn wirklich ein Push-Token vorhanden ist
-      if (employee?.expo_push_token) {
-        await sendPushNotification(employee.expo_push_token, {
-          title: "Neuer Auftrag",
-          body: buildAssignedPushBody({
-            serviceName,
-            customerName,
-            locationAddress,
-            schedule: {
-              jobType: schedule.job_type,
-              date: schedule.date,
-              startTime: schedule.start_time,
-              recurringDays: schedule.recurring_days,
-            },
-          }),
-          // Gleiche Payload-Form wie der Dispatcher (dispatch-notifications).
-          // `jobId` ist der Schlüssel, den useNotificationNavigation ausliest —
-          // ohne ihn öffnet der Tap nur die App, nicht den Auftrag.
-          data: {
-            type: "job_assigned",
-            jobId: data.id,
-            companyId: profile.company_id,
-            employeeId: primaryEmployeeId,
-            status: payload.status,
-          },
-        });
-      }
-    } catch (pushError) {
-      console.error(
-        "[createJob] Push-Benachrichtigung fehlgeschlagen (Job wurde trotzdem erstellt):",
-        pushError
-      );
-    }
-  }
+  // Push-Benachrichtigung für neu zugewiesene Mitarbeiter: läuft NICHT mehr
+  // hier als Client-Fetch, sondern serverseitig, transaktional mit dem
+  // job_assignments-Schreibvorgang oben (callSetJobAssignments →
+  // set_job_assignments), über dieselbe notification_outbox/Dispatcher-
+  // Pipeline wie job_started/job_completed. ALLE gewählten Mitarbeiter
+  // erhalten dadurch je eine eigene Zustellung, nicht mehr nur der erste
+  // (siehe supabase/migrations/20260820000000_job_assigned_notifications.sql).
 
   // Rückgabe im App-Format. Frisch nachlesen, damit `assignees` exakt den
   // gerade per set_job_assignments geschriebenen Stand widerspiegelt
@@ -1002,44 +952,6 @@ export async function completeJob(
 
   // Die RPC gibt den tatsächlich gesetzten Timestamp zurück.
   return typeof data === "string" && data ? data : timestamp;
-}
-
-// Payload einer Job-Push. `data` folgt exakt der Form, die der Dispatcher
-// (supabase/functions/dispatch-notifications) für gestartet/abgeschlossen
-// verschickt — damit liest useNotificationNavigation alle drei Ereignisse
-// über denselben Pfad aus.
-type JobPushMessage = {
-  title: string;
-  body: string;
-  data: {
-    type: string;
-    jobId: string;
-    companyId: string;
-    employeeId: string | null;
-    status: string;
-  };
-};
-
-// Schickt eine Expo Push Notification an ein Gerät.
-// `channelId`/`priority` spiegeln den Dispatcher: "default" ist exakt der
-// Kanal, den registerForPushNotifications auf Android anlegt (Importance MAX).
-async function sendPushNotification(token: string, message: JobPushMessage) {
-  await fetch("https://exp.host/--/api/v2/push/send", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      to: token,
-      sound: "default",
-      title: message.title,
-      body: message.body,
-      data: message.data,
-      channelId: "default",
-      priority: "high",
-    }),
-  });
 }
 
 // Lädt alle generierten Occurrences eines Recurring-Parent-Jobs.

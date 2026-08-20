@@ -287,6 +287,12 @@ using (
 --   erneut an bereits erreichte Admins gesendet. sent_at ERST nach Erfolg.
 -- Beide RLS an, KEINE Policies → kein direkter Client-Zugriff (nur DEFINER-RPC
 -- + Service Role). Siehe supabase/migrations/20260717000000_admin_status_notifications.sql.
+--
+-- Seit 20260820000000_job_assigned_notifications.sql zusätzlich EIN Event pro
+-- neu angelegter job_assignments-Zeile (event_type='job_assigned', Mitarbeiter-
+-- Push statt Admin-Push), geschrieben von set_job_assignments() — diese RPC
+-- lebt (wie job_assignments selbst) nur in den Migrationen, siehe die Drift-
+-- Anmerkung bei employee_time_adjustments oben.
 create table if not exists public.notification_outbox (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
@@ -299,8 +305,25 @@ create table if not exists public.notification_outbox (
   service_name text,
   created_at timestamptz not null default now(),
   fanned_out_at timestamptz,                -- NULL = noch nicht aufgefächert
-  constraint uq_notification_outbox_job_event unique (job_id, event_type)
+  -- assignment_id: NUR für event_type='job_assigned' (FK job_assignments.id,
+  -- Dedupe-Schlüssel für Zuweisungs-Events). NULL für job_started/completed.
+  -- Siehe supabase/migrations/20260820000000_job_assigned_notifications.sql.
+  assignment_id uuid references public.job_assignments(id) on delete set null
 );
+
+-- job_started/job_completed: weiterhin genau eine Zeile pro (job_id,
+-- event_type) — jetzt als partieller Index (ersetzt den früheren globalen
+-- Constraint, der job_assigned faelschlich auf eine Zeile pro Job begrenzt
+-- hätte, unabhängig vom Mitarbeiter).
+create unique index if not exists uq_notification_outbox_job_lifecycle_event
+  on public.notification_outbox(job_id, event_type)
+  where event_type in ('job_started', 'job_completed');
+
+-- job_assigned: eine Zeile pro tatsächlich neu angelegter job_assignments-
+-- Zeile (retry-sicher, korrekt bei Entfernen+Wiederzuweisen).
+create unique index if not exists uq_notification_outbox_assignment
+  on public.notification_outbox(assignment_id)
+  where assignment_id is not null;
 
 create table if not exists public.notification_deliveries (
   id uuid primary key default gen_random_uuid(),
@@ -791,7 +814,8 @@ begin
       updated_row.company_id, updated_row.id, 'job_started', 'in_progress',
       auth.uid(), emp_name, updated_row.customer_name, updated_row.service_name
     )
-    on conflict (job_id, event_type) do nothing;
+    on conflict (job_id, event_type) where event_type in ('job_started', 'job_completed')
+    do nothing;
 
     -- Phase 1 Worked Time (20260812000000): eigene Zuweisungszeile
     -- mitführen. COALESCE hält den Zeitstempel beim Doppel-Tap fest;
@@ -897,7 +921,8 @@ begin
       updated_row.company_id, updated_row.id, 'job_completed', 'completed',
       auth.uid(), emp_name, updated_row.customer_name, updated_row.service_name
     )
-    on conflict (job_id, event_type) do nothing;
+    on conflict (job_id, event_type) where event_type in ('job_started', 'job_completed')
+    do nothing;
 
     -- Phase 1 Worked Time (20260812000000): eigene Zuweisungszeile
     -- mitführen. 'completed' ist terminal und darf immer gesetzt werden —

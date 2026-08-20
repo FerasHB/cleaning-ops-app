@@ -4,7 +4,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // =========================================================
 // Edge Function: dispatch-notifications
 // =========================================================
-// Versendet den Admin-Push bei Job-Statuswechsel. Vollständig serverseitig:
+// Versendet den Push bei Job-Statuswechsel (an Admins) UND bei neuer
+// Job-Zuweisung (an den/die zugewiesenen Mitarbeiter, seit
+// 20260820000000_job_assigned_notifications.sql). Vollständig serverseitig:
 // Empfänger und Inhalt kommen ausschließlich aus notification_outbox /
 // notification_deliveries (per Service Role), NICHT vom aufrufenden Client.
 //
@@ -83,7 +85,28 @@ function jobTitle(row: ClaimedDelivery): string {
 // claim_notification_deliveries liefert bewusst nur employee_name /
 // customer_name / service_name (keine Adresse, keine Terminierung). Eine
 // Erweiterung bräuchte eine Migration und gehört nicht in diesen Änderungsschritt.
+// job_assigned geht an den/die neu zugewiesenen MITARBEITER, nicht an
+// Admins — eigener, kurzer Text ohne "wer hat gestartet/abgeschlossen"-Form.
+// Wie bei job_started/job_completed stehen hier nur customer_name/
+// service_name zur Verfügung (keine Adresse, keine Terminierung) — dieselbe
+// Einschränkung wie bei den bestehenden zwei Events, siehe Kommentar oben.
+function buildAssignedContent(row: ClaimedDelivery): { title: string; body: string } {
+  const service = row.service_name?.trim();
+  const customer = row.customer_name?.trim();
+  const what = jobTitle(row);
+  const at = service && customer ? ` bei ${customer}` : "";
+
+  return {
+    title: "Neuer Auftrag",
+    body: `Dir wurde „${what}“${at} zugewiesen.`,
+  };
+}
+
 function buildContent(row: ClaimedDelivery): { title: string; body: string } {
+  if (row.event_type === "job_assigned") {
+    return buildAssignedContent(row);
+  }
+
   const who = row.employee_name?.trim() || "Ein Mitarbeiter";
   const service = row.service_name?.trim();
   const customer = row.customer_name?.trim();
@@ -204,15 +227,25 @@ Deno.serve(async (req) => {
       claimedTotal += claimed.length;
 
       // Empfänger einordnen:
-      //  - inaktiv / kein Admin mehr  -> endgültig nicht zustellbar (permanent_fail)
-      //  - aktiver Admin OHNE Token   -> NICHT failen, zurückstellen (missing_token);
-      //    nach Token-Registrierung wird die Delivery später normal zustellbar
-      //  - aktiver Admin MIT Token    -> senden
+      //  - inaktiv / falsche Rolle für dieses Event -> endgültig nicht
+      //    zustellbar (permanent_fail). job_started/job_completed gehen an
+      //    Admins (Fan-out über fanout_notification_events), job_assigned
+      //    geht an genau den Mitarbeiter, der in set_job_assignments direkt
+      //    als Empfänger eingetragen wurde (siehe
+      //    supabase/migrations/20260820000000_job_assigned_notifications.sql)
+      //    — auch hier wird die Rolle hier trotzdem defensiv geprüft, falls
+      //    sich die Rolle des Empfängers seit dem Schreiben geändert hat.
+      //  - aktiver, passender Empfänger OHNE Token -> NICHT failen,
+      //    zurückstellen (missing_token); nach Token-Registrierung wird die
+      //    Delivery später normal zustellbar
+      //  - aktiver, passender Empfänger MIT Token -> senden
       const sendable: ClaimedDelivery[] = [];
       for (const d of claimed) {
-        const isActiveAdmin = d.recipient_active === true && d.recipient_role === "admin";
-        if (!isActiveAdmin) {
-          await markDelivery(adminClient, d.delivery_id, "permanent_fail", "recipient not eligible (inactive/not admin)");
+        const expectedRole = d.event_type === "job_assigned" ? "employee" : "admin";
+        const isEligibleRecipient =
+          d.recipient_active === true && d.recipient_role === expectedRole;
+        if (!isEligibleRecipient) {
+          await markDelivery(adminClient, d.delivery_id, "permanent_fail", `recipient not eligible (inactive/not ${expectedRole})`);
           failed++;
         } else if (!d.expo_push_token) {
           await markDelivery(adminClient, d.delivery_id, "missing_token", "missing_push_token");
