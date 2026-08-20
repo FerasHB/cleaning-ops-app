@@ -308,7 +308,21 @@ create table if not exists public.notification_outbox (
   -- assignment_id: NUR für event_type='job_assigned' (FK job_assignments.id,
   -- Dedupe-Schlüssel für Zuweisungs-Events). NULL für job_started/completed.
   -- Siehe supabase/migrations/20260820000000_job_assigned_notifications.sql.
-  assignment_id uuid references public.job_assignments(id) on delete set null
+  assignment_id uuid references public.job_assignments(id) on delete set null,
+  -- Generische Entität, seit 20260821000000_absence_notifications.sql:
+  -- 'job' (job_id gesetzt) | 'absence' (job_id NULL, entity_id = Abwesenheit).
+  -- job_id/job_status sind seitdem NULLABLE, damit Nicht-Job-Events passen.
+  entity_type text,
+  entity_id uuid,
+  -- Schnappschüsse für den Push-Text von Abwesenheits-Events (NULL bei Jobs).
+  -- absence_end_date NULL heißt bei Krankheit bewusst "Ende offen".
+  absence_start_date date,
+  absence_end_date date,
+  constraint chk_notification_outbox_entity check (
+    (entity_type = 'job'     and job_id is not null and entity_id is not null)
+    or
+    (entity_type = 'absence' and job_id is null     and entity_id is not null)
+  )
 );
 
 -- job_started/job_completed: weiterhin genau eine Zeile pro (job_id,
@@ -324,6 +338,16 @@ create unique index if not exists uq_notification_outbox_job_lifecycle_event
 create unique index if not exists uq_notification_outbox_assignment
   on public.notification_outbox(assignment_id)
   where assignment_id is not null;
+
+-- Abwesenheits-Events: eine Zeile pro (Abwesenheit, Event-Typ). sickness_updated
+-- ist bewusst AUSGENOMMEN — dasselbe Krankmeldungs-Datum darf mehrfach geändert
+-- werden; dort schützt stattdessen der Diff-Vergleich in update_own_sickness_end.
+create unique index if not exists uq_notification_outbox_absence_event
+  on public.notification_outbox(entity_id, event_type)
+  where entity_type = 'absence' and event_type <> 'sickness_updated';
+
+create index if not exists idx_notif_outbox_entity
+  on public.notification_outbox(entity_type, entity_id);
 
 create table if not exists public.notification_deliveries (
   id uuid primary key default gen_random_uuid(),

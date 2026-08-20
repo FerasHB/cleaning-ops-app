@@ -59,7 +59,43 @@ type ClaimedDelivery = {
   expo_push_token: string | null;
   recipient_active: boolean | null;
   recipient_role: string | null;
+  // Seit 20260821000000 (Abwesenheits-Events). Bei Job-Events NULL.
+  entity_type: string | null;
+  entity_id: string | null;
+  absence_start_date: string | null;
+  absence_end_date: string | null;
 };
+
+// Welche Rolle MUSS der Empfänger eines Events haben? Statt einer wachsenden
+// if/else-Kette eine Tabelle — jedes neue Event trägt seine Empfängerrolle
+// hier ein, die Partitionierung unten bleibt unverändert.
+//   Job-Lifecycle -> Admin, Job-Zuweisung -> Mitarbeiter,
+//   Abwesenheit gemeldet/beantragt -> Admin, Review-Ergebnis -> Mitarbeiter.
+const EVENT_RECIPIENT_ROLE: Record<string, "admin" | "employee"> = {
+  job_started: "admin",
+  job_completed: "admin",
+  job_assigned: "employee",
+  vacation_requested: "admin",
+  sickness_reported: "admin",
+  sickness_updated: "admin",
+  vacation_approved: "employee",
+  vacation_rejected: "employee",
+};
+
+// Unbekanntes Event -> "admin" als konservativer Rückfall (entspricht dem
+// Verhalten vor dieser Änderung, als alles an Admins ging).
+function expectedRoleFor(eventType: string): "admin" | "employee" {
+  return EVENT_RECIPIENT_ROLE[eventType] ?? "admin";
+}
+
+// "2026-08-25" -> "25.08.2026". Der Dispatcher bekommt reine Datumsstrings
+// (date-Spalten), niemals Zeitstempel — deshalb kein Zeitzonen-Handling.
+function formatDate(value: string | null): string | null {
+  if (!value) return null;
+  const [y, m, d] = value.slice(0, 10).split("-");
+  if (!y || !m || !d) return null;
+  return `${d}.${m}.${y}`;
+}
 
 type ExpoTicket =
   | { status: "ok"; id?: string }
@@ -102,7 +138,64 @@ function buildAssignedContent(row: ClaimedDelivery): { title: string; body: stri
   };
 }
 
+// Abwesenheits-Texte. Zeitraum kommt aus den Schnappschuss-Spalten der Outbox,
+// nicht aus employee_absences — der Text bleibt damit auch dann korrekt, wenn
+// die Abwesenheit später geändert wird.
+//
+// Offenes Ende (end_date IS NULL) ist bei Krankheit ein REGULÄRER Zustand
+// ("bis auf Weiteres"), kein Fehler — der Text darf dann kein leeres oder
+// kaputtes Datum zeigen.
+function buildAbsenceContent(row: ClaimedDelivery): { title: string; body: string } {
+  const who = row.employee_name?.trim() || "Ein Mitarbeiter";
+  const from = formatDate(row.absence_start_date);
+  const to = formatDate(row.absence_end_date);
+
+  // "vom 10.08. bis 14.08." | "ab 10.08." (offenes Ende) | "" (kein Datum)
+  const range = from && to ? `vom ${from} bis ${to}` : from ? `ab ${from}` : "";
+  const rangeSuffix = range ? ` ${range}` : "";
+
+  switch (row.event_type) {
+    case "vacation_requested":
+      return {
+        title: "Neuer Urlaubsantrag",
+        body: range
+          ? `${who} hat Urlaub ${range} beantragt.`
+          : `${who} hat Urlaub beantragt.`,
+      };
+    case "sickness_reported":
+      return {
+        title: "Neue Krankmeldung",
+        body: range
+          ? `${who} hat sich krankgemeldet (${range}).`
+          : `${who} hat sich krankgemeldet.`,
+      };
+    case "sickness_updated":
+      return {
+        title: "Krankmeldung aktualisiert",
+        body: to
+          ? `${who} hat den Zeitraum der Krankmeldung geändert (neues Ende: ${to}).`
+          : `${who} hat die Krankmeldung auf unbestimmte Zeit verlängert.`,
+      };
+    case "vacation_approved":
+      return {
+        title: "Urlaub genehmigt",
+        body: `Dein Urlaubsantrag${rangeSuffix} wurde genehmigt.`,
+      };
+    case "vacation_rejected":
+      return {
+        title: "Urlaub abgelehnt",
+        body: `Dein Urlaubsantrag${rangeSuffix} wurde abgelehnt.`,
+      };
+    default:
+      return { title: "Abwesenheit", body: `${who}: Abwesenheit aktualisiert.` };
+  }
+}
+
 function buildContent(row: ClaimedDelivery): { title: string; body: string } {
+  if (row.entity_type === "absence") {
+    return buildAbsenceContent(row);
+  }
+
   if (row.event_type === "job_assigned") {
     return buildAssignedContent(row);
   }
@@ -241,7 +334,7 @@ Deno.serve(async (req) => {
       //  - aktiver, passender Empfänger MIT Token -> senden
       const sendable: ClaimedDelivery[] = [];
       for (const d of claimed) {
-        const expectedRole = d.event_type === "job_assigned" ? "employee" : "admin";
+        const expectedRole = expectedRoleFor(d.event_type);
         const isEligibleRecipient =
           d.recipient_active === true && d.recipient_role === expectedRole;
         if (!isEligibleRecipient) {
@@ -267,12 +360,17 @@ Deno.serve(async (req) => {
           sound: "default",
           title,
           body,
+          // jobId bleibt der Schlüssel für Job-Events (useNotificationNavigation
+          // öffnet damit den Auftrag); absenceId ist das Gegenstück für
+          // Abwesenheiten. Beide sind bei der jeweils anderen Sorte null.
           data: {
             type: d.event_type,
             jobId: d.job_id,
             companyId: d.company_id,
             employeeId: d.employee_id,
             status: d.job_status,
+            entityType: d.entity_type,
+            absenceId: d.entity_type === "absence" ? d.entity_id : null,
           },
           channelId: "default",
           priority: "high",
