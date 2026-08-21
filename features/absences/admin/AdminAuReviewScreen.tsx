@@ -25,7 +25,7 @@ import type {
 } from "@/types/absenceEvidence";
 import { AU_NOT_REVIEWED_LABEL, AU_STATUS_LABELS } from "@/types/absenceEvidence";
 import { formatDays } from "@/utils/vacationBalance";
-import { formatForDisplay } from "@/utils/date";
+import { formatDateOnlyDE, formatForDisplay } from "@/utils/date";
 import { alertDialog } from "@/utils/dialogs";
 import { toUserMessage } from "@/utils/userMessages";
 import { router, useLocalSearchParams } from "expo-router";
@@ -111,12 +111,12 @@ export default function AdminAuReviewScreen() {
       if (!raw) continue;
       const days = Number(raw);
       if (!Number.isFinite(days) || days <= 0) {
-        setError(`Ungültiger Wert für ${formatForDisplay(c.vacationStart)}.`);
+        setError(`Ungültiger Wert für ${formatDateOnlyDE(c.vacationStart)}.`);
         return;
       }
       if (days > c.restorableDays) {
         setError(
-          `Für ${formatForDisplay(c.vacationStart)} sind höchstens ${formatDays(c.restorableDays)} Tage möglich.`,
+          `Für ${formatDateOnlyDE(c.vacationStart)} sind höchstens ${formatDays(c.restorableDays)} Tage möglich.`,
         );
         return;
       }
@@ -197,8 +197,8 @@ export default function AdminAuReviewScreen() {
                   {candidates.map((c) => (
                     <View key={keyOf(c)} style={styles.card}>
                       <Text style={styles.cardTitle}>
-                        Urlaub {formatForDisplay(c.vacationStart)}–
-                        {formatForDisplay(c.vacationEnd)}
+                        Urlaub {formatDateOnlyDE(c.vacationStart)}–
+                        {formatDateOnlyDE(c.vacationEnd)}
                         {candidates.some((o) => o.year !== c.year) ? ` · ${c.year}` : ""}
                       </Text>
                       <Text style={styles.hint}>
@@ -208,8 +208,8 @@ export default function AdminAuReviewScreen() {
                           : ""}
                       </Text>
                       <Text style={styles.hint}>
-                        AU-Überschneidung: {formatForDisplay(c.overlapStart)}–
-                        {formatForDisplay(c.overlapEnd)}
+                        AU-Überschneidung: {formatDateOnlyDE(c.overlapStart)}–
+                        {formatDateOnlyDE(c.overlapEnd)}
                       </Text>
 
                       {c.restorableDays <= 0 ? (

@@ -67,9 +67,17 @@ export function formatLedgerAmount(amountDays: number): string {
   return `${sign}${value}`;
 }
 
-/** Anzeigeform einer Kennzahl (ohne erzwungenes Vorzeichen): "28,5". */
+/**
+ * Anzeigeform einer Kennzahl (ohne erzwungenes Vorzeichen): "28,5".
+ *
+ * `+ 0` normalisiert eine negative Null (-0) auf +0, BEVOR toLocaleString sie
+ * sieht — sonst zeigt z. B. ein exakt ausgeglichenes "Verbraucht" (Abzug und
+ * Storno heben sich auf, buildVacationBalance liefert -0) fälschlich "-0,0"
+ * an. In JS gilt -0 + 0 === 0 (Object.is(-0 + 0, 0) → true), das ist reine
+ * Zahlendarstellung und ändert keinen echten negativen Wert.
+ */
 export function formatDays(amountDays: number): string {
-  return amountDays.toLocaleString("de-DE", {
+  return (amountDays + 0).toLocaleString("de-DE", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   });

@@ -15,7 +15,7 @@ import type { AppTheme } from "@/constants/theme";
 import type { Absence } from "@/types/absence";
 import type { VacationBalance } from "@/types/vacationLedger";
 import { formatDays } from "@/utils/vacationBalance";
-import { formatForDisplay } from "@/utils/date";
+import { formatDateOnlyDE } from "@/utils/date";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
@@ -62,8 +62,8 @@ export function VacationBalanceCard({ balance, pending }: Props) {
           <Text style={styles.label}>Offene Anträge</Text>
           {pending.map((absence) => (
             <Text key={absence.id} style={styles.pendingLine}>
-              {formatForDisplay(absence.startDate)}
-              {absence.endDate ? ` – ${formatForDisplay(absence.endDate)}` : ""}
+              {formatDateOnlyDE(absence.startDate)}
+              {absence.endDate ? ` – ${formatDateOnlyDE(absence.endDate)}` : ""}
             </Text>
           ))}
           <Text style={styles.footnote}>
