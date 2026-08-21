@@ -32,7 +32,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { Alert, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { toUserMessage } from "@/utils/userMessages";
 import { AdminAbsenceRow } from "@/features/absences/admin/components/AdminAbsenceRow";
@@ -354,6 +362,20 @@ export default function EmployeeDetailScreen() {
               />
             </>
           ) : null}
+          <View style={styles.rowDivider} />
+          {/* Beschäftigung & Urlaub liegt auf einem eigenen Screen: die
+              Stammdaten-Karte bleibt eine reine Übersicht, und die
+              Konfiguration ist ein Admin-Formular mit eigener Validierung. */}
+          <TouchableOpacity
+            onPress={() => router.push(`/employees/${employee.id}/employment`)}
+            accessibilityRole="button"
+          >
+            <InfoRow
+              label="Beschäftigung & Urlaub"
+              value="Konfigurieren"
+              icon="calendar-outline"
+            />
+          </TouchableOpacity>
         </Card>
 
         {/* ── Aktueller Job ── */}
