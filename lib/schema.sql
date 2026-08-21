@@ -318,10 +318,14 @@ create table if not exists public.notification_outbox (
   -- absence_end_date NULL heißt bei Krankheit bewusst "Ende offen".
   absence_start_date date,
   absence_end_date date,
+  -- 'comment' (seit 20260822000000): entity_id = job_comments.id (Dedupe),
+  -- job_id zusätzlich gesetzt, damit der Tap den Auftrag öffnen kann.
   constraint chk_notification_outbox_entity check (
     (entity_type = 'job'     and job_id is not null and entity_id is not null)
     or
     (entity_type = 'absence' and job_id is null     and entity_id is not null)
+    or
+    (entity_type = 'comment' and job_id is not null and entity_id is not null)
   )
 );
 
@@ -345,6 +349,14 @@ create unique index if not exists uq_notification_outbox_assignment
 create unique index if not exists uq_notification_outbox_absence_event
   on public.notification_outbox(entity_id, event_type)
   where entity_type = 'absence' and event_type <> 'sickness_updated';
+
+-- Kommentar-Events: eine Zeile pro Kommentar (entity_id = job_comments.id).
+-- Zwei verschiedene Kommentare am selben Auftrag ergeben zwei Events.
+-- Geschrieben vom AFTER-INSERT-Trigger trg_notify_job_comment auf
+-- job_comments (siehe 20260822000000_comment_notifications.sql).
+create unique index if not exists uq_notification_outbox_comment_event
+  on public.notification_outbox(entity_id, event_type)
+  where entity_type = 'comment';
 
 create index if not exists idx_notif_outbox_entity
   on public.notification_outbox(entity_type, entity_id);
