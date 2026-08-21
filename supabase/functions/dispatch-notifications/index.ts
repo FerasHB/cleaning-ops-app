@@ -71,7 +71,12 @@ type ClaimedDelivery = {
 // hier ein, die Partitionierung unten bleibt unverändert.
 //   Job-Lifecycle -> Admin, Job-Zuweisung -> Mitarbeiter,
 //   Abwesenheit gemeldet/beantragt -> Admin, Review-Ergebnis -> Mitarbeiter.
-const EVENT_RECIPIENT_ROLE: Record<string, "admin" | "employee"> = {
+// "any" = beide Rollen zulässig. Das braucht genau ein Event: comment_added
+// geht je nach Autor an zugewiesene Mitarbeiter UND/ODER Admins. Die konkrete
+// Empfängermenge wurde dabei bereits serverseitig im Trigger abgeleitet
+// (firmengescopt, Autor ausgeschlossen) — hier bleibt deshalb nur zu prüfen,
+// dass der Empfänger noch aktiv ist.
+const EVENT_RECIPIENT_ROLE: Record<string, "admin" | "employee" | "any"> = {
   job_started: "admin",
   job_completed: "admin",
   job_assigned: "employee",
@@ -80,12 +85,25 @@ const EVENT_RECIPIENT_ROLE: Record<string, "admin" | "employee"> = {
   sickness_updated: "admin",
   vacation_approved: "employee",
   vacation_rejected: "employee",
+  comment_added: "any",
 };
 
 // Unbekanntes Event -> "admin" als konservativer Rückfall (entspricht dem
 // Verhalten vor dieser Änderung, als alles an Admins ging).
-function expectedRoleFor(eventType: string): "admin" | "employee" {
+function expectedRoleFor(eventType: string): "admin" | "employee" | "any" {
   return EVENT_RECIPIENT_ROLE[eventType] ?? "admin";
+}
+
+// Empfänger zustellbar? Immer: Konto aktiv. Zusätzlich muss die Rolle zum
+// Event passen — außer bei "any"-Events, deren Empfängermenge serverseitig
+// bereits exakt bestimmt wurde.
+function isEligible(row: ClaimedDelivery): boolean {
+  if (row.recipient_active !== true) return false;
+  const expected = expectedRoleFor(row.event_type);
+  if (expected === "any") {
+    return row.recipient_role === "admin" || row.recipient_role === "employee";
+  }
+  return row.recipient_role === expected;
 }
 
 // "2026-08-25" -> "25.08.2026". Der Dispatcher bekommt reine Datumsstrings
@@ -191,7 +209,30 @@ function buildAbsenceContent(row: ClaimedDelivery): { title: string; body: strin
   }
 }
 
+// Kommentar-Push. Der Kommentartext selbst steht BEWUSST NICHT drin:
+// Datenschutz (Push landet auf dem Sperrbildschirm), unbekannte Länge und
+// unnötiges Rauschen. Der Nutzer öffnet den Auftrag und liest dort.
+function buildCommentContent(row: ClaimedDelivery): { title: string; body: string } {
+  const who = row.employee_name?.trim() || "Jemand";
+  const service = row.service_name?.trim();
+  const customer = row.customer_name?.trim();
+
+  // Gleiche Fallback-Kette wie bei den Job-Events: fehlt die Leistung, rückt
+  // der Kunde nach und darf dann nicht zusätzlich als "bei …" erscheinen.
+  const what = jobTitle(row);
+  const at = service && customer ? ` bei ${customer}` : "";
+
+  return {
+    title: "Neuer Kommentar",
+    body: `${who} hat einen Kommentar zu „${what}“${at} geschrieben.`,
+  };
+}
+
 function buildContent(row: ClaimedDelivery): { title: string; body: string } {
+  if (row.entity_type === "comment") {
+    return buildCommentContent(row);
+  }
+
   if (row.entity_type === "absence") {
     return buildAbsenceContent(row);
   }
@@ -334,11 +375,8 @@ Deno.serve(async (req) => {
       //  - aktiver, passender Empfänger MIT Token -> senden
       const sendable: ClaimedDelivery[] = [];
       for (const d of claimed) {
-        const expectedRole = expectedRoleFor(d.event_type);
-        const isEligibleRecipient =
-          d.recipient_active === true && d.recipient_role === expectedRole;
-        if (!isEligibleRecipient) {
-          await markDelivery(adminClient, d.delivery_id, "permanent_fail", `recipient not eligible (inactive/not ${expectedRole})`);
+        if (!isEligible(d)) {
+          await markDelivery(adminClient, d.delivery_id, "permanent_fail", `recipient not eligible (inactive/not ${expectedRoleFor(d.event_type)})`);
           failed++;
         } else if (!d.expo_push_token) {
           await markDelivery(adminClient, d.delivery_id, "missing_token", "missing_push_token");
@@ -371,6 +409,10 @@ Deno.serve(async (req) => {
             status: d.job_status,
             entityType: d.entity_type,
             absenceId: d.entity_type === "absence" ? d.entity_id : null,
+            // Kommentar-Events tragen zusätzlich job_id — der Tap öffnet
+            // deshalb über den bestehenden jobId-Pfad den Auftrag. commentId
+            // wird für ein späteres Anspringen des Kommentars mitgeführt.
+            commentId: d.entity_type === "comment" ? d.entity_id : null,
           },
           channelId: "default",
           priority: "high",
