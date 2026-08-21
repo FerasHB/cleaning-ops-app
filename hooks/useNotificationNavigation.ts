@@ -39,15 +39,31 @@ import { router } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 
-function extractJobId(
+// Ziel eines angetippten Push. `job` öffnet den Auftrag direkt; `absence`
+// öffnet die passende Abwesenheits-LISTE, weil es (noch) keine Detail-Route
+// pro Abwesenheit gibt — die absenceId wird trotzdem mitgeführt, damit ein
+// späterer Detail-Screen ohne Änderung am Payload angesprungen werden kann.
+type NotificationTarget =
+  | { kind: "job"; id: string }
+  | { kind: "absence"; id: string };
+
+function extractTarget(
   response: Notifications.NotificationResponse | null,
-): string | null {
+): NotificationTarget | null {
   const data = response?.notification?.request?.content?.data as
     | Record<string, unknown>
     | undefined;
 
-  if (data && typeof data.jobId === "string" && data.jobId.length > 0) {
-    return data.jobId;
+  if (!data) return null;
+
+  // Job zuerst: Job-Events tragen niemals eine absenceId, Abwesenheits-Events
+  // niemals eine jobId — die Reihenfolge ist damit unkritisch, aber stabil.
+  if (typeof data.jobId === "string" && data.jobId.length > 0) {
+    return { kind: "job", id: data.jobId };
+  }
+
+  if (typeof data.absenceId === "string" && data.absenceId.length > 0) {
+    return { kind: "absence", id: data.absenceId };
   }
 
   return null;
@@ -57,9 +73,9 @@ function useNotificationNavigationNative() {
   const { session, profile } = useAuth();
   const lastResponse = Notifications.useLastNotificationResponse();
 
-  // Merkt sich einen Tap, dessen Ziel-Job noch nicht geöffnet werden konnte
+  // Merkt sich einen Tap, dessen Ziel noch nicht geöffnet werden konnte
   // (z. B. weil beim Cold Start das Profil noch lädt).
-  const pendingJobIdRef = useRef<string | null>(null);
+  const pendingTargetRef = useRef<NotificationTarget | null>(null);
   // Verhindert, dass dieselbe Notification-Response mehrfach verarbeitet wird
   // (useLastNotificationResponse liefert bei jedem Render denselben Wert).
   const handledIdentifierRef = useRef<string | null>(null);
@@ -76,9 +92,9 @@ function useNotificationNavigationNative() {
     }
     handledIdentifierRef.current = identifier;
 
-    const jobId = extractJobId(lastResponse);
-    if (jobId) {
-      pendingJobIdRef.current = jobId;
+    const target = extractTarget(lastResponse);
+    if (target) {
+      pendingTargetRef.current = target;
     }
   }, [lastResponse]);
 
@@ -86,8 +102,8 @@ function useNotificationNavigationNative() {
   // öffnen. Läuft auch, wenn sich der Auth-Zustand nach einem Cold-Start-Tap
   // erst noch stabilisiert.
   useEffect(() => {
-    const jobId = pendingJobIdRef.current;
-    if (!jobId) {
+    const target = pendingTargetRef.current;
+    if (!target) {
       return;
     }
 
@@ -96,9 +112,18 @@ function useNotificationNavigationNative() {
       return;
     }
 
-    pendingJobIdRef.current = null;
-    router.push({ pathname: "/jobs/[id]", params: { id: jobId } });
-  }, [session, profile?.company_id, lastResponse]);
+    pendingTargetRef.current = null;
+
+    if (target.kind === "job") {
+      router.push({ pathname: "/jobs/[id]", params: { id: target.id } });
+      return;
+    }
+
+    // Abwesenheit: Admin und Mitarbeiter haben getrennte Listen. Die Rolle
+    // entscheidet — ein Mitarbeiter darf die Admin-Liste nicht sehen (und
+    // käme dort per RLS ohnehin nicht an Daten).
+    router.push(profile?.role === "admin" ? "/admin/absences" : "/absences");
+  }, [session, profile?.company_id, profile?.role, lastResponse]);
 }
 
 // Web-Variante: bewusst ein No-Op. Im Browser gibt es keine Push-Tokens
