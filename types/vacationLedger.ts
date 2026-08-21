@@ -21,7 +21,7 @@ export const LEDGER_ENTRY_LABELS: Record<VacationLedgerEntryType, string> = {
   vacation_cancellation: "Storno",
   manual_adjustment: "Manuelle Korrektur",
   carry_over: "Übertrag",
-  au_restoration: "Gutschrift (AU)",
+  au_restoration: "AU-Wiederherstellung",
 };
 
 export type VacationLedgerEntry = {

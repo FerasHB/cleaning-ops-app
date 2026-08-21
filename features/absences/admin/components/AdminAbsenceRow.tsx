@@ -10,6 +10,7 @@
 
 import { Card } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { router } from "expo-router";
 import { isVacationAccountingEnabled } from "@/services/vacation/vacationLedger.service";
 import { VacationDeductionSheet } from "./VacationDeductionSheet";
 import type { AppTheme } from "@/constants/theme";
@@ -44,6 +45,11 @@ export function AdminAbsenceRow({
   const [deductionSheetOpen, setDeductionSheetOpen] = useState(false);
 
   const isVacation = absence.type === "vacation";
+  // AU-Pruefung gibt es nur fuer aktive Krankmeldungen. Der Einstieg liegt
+  // bewusst auf einem eigenen Screen: Bestaetigung UND moegliche
+  // Urlaubs-Rueckgabe sind ein eigener Vorgang, kein Listen-Button.
+  const isActiveSickness =
+    absence.type === "sickness" && absence.status === "reported";
   const isPendingVacation = isVacation && absence.status === "requested";
   const reviewerNote =
     absence.status === "rejected" || absence.status === "approved"
@@ -164,7 +170,18 @@ export function AdminAbsenceRow({
           handleConfirmReject(note);
         }}
       />
-          <VacationDeductionSheet
+          {isActiveSickness ? (
+        <TouchableOpacity
+          style={styles.auLink}
+          onPress={() =>
+            router.push({ pathname: "/absences/[id]/au", params: { id: absence.id } })
+          }
+          accessibilityRole="button"
+        >
+          <Text style={styles.auLinkText}>Arbeitsunfähigkeit prüfen</Text>
+        </TouchableOpacity>
+      ) : null}
+      <VacationDeductionSheet
         visible={deductionSheetOpen}
         employeeName={absence.employeeName}
         rangeLabel={formatAbsenceDateRange(absence)}
@@ -269,6 +286,16 @@ function createStyles(theme: AppTheme) {
     },
     actionBtnDisabled: {
       opacity: 0.5,
+    },
+    auLink: {
+      marginTop: 8,
+      paddingVertical: 8,
+      alignItems: "center",
+    },
+    auLinkText: {
+      color: theme.colors.primary,
+      fontSize: theme.typography.size.sm,
+      fontWeight: theme.typography.weight.semibold,
     },
     approveBtn: {
       backgroundColor: theme.colors.statusCompletedBg,
