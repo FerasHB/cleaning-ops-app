@@ -376,6 +376,17 @@ export default function EmployeeDetailScreen() {
               icon="calendar-outline"
             />
           </TouchableOpacity>
+          <View style={styles.rowDivider} />
+          <TouchableOpacity
+            onPress={() => router.push(`/employees/${employee.id}/vacation`)}
+            accessibilityRole="button"
+          >
+            <InfoRow
+              label="Urlaubskonto"
+              value="Saldo & Verlauf"
+              icon="sunny-outline"
+            />
+          </TouchableOpacity>
         </Card>
 
         {/* ── Aktueller Job ── */}

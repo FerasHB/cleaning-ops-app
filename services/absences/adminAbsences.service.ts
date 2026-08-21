@@ -303,15 +303,30 @@ export async function getCurrentCompanyAbsences(
 }
 
 /** Admin genehmigt/lehnt eine Urlaubsanfrage der eigenen Firma ab. */
+/**
+ * Urlaub genehmigen/ablehnen.
+ *
+ * `deductions` ist die vom Admin BESTÄTIGTE Abzugsmenge je Kalenderjahr
+ * (z. B. `{ "2026": 3 }`, bei Jahresübergang `{ "2026": 2, "2027": 3 }`).
+ * Sie wird NICHT berechnet: aus Referenz-Arbeitstagen/Woche lässt sich nicht
+ * ableiten, welche konkreten Tage Anspruch verbrauchen, und die Einsatzplanung
+ * ist nachträglich änderbar (siehe Migration 20260824000000).
+ *
+ * Pflicht, sobald für den Mitarbeiter ein Urlaubskonto geführt wird — die RPC
+ * lehnt eine Genehmigung ohne bestätigten Abzug ab. Ohne Urlaubskonto bleibt
+ * der Ablauf unverändert und der Wert wird ignoriert.
+ */
 export async function reviewVacation(
   absenceId: string,
   decision: "approved" | "rejected",
   adminNote?: string,
+  deductions?: Record<string, number> | null,
 ): Promise<Absence> {
   const { data, error } = await supabase.rpc("admin_review_vacation", {
     absence_id_input: absenceId,
     decision_input: decision,
     admin_note_input: adminNote?.trim() || null,
+    p_deductions: deductions ?? null,
   });
 
   if (error) {

@@ -28,12 +28,14 @@ export function useVacationReview(onReviewed: (updated: Absence) => void) {
     };
   }, []);
 
+  // `deductions` = vom Admin bestätigte Tage je Jahr. Bei aktivem
+  // Urlaubskonto Pflicht (serverseitig erzwungen), sonst irrelevant.
   const approve = useCallback(
-    async (absenceId: string) => {
+    async (absenceId: string, deductions?: Record<string, number> | null) => {
       setBusyId(absenceId);
       setError("");
       try {
-        const updated = await reviewVacation(absenceId, "approved");
+        const updated = await reviewVacation(absenceId, "approved", undefined, deductions);
         onReviewed(updated);
         return updated;
       } catch (err) {
