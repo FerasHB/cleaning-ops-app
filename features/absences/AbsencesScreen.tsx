@@ -28,6 +28,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AbsenceCard } from "./components/AbsenceCard";
+import { VacationBalanceCard } from "./components/VacationBalanceCard";
+import { useOwnVacationBalance } from "./hooks/useOwnVacationBalance";
 import { useAbsences } from "./hooks/useAbsences";
 import { groupAbsences } from "@/utils/absenceGrouping";
 
@@ -70,6 +72,14 @@ export default function AbsencesScreen() {
     [absences],
   );
 
+  // Urlaubskonto: liefert null, solange es nicht aktiv UND initialisiert ist —
+  // die Karte rendert dann bewusst gar nichts (kein erfundenes "0 Tage").
+  const vacationBalance = useOwnVacationBalance();
+  const pendingVacations = useMemo(
+    () => absences.filter((a) => a.type === "vacation" && a.status === "requested"),
+    [absences],
+  );
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -95,6 +105,8 @@ export default function AbsencesScreen() {
           />
         }
       >
+        <VacationBalanceCard balance={vacationBalance} pending={pendingVacations} />
+
         {loadError ? (
           <View style={styles.bannerWrap}>
             <ErrorBanner

@@ -10,6 +10,8 @@
 
 import { Card } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { isVacationAccountingEnabled } from "@/services/vacation/vacationLedger.service";
+import { VacationDeductionSheet } from "./VacationDeductionSheet";
 import type { AppTheme } from "@/constants/theme";
 import type { Absence } from "@/types/absence";
 import { formatAbsenceDateRange } from "@/utils/absenceFormat";
@@ -25,7 +27,7 @@ type Props = {
   busy: boolean;
   /** Standard true — EmployeeDetail blendet den Namen aus (steht bereits im Screen-Kontext). */
   showEmployeeName?: boolean;
-  onApprove: (absenceId: string) => void;
+  onApprove: (absenceId: string, deductions?: Record<string, number> | null) => void;
   onReject: (absenceId: string, adminNote: string) => void;
 };
 
@@ -39,6 +41,7 @@ export function AdminAbsenceRow({
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [rejectSheetOpen, setRejectSheetOpen] = useState(false);
+  const [deductionSheetOpen, setDeductionSheetOpen] = useState(false);
 
   const isVacation = absence.type === "vacation";
   const isPendingVacation = isVacation && absence.status === "requested";
@@ -47,7 +50,27 @@ export function AdminAbsenceRow({
       ? absence.adminNote
       : null;
 
+  // Wird fuer diesen Mitarbeiter ein Urlaubskonto gefuehrt, muss der Admin
+  // die Abzugsmenge bestaetigen (sie ist nicht berechenbar, siehe
+  // VacationDeductionSheet). Ohne Urlaubskonto bleibt der bisherige,
+  // einfache Bestaetigungsdialog.
   const handleApprove = async () => {
+    if (!absence.employeeId) return;
+
+    let accountingEnabled = false;
+    try {
+      accountingEnabled = await isVacationAccountingEnabled(absence.employeeId);
+    } catch {
+      // Konnte der Status nicht geladen werden, NICHT stillschweigend ohne
+      // Abzug genehmigen — die RPC wuerde bei aktivem Konto ohnehin ablehnen.
+      accountingEnabled = true;
+    }
+
+    if (accountingEnabled) {
+      setDeductionSheetOpen(true);
+      return;
+    }
+
     const confirmed = await confirmDialog({
       title: "Urlaub genehmigen",
       message: `Urlaubsantrag von ${absence.employeeName} (${formatAbsenceDateRange(absence)}) genehmigen?`,
@@ -141,7 +164,19 @@ export function AdminAbsenceRow({
           handleConfirmReject(note);
         }}
       />
-    </Card>
+          <VacationDeductionSheet
+        visible={deductionSheetOpen}
+        employeeName={absence.employeeName}
+        rangeLabel={formatAbsenceDateRange(absence)}
+        startDate={absence.startDate}
+        endDate={absence.endDate ?? absence.startDate}
+        onCancel={() => setDeductionSheetOpen(false)}
+        onConfirm={(deductions) => {
+          setDeductionSheetOpen(false);
+          onApprove(absence.id, deductions);
+        }}
+      />
+</Card>
   );
 }
 

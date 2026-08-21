@@ -256,6 +256,16 @@ create table if not exists public.job_photos (
 -- Migrationen unter supabase/migrations/. Der FK ist hier bewusst
 -- vollständig dokumentiert statt weggelassen — das Nachtragen von
 -- job_assignments selbst gehört in eine eigene Aufräum-Änderung.
+-- Urlaubskonto (20260824000000). Der Saldo ist NIE gespeichert, sondern immer
+-- SUM(vacation_ledger.amount_days) — es gibt bewusst KEINE remaining_days-Spalte.
+-- vacation_years ist ein reiner Jahres-Container; der Jahresanspruch steht als
+-- annual_entitlement-Zeile im Ledger, damit es nur EINE Quelle je Betrag gibt.
+-- Beide Tabellen: RLS an, nur SELECT-Policies (Mitarbeiter eigene Zeilen, Admin
+-- firmenweit) — jede Buchung laeuft ueber SECURITY DEFINER-RPCs, Append-only
+-- ist dadurch strukturell erzwungen.
+-- HINWEIS: Definitionen liegen in der Migration; hier bewusst nur als
+-- Referenz-Kommentar (gleiche Drift-Anmerkung wie bei job_assignments).
+
 create table if not exists public.employee_time_adjustments (
   id uuid primary key default gen_random_uuid(),
   assignment_id uuid not null references public.job_assignments(id) on delete cascade,
