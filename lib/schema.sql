@@ -48,6 +48,19 @@ create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   slug text not null unique,
+  -- Urlaubs-Defaults (20260823000000): greifen für jeden Mitarbeiter, dessen
+  -- eigener Wert NULL ist. default_vacation_management_enabled ist nur ein
+  -- Vorschlagswert für neu angelegte Mitarbeiter, kein rückwirkender Schalter.
+  default_vacation_annual_entitlement_days numeric(5,2),
+  default_vacation_reference_days_per_week numeric(3,2),
+  default_vacation_management_enabled boolean not null default false,
+  constraint chk_companies_vacation_defaults check (
+    (default_vacation_annual_entitlement_days is null
+      or (default_vacation_annual_entitlement_days >= 0 and default_vacation_annual_entitlement_days <= 365))
+    and
+    (default_vacation_reference_days_per_week is null
+      or (default_vacation_reference_days_per_week > 0 and default_vacation_reference_days_per_week <= 7))
+  ),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -72,6 +85,30 @@ create table if not exists public.profiles (
   -- vorbehalten bleibt.
   account_deletion_token uuid,
   account_deletion_reserved_at timestamptz,
+  -- Beschäftigungs-/Urlaubskonfiguration (20260823000000). REIN KONFIGURATION —
+  -- KEIN Saldo: verbrauchter/verbleibender Urlaub existiert bewusst nicht
+  -- (Ledger folgt separat). employment_type ist rein beschreibend und leitet
+  -- NIE einen Anspruch ab (Minijob/Aushilfe haben gesetzlichen Anspruch).
+  -- Override NULL = Firmen-Default aus companies gilt.
+  employment_type public.employment_type,
+  employment_start_date date,
+  employment_end_date date,
+  vacation_management_enabled boolean not null default false,
+  vacation_annual_entitlement_days numeric(5,2),
+  vacation_reference_days_per_week numeric(3,2),
+  constraint chk_profiles_vacation_entitlement check (
+    vacation_annual_entitlement_days is null
+    or (vacation_annual_entitlement_days >= 0 and vacation_annual_entitlement_days <= 365)
+  ),
+  constraint chk_profiles_vacation_reference_days check (
+    vacation_reference_days_per_week is null
+    or (vacation_reference_days_per_week > 0 and vacation_reference_days_per_week <= 7)
+  ),
+  constraint chk_profiles_employment_dates check (
+    employment_start_date is null
+    or employment_end_date is null
+    or employment_end_date >= employment_start_date
+  ),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
