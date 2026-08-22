@@ -1,13 +1,12 @@
 // features/auth/LoginScreen.tsx
-// Redesign: useAppTheme(), Inter-Font, PasswordInput, ErrorBanner.
-// Auth-Logik bleibt unverändert.
+// Login-Formular (E-Mail/Passwort) via supabase.auth.signInWithPassword.
 
 import { ErrorBanner, PasswordInput, Input } from "@/components/ui";
 import { AuthBrand } from "@/features/auth/components/AuthBrand";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
-import { normalizeEmail } from "@/utils/email";
+import { isValidEmail, normalizeEmail } from "@/utils/email";
 import { router } from "expo-router";
 import React, { useMemo, useRef, useState } from "react";
 import {
@@ -56,6 +55,9 @@ export default function LoginScreen() {
 
     if (!email.trim()) {
       setEmailError("E-Mail ist erforderlich.");
+      valid = false;
+    } else if (!isValidEmail(email)) {
+      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
       valid = false;
     }
     if (!password) {
@@ -173,6 +175,9 @@ export default function LoginScreen() {
               onPress={handleLogin}
               disabled={loading}
               activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityLabel="Anmelden"
+              accessibilityState={{ disabled: loading, busy: loading }}
             >
               <Text style={styles.loginBtnText}>
                 {loading ? "Anmelden..." : "Anmelden"}

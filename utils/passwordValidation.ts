@@ -7,6 +7,8 @@
 
 export const MIN_PASSWORD_LENGTH = 10;
 
+export const PASSWORD_MISMATCH_MESSAGE = "Die Passwörter stimmen nicht überein.";
+
 export type PasswordValidationResult = {
   valid: boolean;
   /** Deutsche Fehlermeldungen, leer wenn `valid`. Für UI-Feedback nutzbar. */
@@ -33,6 +35,6 @@ export function validateNewPassword(
 ): string | null {
   const { valid, errors } = validatePassword(password);
   if (!valid) return errors[0];
-  if (password !== confirmPassword) return "Die Passwörter stimmen nicht überein.";
+  if (password !== confirmPassword) return PASSWORD_MISMATCH_MESSAGE;
   return null;
 }

@@ -1,12 +1,13 @@
 // features/auth/RegisterScreen.tsx
-// Redesign: useAppTheme(), Inter-Font, PasswordInput, Passwort-Bestätigung.
-// registerAdmin()-Logik bleibt vollständig unverändert.
+// Admin-Registrierung: Konto + Firma in einem Formular
+// (registerAdmin ruft im Anschluss setupCompanyForAdmin auf).
 
 import { ErrorBanner, Input, PasswordInput } from "@/components/ui";
 import { AuthBrand } from "@/features/auth/components/AuthBrand";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useAuth } from "@/context/AuthContext";
 import { registerAdmin } from "@/services/auth/registerAdmin";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useRef, useState } from "react";
 import {
@@ -23,7 +24,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
-import { validatePassword } from "@/utils/passwordValidation";
+import { isValidEmail } from "@/utils/email";
+import {
+  MIN_PASSWORD_LENGTH,
+  PASSWORD_MISMATCH_MESSAGE,
+  validatePassword,
+} from "@/utils/passwordValidation";
 
 export default function RegisterScreen() {
   const theme      = useAppTheme();
@@ -46,6 +52,8 @@ export default function RegisterScreen() {
   const [formError,         setFormError]         = useState("");
 
   const [loading, setLoading] = useState(false);
+
+  const passwordMeetsLength = password.length >= MIN_PASSWORD_LENGTH;
 
   // Animation
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -78,6 +86,9 @@ export default function RegisterScreen() {
     if (!email.trim()) {
       setEmailError("E-Mail ist erforderlich.");
       valid = false;
+    } else if (!isValidEmail(email)) {
+      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      valid = false;
     }
     const passwordCheck = validatePassword(password);
     if (!passwordCheck.valid) {
@@ -85,7 +96,7 @@ export default function RegisterScreen() {
       valid = false;
     }
     if (password && passwordConf && password !== passwordConf) {
-      setPasswordConfError("Passwörter stimmen nicht überein.");
+      setPasswordConfError(PASSWORD_MISMATCH_MESSAGE);
       valid = false;
     }
     if (password && !passwordConf) {
@@ -201,16 +212,33 @@ export default function RegisterScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>PASSWORT</Text>
               <View style={styles.fields}>
-                <PasswordInput
-                  label="Passwort"
-                  placeholder="Mindestens 10 Zeichen"
-                  value={password}
-                  onChangeText={(t) => { setPassword(t); setPasswordError(""); clearError(); }}
-                  error={passwordError}
-                  autoComplete="password-new"
-                  returnKeyType="next"
-                  editable={!loading}
-                />
+                <View style={styles.passwordField}>
+                  <PasswordInput
+                    label="Passwort"
+                    placeholder="Mindestens 10 Zeichen"
+                    value={password}
+                    onChangeText={(t) => { setPassword(t); setPasswordError(""); clearError(); }}
+                    error={passwordError}
+                    autoComplete="password-new"
+                    returnKeyType="next"
+                    editable={!loading}
+                  />
+                  <View style={styles.passwordHintRow}>
+                    <Ionicons
+                      name={passwordMeetsLength ? "checkmark-circle" : "ellipse-outline"}
+                      size={14}
+                      color={passwordMeetsLength ? theme.colors.statusCompleted : theme.colors.outline}
+                    />
+                    <Text
+                      style={[
+                        styles.passwordHintText,
+                        passwordMeetsLength && styles.passwordHintTextMet,
+                      ]}
+                    >
+                      Mindestens {MIN_PASSWORD_LENGTH} Zeichen
+                    </Text>
+                  </View>
+                </View>
                 <PasswordInput
                   label="Passwort bestätigen"
                   placeholder="Passwort wiederholen"
@@ -238,6 +266,9 @@ export default function RegisterScreen() {
               onPress={handleRegister}
               disabled={loading}
               activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityLabel="Firma erstellen"
+              accessibilityState={{ disabled: loading, busy: loading }}
             >
               <Text style={styles.registerBtnText}>
                 {loading ? "Konto wird erstellt..." : "Firma erstellen"}
@@ -310,6 +341,24 @@ function createStyles(theme: AppTheme) {
       letterSpacing: theme.typography.letterSpacing.widest,
     },
     fields: { gap: theme.spacing.md },
+
+    // Passwort-Feld + Live-Anforderungshinweis
+    passwordField: { gap: 6 },
+    passwordHintRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingLeft: 2,
+    },
+    passwordHintText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.outline,
+    },
+    passwordHintTextMet: {
+      color: theme.colors.statusCompleted,
+      fontFamily: theme.typography.family.medium,
+    },
 
     // Hinweis-Box
     infoBox: {
