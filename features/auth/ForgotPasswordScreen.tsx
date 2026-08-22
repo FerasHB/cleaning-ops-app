@@ -6,6 +6,7 @@ import { ErrorBanner, Input } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
+import { normalizeEmail } from "@/utils/email";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { router } from "expo-router";
@@ -55,7 +56,7 @@ export default function ForgotPasswordScreen() {
       const redirectTo = Linking.createURL("reset-password");
 
       const { error } = await supabase.auth.resetPasswordForEmail(
-        email.trim().toLowerCase(),
+        normalizeEmail(email),
         { redirectTo },
       );
 

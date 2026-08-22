@@ -2,6 +2,7 @@ import { AppHeader, ErrorBanner, PasswordInput } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
+import { validateNewPassword } from "@/utils/passwordValidation";
 import type { AppTheme } from "@/constants/theme";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -27,12 +28,7 @@ export default function ChangePasswordScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const validate = (): string | null => {
-    if (!newPassword.trim()) return "Bitte ein neues Passwort eingeben.";
-    if (newPassword.length < 6) return "Das Passwort muss mindestens 6 Zeichen lang sein.";
-    if (newPassword !== confirmPassword) return "Die Passwörter stimmen nicht überein.";
-    return null;
-  };
+  const validate = (): string | null => validateNewPassword(newPassword, confirmPassword);
 
   const handleSave = async () => {
     const validationError = validate();
@@ -90,7 +86,7 @@ export default function ChangePasswordScreen() {
           <View style={styles.form}>
             <PasswordInput
               label="Neues Passwort"
-              placeholder="Mindestens 6 Zeichen"
+              placeholder="Mindestens 10 Zeichen"
               value={newPassword}
               onChangeText={(text) => {
                 setNewPassword(text);

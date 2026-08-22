@@ -32,9 +32,13 @@ const KNOWN_ERROR_PATTERNS: readonly {
     message: "Bitte bestätige zuerst deine E-Mail-Adresse.",
   },
   {
+    pattern: /unable to validate email address|invalid email/i,
+    message: "Bitte gib eine gültige E-Mail-Adresse ein.",
+  },
+  {
     pattern: /user already registered|already been registered/i,
     message:
-      "Diese E-Mail wurde bereits eingeladen oder ist bereits registriert.",
+      "Für diese E-Mail-Adresse existiert bereits ein Konto.",
   },
   {
     pattern:
