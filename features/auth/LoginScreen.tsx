@@ -7,6 +7,7 @@ import { AuthBrand } from "@/features/auth/components/AuthBrand";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
+import { normalizeEmail } from "@/utils/email";
 import { router } from "expo-router";
 import React, { useMemo, useRef, useState } from "react";
 import {
@@ -70,7 +71,7 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       const { error } = await supabase.auth.signInWithPassword({
-        email:    email.trim().toLowerCase(),
+        email:    normalizeEmail(email),
         password,
       });
       if (error) {

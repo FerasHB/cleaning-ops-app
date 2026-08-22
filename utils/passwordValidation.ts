@@ -1,17 +1,38 @@
 // utils/passwordValidation.ts
-// Gemeinsame Validierung für "neues Passwort setzen"-Formulare (Reset,
-// Einladungs-Annahme). Muss mit der serverseitigen Mindestlänge übereinstimmen
-// (siehe supabase.auth-Passwortregeln / vormals create-employee-Validierung).
+// Gemeinsame Passwort-Validierung für alle Formulare, die ein neues Passwort
+// setzen (Registrierung, Einladungs-Annahme, Passwort zurücksetzen/ändern).
+// Muss mit der serverseitigen Mindestlänge übereinstimmen (Supabase Auth
+// `password_min_length` — siehe supabase/config.toml und Abschlussbericht
+// für den nötigen Dashboard-Abgleich auf Staging/Prod).
 
-/** Null bei gültiger Eingabe, sonst eine deutsche Fehlermeldung. */
+export const MIN_PASSWORD_LENGTH = 10;
+
+export type PasswordValidationResult = {
+  valid: boolean;
+  /** Deutsche Fehlermeldungen, leer wenn `valid`. Für UI-Feedback nutzbar. */
+  errors: string[];
+};
+
+/** Prüft ein neues Passwort gegen die Mindestlänge. Liefert Details für UI-Feedback statt nur einem Boolean. */
+export function validatePassword(password: string): PasswordValidationResult {
+  const errors: string[] = [];
+
+  if (!password.trim()) {
+    errors.push("Bitte ein Passwort eingeben.");
+  } else if (password.length < MIN_PASSWORD_LENGTH) {
+    errors.push(`Das Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`);
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/** Wie validatePassword, plus Abgleich mit der Bestätigung. Null bei gültiger Eingabe, sonst eine deutsche Fehlermeldung. */
 export function validateNewPassword(
   password: string,
   confirmPassword: string,
 ): string | null {
-  if (!password.trim()) return "Bitte ein neues Passwort eingeben.";
-  if (password.length < 6)
-    return "Das Passwort muss mindestens 6 Zeichen lang sein.";
-  if (password !== confirmPassword)
-    return "Die Passwörter stimmen nicht überein.";
+  const { valid, errors } = validatePassword(password);
+  if (!valid) return errors[0];
+  if (password !== confirmPassword) return "Die Passwörter stimmen nicht überein.";
   return null;
 }

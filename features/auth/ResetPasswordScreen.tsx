@@ -201,7 +201,7 @@ export default function ResetPasswordScreen() {
 
             <PasswordInput
               label="Neues Passwort"
-              placeholder="Mindestens 6 Zeichen"
+              placeholder="Mindestens 10 Zeichen"
               value={newPassword}
               onChangeText={(text) => {
                 setNewPassword(text);

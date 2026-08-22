@@ -23,6 +23,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
+import { validatePassword } from "@/utils/passwordValidation";
 
 export default function RegisterScreen() {
   const theme      = useAppTheme();
@@ -78,11 +79,9 @@ export default function RegisterScreen() {
       setEmailError("E-Mail ist erforderlich.");
       valid = false;
     }
-    if (!password) {
-      setPasswordError("Passwort ist erforderlich.");
-      valid = false;
-    } else if (password.length < 6) {
-      setPasswordError("Mindestens 6 Zeichen.");
+    const passwordCheck = validatePassword(password);
+    if (!passwordCheck.valid) {
+      setPasswordError(passwordCheck.errors[0]);
       valid = false;
     }
     if (password && passwordConf && password !== passwordConf) {
@@ -204,7 +203,7 @@ export default function RegisterScreen() {
               <View style={styles.fields}>
                 <PasswordInput
                   label="Passwort"
-                  placeholder="Mindestens 6 Zeichen"
+                  placeholder="Mindestens 10 Zeichen"
                   value={password}
                   onChangeText={(t) => { setPassword(t); setPasswordError(""); clearError(); }}
                   error={passwordError}

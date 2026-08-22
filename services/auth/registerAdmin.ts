@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { setupCompanyForAdmin } from "@/services/company/setupCompanyForAdmin";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
+import { normalizeEmail } from "@/utils/email";
+import { validatePassword } from "@/utils/passwordValidation";
 
 type RegisterAdminInput = {
     fullName: string;
@@ -16,7 +18,7 @@ export async function registerAdmin({
     companyName,
 }: RegisterAdminInput): Promise<void> {
     const trimmedFullName = fullName.trim();
-    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedEmail = normalizeEmail(email);
     const trimmedCompanyName = companyName.trim();
 
     if (!trimmedFullName) {
@@ -27,8 +29,9 @@ export async function registerAdmin({
         throw new Error("E-Mail fehlt.");
     }
 
-    if (!password || password.length < 6) {
-        throw new Error("Passwort muss mindestens 6 Zeichen haben.");
+    const passwordCheck = validatePassword(password);
+    if (!passwordCheck.valid) {
+        throw new Error(passwordCheck.errors[0]);
     }
 
     if (!trimmedCompanyName) {
