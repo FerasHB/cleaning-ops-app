@@ -162,8 +162,16 @@ export async function toFriendlyEdgeFunctionErrorMessage(
     try {
       const body = await (error.context as Response).json();
       const bodyMessage = typeof body?.error === "string" ? body.error : "";
-      if (bodyMessage) {
-        return toFriendlyAuthErrorMessage(bodyMessage, fallback);
+      const bodyCode = typeof body?.code === "string" ? body.code : "";
+      if (bodyMessage || bodyCode) {
+        // Ein `code`-Feld (siehe z.B. create-employee: "email_exists") ist
+        // robuster als der Text — Edge Functions formulieren ihre Meldung
+        // bereits selbst auf Deutsch, aber der Code erlaubt trotzdem den
+        // stabilen KNOWN_ERROR_CODES-Treffer statt Text-Musterabgleich.
+        return toFriendlyAuthErrorMessage(
+          { message: bodyMessage, code: bodyCode },
+          fallback,
+        );
       }
     } catch {
       // Body nicht lesbar (kein/kaputtes JSON) → unten generisch zuordnen.

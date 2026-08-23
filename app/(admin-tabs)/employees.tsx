@@ -9,9 +9,8 @@ import { useJobs } from "@/context/JobContext";
 import { createEmployee } from "@/services/employees/createEmployee";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -27,7 +26,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { getEmployeeStatus } from "@/utils/employeeStatus";
+import { isValidEmail, normalizeEmail } from "@/utils/email";
 import { toUserMessage } from "@/utils/userMessages";
+
+// Erfolgs-Banner blendet sich nach dieser Zeit selbst wieder aus — identisch
+// zum Muster in features/jobs/components/JobPhotos.tsx.
+const SUCCESS_DISPLAY_MS = 3000;
 
 function roleLabel(role?: string | null): string {
   if (role === "admin") return "Admin";
@@ -51,12 +55,26 @@ export default function EmployeesScreen() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [creating, setCreating] = useState(false);
+  const [modalError, setModalError] = useState("");
+
+  // Erfolgs-Feedback nach dem Einladen — Alert.alert ist auf Web ein No-Op
+  // (siehe ErrorBanner-Nutzung unten), daher ein eigenes, selbst
+  // ausblendendes Banner auf der Liste, analog zu JobPhotos.tsx.
+  const [successMessage, setSuccessMessage] = useState("");
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     refreshEmployees();
   }, [refreshEmployees]);
 
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
   const handleOpenModal = () => {
+    setModalError("");
     setModalVisible(true);
   };
 
@@ -64,6 +82,7 @@ export default function EmployeesScreen() {
     setModalVisible(false);
     setFullName("");
     setEmail("");
+    setModalError("");
   };
 
   // ── Mitarbeiter einladen: legt das Konto unbestätigt an und verschickt eine
@@ -72,21 +91,23 @@ export default function EmployeesScreen() {
   // den Einladungs-Link (siehe features/auth/AcceptInviteScreen.tsx).
   const handleCreateEmployee = async () => {
     const trimmedName = fullName.trim();
-    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedEmail = normalizeEmail(email);
 
     if (creating) {
       return;
     }
 
     if (!trimmedName) {
-      Alert.alert("Fehler", "Bitte gib einen Namen ein.");
+      setModalError("Bitte gib einen Namen ein.");
       return;
     }
 
-    if (!trimmedEmail || !trimmedEmail.includes("@")) {
-      Alert.alert("Fehler", "Bitte gib eine gültige E-Mail-Adresse ein.");
+    if (!isValidEmail(trimmedEmail)) {
+      setModalError("Bitte gib eine gültige E-Mail-Adresse ein.");
       return;
     }
+
+    setModalError("");
 
     try {
       setCreating(true);
@@ -97,20 +118,23 @@ export default function EmployeesScreen() {
       });
 
       await refreshEmployees();
+      handleCloseModal();
 
-      Alert.alert(
-        "Einladung verschickt",
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+      setSuccessMessage(
         `${trimmedName} erhält in Kürze eine E-Mail, um das eigene Passwort festzulegen.`,
       );
-
-      handleCloseModal();
+      successTimerRef.current = setTimeout(
+        () => setSuccessMessage(""),
+        SUCCESS_DISPLAY_MS,
+      );
     } catch (error) {
       const message = toUserMessage(
         error,
         "Einladung konnte nicht verschickt werden.",
       );
 
-      Alert.alert("Fehler", message);
+      setModalError(message);
     } finally {
       setCreating(false);
     }
@@ -172,6 +196,17 @@ export default function EmployeesScreen() {
                 statt als nackter roter Text (dieselbe Darstellung wie in den
                 Job-Screens). Text kam bisher zudem roh aus dem Backend. */}
             {error ? <ErrorBanner message={error} /> : null}
+
+            {successMessage ? (
+              <View style={styles.successBanner}>
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={16}
+                  color={theme.colors.statusCompleted}
+                />
+                <Text style={styles.successText}>{successMessage}</Text>
+              </View>
+            ) : null}
           </View>
         }
         ListEmptyComponent={
@@ -256,6 +291,15 @@ export default function EmployeesScreen() {
             <Text style={styles.modalSubtitle}>
               Der Mitarbeiter erhält eine E-Mail und legt sein Passwort selbst fest.
             </Text>
+
+            {modalError ? (
+              <View style={styles.modalErrorWrap}>
+                <ErrorBanner
+                  message={modalError}
+                  onDismiss={() => setModalError("")}
+                />
+              </View>
+            ) : null}
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Name</Text>
@@ -390,7 +434,26 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onSurfaceVariant,
     },
 
-    // ── Error-Text
+    // ── Erfolgs-Banner (nach erfolgreicher Einladung)
+    successBanner: {
+      marginTop: theme.spacing.md,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.xs,
+      backgroundColor: theme.colors.statusCompletedBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusCompletedBorder,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 8,
+    },
+    successText: {
+      flex: 1,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.statusCompleted,
+    },
 
     // ── Mitarbeiter-Karten in der Liste
     employeeCard: {
@@ -511,6 +574,9 @@ function createStyles(theme: AppTheme) {
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurfaceVariant,
+    },
+    modalErrorWrap: {
+      marginTop: theme.spacing.md,
     },
 
     // ── Formular-Felder im Modal
