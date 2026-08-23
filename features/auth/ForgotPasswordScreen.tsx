@@ -6,7 +6,7 @@ import { ErrorBanner, Input } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
-import { normalizeEmail } from "@/utils/email";
+import { isValidEmail, normalizeEmail } from "@/utils/email";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { router } from "expo-router";
@@ -41,6 +41,10 @@ export default function ForgotPasswordScreen() {
 
     if (!email.trim()) {
       setEmailError("E-Mail ist erforderlich.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
       return;
     }
 
