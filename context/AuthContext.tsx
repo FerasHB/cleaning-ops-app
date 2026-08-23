@@ -98,6 +98,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const autoRetryCountRef = useRef(0);
   const MAX_AUTO_RETRIES = 3;
 
+  // Verhindert überlappende syncPushToken()-Läufe, falls die App mehrfach
+  // schnell hintereinander in den Vordergrund wechselt (z. B. schneller
+  // App-Switch) — kein neuer Zustand, nur ein In-Flight-Schutz.
+  const syncingPushTokenRef = useRef(false);
+
   // Merker, ob aktuell ein VOLLSTÄNDIGES Profil gesetzt ist.
   // Grundlage für die Overwrite-Schutzregel in setProfileSafe.
   const hasCompleteProfileRef = useRef(false);
@@ -324,6 +329,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadAndApplyProfile]);
 
   const syncPushToken = useCallback(async () => {
+    // In-Flight-Schutz: verhindert überlappende Läufe, wenn z. B. ein
+    // schneller App-Foreground-Wechsel mehrfach hintereinander feuert. Kein
+    // neuer Speicherzustand — update_my_push_token ist ohnehin idempotent
+    // (setzt nur die eigene Zeile), das hier spart nur unnötige Doppelaufrufe.
+    if (syncingPushTokenRef.current) {
+      return;
+    }
+    syncingPushTokenRef.current = true;
+
     try {
       const expoPushToken = await registerForPushNotifications();
 
@@ -358,6 +372,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!isNetworkError(error)) {
         console.error("Failed to register for push notifications:", error);
       }
+    } finally {
+      syncingPushTokenRef.current = false;
     }
   }, []);
 
@@ -576,6 +592,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // (über refreshProfile). Das funktioniert auch dann, wenn Realtime nicht
   // konfiguriert ist oder die Verbindung im Hintergrund abgerissen ist — der
   // Nutzer wird spätestens beim nächsten Antippen der App gesperrt.
+  //
+  // Derselbe Foreground-Wechsel synchronisiert zusätzlich den Push-Token
+  // (C2.1): bisher lief syncPushToken() nur beim Kaltstart und bei
+  // Auth-State-Änderungen — ein Nutzer, der die Benachrichtigungs-Berechtigung
+  // erst NACH dem ersten Start (über die iOS-/Android-Einstellungen) erteilt
+  // und danach nur in die bereits laufende App zurückwechselt, bekam sonst
+  // keinen Token, bis die nächste Anmeldung/Session-Erneuerung lief.
+  // syncPushToken ist selbst web-sicher (registerForPushNotifications gibt
+  // dort sofort null zurück) und serverseitig idempotent (update_my_push_token
+  // setzt nur die eigene Zeile) — hier bewusst KEIN separater Listener,
+  // sondern derselbe Handler wie oben, um keine zweite AppState-Subscription
+  // zu erzeugen.
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active" && session) {
@@ -583,11 +611,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Fehler landen über profileError in der UI; hier bewusst schlucken,
           // damit ein Foreground-Wechsel nie zu einer unbehandelten Rejection wird.
         });
+        syncPushToken().catch(() => {
+          // syncPushToken fängt eigene Fehler bereits intern ab (siehe oben) —
+          // dieser catch ist nur ein zusätzliches Sicherheitsnetz gegen eine
+          // unbehandelte Rejection bei einem Foreground-Wechsel.
+        });
       }
     });
 
     return () => subscription.remove();
-  }, [session, refreshProfile]);
+  }, [session, refreshProfile, syncPushToken]);
 
   const signOut = useCallback(async () => {
     // Push-Token IMMER zuerst best effort löschen — auch wenn signOut() selbst
