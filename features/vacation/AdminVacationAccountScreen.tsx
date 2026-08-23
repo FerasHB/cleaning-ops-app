@@ -249,7 +249,7 @@ export default function AdminVacationAccountScreen() {
             </Text>
             <TextInput
               style={styles.input}
-              keyboardType="decimal-pad"
+              keyboardType="numbers-and-punctuation"
               placeholder="z. B. 2 oder -0,5"
               placeholderTextColor={theme.colors.onSurfaceVariant}
               value={adjustAmount}
