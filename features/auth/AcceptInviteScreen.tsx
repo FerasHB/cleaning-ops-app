@@ -11,7 +11,7 @@ import { useAuthLinkSession } from "@/features/auth/useAuthLinkSession";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
-import { validateNewPassword } from "@/utils/passwordValidation";
+import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/utils/passwordValidation";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -47,6 +47,8 @@ export default function AcceptInviteScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const passwordMeetsLength = newPassword.length >= MIN_PASSWORD_LENGTH;
 
   const handleSubmit = async () => {
     const validationError = validateNewPassword(newPassword, confirmPassword);
@@ -209,19 +211,36 @@ export default function AcceptInviteScreen() {
               />
             ) : null}
 
-            <PasswordInput
-              label="Passwort"
-              placeholder="Mindestens 10 Zeichen"
-              value={newPassword}
-              onChangeText={(text) => {
-                setNewPassword(text);
-                if (formError) setFormError("");
-              }}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="next"
-              editable={!submitting}
-            />
+            <View style={styles.passwordField}>
+              <PasswordInput
+                label="Passwort"
+                placeholder="Mindestens 10 Zeichen"
+                value={newPassword}
+                onChangeText={(text) => {
+                  setNewPassword(text);
+                  if (formError) setFormError("");
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+                editable={!submitting}
+              />
+              <View style={styles.passwordHintRow}>
+                <Ionicons
+                  name={passwordMeetsLength ? "checkmark-circle" : "ellipse-outline"}
+                  size={14}
+                  color={passwordMeetsLength ? theme.colors.statusCompleted : theme.colors.outline}
+                />
+                <Text
+                  style={[
+                    styles.passwordHintText,
+                    passwordMeetsLength && styles.passwordHintTextMet,
+                  ]}
+                >
+                  Mindestens {MIN_PASSWORD_LENGTH} Zeichen
+                </Text>
+              </View>
+            </View>
 
             <PasswordInput
               label="Passwort bestätigen"
@@ -308,6 +327,24 @@ function createStyles(theme: AppTheme) {
       padding: theme.spacing.xl,
       gap: theme.spacing.lg,
       ...theme.shadows.md,
+    },
+
+    // Passwort-Feld + Live-Anforderungshinweis
+    passwordField: { gap: 6 },
+    passwordHintRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingLeft: 2,
+    },
+    passwordHintText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.outline,
+    },
+    passwordHintTextMet: {
+      color: theme.colors.statusCompleted,
+      fontFamily: theme.typography.family.medium,
     },
 
     primaryBtn: {

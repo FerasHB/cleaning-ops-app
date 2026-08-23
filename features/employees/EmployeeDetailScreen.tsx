@@ -31,7 +31,7 @@ import { getJobStatusLabel } from "@/utils/jobStatus";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -94,8 +94,19 @@ export default function EmployeeDetailScreen() {
 
   // Loading-State für Deaktivieren/Reaktivieren.
   const [updatingActive, setUpdatingActive] = useState(false);
-  // Loading-State für "Einladung erneut senden".
+  // Loading-/Feedback-State für "Einladung erneut senden". Eigenes
+  // Erfolgs-/Fehler-Feedback statt Alert.alert (auf Web ein No-Op) — analog
+  // zum Muster in app/(admin-tabs)/employees.tsx.
   const [resendingInvite, setResendingInvite] = useState(false);
+  const [resendError, setResendError] = useState("");
+  const [resendSuccess, setResendSuccess] = useState("");
+  const resendSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resendSuccessTimerRef.current) clearTimeout(resendSuccessTimerRef.current);
+    };
+  }, []);
 
   const employee = useMemo(
     () => employees.find((e) => e.id === id),
@@ -235,19 +246,23 @@ export default function EmployeeDetailScreen() {
   // resend-invite/index.ts).
   const handleResendInvite = async () => {
     if (!employee || resendingInvite) return;
+    setResendError("");
     try {
       setResendingInvite(true);
       await resendInvite(employee.id);
-      Alert.alert(
-        "Einladung verschickt",
-        `${employee.fullName} hat eine neue Einladungs-E-Mail erhalten.`,
+
+      if (resendSuccessTimerRef.current) clearTimeout(resendSuccessTimerRef.current);
+      setResendSuccess(`${employee.fullName} hat eine neue Einladungs-E-Mail erhalten.`);
+      resendSuccessTimerRef.current = setTimeout(
+        () => setResendSuccess(""),
+        3000,
       );
     } catch (err) {
       const message = toUserMessage(
         err,
         "Einladung konnte nicht erneut verschickt werden.",
       );
-      Alert.alert("Fehler", message);
+      setResendError(message);
     } finally {
       setResendingInvite(false);
     }
@@ -561,6 +576,19 @@ export default function EmployeeDetailScreen() {
 
         {/* ── Aktionen ── */}
         <View style={styles.actions}>
+          {resendError ? (
+            <ErrorBanner message={resendError} onDismiss={() => setResendError("")} />
+          ) : null}
+          {resendSuccess ? (
+            <View style={styles.resendSuccessBanner}>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={16}
+                color={theme.colors.statusCompleted}
+              />
+              <Text style={styles.resendSuccessText}>{resendSuccess}</Text>
+            </View>
+          ) : null}
           <Button
             label="Job zuweisen"
             icon="add"
@@ -698,6 +726,24 @@ function createStyles(theme: AppTheme) {
     actions: {
       gap: theme.spacing.sm,
       marginTop: theme.spacing.sm,
+    },
+    resendSuccessBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.xs,
+      backgroundColor: theme.colors.statusCompletedBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusCompletedBorder,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 8,
+    },
+    resendSuccessText: {
+      flex: 1,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.statusCompleted,
     },
   });
 }
