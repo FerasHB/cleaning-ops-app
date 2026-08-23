@@ -17,7 +17,31 @@ export const OFFLINE_ERROR_MESSAGE =
 export const SERVER_UNAVAILABLE_ERROR_MESSAGE =
   "Der Server ist momentan nicht erreichbar. Bitte versuche es später erneut.";
 
-// Bekannte technische GoTrue-/Supabase-Auth-Fehlertexte → deutsche
+// Stabile GoTrue-Fehlercodes (AuthApiError.code / REST-Body error_code) →
+// deutsche Nutzer-Meldung. Wird VOR den Text-Mustern unten geprüft — ein
+// Code ist robuster als ein Textmuster, weil Supabase die Wortwahl der
+// Meldung ändern kann, ohne den Code zu ändern. Werte siehe
+// @supabase/auth-js ErrorCode-Union (node_modules/@supabase/auth-js/dist/*/lib/error-codes.d.ts).
+const KNOWN_ERROR_CODES: Readonly<Record<string, string>> = {
+  invalid_credentials: "E-Mail oder Passwort ist falsch.",
+  email_not_confirmed: "Bitte bestätige zuerst deine E-Mail-Adresse.",
+  email_address_invalid: "Bitte gib eine gültige E-Mail-Adresse ein.",
+  email_address_not_authorized: "Bitte gib eine gültige E-Mail-Adresse ein.",
+  user_already_exists: "Für diese E-Mail-Adresse existiert bereits ein Konto.",
+  email_exists: "Für diese E-Mail-Adresse existiert bereits ein Konto.",
+  weak_password: "Das Passwort erfüllt nicht die Mindestanforderungen.",
+  over_email_send_rate_limit:
+    "Zu viele Versuche. Bitte warte kurz und versuche es erneut.",
+  over_request_rate_limit:
+    "Zu viele Versuche. Bitte warte kurz und versuche es erneut.",
+  refresh_token_not_found: "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
+  session_expired: "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
+  session_not_found: "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
+};
+
+// Fallback für Fehler ohne erhaltenen Code (z.B. Edge-Function-Bodies, die
+// nur einen String liefern — siehe toFriendlyEdgeFunctionErrorMessage):
+// bekannte technische GoTrue-/Supabase-Auth-Fehlertexte → deutsche
 // Nutzer-Meldung. Reihenfolge relevant: spezifischere Muster zuerst.
 const KNOWN_ERROR_PATTERNS: readonly {
   pattern: RegExp;
@@ -32,7 +56,12 @@ const KNOWN_ERROR_PATTERNS: readonly {
     message: "Bitte bestätige zuerst deine E-Mail-Adresse.",
   },
   {
-    pattern: /unable to validate email address|invalid email/i,
+    // Deckt sowohl "Unable to validate email address" als auch GoTrues
+    // "Email address "x@y.z" is invalid" ab (unterschiedliche Wortstellung,
+    // beide bedeuten dasselbe email_address_invalid). Eng genug, um nicht
+    // versehentlich unabhängige Fehler zu treffen: verlangt "email" +
+    // "invalid" UND (address/adresse-Kontext) im selben Satz.
+    pattern: /unable to validate email address|invalid email|email address.{0,60}is invalid/i,
     message: "Bitte gib eine gültige E-Mail-Adresse ein.",
   },
   {
@@ -69,6 +98,15 @@ function extractMessage(err: unknown): string {
   return typeof maybeMessage === "string" ? maybeMessage : "";
 }
 
+// AuthApiError.code (supabase-js) bzw. REST-Body error_code (Edge Functions,
+// die den Fehler roh durchreichen) — siehe KNOWN_ERROR_CODES oben.
+function extractErrorCode(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const maybeCode =
+    (err as { code?: unknown }).code ?? (err as { error_code?: unknown }).error_code;
+  return typeof maybeCode === "string" ? maybeCode : "";
+}
+
 // Übersetzt einen beliebigen Fehler (Supabase AuthError, geworfene Errors,
 // rohe Strings) in eine nutzerfreundliche deutsche Meldung. `fallback`
 // erlaubt jedem Aufrufer einen zum Kontext passenden Default (z.B. "E-Mail
@@ -78,6 +116,9 @@ export function toFriendlyAuthErrorMessage(
   fallback: string = GENERIC_AUTH_ERROR_MESSAGE,
 ): string {
   if (isNetworkError(err)) return OFFLINE_ERROR_MESSAGE;
+
+  const code = extractErrorCode(err);
+  if (code && KNOWN_ERROR_CODES[code]) return KNOWN_ERROR_CODES[code];
 
   const message = extractMessage(err);
   if (!message) return fallback;
