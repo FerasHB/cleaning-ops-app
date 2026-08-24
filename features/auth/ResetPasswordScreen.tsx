@@ -27,6 +27,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Nur in Entwicklung loggen — niemals Passwörter, Tokens oder Session-Inhalte.
+function devLog(...args: unknown[]) {
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log("[ResetPassword]", ...args);
+  }
+}
+
 const DEFAULT_INVALID_MESSAGE =
   "Der Link ist ungültig. Bitte fordere einen neuen Link an.";
 const EXPIRED_RESET_MESSAGE =
@@ -60,16 +68,43 @@ export default function ResetPasswordScreen() {
     setSubmitting(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({
+      // VORBEDINGUNG: ohne aktive Recovery-Session darf hier gar nicht erst
+      // geschrieben werden. Ohne diese Prüfung lief updateUser() im P0-Fehler
+      // gegen eine sachfremde Alt-Session — der Reset meldete Erfolg, das
+      // Passwort des Recovery-Kontos blieb aber unverändert.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        devLog("Passwort-Update abgebrochen: keine Session vorhanden.");
+        setFormError(
+          "Deine Sitzung für das Zurücksetzen ist nicht mehr gültig. Bitte fordere einen neuen Link an.",
+        );
+        return;
+      }
+
+      devLog("Passwort-Update gestartet.");
+      const { data: updated, error } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
       if (error) {
+        // Technischer Grund nur intern (Dev) — der Nutzer bekommt die
+        // gemappte deutsche Meldung, nie den rohen Supabase-Text.
+        devLog("Passwort-Update fehlgeschlagen:", error.message);
         setFormError(
           toFriendlyAuthErrorMessage(error, "Passwort konnte nicht gesetzt werden."),
         );
         return;
       }
+
+      // Supabase liefert bei Erfolg den aktualisierten User zurück. Fehlt er,
+      // wurde NICHTS bestätigt geändert — dann darf hier kein Erfolg erscheinen.
+      if (!updated?.user) {
+        devLog("Passwort-Update ohne bestätigten User → kein Erfolg.");
+        setFormError("Passwort konnte nicht gesetzt werden.");
+        return;
+      }
+
+      devLog("Passwort-Update erfolgreich.");
 
       // Recovery-Session beenden — der Nutzer soll sich bewusst mit dem
       // neuen Passwort neu anmelden, keine automatische App-Sitzung aus

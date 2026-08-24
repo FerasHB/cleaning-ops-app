@@ -25,11 +25,22 @@ import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthLinkErrorMessage } from "@/utils/authErrorMessages";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 
 export type AuthLinkStatus = "checking" | "ready" | "invalid";
 
 // Kein endloser Spinner: nach dieser Zeit ohne verwertbaren Parameter → invalid.
 const RECHECK_TIMEOUT_MS = 10_000;
+
+// Obergrenze, solange eine Einlösung NACHWEISLICH noch läuft. Ein langsamer
+// (aber gültiger) Code-Tausch darf nicht als „ungültiger Link" enden — genau
+// das erzeugte den P0-Fehler: Watchdog feuert nach 10 s → Nutzer tippt
+// „Link erneut prüfen" → der PKCE-code_verifier ist zu diesem Zeitpunkt aber
+// schon verbraucht (auth-js löscht ihn in JEDEM Ausgang von
+// exchangeCodeForSession) → der zweite Versuch scheitert zwangsläufig.
+// Trotzdem bleibt die Grenze ENDLICH: hängt der Tausch wirklich, greift diese
+// Schranke und der Screen erreicht einen klaren Endzustand.
+const REDEMPTION_TIMEOUT_MS = 30_000;
 
 type RecoveryParams = {
   code?: string;
@@ -146,6 +157,13 @@ export function useAuthLinkSession(
   // erreichte aber nie einen Endzustand. Der Watchdog prüft daher unabhängig,
   // ob der Screen noch bei "checking" steht.
   const statusRef = useRef<AuthLinkStatus>("checking");
+  // true, solange ein Code-/Token-Tausch tatsächlich gegen Supabase läuft.
+  // Unterscheidet die zwei Gründe, warum der Screen noch bei "checking" steht:
+  // „es kam nie etwas an" (kurzer Timeout ist richtig) vs. „die Einlösung
+  // läuft noch" (abwarten, sonst verwerfen wir einen gültigen Link).
+  const redeemingRef = useRef(false);
+  // Verhindert, dass die verlängerte Frist beliebig oft neu gesetzt wird.
+  const redemptionDeadlineRef = useRef<number | null>(null);
 
   const finish = useCallback((next: AuthLinkStatus, message?: string) => {
     if (!mountedRef.current) return;
@@ -156,14 +174,29 @@ export function useAuthLinkSession(
   }, []);
 
   // Nach einem Fehler beim Code-/Token-Tausch trotzdem prüfen, ob bereits eine
-  // gültige Session existiert — z.B. wenn detectSessionInUrl (Web) den Code
-  // schon eingelöst hat. Nur dann ready, sonst invalid.
+  // gültige Session existiert — das deckt GENAU EINEN legitimen Fall ab: auf
+  // Web löst detectSessionInUrl (lib/supabase.ts setzt es nur dort auf true)
+  // den Code bereits ein, bevor dieser Hook läuft; unser Tausch scheitert dann
+  // mit „code already used", obwohl die Session korrekt steht.
+  //
+  // AUF NATIVE IST DIESER RÜCKFALL FALSCH UND WAR DIE URSACHE DES P0-FEHLERS:
+  // dort gibt es kein detectSessionInUrl, also kann eine hier gefundene Session
+  // NICHT aus diesem Link stammen. Sie ist eine ALTE, sachfremde Session (z.B.
+  // ein noch im AsyncStorage liegender Rest-Login). Wurde sie als „ready"
+  // gewertet, zeigte der Screen das Passwort-Formular OHNE Recovery-Session —
+  // updateUser() lief anschließend gegen diese Fremd-Session und das Passwort
+  // des eigentlichen Recovery-Links wurde nie geändert (Reset „erfolgreich",
+  // Login mit neuem Passwort schlug fehl). Auf Native gilt deshalb: gescheiterte
+  // Einlösung = ungültiger Link, ohne Ausnahme.
   const readySessionOrInvalid = useCallback(
     async (message?: string) => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        finish("ready");
-        return;
+      if (Platform.OS === "web") {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+          devLog("Web-Rückfall: Session bereits durch detectSessionInUrl gesetzt.");
+          finish("ready");
+          return;
+        }
       }
       finish("invalid", message ?? defaultInvalidMessage);
     },
@@ -206,6 +239,11 @@ export function useAuthLinkSession(
         return;
       }
 
+      // Ab hier läuft eine echte Einlösung — der Watchdog darf sie nicht
+      // vorzeitig als „ungültig" abbrechen (siehe REDEMPTION_TIMEOUT_MS).
+      redeemingRef.current = true;
+      redemptionDeadlineRef.current = Date.now() + REDEMPTION_TIMEOUT_MS;
+
       try {
         if (hasCode) {
           devLog(`Erkannter Flow: pkce (Quelle: ${source})`);
@@ -245,21 +283,56 @@ export function useAuthLinkSession(
           err instanceof Error ? err.message : String(err),
         );
         finish("invalid", defaultInvalidMessage);
+      } finally {
+        // Einlösung beendet (egal mit welchem Ausgang) — ab jetzt greift wieder
+        // die normale, kurze Watchdog-Frist.
+        redeemingRef.current = false;
+        redemptionDeadlineRef.current = null;
       }
     },
     [finish, readySessionOrInvalid, defaultInvalidMessage, expiredMessage],
   );
 
-  // Unabhängiger Watchdog: steht der Screen nach RECHECK_TIMEOUT_MS immer noch
-  // bei "checking" (egal ob ein Tausch läuft, hängt oder nie etwas ankam) →
-  // klarer Fehlerzustand statt Endlos-Spinner.
+  // Watchdog: steht der Screen nach RECHECK_TIMEOUT_MS immer noch bei
+  // "checking", gibt es zwei GRUNDVERSCHIEDENE Ursachen — und nur eine davon
+  // ist ein Fehler:
+  //   1. Es kam nie ein verwertbarer Parameter an → wirklich ungültig.
+  //   2. Eine Einlösung läuft noch (langsamer Kaltstart, Auth-Lock, schlechtes
+  //      Netz) → der Link ist gültig, wir sind nur noch nicht fertig. Ihn hier
+  //      als „ungültig" zu markieren war der Auslöser des P0-Fehlers, weil der
+  //      Nutzer daraufhin „Link erneut prüfen"/„Neuen Link anfordern" tippte,
+  //      der PKCE-code_verifier aber bereits verbraucht war.
+  // Deshalb wird im Fall 2 bis REDEMPTION_TIMEOUT_MS nachgefasst — endlich,
+  // nicht unbegrenzt: nach Ablauf der Frist wird auch eine hängende Einlösung
+  // sauber als ungültig beendet (kein Endlos-Spinner).
   const armTimeout = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      if (statusRef.current === "checking") {
-        devLog("Watchdog-Timeout: noch bei 'checking' → invalid.");
-        finish("invalid", defaultInvalidMessage);
+      if (statusRef.current !== "checking") return;
+
+      const deadline = redemptionDeadlineRef.current;
+      if (redeemingRef.current && deadline !== null) {
+        const remaining = deadline - Date.now();
+        if (remaining > 0) {
+          devLog(
+            `Watchdog unterdrückt: Einlösung läuft noch (${Math.ceil(remaining / 1000)}s Restfrist).`,
+          );
+          // GENAU EINE Verlängerung bis zur harten Frist — danach ist Schluss.
+          // Endet die Einlösung vorher, steht statusRef nicht mehr auf
+          // "checking" und dieser Timer wird zum No-op.
+          timeoutRef.current = setTimeout(() => {
+            if (statusRef.current !== "checking") return;
+            devLog("Watchdog: Höchstdauer der Einlösung erreicht → invalid.");
+            finish("invalid", defaultInvalidMessage);
+          }, remaining);
+          return;
+        }
+        devLog("Watchdog: Einlösung überschreitet Höchstdauer → invalid.");
+      } else {
+        devLog("Watchdog-Timeout: noch bei 'checking', keine Einlösung → invalid.");
       }
+
+      finish("invalid", defaultInvalidMessage);
     }, RECHECK_TIMEOUT_MS);
   }, [finish, defaultInvalidMessage]);
 
@@ -313,8 +386,16 @@ export function useAuthLinkSession(
     };
   }, [armTimeout]);
 
+  // Hinweis zu "Link erneut prüfen": ein bereits eingelöster PKCE-Code lässt
+  // sich NICHT ein zweites Mal tauschen — auth-js löscht den code_verifier in
+  // jedem Ausgang von exchangeCodeForSession. Der erneute Versuch endet daher
+  // korrekt bei "invalid" (statt wie früher über eine sachfremde Session als
+  // "ready" durchzurutschen). Sinnvoll bleibt recheck für den Fall, dass die
+  // Deep-Link-URL verspätet eintrifft.
   const recheck = useCallback(() => {
     attemptedRef.current = false;
+    redeemingRef.current = false;
+    redemptionDeadlineRef.current = null;
     statusRef.current = "checking";
     setStatus("checking");
     if (authLinkUrl.url) {
