@@ -13,7 +13,7 @@ import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/utils/passwordValidation";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -48,6 +48,13 @@ export default function ResetPasswordScreen() {
     DEFAULT_INVALID_MESSAGE,
     EXPIRED_RESET_MESSAGE,
   );
+
+  // Diagnose (nur __DEV__): macht Mount/Unmount des Screens sichtbar. Ein
+  // Unmount+Mount mitten im Vorgang erklärt eine zweite Link-Verarbeitung.
+  useEffect(() => {
+    devLog("SCREEN MOUNT");
+    return () => devLog("SCREEN UNMOUNT");
+  }, []);
 
   const [formSuccess, setFormSuccess] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -109,6 +116,7 @@ export default function ResetPasswordScreen() {
       // Recovery-Session beenden — der Nutzer soll sich bewusst mit dem
       // neuen Passwort neu anmelden, keine automatische App-Sitzung aus
       // dem Reset-Link heraus.
+      devLog("signOut() nach erfolgreichem Reset — löscht auch den code_verifier.");
       await supabase.auth.signOut().catch(() => {});
 
       setFormSuccess(true);

@@ -199,6 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      authDebug("Deaktivierungs-Sign-out — löscht Session UND code_verifier.");
       await supabase.auth.signOut();
     } catch (err) {
       if (__DEV__) {
@@ -647,6 +648,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Ein bewusstes Löschen gibt es deshalb nur dort, wo der Zugriff wirklich
     // entzogen wird: forceSignOutDueToDeactivation() und die Kontolöschung
     // (features/profile/DeleteAccountScreen.tsx).
+
+    // Diagnose: signOut() ruft intern _removeSession() und löscht damit AUCH
+    // den PKCE-code_verifier. Für die Recovery-Analyse muss sichtbar sein,
+    // ob das während eines laufenden Reset-Vorgangs passiert.
+    authDebug("signOut() aufgerufen — löscht Session UND code_verifier.");
 
     const { error } = await supabase.auth.signOut();
 
