@@ -9,6 +9,7 @@ import type { AppTheme } from "@/constants/theme";
 import { useAuthLinkSession } from "@/features/auth/useAuthLinkSession";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
+import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/utils/passwordValidation";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,9 +28,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Nur in Entwicklung loggen — niemals Passwörter, Tokens oder Session-Inhalte.
+// Nur bei aktivierter Diagnose loggen (siehe utils/authDiagnostics.ts) —
+// niemals Passwörter, Tokens oder Session-Inhalte.
 function devLog(...args: unknown[]) {
-  if (__DEV__) {
+  if (AUTH_DIAGNOSTICS_ENABLED) {
     // eslint-disable-next-line no-console
     console.log("[ResetPassword]", ...args);
   }
@@ -49,7 +51,7 @@ export default function ResetPasswordScreen() {
     EXPIRED_RESET_MESSAGE,
   );
 
-  // Diagnose (nur __DEV__): macht Mount/Unmount des Screens sichtbar. Ein
+  // Diagnose (temporär): macht Mount/Unmount des Screens sichtbar. Ein
   // Unmount+Mount mitten im Vorgang erklärt eine zweite Link-Verarbeitung.
   useEffect(() => {
     devLog("SCREEN MOUNT");

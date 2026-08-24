@@ -22,6 +22,7 @@
 
 import { useAuthLinkUrl } from "@/features/auth/AuthLinkUrlProvider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthLinkErrorMessage } from "@/utils/authErrorMessages";
 import { useLocalSearchParams } from "expo-router";
@@ -52,18 +53,19 @@ type RecoveryParams = {
   errorDescription?: string;
 };
 
-// Nur in Entwicklung loggen — niemals vollständige Tokens/Codes ausgeben.
+// Nur bei aktivierter Diagnose loggen (siehe utils/authDiagnostics.ts) —
+// niemals vollständige Tokens/Codes ausgeben.
 function devLog(...args: unknown[]) {
-  if (__DEV__) {
+  if (AUTH_DIAGNOSTICS_ENABLED) {
     // eslint-disable-next-line no-console
     console.log("[AuthLink]", ...args);
   }
 }
 
 // ── Diagnose für den intermittierenden nativen PKCE-Fehler ──────────────
-// Ausschließlich __DEV__. Alle Werte sind Zähler, Zustandsnamen oder
-// YES/NO — es wird NIE ein Code, Verifier, Token oder eine vollständige URL
-// ausgegeben.
+// TEMPORÄR, vor dem Merge entfernen (siehe utils/authDiagnostics.ts). Alle
+// Werte sind Zähler, Zustandsnamen oder YES/NO — es wird NIE ein Code,
+// Verifier, Token oder eine vollständige URL ausgegeben.
 
 // Fortlaufende Nummer je Hook-Instanz: macht Remounts unmittelbar sichtbar
 // (jede neue Instanz startet mit frischem attemptedRef und darf denselben
@@ -87,7 +89,7 @@ const CODE_VERIFIER_STORAGE_KEY = (() => {
 // NUR Vorhandensein prüfen — der Wert wird gelesen, aber niemals geloggt,
 // weitergereicht oder gespeichert.
 async function codeVerifierPresence(): Promise<"YES" | "NO" | "UNBEKANNT"> {
-  if (!__DEV__ || !CODE_VERIFIER_STORAGE_KEY) return "UNBEKANNT";
+  if (!AUTH_DIAGNOSTICS_ENABLED || !CODE_VERIFIER_STORAGE_KEY) return "UNBEKANNT";
   try {
     const raw = await AsyncStorage.getItem(CODE_VERIFIER_STORAGE_KEY);
     return raw ? "YES" : "NO";

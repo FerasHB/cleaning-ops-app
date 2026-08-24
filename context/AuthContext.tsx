@@ -14,6 +14,7 @@ import {
   type AuthProfile,
   type ProfileFetchErrorKind,
 } from "@/services/profileService";
+import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
 import { isNetworkError } from "@/utils/networkError";
 import NetInfo from "@react-native-community/netinfo";
 import { Session, User } from "@supabase/supabase-js";
@@ -43,10 +44,11 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Nur in Entwicklung loggen — ausschließlich Event-Name/Phase, niemals Tokens
+// Nur bei aktivierter Diagnose loggen (siehe utils/authDiagnostics.ts) —
+// ausschließlich Event-Name/Phase, niemals Tokens
 // oder Session-Inhalte. Dient dazu, den Auth-/Deadlock-Fluss nachzuvollziehen.
 function authDebug(...args: unknown[]) {
-  if (__DEV__) {
+  if (AUTH_DIAGNOSTICS_ENABLED) {
     // eslint-disable-next-line no-console
     console.log("[Auth]", ...args);
   }
