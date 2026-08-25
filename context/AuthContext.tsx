@@ -83,7 +83,9 @@ type ProfileApplyOutcome =
   | "offline-no-cache"
   | "server-error"
   | "signed-out"
-  | "unmounted";
+  | "unmounted"
+  // Recovery-Modus aktiv → bewusst NICHTS geladen (Sicherheitsgrenze).
+  | "recovery-blocked";
 
 // Quellen, die profile AUTORITATIV auf null setzen dürfen — hier wird die
 // Session ohnehin mitgelöscht (echter Sign-out / keine Session). Nur aus diesen
@@ -255,6 +257,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // is_active-Sicherheitsprüfung — auch für gecachte Profile. Wirft nie.
   const loadAndApplyProfile = useCallback(
     async (userId: string): Promise<ProfileApplyOutcome> => {
+      // ── SICHERHEITSGRENZE (ZENTRAL) ────────────────────────────────────
+      // Der Guard sitzt bewusst HIER und nicht (nur) in applySession():
+      // loadAndApplyProfile ist die EINZIGE Stelle, die Profildaten holt und
+      // per saveCachedProfile() auf die Platte schreibt. refreshProfile()
+      // ruft sie direkt auf und wird seinerseits aus drei Pfaden getriggert
+      // (NetInfo-Reconnect, AppState-Foreground, manuelles Retry in
+      // app/index.tsx) — die alle den Guard in applySession() umgingen. Das
+      // war in der QA als "Reconnect: Profil-Retry" + "Profilquelle: remote"
+      // WÄHREND des Recovery-Modus sichtbar. An dieser Engstelle kann kein
+      // Aufrufpfad mehr vorbei.
+      if (isRecoverySessionRef.current) {
+        authDebug("[AuthMode] profile retry blocked during recovery");
+        return "recovery-blocked";
+      }
+
       const result = await getProfileByUserId(userId);
 
       if (!isMountedRef.current) {
@@ -330,6 +347,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // ROH werfen. refreshProfile wird u. a. aus dem AppState-Foreground-Recheck,
     // dem NetInfo-Reconnect und dem manuellen Retry aufgerufen und darf niemals
     // werfen — sonst unbehandelte Promise-Rejections.
+    // SICHERHEITSGRENZE: Früh raus, bevor überhaupt ein Auth-Roundtrip läuft.
+    // loadAndApplyProfile() blockiert ohnehin (zentraler Guard), das hier
+    // spart nur den unnötigen getUser()-Call und hält die Diagnose sauber.
+    if (isRecoverySessionRef.current) {
+      authDebug("[AuthMode] profile retry blocked during recovery");
+      return;
+    }
+
     let currentUser: User | null;
     try {
       const { data } = await supabase.auth.getUser();
@@ -359,6 +384,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadAndApplyProfile]);
 
   const syncPushToken = useCallback(async () => {
+    // SICHERHEITSGRENZE: Im Recovery-Modus wird kein Push-Token registriert.
+    // syncPushToken() hat einen EIGENEN Trigger (AppState-Foreground) und
+    // liefe sonst am Guard in applySession() vorbei.
+    if (isRecoverySessionRef.current) {
+      authDebug("[AuthMode] push token sync blocked during recovery");
+      return;
+    }
+
     // In-Flight-Schutz: verhindert überlappende Läufe, wenn z. B. ein
     // schneller App-Foreground-Wechsel mehrfach hintereinander feuert. Kein
     // neuer Speicherzustand — update_my_push_token ist ohnehin idempotent
@@ -573,6 +606,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
       if (!state.isConnected) {
+        return;
+      }
+
+      // SICHERHEITSGRENZE: Im Recovery-Modus gar nicht erst versuchen.
+      // refreshProfile()/loadAndApplyProfile() blockieren zwar ohnehin, aber
+      // ohne diesen Riegel würde hier bei jedem Reconnect das irreführende
+      // "Reconnect: Profil-Retry" geloggt UND das begrenzte Auto-Retry-Budget
+      // (MAX_AUTO_RETRIES) aufgebraucht, das nach dem Reset noch gebraucht wird.
+      if (isRecoverySessionRef.current) {
+        authDebug("[AuthMode] profile retry blocked during recovery");
         return;
       }
 
