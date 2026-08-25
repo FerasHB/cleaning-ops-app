@@ -49,8 +49,13 @@ type AuthContextType = {
   // zum Passwortwechsel, NIE zum Betreten der App — siehe
   // services/auth/recoveryMode.ts und die Guards in app/_layout.tsx.
   isRecoverySession: boolean;
-  /** Markiert die entstehende Session als reine Recovery-Sitzung (vor dem Tausch). */
-  beginRecoverySession: () => Promise<void>;
+  /**
+   * Markiert die entstehende Session als reine Recovery-Sitzung (vor dem
+   * Tausch). FAIL CLOSED: gibt `false` zurück, wenn die Persistenz
+   * nachweislich fehlschlug — der Aufrufer MUSS dann den Code-/Token-Tausch
+   * verweigern (siehe services/auth/recoveryMode.ts).
+   */
+  beginRecoverySession: () => Promise<boolean>;
   /** Beendet den Recovery-Modus; optional wird die Recovery-Session abgemeldet. */
   endRecoverySession: (options?: { signOutSession?: boolean }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -680,13 +685,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // beginRecoverySession() MUSS aufgerufen werden, BEVOR der PKCE-/Token-
   // Tausch akzeptiert wird. Sonst existiert ein Fenster, in dem eine bereits
   // hergestellte Recovery-Session als normale Session gilt.
-  const beginRecoverySession = useCallback(async () => {
+  const beginRecoverySession = useCallback(async (): Promise<boolean> => {
+    // FAIL CLOSED: der In-Prozess-Zustand (Ref/State) wird erst gesetzt,
+    // NACHDEM die Persistenz bestätigt ist. Schlägt sie fehl, bleibt die App
+    // schlicht NICHT im Recovery-Modus — der Aufrufer bricht dann den
+    // Code-/Token-Tausch ab, bevor überhaupt eine Session entstehen kann.
+    const persisted = await markRecoveryModeActive();
+    if (!persisted) {
+      authDebug("[AuthMode] recovery marker persistence FAILED — Tausch wird verweigert.");
+      return false;
+    }
     isRecoverySessionRef.current = true;
     if (isMountedRef.current) {
       setIsRecoverySession(true);
     }
-    await markRecoveryModeActive();
     authDebug("[AuthMode] recovery entered");
+    return true;
   }, []);
 
   // Beendet den Recovery-Modus. `signOutSession` meldet die Recovery-Session

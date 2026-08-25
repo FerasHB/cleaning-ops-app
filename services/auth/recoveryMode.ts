@@ -29,17 +29,23 @@ const RECOVERY_MODE_VALUE = "1";
 
 /**
  * Markiert die aktuelle/gleich entstehende Session als reine Recovery-Sitzung.
- * MUSS gesetzt werden, BEVOR der Code-/Token-Tausch akzeptiert wird — sonst
- * gibt es ein Zeitfenster, in dem eine bereits hergestellte Recovery-Session
- * noch als normale Session gilt.
+ * MUSS gesetzt und die Persistenz BESTÄTIGT werden, BEVOR der Code-/Token-
+ * Tausch akzeptiert wird — sonst gibt es ein Zeitfenster, in dem eine bereits
+ * hergestellte Recovery-Session noch als normale Session gilt.
+ *
+ * FAIL CLOSED: gibt `true` nur zurück, wenn der Schreibvorgang nachweislich
+ * ohne Fehler durchlief. Der Aufrufer (beginRecoverySession() in
+ * AuthContext) MUSS bei `false` den Code-/Token-Tausch verweigern — ein
+ * unbemerkt fehlgeschlagener Schreibvorgang darf niemals dazu führen, dass
+ * eine Recovery-Session ohne persistierten Marker entsteht (sie überlebte
+ * dann einen Neustart nicht mehr als Recovery, sondern als normale Session).
  */
-export async function markRecoveryModeActive(): Promise<void> {
+export async function markRecoveryModeActive(): Promise<boolean> {
   try {
     await AsyncStorage.setItem(RECOVERY_MODE_KEY, RECOVERY_MODE_VALUE);
+    return true;
   } catch {
-    // Bewusst geschluckt: Schlägt das Schreiben fehl, greift weiterhin der
-    // Route-Guard im laufenden Prozess (AuthContext-State). Verloren geht
-    // dann nur die Persistenz über einen Neustart hinweg.
+    return false;
   }
 }
 

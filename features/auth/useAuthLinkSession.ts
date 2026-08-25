@@ -326,16 +326,29 @@ export function useAuthLinkSession(
       redeemingRef.current = true;
       redemptionDeadlineRef.current = Date.now() + REDEMPTION_TIMEOUT_MS;
 
-      // SICHERHEITSGRENZE: Der Recovery-Marker wird gesetzt, BEVOR der Tausch
-      // überhaupt startet. Entsteht die Session, ist sie damit vom ersten
-      // Moment an als reine Reset-Sitzung gekennzeichnet — es gibt kein
-      // Fenster, in dem sie als normale Session gelten könnte (auch nicht bei
-      // einem Absturz/Force-Close mitten im Tausch).
-      if (flow === "recovery") {
-        await beginRecoverySession();
-      }
-
       try {
+        // SICHERHEITSGRENZE (FAIL CLOSED): Der Recovery-Marker wird gesetzt
+        // und seine Persistenz BESTÄTIGT, BEVOR der Tausch überhaupt startet.
+        // Entsteht die Session, ist sie damit vom ersten Moment an als reine
+        // Reset-Sitzung gekennzeichnet — es gibt kein Fenster, in dem sie als
+        // normale Session gelten könnte (auch nicht bei einem Absturz/
+        // Force-Close mitten im Tausch). Schlägt die Persistenz fehl, wird
+        // der Tausch NICHT ausgeführt — es entsteht dann gar keine Session,
+        // die fälschlich als normal gelten könnte. Läuft bewusst INNERHALB
+        // des try/finally: das bestehende finally setzt redeemingRef/
+        // redemptionDeadlineRef zuverlässig zurück, ohne diese Aufräumarbeit
+        // hier zu duplizieren.
+        if (flow === "recovery") {
+          const recoveryModeConfirmed = await beginRecoverySession();
+          if (!recoveryModeConfirmed) {
+            devLog(
+              "[AuthMode] Recovery-Marker konnte nicht persistiert werden — Tausch abgebrochen (fail-closed).",
+            );
+            finish("invalid", defaultInvalidMessage);
+            return;
+          }
+        }
+
         if (hasCode) {
           devLog(`Erkannter Flow: pkce (Quelle: ${source})`);
 
