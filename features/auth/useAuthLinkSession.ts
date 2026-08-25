@@ -22,9 +22,6 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useAuthLinkUrl } from "@/features/auth/AuthLinkUrlProvider";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
-import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthLinkErrorMessage } from "@/utils/authErrorMessages";
 import { useLocalSearchParams } from "expo-router";
@@ -46,7 +43,6 @@ const RECHECK_TIMEOUT_MS = 10_000;
 // Schranke und der Screen erreicht einen klaren Endzustand.
 const REDEMPTION_TIMEOUT_MS = 30_000;
 
-
 type RecoveryParams = {
   code?: string;
   accessToken?: string;
@@ -56,49 +52,11 @@ type RecoveryParams = {
   errorDescription?: string;
 };
 
-// Nur bei aktivierter Diagnose loggen (siehe utils/authDiagnostics.ts) —
-// niemals vollständige Tokens/Codes ausgeben.
+// Nur in Entwicklung loggen — niemals vollständige Tokens/Codes ausgeben.
 function devLog(...args: unknown[]) {
-  if (AUTH_DIAGNOSTICS_ENABLED) {
+  if (__DEV__) {
     // eslint-disable-next-line no-console
     console.log("[AuthLink]", ...args);
-    addDiagnosticEvent("[AuthLink]", ...args);
-  }
-}
-
-// ── Diagnose für den intermittierenden nativen PKCE-Fehler ──────────────
-// TEMPORÄR, vor dem Merge entfernen (siehe utils/authDiagnostics.ts). Alle
-// Werte sind Zähler, Zustandsnamen oder YES/NO — es wird NIE ein Code,
-// Verifier, Token oder eine vollständige URL ausgegeben.
-
-// Fortlaufende Nummer je Hook-Instanz: macht Remounts unmittelbar sichtbar
-// (jede neue Instanz startet mit frischem attemptedRef und darf denselben
-// Link erneut verarbeiten — genau der Verdachtsfall).
-let hookInstanceCounter = 0;
-// Zählt Aufrufe von processParams über ALLE Instanzen hinweg.
-let processParamsCounter = 0;
-
-// Storage-Schlüssel, unter dem auth-js den PKCE-code_verifier ablegt.
-// auth-js nutzt genau EINEN Schlüssel pro Projekt (kein Flow-Namespacing).
-const CODE_VERIFIER_STORAGE_KEY = (() => {
-  try {
-    const host = new URL(process.env.EXPO_PUBLIC_SUPABASE_URL ?? "").hostname;
-    const projectRef = host.split(".")[0];
-    return projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null;
-  } catch {
-    return null;
-  }
-})();
-
-// NUR Vorhandensein prüfen — der Wert wird gelesen, aber niemals geloggt,
-// weitergereicht oder gespeichert.
-async function codeVerifierPresence(): Promise<"YES" | "NO" | "UNBEKANNT"> {
-  if (!AUTH_DIAGNOSTICS_ENABLED || !CODE_VERIFIER_STORAGE_KEY) return "UNBEKANNT";
-  try {
-    const raw = await AsyncStorage.getItem(CODE_VERIFIER_STORAGE_KEY);
-    return raw ? "YES" : "NO";
-  } catch {
-    return "UNBEKANNT";
   }
 }
 
@@ -215,13 +173,6 @@ export function useAuthLinkSession(
   const redeemingRef = useRef(false);
   // Verhindert, dass die verlängerte Frist beliebig oft neu gesetzt wird.
   const redemptionDeadlineRef = useRef<number | null>(null);
-  // Diagnose: eindeutige Nummer dieser Hook-Instanz. Steigt sie bei EINEM
-  // Recovery-Vorgang um mehr als 1, gab es einen Remount.
-  const instanceIdRef = useRef<number | null>(null);
-  if (instanceIdRef.current === null) {
-    instanceIdRef.current = ++hookInstanceCounter;
-  }
-  const instanceId = instanceIdRef.current;
 
   const finish = useCallback((next: AuthLinkStatus, message?: string) => {
     if (!mountedRef.current) return;
@@ -273,27 +224,12 @@ export function useAuthLinkSession(
       const hasCode = !!recovery.code;
       const hasTokens = !!(recovery.accessToken && recovery.refreshToken);
 
-      const callNo = ++processParamsCounter;
-      devLog(
-        `processParams #${callNo} (Instanz ${instanceId}) Quelle=${source}`,
-        `error=${hasError} code=${hasCode} tokens=${hasTokens}`,
-        `bereitsEingelöst=${attemptedRef.current}`,
-      );
-
       // Diese Quelle enthält nichts Verwertbares → anderen Quellen die Chance
       // lassen (attemptedRef NICHT setzen).
-      if (!hasError && !hasCode && !hasTokens) {
-        devLog(`processParams #${callNo}: nichts Verwertbares → übersprungen.`);
-        return;
-      }
+      if (!hasError && !hasCode && !hasTokens) return;
 
       // Nur den ersten Treffer einlösen (Code ist ohnehin einmalig gültig).
-      if (attemptedRef.current) {
-        devLog(
-          `processParams #${callNo}: DOPPELVERARBEITUNG durch Guard verhindert.`,
-        );
-        return;
-      }
+      if (attemptedRef.current) return;
       attemptedRef.current = true;
 
       if (hasError) {
@@ -354,48 +290,18 @@ export function useAuthLinkSession(
 
         if (hasCode) {
           devLog(`Erkannter Flow: pkce (Quelle: ${source})`);
-
-          // Diagnose: Session-Lage UND Verifier-Vorhandensein unmittelbar VOR
-          // dem Tausch. Fehlt der Verifier hier bereits, scheitert auth-js
-          // rein lokal (AuthPKCECodeVerifierMissingError, kein Serveraufruf).
-          const { data: preSession } = await supabase.auth.getSession();
-          const preUserId = preSession.session?.user?.id ?? null;
-          devLog(
-            `VOR Tausch: code_verifier vorhanden=${await codeVerifierPresence()}`,
-            `| Session vorhanden=${preUserId ? "YES" : "NO"}`,
-          );
-
           devLog("exchangeCodeForSession gestartet");
           const { data, error } = await supabase.auth.exchangeCodeForSession(
             recovery.code!,
           );
           devLog(
-            "exchangeCodeForSession beendet:",
-            error
-              ? `FEHLER Typ=${error.name} status=${error.status ?? "-"} msg=${error.message}`
-              : "erfolgreich",
+            "exchangeCodeForSession beendet",
+            error ? `Fehler: ${error.message}` : "erfolgreich",
           );
-          devLog(
-            `NACH Tausch: code_verifier vorhanden=${await codeVerifierPresence()}`,
-            `| Session entstanden=${data?.session ? "YES" : "NO"}`,
-          );
-
           if (error || !data.session) {
             await readySessionOrInvalid();
             return;
           }
-
-          // Wechselt die Session auf einen ANDEREN Nutzer als eine zuvor
-          // vorhandene? Nur MATCH/NO MATCH — keine IDs im Log.
-          const newUserId = data.session.user?.id ?? null;
-          devLog(
-            "Recovery-User vs. vorherige Session:",
-            preUserId === null
-              ? "keine vorherige Session"
-              : preUserId === newUserId
-                ? "MATCH"
-                : "NO MATCH",
-          );
           devLog("PKCE-Session hergestellt.");
           finish("ready");
           return;
@@ -435,7 +341,6 @@ export function useAuthLinkSession(
       flow,
       beginRecoverySession,
       endRecoverySession,
-      instanceId,
     ],
   );
 
@@ -590,18 +495,13 @@ export function useAuthLinkSession(
   // ── Mount-Lifecycle + Watchdog-Timeout ──
   useEffect(() => {
     mountedRef.current = true;
-    devLog(
-      `HOOK MOUNT — Instanz ${instanceId} (Instanzen bisher: ${hookInstanceCounter}).`,
-      instanceId > 1 ? "ACHTUNG: REMOUNT während desselben Vorgangs?" : "",
-    );
     armTimeout();
 
     return () => {
-      devLog(`HOOK UNMOUNT — Instanz ${instanceId}.`);
       mountedRef.current = false;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [armTimeout, instanceId]);
+  }, [armTimeout]);
 
   // Hinweis zu "Link erneut prüfen": ein bereits eingelöster PKCE-Code lässt
   // sich NICHT ein zweites Mal tauschen — auth-js löscht den code_verifier in

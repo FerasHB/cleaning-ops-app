@@ -3,7 +3,6 @@
 
 import { ErrorBanner, PasswordInput, Input } from "@/components/ui";
 import { AuthBrand } from "@/features/auth/components/AuthBrand";
-import { AuthDiagnosticsPanel } from "@/features/auth/AuthDiagnosticsPanel";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
@@ -208,12 +207,6 @@ export default function LoginScreen() {
           <Animated.View style={{ opacity: fadeAnim }}>
             <Text style={styles.footer}>Nur für autorisierte Mitarbeiter</Text>
           </Animated.View>
-
-          {/* Diagnose (temporär): nach erfolgreichem Reset landet der Nutzer
-              hier, ResetPasswordScreen ist dann nicht mehr erreichbar. Ohne
-              diese Stelle wäre der Buffer trotz Persistenz aus der UI nicht
-              mehr abrufbar. Rendert nichts ohne AUTH_DIAGNOSTICS_ENABLED. */}
-          <AuthDiagnosticsPanel />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

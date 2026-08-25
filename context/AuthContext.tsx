@@ -14,8 +14,6 @@ import {
   type AuthProfile,
   type ProfileFetchErrorKind,
 } from "@/services/profileService";
-import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
-import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
 import {
   clearRecoveryMode,
   isRecoveryModePersisted,
@@ -64,14 +62,12 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Nur bei aktivierter Diagnose loggen (siehe utils/authDiagnostics.ts) —
-// ausschließlich Event-Name/Phase, niemals Tokens
+// Nur in Entwicklung loggen — ausschließlich Event-Name/Phase, niemals Tokens
 // oder Session-Inhalte. Dient dazu, den Auth-/Deadlock-Fluss nachzuvollziehen.
 function authDebug(...args: unknown[]) {
-  if (AUTH_DIAGNOSTICS_ENABLED) {
+  if (__DEV__) {
     // eslint-disable-next-line no-console
     console.log("[Auth]", ...args);
-    addDiagnosticEvent("[Auth]", ...args);
   }
 }
 
@@ -849,9 +845,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // entzogen wird: forceSignOutDueToDeactivation() und die Kontolöschung
     // (features/profile/DeleteAccountScreen.tsx).
 
-    // Diagnose: signOut() ruft intern _removeSession() und löscht damit AUCH
-    // den PKCE-code_verifier. Für die Recovery-Analyse muss sichtbar sein,
-    // ob das während eines laufenden Reset-Vorgangs passiert.
     authDebug("signOut() aufgerufen — löscht Session UND code_verifier.");
     invalidatePendingAuthWork("signOut");
 

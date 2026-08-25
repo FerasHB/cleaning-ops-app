@@ -14,10 +14,7 @@
     },
     "preview": {
       "distribution": "internal",
-      "environment": "preview",
-      "env": {
-        "EXPO_PUBLIC_AUTH_DIAGNOSTICS": "1"
-      }
+      "environment": "preview"
     },
     "production": {
       "autoIncrement": true,

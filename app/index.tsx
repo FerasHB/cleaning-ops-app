@@ -5,7 +5,6 @@
 // mit Retry-/Logout-Optionen angezeigt, damit die App nie endlos lädt.
 
 import { useAuth } from "@/context/AuthContext";
-import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Redirect, router } from "expo-router";
 import { useEffect, useState } from "react";
@@ -41,15 +40,6 @@ export default function IndexScreen() {
       void endRecoverySession();
     }
   }, [loading, isRecoverySession, session, endRecoverySession]);
-
-  // Diagnose (temporär): belegt, dass die Sicherheitsgrenze wirklich greift.
-  useEffect(() => {
-    if (!loading && isRecoverySession && session) {
-      addDiagnosticEvent(
-        "[AuthMode] normal navigation blocked — Recovery-Session, Umleitung auf /reset-password",
-      );
-    }
-  }, [loading, isRecoverySession, session]);
 
   // ── Ziel der Weiterleitung EINMAL bestimmen (rein aus dem Auth-Zustand) ──
   let redirectTo: string | null = null;

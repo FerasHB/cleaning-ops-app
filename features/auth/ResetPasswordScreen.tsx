@@ -7,17 +7,14 @@
 import { ErrorBanner, PasswordInput } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
-import { AuthDiagnosticsPanel } from "@/features/auth/AuthDiagnosticsPanel";
 import { useAuthLinkSession } from "@/features/auth/useAuthLinkSession";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
-import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
-import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/utils/passwordValidation";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -30,16 +27,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-// Nur bei aktivierter Diagnose loggen (siehe utils/authDiagnostics.ts) —
-// niemals Passwörter, Tokens oder Session-Inhalte.
-function devLog(...args: unknown[]) {
-  if (AUTH_DIAGNOSTICS_ENABLED) {
-    // eslint-disable-next-line no-console
-    console.log("[ResetPassword]", ...args);
-    addDiagnosticEvent("[ResetPassword]", ...args);
-  }
-}
 
 const DEFAULT_INVALID_MESSAGE =
   "Der Link ist ungültig. Bitte fordere einen neuen Link an.";
@@ -68,13 +55,6 @@ export default function ResetPasswordScreen() {
     router.replace("/login");
   };
 
-  // Diagnose (temporär): macht Mount/Unmount des Screens sichtbar. Ein
-  // Unmount+Mount mitten im Vorgang erklärt eine zweite Link-Verarbeitung.
-  useEffect(() => {
-    devLog("SCREEN MOUNT");
-    return () => devLog("SCREEN UNMOUNT");
-  }, []);
-
   const [formSuccess, setFormSuccess] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -100,22 +80,17 @@ export default function ResetPasswordScreen() {
       // Passwort des Recovery-Kontos blieb aber unverändert.
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
-        devLog("Passwort-Update abgebrochen: keine Session vorhanden.");
         setFormError(
           "Deine Sitzung für das Zurücksetzen ist nicht mehr gültig. Bitte fordere einen neuen Link an.",
         );
         return;
       }
 
-      devLog("Passwort-Update gestartet.");
       const { data: updated, error } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
       if (error) {
-        // Technischer Grund nur intern (Dev) — der Nutzer bekommt die
-        // gemappte deutsche Meldung, nie den rohen Supabase-Text.
-        devLog("Passwort-Update fehlgeschlagen:", error.message);
         setFormError(
           toFriendlyAuthErrorMessage(error, "Passwort konnte nicht gesetzt werden."),
         );
@@ -125,17 +100,13 @@ export default function ResetPasswordScreen() {
       // Supabase liefert bei Erfolg den aktualisierten User zurück. Fehlt er,
       // wurde NICHTS bestätigt geändert — dann darf hier kein Erfolg erscheinen.
       if (!updated?.user) {
-        devLog("Passwort-Update ohne bestätigten User → kein Erfolg.");
         setFormError("Passwort konnte nicht gesetzt werden.");
         return;
       }
 
-      devLog("Passwort-Update erfolgreich.");
-
       // SICHERHEITSGRENZE: Recovery-Modus beenden UND abmelden. Der Nutzer
       // soll sich bewusst mit dem NEUEN Passwort anmelden — aus dem
       // Reset-Link heraus entsteht nie eine App-Sitzung.
-      devLog("Reset abgeschlossen — Recovery-Modus beenden und abmelden.");
       await endRecoverySession({ signOutSession: true });
 
       setFormSuccess(true);
@@ -153,7 +124,6 @@ export default function ResetPasswordScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.centerHint}>Link wird geprüft …</Text>
-          <AuthDiagnosticsPanel />
         </View>
       </SafeAreaView>
     );
@@ -195,7 +165,6 @@ export default function ResetPasswordScreen() {
           >
             <Text style={styles.linkBtnText}>Zurück zum Login</Text>
           </TouchableOpacity>
-          <AuthDiagnosticsPanel />
         </View>
       </SafeAreaView>
     );
@@ -225,7 +194,6 @@ export default function ResetPasswordScreen() {
           >
             <Text style={styles.primaryBtnText}>Zum Login</Text>
           </TouchableOpacity>
-          <AuthDiagnosticsPanel />
         </View>
       </SafeAreaView>
     );
@@ -324,8 +292,6 @@ export default function ResetPasswordScreen() {
                 <Text style={styles.primaryBtnText}>Passwort speichern</Text>
               )}
             </TouchableOpacity>
-
-            <AuthDiagnosticsPanel />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

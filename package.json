@@ -21,7 +21,6 @@
     "@react-navigation/native": "^7.1.8",
     "@supabase/supabase-js": "^2.101.1",
     "expo": "~54.0.36",
-    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.9",
