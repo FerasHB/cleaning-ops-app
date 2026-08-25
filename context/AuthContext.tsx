@@ -15,6 +15,7 @@ import {
   type ProfileFetchErrorKind,
 } from "@/services/profileService";
 import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
+import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
 import { isNetworkError } from "@/utils/networkError";
 import NetInfo from "@react-native-community/netinfo";
 import { Session, User } from "@supabase/supabase-js";
@@ -51,6 +52,7 @@ function authDebug(...args: unknown[]) {
   if (AUTH_DIAGNOSTICS_ENABLED) {
     // eslint-disable-next-line no-console
     console.log("[Auth]", ...args);
+    addDiagnosticEvent("[Auth]", ...args);
   }
 }
 

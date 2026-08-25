@@ -6,10 +6,12 @@
 
 import { ErrorBanner, PasswordInput } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
+import { AuthDiagnosticsPanel } from "@/features/auth/AuthDiagnosticsPanel";
 import { useAuthLinkSession } from "@/features/auth/useAuthLinkSession";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
+import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/utils/passwordValidation";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,6 +36,7 @@ function devLog(...args: unknown[]) {
   if (AUTH_DIAGNOSTICS_ENABLED) {
     // eslint-disable-next-line no-console
     console.log("[ResetPassword]", ...args);
+    addDiagnosticEvent("[ResetPassword]", ...args);
   }
 }
 
@@ -136,6 +139,7 @@ export default function ResetPasswordScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.centerHint}>Link wird geprüft …</Text>
+          <AuthDiagnosticsPanel />
         </View>
       </SafeAreaView>
     );
@@ -177,6 +181,7 @@ export default function ResetPasswordScreen() {
           >
             <Text style={styles.linkBtnText}>Zurück zum Login</Text>
           </TouchableOpacity>
+          <AuthDiagnosticsPanel />
         </View>
       </SafeAreaView>
     );
@@ -206,6 +211,7 @@ export default function ResetPasswordScreen() {
           >
             <Text style={styles.primaryBtnText}>Zum Login</Text>
           </TouchableOpacity>
+          <AuthDiagnosticsPanel />
         </View>
       </SafeAreaView>
     );
@@ -304,6 +310,8 @@ export default function ResetPasswordScreen() {
                 <Text style={styles.primaryBtnText}>Passwort speichern</Text>
               )}
             </TouchableOpacity>
+
+            <AuthDiagnosticsPanel />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

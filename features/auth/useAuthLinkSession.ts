@@ -23,6 +23,7 @@
 import { useAuthLinkUrl } from "@/features/auth/AuthLinkUrlProvider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
+import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthLinkErrorMessage } from "@/utils/authErrorMessages";
 import { useLocalSearchParams } from "expo-router";
@@ -59,6 +60,7 @@ function devLog(...args: unknown[]) {
   if (AUTH_DIAGNOSTICS_ENABLED) {
     // eslint-disable-next-line no-console
     console.log("[AuthLink]", ...args);
+    addDiagnosticEvent("[AuthLink]", ...args);
   }
 }
 
