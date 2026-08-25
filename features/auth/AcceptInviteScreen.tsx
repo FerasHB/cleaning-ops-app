@@ -40,6 +40,10 @@ export default function AcceptInviteScreen() {
   const { status, invalidMessage, recheck } = useAuthLinkSession(
     DEFAULT_INVALID_MESSAGE,
     EXPIRED_INVITE_MESSAGE,
+    // Einladungs-Annahme ist BEWUSST kein Recovery-Modus: sie führt regulär in
+    // die App, der Zugang wird dort über profiles.invite_accepted_at gesteuert
+    // (siehe app/index.tsx). Unverändertes Verhalten.
+    "invite",
   );
 
   const [formSuccess, setFormSuccess] = useState(false);

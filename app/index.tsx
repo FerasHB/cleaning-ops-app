@@ -7,7 +7,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Redirect, router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -17,15 +17,51 @@ import {
 } from "react-native";
 
 export default function IndexScreen() {
-  const { loading, session, profile, role, profileError, refreshProfile, signOut } =
-    useAuth();
+  const {
+    loading,
+    session,
+    profile,
+    role,
+    profileError,
+    refreshProfile,
+    signOut,
+    isRecoverySession,
+    endRecoverySession,
+  } = useAuth();
   const theme = useAppTheme();
   const [retrying, setRetrying] = useState(false);
+
+  // Selbstheilung: Marker ohne Session bedeutet, die Recovery-Sitzung ist weg
+  // (abgelaufen/abgemeldet). Marker aufräumen, damit der nächste Start wieder
+  // normal auf dem Login landet. MUSS vor jedem bedingten return stehen —
+  // sonst wäre es ein konditionaler Hook-Aufruf.
+  useEffect(() => {
+    if (!loading && isRecoverySession && !session) {
+      void endRecoverySession();
+    }
+  }, [loading, isRecoverySession, session, endRecoverySession]);
 
   // ── Ziel der Weiterleitung EINMAL bestimmen (rein aus dem Auth-Zustand) ──
   let redirectTo: string | null = null;
   if (!loading) {
-    if (!session) {
+    if (isRecoverySession) {
+      // SICHERHEITSGRENZE: Eine reine Passwort-Reset-Sitzung führt IMMER zurück
+      // in den Reset-Flow, nie in die App — auch nach Force-Close/Kaltstart.
+      // Ist der Marker gesetzt, die Session aber weg (abgelaufen/abgemeldet),
+      // wäre der Nutzer sonst dauerhaft gefangen: dann Marker aufräumen und
+      // regulär zum Login. Siehe services/auth/recoveryMode.ts.
+      // Der Query-Parameter `restored=1` ist das DETERMINISTISCHE Signal für
+      // ResetPasswordScreen, dass diese Navigation aus einer bereits
+      // persistierten Recovery-Session stammt und NICHT aus einem frischen
+      // Deep-Link. Nur diese eine Stelle setzt ihn — ein echter Recovery-Link
+      // von Supabase trägt ihn nie (Redirect-Ziel ist exakt
+      // `taskopsmanager://reset-password`, siehe uri_allow_list). Damit
+      // braucht der Hook keine Zeitheuristik mehr, um die beiden Fälle zu
+      // unterscheiden. Der Parameter allein berechtigt zu NICHTS: der
+      // Restore-Pfad verlangt zusätzlich den aktiven Recovery-Marker UND eine
+      // gültige Session.
+      redirectTo = session ? "/reset-password?restored=1" : "/login";
+    } else if (!session) {
       // Abgemeldete Nutzer landen immer auf der Anmeldung (Login), nicht auf
       // Welcome/Register. Die Registrierung ist von dort nur über eine
       // explizite Nutzeraktion erreichbar (Link "Firma registrieren").

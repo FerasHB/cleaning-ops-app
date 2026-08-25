@@ -6,6 +6,7 @@
 
 import { ErrorBanner, PasswordInput } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
+import { useAuth } from "@/context/AuthContext";
 import { useAuthLinkSession } from "@/features/auth/useAuthLinkSession";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
@@ -36,10 +37,23 @@ export default function ResetPasswordScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
+  const { endRecoverySession } = useAuth();
   const { status, invalidMessage, recheck } = useAuthLinkSession(
     DEFAULT_INVALID_MESSAGE,
     EXPIRED_RESET_MESSAGE,
+    // SICHERHEITSGRENZE: markiert die entstehende Session als reine
+    // Reset-Sitzung — siehe services/auth/recoveryMode.ts.
+    "recovery",
   );
+
+  // Abbruch des Reset-Flows ("Zurück zum Login"): Recovery-Modus beenden UND
+  // die Recovery-Session abmelden. Ohne den Sign-out bliebe eine gültige
+  // Session zurück, die nach dem Aufheben des Markers plötzlich als normaler
+  // App-Zugang zählen würde.
+  const handleAbandonRecovery = async () => {
+    await endRecoverySession({ signOutSession: true });
+    router.replace("/login");
+  };
 
   const [formSuccess, setFormSuccess] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -60,7 +74,19 @@ export default function ResetPasswordScreen() {
     setSubmitting(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({
+      // VORBEDINGUNG: ohne aktive Recovery-Session darf hier gar nicht erst
+      // geschrieben werden. Ohne diese Prüfung lief updateUser() im P0-Fehler
+      // gegen eine sachfremde Alt-Session — der Reset meldete Erfolg, das
+      // Passwort des Recovery-Kontos blieb aber unverändert.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        setFormError(
+          "Deine Sitzung für das Zurücksetzen ist nicht mehr gültig. Bitte fordere einen neuen Link an.",
+        );
+        return;
+      }
+
+      const { data: updated, error } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
@@ -71,10 +97,17 @@ export default function ResetPasswordScreen() {
         return;
       }
 
-      // Recovery-Session beenden — der Nutzer soll sich bewusst mit dem
-      // neuen Passwort neu anmelden, keine automatische App-Sitzung aus
-      // dem Reset-Link heraus.
-      await supabase.auth.signOut().catch(() => {});
+      // Supabase liefert bei Erfolg den aktualisierten User zurück. Fehlt er,
+      // wurde NICHTS bestätigt geändert — dann darf hier kein Erfolg erscheinen.
+      if (!updated?.user) {
+        setFormError("Passwort konnte nicht gesetzt werden.");
+        return;
+      }
+
+      // SICHERHEITSGRENZE: Recovery-Modus beenden UND abmelden. Der Nutzer
+      // soll sich bewusst mit dem NEUEN Passwort anmelden — aus dem
+      // Reset-Link heraus entsteht nie eine App-Sitzung.
+      await endRecoverySession({ signOutSession: true });
 
       setFormSuccess(true);
     } catch (err) {
@@ -127,7 +160,7 @@ export default function ResetPasswordScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.linkBtn}
-            onPress={() => router.replace("/login")}
+            onPress={handleAbandonRecovery}
             activeOpacity={0.75}
           >
             <Text style={styles.linkBtnText}>Zurück zum Login</Text>
