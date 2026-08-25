@@ -60,7 +60,17 @@ export default function IndexScreen() {
       // Ist der Marker gesetzt, die Session aber weg (abgelaufen/abgemeldet),
       // wäre der Nutzer sonst dauerhaft gefangen: dann Marker aufräumen und
       // regulär zum Login. Siehe services/auth/recoveryMode.ts.
-      redirectTo = session ? "/reset-password" : "/login";
+      // Der Query-Parameter `restored=1` ist das DETERMINISTISCHE Signal für
+      // ResetPasswordScreen, dass diese Navigation aus einer bereits
+      // persistierten Recovery-Session stammt und NICHT aus einem frischen
+      // Deep-Link. Nur diese eine Stelle setzt ihn — ein echter Recovery-Link
+      // von Supabase trägt ihn nie (Redirect-Ziel ist exakt
+      // `taskopsmanager://reset-password`, siehe uri_allow_list). Damit
+      // braucht der Hook keine Zeitheuristik mehr, um die beiden Fälle zu
+      // unterscheiden. Der Parameter allein berechtigt zu NICHTS: der
+      // Restore-Pfad verlangt zusätzlich den aktiven Recovery-Marker UND eine
+      // gültige Session.
+      redirectTo = session ? "/reset-password?restored=1" : "/login";
     } else if (!session) {
       // Abgemeldete Nutzer landen immer auf der Anmeldung (Login), nicht auf
       // Welcome/Register. Die Registrierung ist von dort nur über eine

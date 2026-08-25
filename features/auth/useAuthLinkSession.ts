@@ -46,11 +46,6 @@ const RECHECK_TIMEOUT_MS = 10_000;
 // Schranke und der Screen erreicht einen klaren Endzustand.
 const REDEMPTION_TIMEOUT_MS = 30_000;
 
-// Kurze Karenz, bevor eine bereits eingelöste Recovery-Session als
-// "wiederhergestellt" akzeptiert wird. Sie stellt sicher, dass ein ECHTER
-// Deep-Link (getInitialURL/Router-Params/url-Event) immer zuerst zum Zug
-// kommt — der Restore-Pfad darf einen frischen Link niemals überholen.
-const RESTORE_GRACE_MS = 1_000;
 
 type RecoveryParams = {
   code?: string;
@@ -192,6 +187,7 @@ export function useAuthLinkSession(
     useAuth();
 
   const params = useLocalSearchParams<{
+    restored?: string;
     code?: string;
     access_token?: string;
     refresh_token?: string;
@@ -543,45 +539,49 @@ export function useAuthLinkSession(
   //     aus dem persistierten, fail-closed gesetzten Marker) — eine beliebige
   //     normale Supabase-Session erfüllt das nie,
   //   • nur wenn KEINE Einlösung lief oder läuft (attemptedRef),
-  //   • und erst nach RESTORE_GRACE_MS, damit ein echter frischer Link
-  //     immer Vorrang hat.
+  //   • und nur bei `restored=1` — dem DETERMINISTISCHEN Signal aus
+  //     app/index.tsx. Genau diese eine Stelle setzt es; ein echter
+  //     Recovery-Link von Supabase trägt es nie, weil dessen Redirect-Ziel
+  //     exakt `taskopsmanager://reset-password` ohne Query ist (uri_allow_list).
+  //     Damit gibt es keinen Zeitwettlauf mehr zwischen Restore und frischem
+  //     Link: ein frischer Link kommt schlicht ohne dieses Signal an und
+  //     löst immer seinen eigenen Code ein.
+  const isRestoredEntry = firstString(params.restored) === "1";
+
   useEffect(() => {
-    if (flow !== "recovery" || !isRecoverySession) return;
+    if (flow !== "recovery" || !isRecoverySession || !isRestoredEntry) return;
 
     let cancelled = false;
-    const timer = setTimeout(() => {
-      void (async () => {
-        if (cancelled || !mountedRef.current) return;
-        // Ein Deep-Link war schneller → dessen Ergebnis gilt.
-        if (attemptedRef.current || statusRef.current !== "checking") return;
+    void (async () => {
+      if (cancelled || !mountedRef.current) return;
+      if (attemptedRef.current || statusRef.current !== "checking") return;
 
-        const { data } = await supabase.auth.getSession();
-        if (cancelled || !mountedRef.current) return;
-        if (attemptedRef.current || statusRef.current !== "checking") return;
+      const { data } = await supabase.auth.getSession();
+      if (cancelled || !mountedRef.current) return;
+      if (attemptedRef.current || statusRef.current !== "checking") return;
 
-        if (data.session) {
-          attemptedRef.current = true;
-          devLog("[AuthMode] restored recovery session accepted for reset form");
-          finish("ready");
-          return;
-        }
-
-        // Marker gesetzt, aber keine Session mehr: sicher scheitern und den
-        // Modus aufheben, damit der Nutzer nicht im Reset-Flow feststeckt.
-        devLog("[AuthMode] restored recovery session missing/invalid");
+      if (data.session) {
         attemptedRef.current = true;
-        await endRecoverySession();
-        finish("invalid", defaultInvalidMessage);
-      })();
-    }, RESTORE_GRACE_MS);
+        devLog("[AuthMode] restored recovery session accepted for reset form");
+        finish("ready");
+        return;
+      }
+
+      // Marker gesetzt, aber keine Session mehr: sicher scheitern und den
+      // Modus aufheben, damit der Nutzer nicht im Reset-Flow feststeckt.
+      devLog("[AuthMode] restored recovery session missing/invalid");
+      attemptedRef.current = true;
+      await endRecoverySession();
+      finish("invalid", defaultInvalidMessage);
+    })();
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
   }, [
     flow,
     isRecoverySession,
+    isRestoredEntry,
     finish,
     defaultInvalidMessage,
     endRecoverySession,
