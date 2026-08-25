@@ -5,9 +5,10 @@
 // mit Retry-/Logout-Optionen angezeigt, damit die App nie endlos lädt.
 
 import { useAuth } from "@/context/AuthContext";
+import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Redirect, router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -17,15 +18,50 @@ import {
 } from "react-native";
 
 export default function IndexScreen() {
-  const { loading, session, profile, role, profileError, refreshProfile, signOut } =
-    useAuth();
+  const {
+    loading,
+    session,
+    profile,
+    role,
+    profileError,
+    refreshProfile,
+    signOut,
+    isRecoverySession,
+    endRecoverySession,
+  } = useAuth();
   const theme = useAppTheme();
   const [retrying, setRetrying] = useState(false);
+
+  // Selbstheilung: Marker ohne Session bedeutet, die Recovery-Sitzung ist weg
+  // (abgelaufen/abgemeldet). Marker aufräumen, damit der nächste Start wieder
+  // normal auf dem Login landet. MUSS vor jedem bedingten return stehen —
+  // sonst wäre es ein konditionaler Hook-Aufruf.
+  useEffect(() => {
+    if (!loading && isRecoverySession && !session) {
+      void endRecoverySession();
+    }
+  }, [loading, isRecoverySession, session, endRecoverySession]);
+
+  // Diagnose (temporär): belegt, dass die Sicherheitsgrenze wirklich greift.
+  useEffect(() => {
+    if (!loading && isRecoverySession && session) {
+      addDiagnosticEvent(
+        "[AuthMode] normal navigation blocked — Recovery-Session, Umleitung auf /reset-password",
+      );
+    }
+  }, [loading, isRecoverySession, session]);
 
   // ── Ziel der Weiterleitung EINMAL bestimmen (rein aus dem Auth-Zustand) ──
   let redirectTo: string | null = null;
   if (!loading) {
-    if (!session) {
+    if (isRecoverySession) {
+      // SICHERHEITSGRENZE: Eine reine Passwort-Reset-Sitzung führt IMMER zurück
+      // in den Reset-Flow, nie in die App — auch nach Force-Close/Kaltstart.
+      // Ist der Marker gesetzt, die Session aber weg (abgelaufen/abgemeldet),
+      // wäre der Nutzer sonst dauerhaft gefangen: dann Marker aufräumen und
+      // regulär zum Login. Siehe services/auth/recoveryMode.ts.
+      redirectTo = session ? "/reset-password" : "/login";
+    } else if (!session) {
       // Abgemeldete Nutzer landen immer auf der Anmeldung (Login), nicht auf
       // Welcome/Register. Die Registrierung ist von dort nur über eine
       // explizite Nutzeraktion erreichbar (Link "Firma registrieren").

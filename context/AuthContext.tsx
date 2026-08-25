@@ -16,6 +16,11 @@ import {
 } from "@/services/profileService";
 import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
 import { addDiagnosticEvent } from "@/utils/authDiagnosticsBuffer";
+import {
+  clearRecoveryMode,
+  isRecoveryModePersisted,
+  markRecoveryModeActive,
+} from "@/services/auth/recoveryMode";
 import { isNetworkError } from "@/utils/networkError";
 import NetInfo from "@react-native-community/netinfo";
 import { Session, User } from "@supabase/supabase-js";
@@ -39,6 +44,15 @@ type AuthContextType = {
   // Echter Server-/RLS-Fehler beim Laden des Profils (nicht "offline") —
   // siehe app/index.tsx für die dazugehörige Fehler-/Retry-UI.
   profileError: ProfileFetchErrorKind;
+  // SICHERHEITSGRENZE: true, solange die vorhandene Session AUSSCHLIESSLICH
+  // aus einem Passwort-Reset-Link stammt. Eine solche Session berechtigt nur
+  // zum Passwortwechsel, NIE zum Betreten der App — siehe
+  // services/auth/recoveryMode.ts und die Guards in app/_layout.tsx.
+  isRecoverySession: boolean;
+  /** Markiert die entstehende Session als reine Recovery-Sitzung (vor dem Tausch). */
+  beginRecoverySession: () => Promise<void>;
+  /** Beendet den Recovery-Modus; optional wird die Recovery-Session abgemeldet. */
+  endRecoverySession: (options?: { signOutSession?: boolean }) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 };
@@ -73,6 +87,7 @@ type ProfileApplyOutcome =
 // wegräumen — sonst landet die App mit session, aber ohne profile im Spinner.
 const AUTHORITATIVE_PROFILE_CLEAR_SOURCES = new Set<string>([
   "applySession:no-session",
+  "applySession:recovery",
   "signout",
   "deactivation",
 ]);
@@ -83,6 +98,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [profileError, setProfileError] = useState<ProfileFetchErrorKind>(null);
   const [loading, setLoading] = useState(true);
+  // SICHERHEITSGRENZE — siehe services/auth/recoveryMode.ts.
+  const [isRecoverySession, setIsRecoverySession] = useState(false);
+  // Synchroner Spiegel: applySession() läuft teils VOR dem nächsten Render und
+  // muss die Entscheidung "Profil laden ja/nein" sofort treffen können.
+  const isRecoverySessionRef = useRef(false);
 
   const isMountedRef = useRef(true);
   const lastHandledUserIdRef = useRef<string | null>(null);
@@ -403,6 +423,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // SICHERHEITSGRENZE: Während des Passwort-Resets wird BEWUSST KEIN
+      // Profil geladen und KEIN Push-Token registriert. Eine Recovery-Session
+      // darf keine Firmen-/Nutzerdaten (Name, Rolle, company_id) in den State
+      // oder in den lokalen Cache ziehen, bevor der Reset abgeschlossen ist.
+      // Ohne diesen Zweig lief loadAndApplyProfile() auch im Reset-Flow durch
+      // und schrieb das Profil per saveCachedProfile() sogar auf die Platte.
+      if (isRecoverySessionRef.current) {
+        authDebug("[AuthMode] Recovery aktiv — Profil-/Push-Arbeit übersprungen.");
+        setProfileSafe("applySession:recovery", null);
+        setProfileError(null);
+        isOfflineProfileRef.current = false;
+        lastHandledUserIdRef.current = null;
+        return;
+      }
+
       const outcome = await loadAndApplyProfile(nextUserId);
 
       if (!isMountedRef.current) {
@@ -424,6 +459,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const bootstrap = async () => {
       try {
         setLoading(true);
+
+        // SICHERHEITSGRENZE: Der persistierte Recovery-Marker wird ZUERST
+        // gelesen — vor getSession()/applySession(). Nur so ist beim
+        // Kaltstart schon bekannt, dass eine wiederhergestellte Session eine
+        // reine Reset-Sitzung ist, bevor irgendetwas Profil-/Routing-
+        // relevantes damit passiert.
+        const persistedRecovery = await isRecoveryModePersisted();
+        isRecoverySessionRef.current = persistedRecovery;
+        if (isMountedRef.current) {
+          setIsRecoverySession(persistedRecovery);
+        }
+        if (persistedRecovery) {
+          authDebug("[AuthMode] recovery restored after cold start");
+        }
 
         const { data, error } = await supabase.auth.getSession();
 
@@ -627,6 +676,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.remove();
   }, [session, refreshProfile, syncPushToken]);
 
+  // ── SICHERHEITSGRENZE: Recovery-Modus betreten/verlassen ────────────────
+  // beginRecoverySession() MUSS aufgerufen werden, BEVOR der PKCE-/Token-
+  // Tausch akzeptiert wird. Sonst existiert ein Fenster, in dem eine bereits
+  // hergestellte Recovery-Session als normale Session gilt.
+  const beginRecoverySession = useCallback(async () => {
+    isRecoverySessionRef.current = true;
+    if (isMountedRef.current) {
+      setIsRecoverySession(true);
+    }
+    await markRecoveryModeActive();
+    authDebug("[AuthMode] recovery entered");
+  }, []);
+
+  // Beendet den Recovery-Modus. `signOutSession` meldet die Recovery-Session
+  // zusätzlich ab — richtig für Abbruch ("Zurück zum Login") und für den
+  // abgeschlossenen Reset. Bei einem ungültigen Link gibt es gar keine
+  // Session; dann reicht das Löschen des Markers, damit der Nutzer nicht
+  // dauerhaft im Reset-Flow gefangen bleibt.
+  const endRecoverySession = useCallback(
+    async (options?: { signOutSession?: boolean }) => {
+      isRecoverySessionRef.current = false;
+      if (isMountedRef.current) {
+        setIsRecoverySession(false);
+      }
+      await clearRecoveryMode();
+
+      if (options?.signOutSession) {
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          // Best effort — der Marker ist bereits weg, die App ist damit nicht
+          // mehr im Recovery-Modus gefangen.
+        }
+        if (isMountedRef.current) {
+          setSession(null);
+          setUser(null);
+          setProfileSafe("signout", null);
+          setProfileError(null);
+        }
+        lastHandledUserIdRef.current = null;
+      }
+
+      authDebug("[AuthMode] recovery cleared");
+    },
+    [setProfileSafe],
+  );
+
   const signOut = useCallback(async () => {
     // Push-Token IMMER zuerst best effort löschen — auch wenn signOut() selbst
     // fehlschlägt, darf auf einem geteilten Gerät kein Token des vorherigen
@@ -658,6 +754,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // ob das während eines laufenden Reset-Vorgangs passiert.
     authDebug("signOut() aufgerufen — löscht Session UND code_verifier.");
 
+    // Ein regulärer Logout beendet immer auch einen etwaigen Recovery-Modus.
+    isRecoverySessionRef.current = false;
+    if (isMountedRef.current) {
+      setIsRecoverySession(false);
+    }
+    await clearRecoveryMode();
+
     const { error } = await supabase.auth.signOut();
 
     if (error) {
@@ -681,10 +784,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: profile?.role ?? null,
       loading,
       profileError,
+      isRecoverySession,
+      beginRecoverySession,
+      endRecoverySession,
       signOut,
       refreshProfile,
     }),
-    [session, user, profile, loading, profileError, signOut, refreshProfile],
+    [
+      session,
+      user,
+      profile,
+      loading,
+      profileError,
+      isRecoverySession,
+      beginRecoverySession,
+      endRecoverySession,
+      signOut,
+      refreshProfile,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

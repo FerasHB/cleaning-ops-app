@@ -6,6 +6,7 @@
 
 import { ErrorBanner, PasswordInput } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
+import { useAuth } from "@/context/AuthContext";
 import { AuthDiagnosticsPanel } from "@/features/auth/AuthDiagnosticsPanel";
 import { useAuthLinkSession } from "@/features/auth/useAuthLinkSession";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -49,10 +50,23 @@ export default function ResetPasswordScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
+  const { endRecoverySession } = useAuth();
   const { status, invalidMessage, recheck } = useAuthLinkSession(
     DEFAULT_INVALID_MESSAGE,
     EXPIRED_RESET_MESSAGE,
+    // SICHERHEITSGRENZE: markiert die entstehende Session als reine
+    // Reset-Sitzung — siehe services/auth/recoveryMode.ts.
+    "recovery",
   );
+
+  // Abbruch des Reset-Flows ("Zurück zum Login"): Recovery-Modus beenden UND
+  // die Recovery-Session abmelden. Ohne den Sign-out bliebe eine gültige
+  // Session zurück, die nach dem Aufheben des Markers plötzlich als normaler
+  // App-Zugang zählen würde.
+  const handleAbandonRecovery = async () => {
+    await endRecoverySession({ signOutSession: true });
+    router.replace("/login");
+  };
 
   // Diagnose (temporär): macht Mount/Unmount des Screens sichtbar. Ein
   // Unmount+Mount mitten im Vorgang erklärt eine zweite Link-Verarbeitung.
@@ -118,11 +132,11 @@ export default function ResetPasswordScreen() {
 
       devLog("Passwort-Update erfolgreich.");
 
-      // Recovery-Session beenden — der Nutzer soll sich bewusst mit dem
-      // neuen Passwort neu anmelden, keine automatische App-Sitzung aus
-      // dem Reset-Link heraus.
-      devLog("signOut() nach erfolgreichem Reset — löscht auch den code_verifier.");
-      await supabase.auth.signOut().catch(() => {});
+      // SICHERHEITSGRENZE: Recovery-Modus beenden UND abmelden. Der Nutzer
+      // soll sich bewusst mit dem NEUEN Passwort anmelden — aus dem
+      // Reset-Link heraus entsteht nie eine App-Sitzung.
+      devLog("Reset abgeschlossen — Recovery-Modus beenden und abmelden.");
+      await endRecoverySession({ signOutSession: true });
 
       setFormSuccess(true);
     } catch (err) {
@@ -176,7 +190,7 @@ export default function ResetPasswordScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.linkBtn}
-            onPress={() => router.replace("/login")}
+            onPress={handleAbandonRecovery}
             activeOpacity={0.75}
           >
             <Text style={styles.linkBtnText}>Zurück zum Login</Text>

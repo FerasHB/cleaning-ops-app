@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
 });
 
 function RootNavigator() {
-  const { session, profile, role } = useAuth();
+  const { session, profile, role, isRecoverySession } = useAuth();
 
   // Tippt der Nutzer auf eine Push-Benachrichtigung, wird direkt der
   // betroffene Job geöffnet (auch beim Cold Start).
@@ -158,12 +158,29 @@ function RootNavigator() {
   // Stack.Protected entfernt nicht-zugängliche Routen vollständig aus dem
   // Stack → eingeloggte User können nicht per Swipe/Back auf Welcome/Login
   // zurück, und Auth-Screens bleiben nicht hinter den Tabs liegen.
-  const hasSession = !!session;
+  // ── SICHERHEITSGRENZE: Recovery-Session ≠ App-Zugang ────────────────────
+  // Eine aus einem Passwort-Reset-Link entstandene Session ist eine ganz
+  // normale Supabase-Session (persistiert, Event `SIGNED_IN`) und war deshalb
+  // hier bislang von einem echten Login nicht unterscheidbar: Force-Close im
+  // Reset-Flow + Neustart öffnete die voll authentifizierte App, ohne dass je
+  // ein Passwort eingegeben wurde. `isRecoverySession` kommt aus dem
+  // persistierten Marker (services/auth/recoveryMode.ts) und wird im
+  // AuthContext VOR der Session-Wiederherstellung hydriert — er übersteht
+  // damit Backgrounding, Force-Close, Kaltstart und Router-Remounts.
+  //
+  // Solange er gesetzt ist, zählt die Session hier bewusst NICHT als
+  // "eingeloggt": alle geschützten Routen-Gruppen fallen komplett aus dem
+  // Navigations-State, es gibt also gar keinen Screen, zu dem man per
+  // Back-Navigation, Deep-Link oder Remount entkommen könnte.
+  const hasAppSession = !!session && !isRecoverySession;
   const hasCompany = !!profile?.company_id;
   // Eingeloggt, Profil geladen, aber noch kein Unternehmen → Setup.
-  const needsSetup = hasSession && !!profile && !hasCompany;
+  const needsSetup = hasAppSession && !!profile && !hasCompany;
   // Voll eingeloggt (Session + Unternehmen) → App/Tabs.
-  const isAuthed = hasSession && hasCompany;
+  const isAuthed = hasAppSession && hasCompany;
+  // Auth-Screens (Login/Register/…) bleiben im Recovery-Modus erreichbar —
+  // sonst gäbe es aus einem abgebrochenen Reset keinen Weg zurück zum Login.
+  const hasSession = hasAppSession;
 
   // Rollen-Guards (zusätzlich zu RLS, das die eigentliche Sicherheitsgrenze
   // bleibt): verhindert, dass ein Employee die Admin-Tab-Gruppe oder

@@ -20,6 +20,7 @@
 // Folge dessen, was der jeweilige Screen mit der bereiten Session tut (z.B.
 // Passwort setzen), nicht Teil der Link-Einlösung selbst.
 
+import { useAuth } from "@/context/AuthContext";
 import { useAuthLinkUrl } from "@/features/auth/AuthLinkUrlProvider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AUTH_DIAGNOSTICS_ENABLED } from "@/utils/authDiagnostics";
@@ -163,6 +164,11 @@ export function useAuthLinkSession(
   // abgelaufen kennzeichnet (error_code/error_description enthält
   // "expired") — fehlt sie, wird defaultInvalidMessage auch dafür verwendet.
   expiredMessage: string = defaultInvalidMessage,
+  // SICHERHEITSGRENZE: Nur der Passwort-Reset erzeugt eine Session, die die
+  // App NICHT betreten darf. Die Einladungs-Annahme führt bewusst regulär in
+  // die App (dort steuert profiles.invite_accepted_at den Zugang, siehe
+  // app/index.tsx) und wird deshalb NICHT als Recovery markiert.
+  flow: "recovery" | "invite" = "invite",
 ): {
   status: AuthLinkStatus;
   invalidMessage: string;
@@ -176,6 +182,7 @@ export function useAuthLinkSession(
   // kommt bewusst aus dem app-weiten Provider statt aus einem eigenen
   // Linking-Listener hier im Hook.
   const authLinkUrl = useAuthLinkUrl();
+  const { beginRecoverySession, endRecoverySession } = useAuth();
 
   const params = useLocalSearchParams<{
     code?: string;
@@ -238,6 +245,12 @@ export function useAuthLinkSession(
   // Einlösung = ungültiger Link, ohne Ausnahme.
   const readySessionOrInvalid = useCallback(
     async (message?: string) => {
+      // SICHERHEITSGRENZE: Gescheiterte Einlösung → Marker wieder abräumen.
+      // Sonst bliebe die App nach einem ungültigen Link dauerhaft im
+      // Recovery-Modus gefangen (keine Session, aber Marker gesetzt).
+      if (flow === "recovery") {
+        await endRecoverySession();
+      }
       if (Platform.OS === "web") {
         const { data } = await supabase.auth.getSession();
         if (data.session) {
@@ -248,7 +261,7 @@ export function useAuthLinkSession(
       }
       finish("invalid", message ?? defaultInvalidMessage);
     },
-    [finish, defaultInvalidMessage],
+    [finish, defaultInvalidMessage, flow, endRecoverySession],
   );
 
   const processParams = useCallback(
@@ -290,6 +303,12 @@ export function useAuthLinkSession(
         // technischen Text (z.B. "Email link is invalid or has expired") —
         // NIE direkt anzeigen, sondern nur zur Unterscheidung
         // ungültig/abgelaufen verwenden (siehe toFriendlyAuthLinkErrorMessage).
+        // SICHERHEITSGRENZE: auch hier einen evtl. noch persistierten Marker
+        // aus einem früheren Versuch abräumen — ein ungültiger Link darf die
+        // App nicht im Recovery-Modus festhalten.
+        if (flow === "recovery") {
+          await endRecoverySession();
+        }
         finish(
           "invalid",
           toFriendlyAuthLinkErrorMessage(
@@ -306,6 +325,15 @@ export function useAuthLinkSession(
       // vorzeitig als „ungültig" abbrechen (siehe REDEMPTION_TIMEOUT_MS).
       redeemingRef.current = true;
       redemptionDeadlineRef.current = Date.now() + REDEMPTION_TIMEOUT_MS;
+
+      // SICHERHEITSGRENZE: Der Recovery-Marker wird gesetzt, BEVOR der Tausch
+      // überhaupt startet. Entsteht die Session, ist sie damit vom ersten
+      // Moment an als reine Reset-Sitzung gekennzeichnet — es gibt kein
+      // Fenster, in dem sie als normale Session gelten könnte (auch nicht bei
+      // einem Absturz/Force-Close mitten im Tausch).
+      if (flow === "recovery") {
+        await beginRecoverySession();
+      }
 
       try {
         if (hasCode) {
@@ -383,7 +411,16 @@ export function useAuthLinkSession(
         redemptionDeadlineRef.current = null;
       }
     },
-    [finish, readySessionOrInvalid, defaultInvalidMessage, expiredMessage],
+    [
+      finish,
+      readySessionOrInvalid,
+      defaultInvalidMessage,
+      expiredMessage,
+      flow,
+      beginRecoverySession,
+      endRecoverySession,
+      instanceId,
+    ],
   );
 
   // Watchdog: steht der Screen nach RECHECK_TIMEOUT_MS immer noch bei
