@@ -110,6 +110,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Synchroner Spiegel: applySession() läuft teils VOR dem nächsten Render und
   // muss die Entscheidung "Profil laden ja/nein" sofort treffen können.
   const isRecoverySessionRef = useRef(false);
+  // ── Schutz vor VERALTETER asynchroner Auth-Folgearbeit ──────────────────
+  // onAuthStateChange stellt seine Folgearbeit per setTimeout(…, 0) zurück
+  // (Deadlock-Vermeidung, siehe unten). Zwischen Einplanung und Ausführung
+  // kann sich der Auth-Zustand komplett geändert haben — beim Passwort-Reset
+  // genau so beobachtet: USER_UPDATED wird eingeplant, danach beendet der
+  // Reset-Flow den Recovery-Modus und meldet ab, und die eingeplante Aufgabe
+  // lief anschließend trotzdem los und forderte ein Profil für eine bereits
+  // abgemeldete Session an ("Profil: Server-/RLS-Fehler").
+  // Jeder Zustandswechsel, der eingeplante Arbeit entwertet, erhöht diese
+  // Epoche; die Aufgabe merkt sich den Wert bei der Einplanung und bricht ab,
+  // wenn er sich bis zur Ausführung geändert hat.
+  const authWorkEpochRef = useRef(0);
+  const invalidatePendingAuthWork = useCallback((reason: string) => {
+    authWorkEpochRef.current += 1;
+    authDebug("Eingeplante Auth-Folgearbeit entwertet:", reason);
+  }, []);
 
   const isMountedRef = useRef(true);
   const lastHandledUserIdRef = useRef<string | null>(null);
@@ -199,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     deactivationHandledRef.current = true;
+    invalidatePendingAuthWork("deactivation");
 
     Alert.alert(
       "Konto deaktiviert",
@@ -250,7 +267,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Zurücksetzen, damit ein späterer, neuer Login wieder normal geprüft wird.
     deactivationHandledRef.current = false;
-  }, [clearOwnPushTokenBestEffort]);
+  }, [clearOwnPushTokenBestEffort, invalidatePendingAuthWork]);
 
   // Lädt das Profil remote, fällt bei Netzwerkfehler auf den lokalen Cache
   // zurück und setzt den State. Zentralisiert die Offline-Logik UND die
@@ -503,12 +520,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Kaltstart schon bekannt, dass eine wiederhergestellte Session eine
         // reine Reset-Sitzung ist, bevor irgendetwas Profil-/Routing-
         // relevantes damit passiert.
+        //
+        // WICHTIG: Das Ergebnis darf einen bereits WÄHREND des Bootstraps
+        // aktivierten Recovery-Modus NICHT überschreiben. Effekte von
+        // Kind-Komponenten laufen vor denen des Providers, deshalb kann
+        // beginRecoverySession() (frischer Deep-Link) den Marker setzen,
+        // während das await oben noch läuft. Ein bedingungsloses Zuweisen
+        // hätte den frisch gesetzten Modus wieder auf false gedrückt und die
+        // Containment-Grenze für diesen Lauf still deaktiviert.
         const persistedRecovery = await isRecoveryModePersisted();
-        isRecoverySessionRef.current = persistedRecovery;
-        if (isMountedRef.current) {
-          setIsRecoverySession(persistedRecovery);
-        }
-        if (persistedRecovery) {
+        if (isRecoverySessionRef.current) {
+          // Bereits in diesem Lauf aktiviert (frische Einlösung) — nichts tun.
+          authDebug(
+            "[AuthMode] recovery bereits in diesem Lauf aktiviert — Bootstrap-Hydration übersprungen.",
+          );
+        } else if (persistedRecovery) {
+          isRecoverySessionRef.current = true;
+          if (isMountedRef.current) {
+            setIsRecoverySession(true);
+          }
           authDebug("[AuthMode] recovery restored after cold start");
         }
 
@@ -572,8 +602,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Supabase den Lock freigibt, bevor applySession weitere Supabase-Aufrufe
       // macht.
       authDebug("Folgearbeit geplant", event);
+      // Epoche zum EINPLANUNGS-Zeitpunkt festhalten (siehe authWorkEpochRef).
+      const scheduledEpoch = authWorkEpochRef.current;
       setTimeout(() => {
         if (!isMountedRef.current) {
+          return;
+        }
+        // Auth-Zustand hat sich seit der Einplanung geändert (Sign-out,
+        // Recovery beendet, Deaktivierung) → diese Aufgabe ist veraltet und
+        // darf KEINE authentifizierte Profilarbeit mehr ausführen.
+        if (scheduledEpoch !== authWorkEpochRef.current) {
+          authDebug("Folgearbeit verworfen (veraltet):", event);
           return;
         }
         void (async () => {
@@ -753,6 +792,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // dauerhaft im Reset-Flow gefangen bleibt.
   const endRecoverySession = useCallback(
     async (options?: { signOutSession?: boolean }) => {
+      // MUSS vor dem Sign-out passieren: entwertet bereits eingeplante
+      // Folgearbeit (z.B. das USER_UPDATED aus updateUser()), damit sie kein
+      // Profil mehr für die gleich abgemeldete Session anfordert.
+      invalidatePendingAuthWork("endRecoverySession");
       isRecoverySessionRef.current = false;
       if (isMountedRef.current) {
         setIsRecoverySession(false);
@@ -777,7 +820,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       authDebug("[AuthMode] recovery cleared");
     },
-    [setProfileSafe],
+    [setProfileSafe, invalidatePendingAuthWork],
   );
 
   const signOut = useCallback(async () => {
@@ -810,6 +853,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // den PKCE-code_verifier. Für die Recovery-Analyse muss sichtbar sein,
     // ob das während eines laufenden Reset-Vorgangs passiert.
     authDebug("signOut() aufgerufen — löscht Session UND code_verifier.");
+    invalidatePendingAuthWork("signOut");
 
     // Ein regulärer Logout beendet immer auch einen etwaigen Recovery-Modus.
     isRecoverySessionRef.current = false;
@@ -831,7 +875,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     lastHandledUserIdRef.current = null;
     autoRetryCountRef.current = 0;
     isOfflineProfileRef.current = false;
-  }, [clearOwnPushTokenBestEffort]);
+  }, [clearOwnPushTokenBestEffort, invalidatePendingAuthWork]);
 
   const value = useMemo(
     () => ({
