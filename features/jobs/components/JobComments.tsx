@@ -3,13 +3,14 @@
 // Liste (Autor, Zeit, Text) + Eingabe. Online-only — nutzt useJobComments
 // (kein JobContext, keine Offline-Queue).
 //
-// SCHREIBRECHT ist NICHT dasselbe wie Leserecht: seit Phase 5 sieht auch ein
-// nur sekundär zugewiesener Mitarbeiter den Auftrag und seine Kommentare,
-// darf aber keinen schreiben — die RLS-Policy
-// "employee insert comments on own jobs" verlangt weiterhin
-// jobs.assigned_to = auth.uid(). Deshalb MUSS der Aufrufer `canComment`
-// setzen; ohne dieses Prop hätte der Nutzer ein aktives Senden-Feld, das
-// serverseitig mit einem RLS-Fehler endet.
+// SCHREIBRECHT ist NICHT dasselbe wie Leserecht: die RLS-Policy
+// "employee insert comments on own jobs" verlangt die volle Zuweisungsmenge
+// (assigned_to ODER job_assignments, seit Migration 20260826000001) — ein
+// nicht zugewiesener Mitarbeiter darf den Auftrag also gar nicht erst sehen,
+// geschweige denn kommentieren. Deshalb MUSS der Aufrufer `canComment`
+// dennoch setzen; ohne dieses Prop hätte z. B. ein Admin, der gerade keinen
+// Zugriff mehr hat, ein aktives Senden-Feld, das serverseitig mit einem
+// RLS-Fehler endet.
 
 import { Button, Card, EmptyState, ErrorBanner, Input } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";

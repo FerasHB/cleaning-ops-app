@@ -247,13 +247,17 @@ begin
   raise notice 'CASE 5 -> %', n;
 end $$;
 
--- CASE 6: BERND laedt hoch -> ABGELEHNT.
--- BEWUSSTE, DOKUMENTIERTE ASYMMETRIE: der Foto-/Kommentar-SCHREIBPFAD
--- haengt projektweit am Legacy-Primaer (assigned_to), nicht an der
--- Zuweisungsmenge — siehe CLAUDE.md und Abschnitt 2 der Migration. Die App
--- bietet Bernd den Upload gar nicht erst an (isPrimaryAssignee). Dieser
--- Fall haelt den Status quo fest, damit eine spaetere Angleichung eine
--- BEWUSSTE Aenderung ist und kein Versehen.
+-- CASE 6: BERND laedt hoch -> ERLAUBT (seit 20260826000001).
+-- ZUR EINORDNUNG (historisch): zum Stand DIESER Migration (20260805000000)
+-- war das eine BEWUSSTE, DOKUMENTIERTE ASYMMETRIE — der Foto-/Kommentar-
+-- SCHREIBPFAD hing projektweit am Legacy-Primaer (assigned_to), nicht an der
+-- Zuweisungsmenge. Migration 20260826000001_secondary_assignee_write_access
+-- hat genau diese Asymmetrie aufgeloest (angekuendigt als "eigener PR" im
+-- Kommentar von Abschnitt 2 dieser Migration): die INSERT-Policy erlaubt
+-- jetzt die volle Zuweisungsmenge. Die App bietet Bernd den Upload seither
+-- ebenfalls an (features/jobs/JobDetailScreen.tsx nutzt dort isAssignedTo
+-- statt isPrimaryAssignee). Siehe supabase/tests/secondary_assignee_write_
+-- access.test.sql CASE 20 fuer die aktuelle, dedizierte Fassung.
 do $$
 declare v text;
 begin
@@ -267,7 +271,7 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (6,'SEKUNDAER Zugewiesener laedt hoch (Schreibpfad bleibt am Primaer)','ABGELEHNT',v);
+  insert into _r values (6,'SEKUNDAER Zugewiesener laedt hoch (seit 20260826000001 erlaubt)','ERLAUBT',v);
   raise notice 'CASE 6 -> %', v;
 end $$;
 
@@ -304,7 +308,8 @@ begin
   raise notice 'CASE 8 -> %', v;
 end $$;
 
--- CASE 9: Admin A sieht ALLE Fotos seiner Firma (nach CASE 4 + 8 sind es 3).
+-- CASE 9: Admin A sieht ALLE Fotos seiner Firma (nach CASE 4 + 6 + 8 sind es
+-- 4 — bernd.jpg aus CASE 6 zaehlt seit 20260826000001 mit).
 do $$
 declare n int;
 begin
@@ -314,7 +319,7 @@ begin
    where bucket_id='job-photos'
      and (storage.foldername(name))[1] = 'b1000000-0000-0000-0000-000000000001';
   execute 'reset role';
-  insert into _r values (9,'Admin verwaltet saemtliche Firmenfotos (anna+anna-neu+admin)','3',n::text);
+  insert into _r values (9,'Admin verwaltet saemtliche Firmenfotos (anna+bernd+anna-neu+admin)','4',n::text);
   raise notice 'CASE 9 -> %', n;
 end $$;
 
@@ -446,11 +451,12 @@ begin
             when others then v := 'FEHLER('||sqlstate||')';
   end;
   execute 'reset role';
-  -- ANNA sieht genau die drei Objekte von J1 (anna.jpg + anna-neu.jpg aus
-  -- CASE 4 + admin.jpg aus CASE 8). Das Altlast-Objekt bleibt unsichtbar,
-  -- und carla-eigen.jpg aus CASE 10 gehoert zu J2.
+  -- ANNA sieht genau die vier Objekte von J1 (anna.jpg + bernd.jpg aus
+  -- CASE 6 [seit 20260826000001 erlaubt] + anna-neu.jpg aus CASE 4 +
+  -- admin.jpg aus CASE 8). Das Altlast-Objekt bleibt unsichtbar, und
+  -- carla-eigen.jpg aus CASE 10 gehoert zu J2.
   insert into _r values (15,'Kaputt benanntes Bestandsobjekt bricht die Fotoliste NICHT',
-    'zeilen=3',v);
+    'zeilen=4',v);
   raise notice 'CASE 15 -> %', v;
 end $$;
 

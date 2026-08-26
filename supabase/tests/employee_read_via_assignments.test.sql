@@ -336,9 +336,17 @@ begin
   raise notice 'CASE 12 -> %', v;
 end $$;
 
--- CASE 12b: der Grund dafuer, als harter Regressionsschutz.
--- Der Sekundaere darf den Ungelesen-Status NICHT schreiben. Solange das so
--- ist, DARF die RPC ihn ihm auch nicht melden — sonst haengt der Punkt.
+-- CASE 12b: der Grund dafuer GALT bis 20260826000001.
+-- Damals durfte der Sekundaere den Ungelesen-Status nicht schreiben — genau
+-- deshalb durfte die RPC (CASE 12) ihm auch nichts melden, sonst haette ein
+-- haengender Punkt gedroht. Migration 20260826000001_secondary_assignee_
+-- write_access hat den job_comment_reads-Schreibpfad auf die volle
+-- Zuweisungsmenge angehoben (siehe supabase/tests/secondary_assignee_write_
+-- access.test.sql CASE 14/15) — der Sekundaere DARF jetzt schreiben. CASE 12
+-- bleibt trotzdem bei "ungelesen=0", weil get_unread_comment_job_ids()
+-- bewusst NICHT mitgezogen wurde (kein Bedarf laut Zugriffsmatrix, siehe
+-- Kopfkommentar dieser Migration): er schreibt hier erfolgreich einen
+-- Read-State, den die RPC ohnehin nie fuer ihn ausgewertet haette.
 do $$
 declare v text;
 begin
@@ -352,8 +360,8 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (121,'Sekundaerer kann Ungelesen-Status nicht schreiben (Schreibpfad unveraendert)',
-    'ABGELEHNT',v);
+  insert into _r values (121,'Sekundaerer kann Ungelesen-Status seit 20260826000001 schreiben',
+    'AKZEPTIERT',v);
   raise notice 'CASE 12b -> %', v;
 end $$;
 
@@ -391,11 +399,19 @@ end $$;
 
 
 -- =========================================================
--- D. SCHREIBRECHTE BLEIBEN UNVERAENDERT (Kern der Read-Only-Zusicherung)
+-- D. SCHREIBRECHTE ZUM ZEITPUNKT DIESER MIGRATION (Phase 5, 20260730000000)
 -- =========================================================
+-- WICHTIG — GILT NUR NOCH TEILWEISE: diese Sektion hielt urspruenglich fest,
+-- dass Phase 5 eine REINE Lese-Aenderung ist. Migration 20260826000001_
+-- secondary_assignee_write_access hat den Kommentar-/Foto-/Ungelesen-
+-- Schreibpfad DANACH bewusst auf die volle Zuweisungsmenge angehoben (siehe
+-- deren Kopfkommentar sowie supabase/tests/secondary_assignee_write_access.
+-- test.sql). Die Faelle unten sind entsprechend aktualisiert; was WEITERHIN
+-- unveraendert bleibt (Start/Abschluss, direktes UPDATE auf jobs), bleibt
+-- ABGELEHNT.
 
--- CASE 14: SEKUNDAER darf KEINEN Kommentar schreiben (Insert-Policy haengt
--- weiterhin an jobs.assigned_to). Bewusst so — Phase 6/7.
+-- CASE 14: SEKUNDAER darf seit 20260826000001 kommentieren (vorher ABGELEHNT
+-- — die Insert-Policy haengte bis dahin ausschliesslich an jobs.assigned_to).
 do $$
 declare v text;
 begin
@@ -409,8 +425,8 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (14,'Sekundaerer darf KEINEN Kommentar schreiben (Schreibpfad unveraendert)',
-    'ABGELEHNT',v);
+  insert into _r values (14,'Sekundaerer darf seit 20260826000001 kommentieren',
+    'AKZEPTIERT',v);
   raise notice 'CASE 14 -> %', v;
 end $$;
 
@@ -432,15 +448,16 @@ begin
   raise notice 'CASE 15 -> %', v;
 end $$;
 
--- CASE 16: SEKUNDAER darf keine Foto-Zeile anlegen.
+-- CASE 16: SEKUNDAER darf seit 20260826000001 eine Foto-Zeile anlegen.
 --
--- DIESER FALL IST DER GRUND FUER ABSCHNITT 6 DER MIGRATION. Vor dem
--- Entfernen der beiden weiten Baseline-Policies schlug er fehl: die
--- Policy "job_photos: Firma darf Fotos hochladen" prueft die Zuweisung
--- nicht selbst, sondern nur, ob der Aufrufer die jobs-Zeile SEHEN kann —
--- eine Bedingung, die Abschnitt 1 dieser Migration gerade erweitert.
--- Damit haette eine reine Lese-Aenderung transitiv ein SCHREIBRECHT
--- geoeffnet. Der Fall bleibt hier als Regressionsschutz stehen.
+-- ZUR EINORDNUNG (historisch): dieser Fall war urspruenglich der Grund fuer
+-- Abschnitt 6 DIESER Migration (20260730000000) — vor dem Entfernen der
+-- beiden weiten Baseline-Policies haette die reine Lese-Erweiterung aus
+-- Abschnitt 1 hier transitiv ein Schreibrecht geoeffnet. Das ist weiterhin
+-- korrekt und wird durch CASE 24 unten abgesichert. Der SEKUNDAERE darf hier
+-- inzwischen aber aus einem ANDEREN, bewussten Grund erfolgreich schreiben:
+-- 20260826000001_secondary_assignee_write_access hat die strenge
+-- Insert-Policy selbst auf die volle Zuweisungsmenge angehoben.
 do $$
 declare v text;
 begin
@@ -454,7 +471,7 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (16,'Sekundaerer darf kein Foto anlegen (Schreibpfad unveraendert)','ABGELEHNT',v);
+  insert into _r values (16,'Sekundaerer darf seit 20260826000001 ein Foto anlegen','AKZEPTIERT',v);
   raise notice 'CASE 16 -> %', v;
 end $$;
 
@@ -530,8 +547,15 @@ begin
   raise notice 'CASE 20 -> %', v;
 end $$;
 
--- CASE 21: KEINE Schreib-Policy (INSERT/UPDATE/DELETE) wurde erweitert.
--- Geprueft wird die with_check-Seite ebenso wie die using-Seite.
+-- CASE 21: Stand DIESER Migration (20260730000000): KEINE Schreib-Policy
+-- (INSERT/UPDATE/DELETE) wurde erweitert. Geprueft wird die with_check-Seite
+-- ebenso wie die using-Seite.
+--
+-- SEIT 20260826000001_secondary_assignee_write_access gilt das nicht mehr:
+-- fuenf Schreib-Policies (job_comments/job_photos INSERT, job_comment_reads
+-- INSERT+UPDATE, storage.objects INSERT) nutzen den Helfer jetzt bewusst.
+-- Siehe supabase/tests/secondary_assignee_write_access.test.sql CASE 28 fuer
+-- die aktuelle, positive Fassung dieser Zusicherung.
 do $$
 declare v text;
 begin
@@ -540,8 +564,8 @@ begin
   where cmd <> 'SELECT'
     and (coalesce(qual,'') like '%is_assigned_to_job%'
       or coalesce(with_check,'') like '%is_assigned_to_job%');
-  insert into _r values (21,'Keine INSERT/UPDATE/DELETE-Policy nutzt den Helfer',
-    'schreibpolicies_mit_helfer=0',v);
+  insert into _r values (21,'Schreib-Policies mit Helfer (seit 20260826000001: 5 statt 0)',
+    'schreibpolicies_mit_helfer=5',v);
   raise notice 'CASE 21 -> %', v;
 end $$;
 
@@ -637,6 +661,9 @@ end $$;
 
 -- CASE 27: und der Admin liest weiterhin alle Fotos der eigenen Firma
 -- (Gegenprobe zum Entfernen der weiten LESE-Policy).
+-- Zaehlwert 3 statt urspruenglich 2: seit 20260826000001 gelingt CASE 16
+-- (Sekundaerer legt Foto an), was hier eine zusaetzliche Zeile beisteuert
+-- (Setup-Foto + CASE 16 + CASE 25).
 do $$
 declare v text;
 begin
@@ -645,7 +672,7 @@ begin
   select 'admin_fotos='||count(*)::text into v
   from public.job_photos where job_id='e4000000-0000-0000-0000-000000000001';
   execute 'reset role';
-  insert into _r values (27,'Admin liest weiterhin die Fotos der eigenen Firma','admin_fotos=2',v);
+  insert into _r values (27,'Admin liest weiterhin die Fotos der eigenen Firma','admin_fotos=3',v);
   raise notice 'CASE 27 -> %', v;
 end $$;
 

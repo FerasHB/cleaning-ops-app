@@ -703,11 +703,16 @@ begin
   raise notice 'CASE 24 -> %', v;
 end $$;
 
--- CASE 25: der Kommentar-Schreibpfad bleibt am Legacy-Primaer. MOHAMMED
--- darf J1 abschliessen (CASE 3), aber weiterhin keinen Kommentar anlegen —
--- diese INSERT-Policy ist NICHT Teil dieser Phase. Der Client gated das
--- Eingabefeld entsprechend (isPrimaryAssignee), es entsteht also kein
--- Button, der fehlschlaegt.
+-- CASE 25: der Kommentar-Schreibpfad. Zum Stand DIESER Migration (Phase 7,
+-- 20260731000000) blieb er bewusst am Legacy-Primaer: MOHAMMED durfte J1
+-- abschliessen (CASE 3), aber keinen Kommentar anlegen. Migration
+-- 20260826000001_secondary_assignee_write_access hat diese Asymmetrie
+-- spaeter aufgeloest (dort als "eigener PR" angekuendigt) — die
+-- INSERT-Policy erlaubt seither die volle Zuweisungsmenge, und der Client
+-- gated das Eingabefeld entsprechend mit isAssignedTo statt isPrimaryAssignee
+-- (features/jobs/JobDetailScreen.tsx). Siehe supabase/tests/secondary_
+-- assignee_write_access.test.sql CASE 2 fuer die aktuelle, dedizierte
+-- Fassung dieser Zusicherung.
 do $$
 declare v text;
 begin
@@ -721,7 +726,7 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (25,'Kommentar-INSERT bleibt fuer den Sekundaeren abgelehnt (bewusste Asymmetrie)','ABGELEHNT',v);
+  insert into _r values (25,'Kommentar-INSERT seit 20260826000001 fuer den Sekundaeren erlaubt','AKZEPTIERT',v);
   raise notice 'CASE 25 -> %', v;
 end $$;
 
