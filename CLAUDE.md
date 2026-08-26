@@ -149,11 +149,17 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
     (ODER den Legacy-Zeiger für Bestandszeilen ohne `job_assignments`-Zeile). Prüft zusätzlich
     `role='employee'` und `jobType='single'` — beides steht serverseitig ebenfalls außerhalb der
     ODER-Klammer, weil Recurring-Parent-Regeln selbst Zuweisungen tragen.
-  - `isPrimaryAssignee(job, employeeId)` → **Kommentar schreiben, Foto-Upload, Ungelesen-Status**. Deren
-    INSERT-Policies auf `job_comments`/`job_photos`/`job_comment_reads`/`storage.objects` verlangen
-    weiterhin `jobs.assigned_to = auth.uid()`. Diese Asymmetrie ist gewollt und dokumentiert; sie fällt
-    in einem eigenen PR. Hier `isAssignedTo()` zu verwenden erzeugt einen Button, der mit 42501 bzw.
-    „Job not found or not allowed" fehlschlägt.
+  - `isAssignedTo(job, employeeId)` → **Kommentar schreiben, Foto-Upload**. Seit Migration
+    `20260826000001` erlauben die INSERT-Policies auf `job_comments`/`job_photos`/`storage.objects`
+    ebenfalls die volle Zuweisungsmenge (ODER den Legacy-Zeiger). Zuvor bestand hier eine bewusste
+    Asymmetrie zu Start/Abschluss (nur der Legacy-Primär durfte schreiben) — die Migration hat sie
+    aufgelöst.
+  - `isPrimaryAssignee(job, employeeId)` bleibt NUR noch für das Markieren des **Ungelesen-Status**
+    (`job_comment_reads` INSERT/UPDATE über `markJobCommentsAsRead`) reserviert.
+    `get_unread_comment_job_ids()` wertet weiterhin ausschließlich `jobs.assigned_to` aus — bewusst
+    nicht Teil von `20260826000001`, weil kein Bedarf laut Zugriffsmatrix besteht: die RPC würde einem
+    sekundär Zugewiesenen ohnehin nie einen ungelesenen Kommentar melden, ein Markier-Versuch mit
+    `isAssignedTo()` wäre also nur ein wirkungsloser zusätzlicher Request.
 - **Geteilte Job-Uhr (Shared Job Time):** ein Auftrag hat **genau eine** offizielle Dauer
   (`completed_at - started_at`). Wer Start/Abschluss gedrückt hat, ist dafür unerheblich — **alle**
   Zugewiesenen erhalten diese Zeit im Stundenzettel, auch wer Start nie gedrückt hat. Der erste

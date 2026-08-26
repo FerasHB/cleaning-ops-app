@@ -44,7 +44,7 @@ import { JobStatusOverview } from "@/features/jobs/components/JobStatusOverview"
 import { JobTimelineCard } from "@/features/jobs/components/JobTimelineCard";
 import { OccurrenceOriginLink } from "@/features/jobs/components/OccurrenceOriginLink";
 import { getJobById } from "@/services/jobs/jobs.service";
-import { canRunJobActions, isPrimaryAssignee } from "@/utils/jobAssignees";
+import { canRunJobActions, isAssignedTo, isPrimaryAssignee } from "@/utils/jobAssignees";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import type { Job } from "@/types/job";
 import { useFocusEffect } from "@react-navigation/native";
@@ -173,13 +173,13 @@ export default function JobDetailScreen() {
 
   // Darf der Nutzer den Ungelesen-Status dieses Jobs schreiben?
   //
-  // job_comment_reads hat eigene INSERT/UPDATE-Policies, die weiterhin den
-  // LEGACY-PRIMÄR verlangen. Ein sekundär Zugewiesener darf die Kommentare
-  // zwar lesen (Phase 5), das Markieren schlägt für ihn aber mit 42501 fehl.
-  // Der Fehler würde im JobContext stillschweigend geschluckt — also gar
-  // nicht erst versuchen.
-  // Phase 7 hat NUR start_own_job/complete_own_job erweitert; die
-  // Kommentar-/Foto-Schreibpfade folgen in einem eigenen PR.
+  // job_comment_reads erlaubt seit 20260826000001 zwar die volle
+  // Zuweisungsmenge zu schreiben, aber get_unread_comment_job_ids() wertet
+  // weiterhin ausschließlich den LEGACY-PRIMÄR aus (bewusst unverändert,
+  // kein Bedarf laut Zugriffsmatrix). Ein sekundär Zugewiesener würde also
+  // NIE als „hat ungelesene Kommentare" gemeldet — ein Markier-Versuch wäre
+  // rein verschwendet (ein zusätzlicher Request ohne jede Wirkung), deshalb
+  // hier weiterhin isPrimaryAssignee statt isAssignedTo.
   const canMarkCommentsRead =
     !!job && (isAdmin || isPrimaryAssignee(job, profile?.id));
 
@@ -325,15 +325,15 @@ export default function JobDetailScreen() {
   const canComplete = canRunActions && job.status === "in_progress";
   const isDone = job.status === "completed";
 
-  // Foto-Upload: Admin immer; Employee nur wenn PRIMÄR zugewiesen.
-  // BEWUSSTE ASYMMETRIE zu canStart/canComplete oben: die Insert-Policies auf
-  // job_photos und storage.objects hängen weiterhin an assigned_to = auth.uid().
-  // Phase 7 hat NUR die beiden Status-RPCs erweitert — Fotos und Kommentare
-  // gehören nicht zur Job-Uhr und folgen in einem eigenen PR.
+  // Foto-Upload: Admin immer; Employee, wenn ihm der Auftrag zugewiesen ist
+  // (volle Zuweisungsmenge, nicht nur der Legacy-Primär). Seit 20260826000001
+  // erlauben die Insert-Policies auf job_photos und storage.objects genau
+  // das — spiegelt exakt das Server-Prädikat, wie canRunJobActions es für
+  // Start/Abschluss tut.
   // isOnline wird separat übergeben — JobPhotos zeigt den Offline-Hinweis selbst.
   const canUploadPhotos =
     role === "admin" ||
-    (role === "employee" && isPrimaryAssignee(job, profile?.id));
+    (role === "employee" && isAssignedTo(job, profile?.id));
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -431,7 +431,7 @@ export default function JobDetailScreen() {
         {/* 8 — Kommentare (append-only, online-only, unverändert) */}
         <JobComments
           jobId={job.id}
-          canComment={isAdmin || isPrimaryAssignee(job, profile?.id)}
+          canComment={isAdmin || isAssignedTo(job, profile?.id)}
           onInputFocus={handleCommentFocus}
         />
 

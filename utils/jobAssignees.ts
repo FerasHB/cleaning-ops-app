@@ -12,12 +12,18 @@ import type { Job, JobAssignee } from "@/types/job";
  * wer angezeigt wird. Für Aktions-Buttons gibt es genau zwei Gates, die dem
  * jeweiligen SERVER-Prädikat entsprechen müssen:
  *
- *   canRunJobActions()  → Start/Abschluss. Serverseitig erlauben
- *                         start_own_job/complete_own_job seit Phase 7 die
- *                         volle Zuweisungsmenge (ODER Legacy-Primär).
- *   isPrimaryAssignee() → Kommentar schreiben, Foto-Upload, Ungelesen-Status.
- *                         Deren INSERT-Policies verlangen weiterhin
- *                         jobs.assigned_to = auth.uid().
+ *   canRunJobActions() → Start/Abschluss. Serverseitig erlauben
+ *                        start_own_job/complete_own_job seit Phase 7 die
+ *                        volle Zuweisungsmenge (ODER Legacy-Primär).
+ *   isAssignedTo()     → seit 20260826000001 ZUSÄTZLICH Kommentar schreiben
+ *                        und Foto-Upload. Die INSERT-Policies auf
+ *                        job_comments/job_photos/storage.objects erlauben
+ *                        seither ebenfalls die volle Zuweisungsmenge.
+ *
+ * isPrimaryAssignee() ist NICHT mehr Teil dieser beiden Gates — sie wird nur
+ * noch für das Markieren des Ungelesen-Status gebraucht (siehe dortiger
+ * Docstring): get_unread_comment_job_ids() wertet weiterhin ausschließlich
+ * den Legacy-Primär aus, absichtlich unverändert seit 20260826000001.
  */
 
 export const UNASSIGNED_LABEL = "Nicht zugewiesen";
@@ -44,9 +50,10 @@ export function isUnassigned(job: Pick<Job, "assignees">): boolean {
 
 /**
  * true, wenn der Mitarbeiter dem Auftrag zugewiesen ist (egal an welcher
- * Stelle der Menge). Für ANZEIGE und FILTER — und seit Phase 7 zusätzlich
- * die Grundlage von `canRunJobActions` (Start/Abschluss). NICHT ausreichend
- * für Kommentar-/Foto-Schreibrechte, dafür siehe `isPrimaryAssignee`.
+ * Stelle der Menge). Für ANZEIGE und FILTER, Grundlage von `canRunJobActions`
+ * (Start/Abschluss, seit Phase 7) und seit 20260826000001 zusätzlich für
+ * Kommentar schreiben und Foto-Upload (siehe `isPrimaryAssignee` für den
+ * verbleibenden Sonderfall Ungelesen-Status).
  */
 export function isAssignedTo(
   job: Pick<Job, "assignees">,
@@ -59,17 +66,17 @@ export function isAssignedTo(
 /**
  * true, wenn der Mitarbeiter der LEGACY-PRIMÄR des Auftrags ist.
  *
- * NUR NOCH für die Schreibpfade, die serverseitig weiterhin
- * jobs.assigned_to = auth.uid() verlangen:
- *   * Kommentar schreiben  (Policy „employee insert comments on own jobs")
- *   * Foto-Upload          (job_photos + storage.objects INSERT)
- *   * Ungelesen-Status     (job_comment_reads INSERT/UPDATE)
+ * NUR NOCH für das Markieren des Ungelesen-Status
+ * (job_comment_reads INSERT/UPDATE via `markJobCommentsAsRead`):
+ * get_unread_comment_job_ids() wertet weiterhin ausschließlich
+ * jobs.assigned_to aus, bewusst unverändert seit 20260826000001 (kein
+ * Bedarf laut Zugriffsmatrix — die RPC würde einem sekundär Zugewiesenen
+ * ohnehin nie einen ungelesenen Kommentar melden). Ein Markier-Versuch mit
+ * der vollen Zuweisungsmenge wäre zwar seit derselben Migration serverseitig
+ * erlaubt, aber wirkungslos — die RPC prüft ihn nie.
  *
- * Würde die UI dort die volle Zuweisungsmenge nutzen, bekäme ein sekundär
- * Zugewiesener einen Button, der mit 42501 bzw. „Job not found or not
- * allowed" fehlschlägt.
- *
- * NICHT MEHR für Start/Abschluss: diese laufen seit Phase 7 über die
+ * Kommentar schreiben und Foto-Upload laufen seit 20260826000001 über
+ * `isAssignedTo`. Start/Abschluss laufen seit Phase 7 über die
  * Zuweisungsmenge — siehe `canRunJobActions`.
  */
 export function isPrimaryAssignee(
