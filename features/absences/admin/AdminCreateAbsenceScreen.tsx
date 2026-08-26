@@ -77,7 +77,7 @@ export default function AdminCreateAbsenceScreen({
     setError("");
     setSubmitting(true);
     try {
-      await adminCreateAbsence({
+      const created = await adminCreateAbsence({
         employeeId: employeeId!,
         type,
         startDate: formatDateISO(startDate!)!,
@@ -85,10 +85,18 @@ export default function AdminCreateAbsenceScreen({
         note: note.trim() || undefined,
       });
 
+      // Wortlaut richtet sich nach dem TATSÄCHLICH zurückgegebenen Status,
+      // nicht nach einer hier erneut geprüften Konto-Annahme: für einen
+      // Mitarbeiter mit geführtem Urlaubskonto liefert admin_create_absence
+      // seit 20260826000002 status='requested' statt 'approved' — die
+      // Genehmigung samt Abzugsbestätigung läuft dann über die bestehende
+      // Urlaubsanträge-Ansicht (admin_review_vacation), nicht hier.
       await alertDialog(
         "Abwesenheit erfasst",
         type === "vacation"
-          ? "Der Urlaub wurde als genehmigt erfasst."
+          ? created.status === "approved"
+            ? "Der Urlaub wurde als genehmigt erfasst."
+            : "Der Urlaub wurde erfasst. Für diesen Mitarbeiter wird ein Urlaubskonto geführt — die Genehmigung samt Abzugsbestätigung erfolgt über die Urlaubsanträge-Liste."
           : "Die Krankmeldung wurde erfasst.",
       );
       router.back();
