@@ -437,12 +437,35 @@ function mapJob(row: JobRow): Job {
   };
 }
 
-// Holt alle Jobs aus Supabase
+// Schließt PAUSIERTE Dauerauftrags-Occurrences aus operativen Job-Abfragen aus:
+// eine generierte Occurrence (parent_job_id IS NOT NULL), deren Parent-Regel
+// deaktiviert wurde — update_job_occurrences() vererbt is_active=false per SYNC
+// nur auf die zukünftigen, sauberen, OFFENEN Termine. Solche Termine sind keine
+// aktionierbare Arbeit mehr (Client-Pendant: isPausedRecurringOccurrence /
+// canRunJobActions; Server-Pendant: start_own_job-Guard, Migration
+// 20260829000000).
+//
+// BEWUSST ENG über status='open': gestartete/abgeschlossene Occurrences bleiben
+// IMMER sichtbar (Arbeitshistorie). Gewöhnliche Einzelaufträge
+// (parent_job_id IS NULL) sind über die erste OR-Alternative ausgenommen —
+// buildSchedulePayload() schreibt sie ohnehin immer aktiv.
+//
+// NICHT angewandt auf: getJobById (Detail lädt weiterhin, nur der Start-Button
+// entfällt), getJobOccurrences / getRecurringRules (Regel-Verwaltung muss
+// pausierte Termine zeigen), getCompletedOccurrences (nur status='completed').
+function excludePausedOccurrences<T>(query: T): T {
+  // Gleiches `as any`-Muster wie applyEmployeeFilter unten — der
+  // PostgREST-Builder-Typ ist generisch nicht sauber durchreichbar.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const q = query as any;
+  return q.or("parent_job_id.is.null,is_active.is.true,status.neq.open");
+}
+
+// Holt alle Jobs aus Supabase (ohne pausierte Dauerauftrags-Occurrences).
 export async function getJobs(): Promise<Job[]> {
-  const { data, error } = await supabase
-    .from("jobs")
-    .select(JOB_SELECT)
-    .order("created_at", { ascending: false });
+  const { data, error } = await excludePausedOccurrences(
+    supabase.from("jobs").select(JOB_SELECT),
+  ).order("created_at", { ascending: false });
 
   if (error) {
     throw error;
@@ -1102,6 +1125,7 @@ export async function getScheduleOccurrences(
     query = query.in("status", params.statuses);
   }
   query = applyEmployeeFilter(query, params.employee);
+  query = excludePausedOccurrences(query);
 
   const { data, error } = await query
     .order("date", { ascending: true })
@@ -1129,6 +1153,7 @@ export async function getOverdueOccurrences(
     .in("status", ["open", "in_progress"])
     .lt("date", todayKey);
   query = applyEmployeeFilter(query, employee);
+  query = excludePausedOccurrences(query);
 
   const { data, error } = await query
     .order("date", { ascending: false })
@@ -1263,10 +1288,14 @@ export type ScheduleKpis = {
 async function countJobs(
   build: (q: any) => any,
 ): Promise<number> {
-  const base = supabase
-    .from("jobs")
-    .select("id", { count: "exact", head: true })
-    .eq("job_type", "single");
+  // Pausierte Dauerauftrags-Occurrences zählen nicht als operative Arbeit
+  // (gleiche Regel wie getScheduleOccurrences — siehe excludePausedOccurrences).
+  const base = excludePausedOccurrences(
+    supabase
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("job_type", "single"),
+  );
   const { count, error } = await build(base);
   if (error) {
     throw error;

@@ -1,4 +1,5 @@
 import type { Job, JobAssignee } from "@/types/job";
+import { isPausedRecurringOccurrence } from "@/utils/jobSchedule";
 
 /**
  * Zentrale Helfer für die Anzeige der Zuweisungsmenge eines Auftrags.
@@ -115,14 +116,24 @@ export function isPrimaryAssignee(
  * Job-Uhr gehört dem Auftrag, nicht einem einzelnen Mitarbeiter. Jeder
  * Zugewiesene darf starten und abschließen; der erste Erfolg gewinnt, alle
  * anderen sehen danach denselben Status.
+ *
+ *  4. KEIN pausierter Dauerauftrags-Termin — eine generierte Occurrence,
+ *     deren Parent-Regel deaktiviert wurde (is_active=false, status='open').
+ *     Spiegelt den Server-Guard in start_own_job (Migration 20260829000000);
+ *     historische (in_progress/completed) Termine sind nie betroffen, siehe
+ *     isPausedRecurringOccurrence().
  */
 export function canRunJobActions(
-  job: Pick<Job, "employeeId" | "jobType" | "assignees">,
+  job: Pick<
+    Job,
+    "employeeId" | "jobType" | "assignees" | "parentJobId" | "isActive" | "status"
+  >,
   role: string | null | undefined,
   employeeId: string | null | undefined,
 ): boolean {
   if (role !== "employee") return false;
   if (job.jobType !== "single") return false;
+  if (isPausedRecurringOccurrence(job)) return false;
   return isAssignedTo(job, employeeId) || isPrimaryAssignee(job, employeeId);
 }
 
