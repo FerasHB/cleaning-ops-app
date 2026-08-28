@@ -38,6 +38,33 @@ function timeFromISO(iso: string | null | undefined): string | null {
 }
 
 /**
+ * Ein PAUSIERTER Dauerauftrags-Termin: die Parent-Regel wurde deaktiviert
+ * (`setRecurringRuleActive(rule, false)`), woraufhin `update_job_occurrences`
+ * den offenen Zukunftstermin per SYNC auf `is_active = false` gesetzt hat.
+ *
+ * Solche Termine sind KEINE aktionierbare Arbeit mehr:
+ *   - `start_own_job` lehnt sie serverseitig ab (Migration 20260829000000),
+ *   - sie gehören nicht in operative Listen/Kalender (Mitarbeiter UND Admin),
+ *   - `canRunJobActions` blendet den Start-Button aus.
+ *
+ * BEWUSST ENG: greift nur bei einer generierten Occurrence
+ * (`parentJobId` gesetzt), die `is_active === false` UND `status === "open"`
+ * ist. Historische Termine (`in_progress`/`completed`) sind NIE betroffen —
+ * deaktivieren darf niemals Arbeitshistorie verstecken. Gewöhnliche
+ * Einzelaufträge (`parentJobId == null`) sind strukturell ausgenommen: das
+ * Formular schreibt sie immer aktiv (`buildSchedulePayload`).
+ */
+export function isPausedRecurringOccurrence(
+  job: Pick<Job, "parentJobId" | "isActive" | "status">,
+): boolean {
+  return (
+    job.parentJobId != null &&
+    job.isActive === false &&
+    job.status === "open"
+  );
+}
+
+/**
  * Ist dieser Job heute fällig?
  * - nur aktive Jobs (isActive !== false)
  * - single:    date == heute (Fallback: scheduledStart == heute, für Alt-Daten)

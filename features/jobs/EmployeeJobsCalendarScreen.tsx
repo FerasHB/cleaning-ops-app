@@ -59,6 +59,7 @@ import {
 } from "@/utils/calendarMonth";
 import { formatDateISO } from "@/utils/date";
 import { canRunJobActions } from "@/utils/jobAssignees";
+import { isPausedRecurringOccurrence } from "@/utils/jobSchedule";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
@@ -127,9 +128,14 @@ export default function EmployeeJobsCalendarScreen() {
   // ── Daten ────────────────────────────────────────────────────
   // Nur konkrete Einzeltermine (echte Single-Jobs + Occurrences).
   // Parent-Recurring-Regeln fallen raus — zusätzlich zur serverseitigen RLS
-  // als Client-Schutz, unverändert zur bisherigen Ansicht.
+  // als Client-Schutz. Pausierte Dauerauftrags-Occurrences (Regel deaktiviert,
+  // offener Zukunftstermin) ebenfalls raus: die Server-Abfrage filtert sie
+  // bereits, das hier deckt einen veralteten Offline-Cache ab.
   const singleJobs = useMemo(
-    () => jobs.filter((j) => j.jobType === "single"),
+    () =>
+      jobs.filter(
+        (j) => j.jobType === "single" && !isPausedRecurringOccurrence(j),
+      ),
     [jobs],
   );
 

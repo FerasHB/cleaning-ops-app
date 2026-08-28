@@ -27,7 +27,11 @@
 import { MONTH_NAMES_DE } from "@/utils/calendarMonth";
 import { formatDateISO } from "@/utils/date";
 import { canRunJobActions } from "@/utils/jobAssignees";
-import { getJobDisplayTime, isJobToday } from "@/utils/jobSchedule";
+import {
+  getJobDisplayTime,
+  isJobToday,
+  isPausedRecurringOccurrence,
+} from "@/utils/jobSchedule";
 import { getWeekdayKey, WEEKDAYS } from "@/utils/recurrence";
 import type { Job, JobStatus } from "@/types/job";
 
@@ -122,8 +126,13 @@ export function buildJobQueueSections(
 
   // Nur konkrete Einzeltermine — Parent-Recurring-Regeln haben keinen Tag
   // und gehören nicht in eine Tages-/Warteschlangen-Ansicht (siehe auch
-  // EmployeeJobsCalendarScreen).
-  const singleJobs = jobs.filter((j) => j.jobType === "single");
+  // EmployeeJobsCalendarScreen). Pausierte Dauerauftrags-Occurrences
+  // (Regel deaktiviert) sind ebenfalls raus — keine aktionierbare Arbeit.
+  // Defensiv: die Server-Abfrage (getJobs) filtert sie bereits, das hier
+  // deckt einen veralteten Offline-Cache ab.
+  const singleJobs = jobs.filter(
+    (j) => j.jobType === "single" && !isPausedRecurringOccurrence(j),
+  );
   const scoped =
     statusFilter === "all"
       ? singleJobs
