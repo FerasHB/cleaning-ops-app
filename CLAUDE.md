@@ -161,8 +161,12 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
     möglich, nachdem `20260826000001` den Schreibpfad auf `job_comment_reads` geöffnet hatte; **diese
     Kopplung ist bindend** (RPC meldet ⇒ derselbe Nutzer muss markieren dürfen), sonst kehrt der
     dauerhaft hängende Ungelesen-Punkt zurück.
-  - `isPrimaryAssignee(job, employeeId)` ist damit **kein eigenes Gate mehr** — nur noch der
-    Legacy-Zweig innerhalb von `canRunJobActions()`.
+  - `isPrimaryAssignee(job, employeeId)` ist **kein eigenständiges Gate mehr**, aber weiterhin der
+    **Legacy-Zweig zweier Gates**: `canRunJobActions()` und `canMarkCommentsRead`
+    (`JobDetailScreen`). Für Bestands-Aufträge ohne `job_assignments`-Zeile liefert `mapAssignees()`
+    `[]`, `isAssignedTo()` also `false` — beide Server-Prädikate tragen dort aber weiterhin
+    `assigned_to = auth.uid()`. Ein Client-Gate, das nur einen der beiden ODER-Zweige abbildet, ist
+    falsch. Kommentar schreiben und Foto-Upload laufen dagegen allein über `isAssignedTo()`.
 - **Geteilte Job-Uhr (Shared Job Time):** ein Auftrag hat **genau eine** offizielle Dauer
   (`completed_at - started_at`). Wer Start/Abschluss gedrückt hat, ist dafür unerheblich — **alle**
   Zugewiesenen erhalten diese Zeit im Stundenzettel, auch wer Start nie gedrückt hat. Der erste

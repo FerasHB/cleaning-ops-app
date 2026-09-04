@@ -44,7 +44,7 @@ import { JobStatusOverview } from "@/features/jobs/components/JobStatusOverview"
 import { JobTimelineCard } from "@/features/jobs/components/JobTimelineCard";
 import { OccurrenceOriginLink } from "@/features/jobs/components/OccurrenceOriginLink";
 import { getJobById } from "@/services/jobs/jobs.service";
-import { canRunJobActions, isAssignedTo } from "@/utils/jobAssignees";
+import { canRunJobActions, isAssignedTo, isPrimaryAssignee } from "@/utils/jobAssignees";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import type { Job } from "@/types/job";
 import { useFocusEffect } from "@react-navigation/native";
@@ -173,15 +173,28 @@ export default function JobDetailScreen() {
 
   // Darf der Nutzer den Ungelesen-Status dieses Jobs schreiben?
   //
-  // Volle Zuweisungsmenge — spiegelt beide Server-Prädikate, die hier
-  // zusammenspielen: die INSERT/UPDATE-Policies auf job_comment_reads (seit
-  // 20260826000001) und get_unread_comment_job_ids() (seit 20260904000000).
-  // Vorher stand hier isPrimaryAssignee, weil die RPC einem sekundär
-  // Zugewiesenen ohnehin nie einen ungelesenen Kommentar gemeldet hätte;
-  // seit die RPC das tut, würde dieselbe Einschränkung den roten Punkt bei
-  // ihm dauerhaft stehen lassen.
+  // Spiegelt BEIDE Zweige des Server-Prädikats, das hier zweimal identisch
+  // gilt — in den INSERT/UPDATE-Policies auf job_comment_reads (seit
+  // 20260826000001) und in get_unread_comment_job_ids() (seit
+  // 20260904000000):
+  //     assigned_to = auth.uid()  OR  is_assigned_to_job(job)
+  // also `isPrimaryAssignee` ODER `isAssignedTo`, exakt wie es
+  // `canRunJobActions` für Start/Abschluss tut.
+  //
+  // Beide Zweige sind nötig, und zwar aus GEGENSÄTZLICHEN Gründen:
+  //  - `isAssignedTo` allein ließe den roten Punkt bei einem Auftrag stehen,
+  //    für den nur der Legacy-Zeiger existiert (keine job_assignments-Zeile,
+  //    Bestandsdaten): `mapAssignees` liefert dort `[]`, die RPC meldet den
+  //    Auftrag aber über ihren Legacy-Zweig als ungelesen.
+  //  - `isPrimaryAssignee` allein (der Stand vor 20260904000000) ließe ihn
+  //    bei jedem sekundär Zugewiesenen stehen.
+  // Genau diese Kopplung — wer gemeldet wird, muss markieren dürfen — ist
+  // die bindende Invariante aus dem Kopfkommentar von 20260904000000.
   const canMarkCommentsRead =
-    !!job && (isAdmin || isAssignedTo(job, profile?.id));
+    !!job &&
+    (isAdmin ||
+      isAssignedTo(job, profile?.id) ||
+      isPrimaryAssignee(job, profile?.id));
 
   // Beim Öffnen die Kommentare dieses Jobs als gesehen markieren
   // (entfernt den roten Punkt). Online-only, optimistisch im Context.

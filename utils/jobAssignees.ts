@@ -22,11 +22,15 @@ import { isPausedRecurringOccurrence } from "@/utils/jobSchedule";
  *                        seither ebenfalls die volle Zuweisungsmenge.
  *                        Seit 20260904000000 gilt dasselbe für das Markieren
  *                        des Ungelesen-Status (job_comment_reads
- *                        INSERT/UPDATE + get_unread_comment_job_ids()).
+ *                        INSERT/UPDATE + get_unread_comment_job_ids()) —
+ *                        dort aber ODER-verknüpft mit isPrimaryAssignee(),
+ *                        siehe canMarkCommentsRead in JobDetailScreen.
  *
- * isPrimaryAssignee() ist damit an KEINEM Gate mehr beteiligt — sie ist nur
- * noch der Legacy-Zweig innerhalb von canRunJobActions() (siehe dortiger
- * Docstring) und fällt mit Phase 11.
+ * isPrimaryAssignee() ist kein eigenständiges Gate mehr, aber weiterhin der
+ * LEGACY-ZWEIG von zwei Gates: canRunJobActions() und canMarkCommentsRead.
+ * Beide Server-Prädikate lauten `assigned_to = auth.uid() OR
+ * is_assigned_to_job(job)` — ein Client-Gate, das nur einen der beiden Zweige
+ * abbildet, ist falsch. Fällt mit Phase 11.
  */
 
 export const UNASSIGNED_LABEL = "Nicht zugewiesen";
@@ -70,15 +74,24 @@ export function isAssignedTo(
 /**
  * true, wenn der Mitarbeiter der LEGACY-PRIMÄR des Auftrags ist.
  *
- * KEIN eigenes Gate mehr. Einziger Aufrufer ist der Legacy-Zweig von
- * `canRunJobActions` (Bestands-Aufträge mit `assigned_to`, für die keine
- * job_assignments-Zeile existiert — Begründung dort). Fällt mit Phase 11.
+ * KEIN eigenes Gate mehr, sondern der LEGACY-ZWEIG von zwei Gates —
+ * Bestands-Aufträge mit `assigned_to`, für die keine job_assignments-Zeile
+ * existiert (`mapAssignees` liefert dort `[]`, `isAssignedTo` also false):
  *
- * Der frühere Sonderfall „Ungelesen-Status" ist entfallen: seit
- * 20260826000001 darf die volle Zuweisungsmenge auf job_comment_reads
- * schreiben, seit 20260904000000 wertet get_unread_comment_job_ids() sie
- * ebenfalls aus. Kommentar schreiben, Foto-Upload und Markieren laufen
- * damit alle über `isAssignedTo`.
+ *   1. `canRunJobActions` (Start/Abschluss, Begründung dort)
+ *   2. `canMarkCommentsRead` in JobDetailScreen (Ungelesen-Status)
+ *
+ * Zu (2): der frühere Sonderfall „nur der Legacy-Primär darf markieren" ist
+ * entfallen — seit 20260826000001 darf die volle Zuweisungsmenge auf
+ * job_comment_reads schreiben, seit 20260904000000 wertet
+ * get_unread_comment_job_ids() sie ebenfalls aus. Beide Server-Prädikate
+ * tragen aber WEITERHIN den Legacy-Zweig, deshalb muss das Client-Gate ihn
+ * ebenfalls tragen: sonst meldet die RPC einen Bestands-Auftrag als
+ * ungelesen, den der Client nie zu markieren versucht — der rote Punkt
+ * bliebe dauerhaft stehen.
+ *
+ * Kommentar schreiben und Foto-Upload laufen dagegen allein über
+ * `isAssignedTo` (siehe dort). Fällt mit Phase 11.
  */
 export function isPrimaryAssignee(
   job: Pick<Job, "employeeId">,
