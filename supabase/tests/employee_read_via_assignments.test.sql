@@ -8,12 +8,14 @@
 -- NOCH die Sichtbarkeit von Recurring-Parent-Regeln NOCH firmenfremde
 -- Daten aufgehen.
 --
--- Die Ungelesen-Kennzeichnung (get_unread_comment_job_ids) bleibt
--- ABSICHTLICH am Legacy-Primaer: sie haengt am Schreibpfad
--- job_comment_reads, der in dieser Lese-Phase nicht angefasst wird. Die
--- Faelle 12, 12b und 12c sichern genau diese Kopplung ab — sie ist der
--- Grund, warum ein blosses Erweitern der RPC einen dauerhaft haengenden
--- Ungelesen-Punkt erzeugt haette.
+-- Die Ungelesen-Kennzeichnung (get_unread_comment_job_ids) blieb ZUM STAND
+-- DIESER MIGRATION absichtlich am Legacy-Primaer: sie ist an den Schreibpfad
+-- job_comment_reads gekoppelt, der in dieser Lese-Phase nicht angefasst
+-- wurde. Beides ist inzwischen nachgezogen — job_comment_reads in
+-- 20260826000001, die RPC in 20260904000000. Die Faelle 12, 12b und 12c
+-- sichern weiterhin die KOPPLUNG ab: die RPC darf die Zuweisungsmenge nur
+-- melden, solange derselbe Nutzer seinen Read-State auch schreiben kann —
+-- sonst waere der dauerhaft haengende Ungelesen-Punkt zurueck.
 --
 -- Alle Zugriffe laufen als echte Rollen (SET ROLE + request.jwt.claims),
 -- also ueber denselben Pfad wie die App ueber PostgREST.
@@ -317,12 +319,15 @@ begin
   raise notice 'CASE 11 -> %', v;
 end $$;
 
--- CASE 12: Ungelesen-RPC meldet dem SEKUNDAEREN NICHTS.
+-- CASE 12: Ungelesen-RPC meldet dem SEKUNDAEREN den Auftrag.
 --
--- Das ist BEABSICHTIGT und der Kern der Entscheidung aus Abschnitt 5 der
--- Migration: die RPC bleibt unveraendert am Legacy-Primaer. Wuerde man sie
--- erweitern, ohne die Schreib-Policies von job_comment_reads mitzuziehen,
--- entstuende ein dauerhaft haengender Ungelesen-Punkt (Fall 12b).
+-- ZUM STAND DIESER MIGRATION war das noch "ungelesen=0": Abschnitt 5 nahm die
+-- RPC bewusst aus, weil der Sekundaere seinen Read-State damals nicht
+-- schreiben durfte — ein Erweitern nur hier haette einen dauerhaft
+-- haengenden Ungelesen-Punkt erzeugt (Fall 12b). Diese Vorbedingung ist seit
+-- 20260826000001 erfuellt; 20260904000000_unread_comments_via_assignments hat
+-- die RPC daraufhin nachgezogen. Die vollstaendige Matrix dazu steht in
+-- supabase/tests/secondary_assignee_unread_comments.test.sql.
 do $$
 declare v text;
 begin
@@ -332,7 +337,7 @@ begin
   from public.get_unread_comment_job_ids() g
   where g = 'e4000000-0000-0000-0000-000000000001';
   execute 'reset role';
-  insert into _r values (12,'Ungelesen-RPC bleibt am Legacy-Primaer (Sekundaerer erhaelt nichts)','ungelesen=0',v);
+  insert into _r values (12,'Ungelesen-RPC folgt der Zuweisungsmenge (Sekundaerer erhaelt die Meldung)','ungelesen=1',v);
   raise notice 'CASE 12 -> %', v;
 end $$;
 
@@ -342,11 +347,11 @@ end $$;
 -- haengender Punkt gedroht. Migration 20260826000001_secondary_assignee_
 -- write_access hat den job_comment_reads-Schreibpfad auf die volle
 -- Zuweisungsmenge angehoben (siehe supabase/tests/secondary_assignee_write_
--- access.test.sql CASE 14/15) — der Sekundaere DARF jetzt schreiben. CASE 12
--- bleibt trotzdem bei "ungelesen=0", weil get_unread_comment_job_ids()
--- bewusst NICHT mitgezogen wurde (kein Bedarf laut Zugriffsmatrix, siehe
--- Kopfkommentar dieser Migration): er schreibt hier erfolgreich einen
--- Read-State, den die RPC ohnehin nie fuer ihn ausgewertet haette.
+-- access.test.sql CASE 14/15) — der Sekundaere DARF jetzt schreiben. Damit
+-- war die Vorbedingung erfuellt, unter der 20260904000000 auch die RPC
+-- nachziehen durfte (CASE 12, jetzt "ungelesen=1"). Dieser Fall bleibt der
+-- Waechter dieser Kopplung: schlaegt er fehl, waehrend CASE 12 meldet, ist
+-- der haengende Punkt zurueck.
 do $$
 declare v text;
 begin
@@ -585,10 +590,12 @@ begin
   raise notice 'CASE 22 -> %', v;
 end $$;
 
--- CASE 23: get_unread_comment_job_ids wurde NICHT erweitert.
--- Regressionsschutz: taucht is_assigned_to_job jemals im Funktionsrumpf auf,
--- ohne dass die job_comment_reads-Schreibpolicies nachgezogen wurden, ist der
--- haengende Ungelesen-Punkt zurueck.
+-- CASE 23: get_unread_comment_job_ids nutzt den Zuweisungs-Helfer und bleibt
+-- dabei STABLE/SECURITY DEFINER.
+-- Der Helfer darf hier nur stehen, solange die job_comment_reads-Schreib-
+-- policies ihn ebenfalls tragen (seit 20260826000001) — sonst waere der
+-- dauerhaft haengende Ungelesen-Punkt aus Fall 12b zurueck. Genau diese
+-- Kopplung prueft secondary_assignee_unread_comments.test.sql CASE 12.
 do $$
 declare v text;
 begin
@@ -597,8 +604,8 @@ begin
        ||'/definer='||p.prosecdef::text into v
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname='public' and p.proname='get_unread_comment_job_ids';
-  insert into _r values (23,'Ungelesen-RPC unveraendert (kein Helfer, weiterhin STABLE/DEFINER)',
-    'nutzt_helfer=false/volatilitaet=s/definer=true',v);
+  insert into _r values (23,'Ungelesen-RPC nutzt den Zuweisungs-Helfer (weiterhin STABLE/DEFINER)',
+    'nutzt_helfer=true/volatilitaet=s/definer=true',v);
   raise notice 'CASE 23 -> %', v;
 end $$;
 

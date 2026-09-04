@@ -44,7 +44,7 @@ import { JobStatusOverview } from "@/features/jobs/components/JobStatusOverview"
 import { JobTimelineCard } from "@/features/jobs/components/JobTimelineCard";
 import { OccurrenceOriginLink } from "@/features/jobs/components/OccurrenceOriginLink";
 import { getJobById } from "@/services/jobs/jobs.service";
-import { canRunJobActions, isAssignedTo, isPrimaryAssignee } from "@/utils/jobAssignees";
+import { canRunJobActions, isAssignedTo } from "@/utils/jobAssignees";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import type { Job } from "@/types/job";
 import { useFocusEffect } from "@react-navigation/native";
@@ -173,15 +173,15 @@ export default function JobDetailScreen() {
 
   // Darf der Nutzer den Ungelesen-Status dieses Jobs schreiben?
   //
-  // job_comment_reads erlaubt seit 20260826000001 zwar die volle
-  // Zuweisungsmenge zu schreiben, aber get_unread_comment_job_ids() wertet
-  // weiterhin ausschließlich den LEGACY-PRIMÄR aus (bewusst unverändert,
-  // kein Bedarf laut Zugriffsmatrix). Ein sekundär Zugewiesener würde also
-  // NIE als „hat ungelesene Kommentare" gemeldet — ein Markier-Versuch wäre
-  // rein verschwendet (ein zusätzlicher Request ohne jede Wirkung), deshalb
-  // hier weiterhin isPrimaryAssignee statt isAssignedTo.
+  // Volle Zuweisungsmenge — spiegelt beide Server-Prädikate, die hier
+  // zusammenspielen: die INSERT/UPDATE-Policies auf job_comment_reads (seit
+  // 20260826000001) und get_unread_comment_job_ids() (seit 20260904000000).
+  // Vorher stand hier isPrimaryAssignee, weil die RPC einem sekundär
+  // Zugewiesenen ohnehin nie einen ungelesenen Kommentar gemeldet hätte;
+  // seit die RPC das tut, würde dieselbe Einschränkung den roten Punkt bei
+  // ihm dauerhaft stehen lassen.
   const canMarkCommentsRead =
-    !!job && (isAdmin || isPrimaryAssignee(job, profile?.id));
+    !!job && (isAdmin || isAssignedTo(job, profile?.id));
 
   // Beim Öffnen die Kommentare dieses Jobs als gesehen markieren
   // (entfernt den roten Punkt). Online-only, optimistisch im Context.

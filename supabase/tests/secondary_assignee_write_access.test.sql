@@ -663,16 +663,19 @@ begin
   raise notice 'CASE 28 -> %', v;
 end $$;
 
--- CASE 29: get_unread_comment_job_ids() bleibt UNVERAENDERT (kein Helfer,
--- weiterhin STABLE/DEFINER) — bewusst nicht Teil dieser Migration, siehe
--- deren Kopfkommentar.
+-- CASE 29: get_unread_comment_job_ids() nutzt denselben Zuweisungs-Helfer.
+-- Diese Migration hat die RPC nicht angefasst — ihr Kopfkommentar begruendete
+-- das damit, sie frage "bereits die volle Zuweisungsmenge ab (siehe Phase 5)".
+-- Das traf nicht zu: Phase 5 (20260730000000, Abschnitt 5) hatte sie explizit
+-- ausgenommen. Nachgezogen in 20260904000000_unread_comments_via_assignments,
+-- deren Vorbedingung genau die hier geprueften Schreibpfade sind (CASE 14/15).
 do $$
 declare v text;
 begin
   select 'nutzt_helfer='||(pg_get_functiondef(p.oid) like '%is_assigned_to_job%')::text into v
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname='public' and p.proname='get_unread_comment_job_ids';
-  insert into _r values (29,'Ungelesen-RPC unveraendert (bewusst nicht erweitert)','nutzt_helfer=false',v);
+  insert into _r values (29,'Ungelesen-RPC folgt derselben Zuweisungsmenge','nutzt_helfer=true',v);
   raise notice 'CASE 29 -> %', v;
 end $$;
 

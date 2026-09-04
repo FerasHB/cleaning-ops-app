@@ -1251,7 +1251,7 @@ grant execute on function public.complete_notification_delivery(uuid, text, text
 -- Liefert die Job-IDs, bei denen es für den aktuellen User ungelesene
 -- Kommentare gibt: neuester Kommentar-Zeitpunkt > eigenes last_seen_at.
 -- - Admin: alle Jobs der eigenen Firma
--- - Employee: nur eigene (zugewiesene) Jobs
+-- - Employee: volle Zuweisungsmenge (job_assignments ODER Legacy-Zeiger)
 -- - eigene Kommentare zählen NICHT als ungelesen (author_id != auth.uid())
 
 create or replace function public.get_unread_comment_job_ids()
@@ -1269,11 +1269,17 @@ as $$
       public.current_user_role() = 'admin'
       or (
         public.current_user_role() = 'employee'
-        -- BEWUSST weiterhin nur der Legacy-Primär: das Markieren als
-        -- gelesen schreibt auf job_comment_reads, dessen Policies denselben
-        -- Primär verlangen. Ein Erweitern nur hier erzeugte einen dauerhaft
-        -- hängenden Ungelesen-Punkt (siehe 20260730000000, Abschnitt 5).
-        and j.assigned_to = auth.uid()
+        -- Volle Zuweisungsmenge, identisch zu den Kommentar-/Foto-Policies
+        -- (Migration 20260904000000). Bis dahin stand hier nur der
+        -- Legacy-Primär, weil das Markieren als gelesen auf
+        -- job_comment_reads schreibt und dessen Policies denselben Primär
+        -- verlangten — ein Erweitern nur hier hätte einen dauerhaft
+        -- hängenden Ungelesen-Punkt erzeugt (siehe 20260730000000,
+        -- Abschnitt 5). Diese Kopplung ist seit 20260826000001 aufgelöst.
+        and (
+          j.assigned_to = auth.uid()
+          or public.is_assigned_to_job(j.id)
+        )
       )
     )
     and c.author_id is distinct from auth.uid()

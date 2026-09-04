@@ -154,12 +154,15 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
     ebenfalls die volle Zuweisungsmenge (ODER den Legacy-Zeiger). Zuvor bestand hier eine bewusste
     Asymmetrie zu Start/Abschluss (nur der Legacy-Primär durfte schreiben) — die Migration hat sie
     aufgelöst.
-  - `isPrimaryAssignee(job, employeeId)` bleibt NUR noch für das Markieren des **Ungelesen-Status**
-    (`job_comment_reads` INSERT/UPDATE über `markJobCommentsAsRead`) reserviert.
-    `get_unread_comment_job_ids()` wertet weiterhin ausschließlich `jobs.assigned_to` aus — bewusst
-    nicht Teil von `20260826000001`, weil kein Bedarf laut Zugriffsmatrix besteht: die RPC würde einem
-    sekundär Zugewiesenen ohnehin nie einen ungelesenen Kommentar melden, ein Markier-Versuch mit
-    `isAssignedTo()` wäre also nur ein wirkungsloser zusätzlicher Request.
+  - `isAssignedTo(job, employeeId)` deckt seit Migration `20260904000000` **auch** das Markieren des
+    **Ungelesen-Status** ab: `get_unread_comment_job_ids()` autorisiert Mitarbeiter jetzt über dieselbe
+    Zuweisungsmenge (ODER Legacy-Zeiger) wie alle Kommentar-/Foto-Policies. Vorher hing die RPC allein
+    an `jobs.assigned_to` — ein sekundär Zugewiesener bekam nie einen roten Punkt. Der Umbau war erst
+    möglich, nachdem `20260826000001` den Schreibpfad auf `job_comment_reads` geöffnet hatte; **diese
+    Kopplung ist bindend** (RPC meldet ⇒ derselbe Nutzer muss markieren dürfen), sonst kehrt der
+    dauerhaft hängende Ungelesen-Punkt zurück.
+  - `isPrimaryAssignee(job, employeeId)` ist damit **kein eigenes Gate mehr** — nur noch der
+    Legacy-Zweig innerhalb von `canRunJobActions()`.
 - **Geteilte Job-Uhr (Shared Job Time):** ein Auftrag hat **genau eine** offizielle Dauer
   (`completed_at - started_at`). Wer Start/Abschluss gedrückt hat, ist dafür unerheblich — **alle**
   Zugewiesenen erhalten diese Zeit im Stundenzettel, auch wer Start nie gedrückt hat. Der erste
