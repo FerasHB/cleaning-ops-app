@@ -56,6 +56,11 @@ export default function ResetPasswordScreen() {
   };
 
   const [formSuccess, setFormSuccess] = useState(false);
+  // Best-effort-Signal für die Erfolgsanzeige: wird nur wahr, wenn der
+  // accept_own_invite()-Aufruf unten selbst fehlschlägt (nicht bei einem
+  // erwarteten No-Op für Admins/bereits akzeptierte Mitarbeiter) — siehe
+  // Kommentar in handleSubmit.
+  const [inviteCompletionUncertain, setInviteCompletionUncertain] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [formError, setFormError] = useState("");
@@ -102,6 +107,35 @@ export default function ResetPasswordScreen() {
       if (!updated?.user) {
         setFormError("Passwort konnte nicht gesetzt werden.");
         return;
+      }
+
+      // Schließt eine noch offene Mitarbeiter-Einladung mit ab: ein
+      // Mitarbeiter, dessen accept-invite-Sitzungstoken abgelaufen ist, BEVOR
+      // dort ein Passwort gesetzt wurde, hat eine bestätigte E-Mail, aber
+      // profiles.invite_accepted_at bleibt NULL — app/index.tsx leitet ihn
+      // sonst bei JEDEM Login dauerhaft auf /accept-invite um, obwohl das
+      // neue Passwort hier gerade erfolgreich gesetzt wurde (Redirect-Loop,
+      // siehe 20260906000000_accept_own_invite_recovery_completion.sql). Die
+      // RPC grenzt serverseitig auf role='employee' AND invite_accepted_at
+      // IS NULL ein — für Admins, bereits akzeptierte Mitarbeiter und Legacy-
+      // Konten ist dieser Aufruf ein reines No-Op (liefert false, ändert
+      // nichts). MUSS vor endRecoverySession() laufen, solange auth.uid()
+      // noch die gültige Recovery-Session ist.
+      //
+      // Best effort, aber NICHT stillschweigend: schlägt der Aufruf selbst
+      // fehl (Netzwerk/Serverfehler, nicht "kein Treffer"), bleibt das
+      // Passwort trotzdem gesetzt — das bleibt die primäre Operation und wird
+      // hier nicht rückgängig gemacht —, aber ein wirklich betroffener
+      // Mitarbeiter könnte danach weiterhin im selben Umleitungs-Loop
+      // hängen. Das wird unten in der Erfolgsanzeige sichtbar gemacht statt
+      // stillschweigend als vollen Erfolg darzustellen.
+      const { error: acceptError } = await supabase.rpc("accept_own_invite");
+      if (acceptError) {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.warn("accept_own_invite fehlgeschlagen:", acceptError.message);
+        }
+        setInviteCompletionUncertain(true);
       }
 
       // SICHERHEITSGRENZE: Recovery-Modus beenden UND abmelden. Der Nutzer
@@ -186,6 +220,16 @@ export default function ResetPasswordScreen() {
           <Text style={styles.centerText}>
             Dein neues Passwort wurde gespeichert. Bitte melde dich damit an.
           </Text>
+          {inviteCompletionUncertain ? (
+            // Nicht blockierend: das Passwort ist gesetzt, aber ein
+            // abschließender Serverschritt ist fehlgeschlagen (siehe
+            // handleSubmit) — falls das den Zugang betrifft, soll das nicht
+            // stillschweigend als vollständiger Erfolg erscheinen.
+            <Text style={styles.centerText}>
+              Solltest du dich danach nicht wie gewohnt anmelden können, wende
+              dich bitte an deinen Administrator.
+            </Text>
+          ) : null}
 
           <TouchableOpacity
             style={styles.primaryBtn}

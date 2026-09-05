@@ -15,6 +15,12 @@ type ResendInviteBody = {
 // Kommentar + DEPLOY.md).
 const INVITE_REDIRECT_TO = "taskopsmanager://accept-invite";
 
+// Ziel des Passwort-Reset-Deep-Links — muss identisch zu dem Wert sein, den
+// ForgotPasswordScreen/ResetPasswordScreen über Linking.createURL("reset-password")
+// erzeugen (siehe features/auth/ForgotPasswordScreen.tsx), und ist bereits Teil
+// der uri_allow_list (unverändert von dieser Änderung).
+const PASSWORD_RESET_REDIRECT_TO = "taskopsmanager://reset-password";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -137,6 +143,54 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ── Invite-Limbo-Erkennung (Staging-Diagnose 2026-09-05/06) ──────────
+    // auth.users.confirmed_at (bzw. email_confirmed_at) wird bereits gesetzt,
+    // sobald der /verify-Schritt eines Einladungs-Links durchläuft — das
+    // passiert VOR und UNABHÄNGIG davon, ob der Mitarbeiter im
+    // accept-invite-Screen danach tatsächlich ein Passwort setzt. Läuft die
+    // eingebettete Sitzung ab, bevor das geschieht, bleibt das Konto
+    // bestätigt, aber profiles.invite_accepted_at für immer NULL (der obige
+    // Guard hätte hier bereits 400 geliefert, wäre das Feld gesetzt).
+    // inviteUserByEmail() schlägt für ein bereits bestätigtes Konto IMMER mit
+    // GoTrue 422 "email_exists" fehl — erneutes Einladen ist für diesen
+    // Zustand kein gangbarer Weg. Richtiger Weg: derselbe Passwort-Reset-Weg,
+    // den ein Mitarbeiter auch selbst über "Passwort vergessen" auslösen
+    // könnte (resetPasswordForEmail, dieselbe GoTrue-Route, dasselbe SMTP).
+    // ResetPasswordScreen schließt die Einladung serverseitig über
+    // accept_own_invite() ab (siehe 20260906000000_...), sobald das neue
+    // Passwort dort gesetzt wird — kein Sonderpfad nötig.
+    const isConfirmed = Boolean(
+      authUser.user.confirmed_at ?? authUser.user.email_confirmed_at,
+    );
+
+    if (isConfirmed) {
+      const { error: recoverError } = await adminClient.auth
+        .resetPasswordForEmail(authUser.user.email, {
+          redirectTo: PASSWORD_RESET_REDIRECT_TO,
+        });
+
+      if (recoverError) {
+        return Response.json(
+          {
+            error:
+              recoverError.message ??
+              "Passwort-Link konnte nicht verschickt werden.",
+          },
+          { status: 400, headers: corsHeaders },
+        );
+      }
+
+      // invited_at bewusst NICHT aktualisiert: das Feld bedeutet "zuletzt
+      // EINGELADEN" (siehe 20260718000000_employee_invitations.sql) — dieser
+      // Zweig verschickt keine neue Einladung, sondern einen Recovery-Link
+      // für ein bereits bestätigtes Konto.
+      return Response.json(
+        { success: true, mode: "recovery" },
+        { headers: corsHeaders },
+      );
+    }
+
+    // Nicht bestätigt: normaler Resend-Invite-Pfad (unverändert).
     // inviteUserByEmail auf einen bereits (unbestätigt) existierenden Nutzer
     // regeneriert den Einladungs-Link und verschickt die Mail erneut.
     const { error: inviteError } = await adminClient.auth.admin
@@ -172,7 +226,7 @@ Deno.serve(async (req) => {
     }
 
     return Response.json(
-      { success: true, invitedAt },
+      { success: true, mode: "invite", invitedAt },
       { headers: corsHeaders },
     );
   } catch (error) {
