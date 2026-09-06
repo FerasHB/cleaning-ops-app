@@ -701,6 +701,16 @@ end $$;
 -- counts_for_timesheet=true. Das aendert NICHT die geteilte Job-Uhr auf
 -- jobs (weiterhin GENAU EINE offizielle Dauer, siehe CASE 4/5) — es ist ein
 -- rein additiver, paralleler Nachweis pro Mitarbeiter.
+--
+-- emp_start_gesetzt=4 (nicht 3): complete_own_job() selbst setzt
+-- employee_started_at nirgends — MOHAMMED schliesst J1 in CASE 3 ab, ohne
+-- je selbst gestartet zu haben. Aber CASE 23 (oben, "Start auf einem
+-- abgeschlossenen Auftrag ist No-Op") laesst MOHAMMED start_own_job auf dem
+-- inzwischen abgeschlossenen J1 aufrufen — start_own_job()s eigener,
+-- bewusster idempotenter Rueckfall greift dabei und setzt
+-- employee_started_at = coalesce(employee_started_at, started_at_input)
+-- auch in diesem No-Op-Zweig. Dadurch traegt bis CASE 24 tatsaechlich JEDE
+-- der vier Zeilen einen eigenen Start-Zeitstempel — nicht nur drei.
 do $$
 declare v text;
 begin
@@ -712,7 +722,7 @@ begin
   from public.job_assignments ja
   where ja.job_id in ('f4000000-0000-0000-0000-000000000001','f4000000-0000-0000-0000-000000000002');
   insert into _r values (24,'Seit 20260812000000: eigene Worked-Time-Zeitstempel pro Mitarbeiter gesetzt (Stundenzettel bleibt auf jobs.*)',
-    'attendance=completed,started/emp_start_gesetzt=3/emp_ende_gesetzt=3/counts=true', v);
+    'attendance=completed,started/emp_start_gesetzt=4/emp_ende_gesetzt=3/counts=true', v);
   raise notice 'CASE 24 -> %', v;
 end $$;
 
