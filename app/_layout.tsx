@@ -2,7 +2,7 @@
 // Root Layout — lädt Inter-Font und stellt Auth + Job Context bereit.
 // Der Splash Screen bleibt sichtbar, bis die Fonts geladen sind.
 
-import { AnimatedSplash } from "@/components/ui";
+import { AnimatedSplash, BackendEnvironmentBadge } from "@/components/ui";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { JobProvider } from "@/context/JobContext";
 import { AuthLinkUrlProvider } from "@/features/auth/AuthLinkUrlProvider";
@@ -385,6 +385,10 @@ export default function RootLayout() {
         <AuthProvider>
           <SplashGate>
             <RootNavigator />
+            {/* Rein beobachtend, kein Effekt auf Routing/Auth — siehe
+                components/ui/BackendEnvironmentBadge.tsx. Rendert null in
+                jedem echten Produktions-Release. */}
+            <BackendEnvironmentBadge />
           </SplashGate>
         </AuthProvider>
       </AuthLinkUrlProvider>

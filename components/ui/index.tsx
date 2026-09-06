@@ -34,6 +34,7 @@ export { StatusBadge } from "./StatusBadge";
 export { WeekdayDots } from "./WeekdayDots";
 export { SkeletonCard } from "./SkeletonCard";
 export { OfflineBanner } from "./OfflineBanner";
+export { BackendEnvironmentBadge } from "./BackendEnvironmentBadge";
 export { ErrorBanner } from "./ErrorBanner";
 export { InitialsAvatar } from "./InitialsAvatar";
 export { InfoRow } from "./InfoRow";
