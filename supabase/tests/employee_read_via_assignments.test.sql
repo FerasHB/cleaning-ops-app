@@ -480,9 +480,17 @@ begin
   raise notice 'CASE 16 -> %', v;
 end $$;
 
--- CASE 17: SEKUNDAER kann den Auftrag NICHT starten — start_own_job
--- verlangt weiterhin assigned_to = auth.uid(). Genau deshalb muss der
--- Client sein Aktions-Gating am Legacy-Primaer ausrichten.
+-- CASE 17: SEKUNDAER kann den Auftrag inzwischen STARTEN.
+--
+-- ZUM STAND DIESER MIGRATION (20260730000000, reine Lese-Erweiterung) galt
+-- hier noch ABGELEHNT: start_own_job verlangte ausschliesslich
+-- assigned_to = auth.uid(), der Client musste sein Aktions-Gating deshalb am
+-- Legacy-Primaer ausrichten. Migration 20260731000000_shared_job_time_multi_
+-- assignment ("Shared Job Time", Phase 7) hat direkt im Anschluss einen
+-- zweiten ODER-Zweig public.is_assigned_to_job(job_id_input) ergaenzt, der
+-- genau diesen SEKUNDAEREN einschliesst (siehe canRunJobActions() in
+-- utils/jobAssignees.ts). Die vollstaendige Matrix dazu steht in
+-- supabase/tests/shared_job_time_multi_assignment.test.sql (CASE 3/8).
 do $$
 declare v text;
 begin
@@ -494,8 +502,8 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (17,'Sekundaerer kann den Auftrag nicht starten (RPC unveraendert, Phase 7)',
-    'ABGELEHNT',v);
+  insert into _r values (17,'Sekundaerer kann den Auftrag seit Phase 7 (20260731000000) starten',
+    'AKZEPTIERT',v);
   raise notice 'CASE 17 -> %', v;
 end $$;
 

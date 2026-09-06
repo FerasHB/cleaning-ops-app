@@ -80,12 +80,13 @@ values
    'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
    'c2000000-0000-0000-0000-000000000002','Regelkunde','Unterhaltsreinigung','Regelweg 1',
    'open','single', current_date - 3, '08:00', true, null, null),
-  -- erledigt (Vergangenheit)
+  -- erledigt (Vergangenheit, innerhalb der 30-Tage-KPI-Grenze — siehe CASE 19)
   ('c4000000-0000-0000-0000-000000000003','c1000000-0000-0000-0000-000000000001',
    'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
    'c2000000-0000-0000-0000-000000000002','Regelkunde','Unterhaltsreinigung','Regelweg 1',
    'completed','single', current_date - 5, '08:00', true,
-   timestamptz '2026-07-15 08:02:00+00', timestamptz '2026-07-15 10:00:00+00'),
+   (current_date - 5)::timestamptz + interval '8 hours 2 minutes',
+   (current_date - 5)::timestamptz + interval '10 hours'),
   -- ABWEICHEND: falsche Uhrzeit (09:30), zukünftig (mit Historie: started_at)
   ('c4000000-0000-0000-0000-000000000004','c1000000-0000-0000-0000-000000000001',
    'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
@@ -320,7 +321,10 @@ begin
   insert into _disp_results values (18,'Überfällige NICHT in Offen','0', n::text);
 
   -- CASE 19: KPI „Erledigt" = completed UND completed_at >= heute-30
-  --   c4..3 (vor 8 Tagen) ja; c4..7 (vor 40 Tagen) nein → 1
+  --   c4..3 (vor 5 Tagen, relativ zu current_date) ja; c4..7 (vor 40 Tagen) nein → 1
+  --   completed_at ist bewusst relativ zu current_date gesetzt (nicht als
+  --   fixes Datum) — sonst faellt der Fixture-Zeitstempel irgendwann aus
+  --   dem 30-Tage-Fenster und der Fall schlaegt allein durch Zeitablauf fehl.
   select count(*) into n from public.jobs
    where job_type='single' and status='completed' and completed_at >= today - 30;
   insert into _disp_results values (19,'KPI Erledigt: letzte 30 Tage','1', n::text);

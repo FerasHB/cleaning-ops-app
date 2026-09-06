@@ -161,6 +161,7 @@ Noch offen (Review/Staging, bewusst nicht von mir ausgeführt):
 
 * Schreiben von Zuweisungen aus der App (Phase 6) — `set_job_assignments` wird weiterhin von keinem Client aufgerufen.
 * Sekundär Zugewiesene können weiterhin **nicht** starten/abschließen, kommentieren oder Fotos hochladen (Phase 7). Sie sehen den Auftrag, die Kommentare und die Fotos — schreiben dürfen sie nicht. Diese Asymmetrie ist in der Migration dokumentiert und in den Tests festgehalten.
+  > **Korrektur (Phase 11, 2026-09-06).** Diese Aussage galt nur zum Stand von Phase 5. Migration `20260731000000_shared_job_time_multi_assignment` (Phase 7, direkt im Anschluss an diese Phase) hat Start/Abschluss für die volle Zuweisungsmenge geöffnet; `20260826000001_secondary_assignee_write_access` hat danach auch Kommentare, Foto-Upload und die Ungelesen-Markierung nachgezogen. Sekundär Zugewiesene dürfen also inzwischen alles davon — siehe `utils/jobAssignees.ts` (`canRunJobActions`, `isAssignedTo`) und `supabase/tests/shared_job_time_multi_assignment.test.sql` / `secondary_assignee_write_access.test.sql`.
 * `jobs.assigned_to` und `Job.employeeId` bleiben bestehen (Phase 11).
 
 ## 8. Nebenbefund, NICHT in dieser Phase behoben
