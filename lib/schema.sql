@@ -806,15 +806,28 @@ $$;
 grant execute on function public.clear_my_push_token() to authenticated;
 
 -- Markiert die eigene Einladung als abgeschlossen (einmalig, null -> now()).
--- Wird vom accept-invite-Screen aufgerufen, nachdem updateUser({password})
--- erfolgreich war. security definer, weil Mitarbeiter keine UPDATE-Policy auf
--- profiles haben — exakt dasselbe Muster wie update_my_push_token oben.
+-- Wird von AcceptInviteScreen UND ResetPasswordScreen aufgerufen, nachdem
+-- updateUser({password}) erfolgreich war (siehe
+-- 20260906000000_accept_own_invite_recovery_completion.sql — schließt die
+-- Lücke, dass ein Mitarbeiter mit abgelaufener Einladungs-Sitzung, der sein
+-- Passwort stattdessen über Passwort-Reset setzt, sonst dauerhaft im
+-- accept-invite-Redirect-Loop von app/index.tsx hängen bleibt).
+-- role = 'employee' grenzt bewusst auf Mitarbeiter ein — für Admins hat das
+-- Feld keine Bedeutung, Bestandsdaten sind dort durch den Backfill oben
+-- bereits nicht-NULL. security definer, weil Mitarbeiter keine UPDATE-Policy
+-- auf profiles haben — exakt dasselbe Muster wie update_my_push_token oben.
+-- Rückgabetyp boolean (statt void): signalisiert dem Aufrufer, ob wirklich
+-- eine Zeile geändert wurde — ResetPasswordScreen braucht das, um einen
+-- echten RPC-Fehlschlag von einem erwarteten No-Op (Admin/bereits
+-- akzeptiert/Legacy) zu unterscheiden.
 create or replace function public.accept_own_invite()
-returns void
+returns boolean
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_rows int;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -823,12 +836,17 @@ begin
   update public.profiles
   set invite_accepted_at = now()
   where id = auth.uid()
+    and role = 'employee'
     and is_active = true
     and invite_accepted_at is null;
 
-  -- Kein raise bei "not found": erneuter Aufruf nach bereits erfolgter
-  -- Annahme (Doppel-Tap, Retry) oder bei deaktiviertem Konto ist kein
-  -- harter Fehler — der Aufrufer zeigt Erfolg bereits nach updateUser().
+  get diagnostics v_rows = row_count;
+
+  -- Kein raise bei v_rows = 0: erneuter Aufruf nach bereits erfolgter Annahme
+  -- (Doppel-Tap, Retry), durch einen Admin/Legacy-Nutzer oder bei deaktiviertem
+  -- Konto ist kein harter Fehler — der Rückgabewert allein signalisiert dem
+  -- Aufrufer, ob wirklich etwas geändert wurde.
+  return v_rows > 0;
 end;
 $$;
 

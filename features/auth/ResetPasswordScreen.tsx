@@ -56,6 +56,17 @@ export default function ResetPasswordScreen() {
   };
 
   const [formSuccess, setFormSuccess] = useState(false);
+  // Echter RPC-Fehlschlag (nicht "kein Treffer" für Admins/bereits
+  // akzeptierte Mitarbeiter/Legacy — das ist ein erwartetes No-Op ohne
+  // Fehler) — hält die Recovery-Session bewusst OFFEN für einen echten Retry
+  // statt den Nutzer stillschweigend zum Login zu schicken, wo er ohne
+  // gültiges Einladungstoken im selben Umleitungs-Loop wie vor diesem Fix
+  // landen könnte (siehe finishAfterPasswordSet).
+  const [acceptInviteRetryNeeded, setAcceptInviteRetryNeeded] = useState(false);
+  const [retryingAccept, setRetryingAccept] = useState(false);
+  // Nur wahr, wenn der Nutzer nach einem fehlgeschlagenen Retry explizit
+  // "Trotzdem fortfahren" gewählt hat — steuert die Erfolgsanzeige unten.
+  const [acceptInviteGaveUp, setAcceptInviteGaveUp] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [formError, setFormError] = useState("");
@@ -104,17 +115,74 @@ export default function ResetPasswordScreen() {
         return;
       }
 
-      // SICHERHEITSGRENZE: Recovery-Modus beenden UND abmelden. Der Nutzer
-      // soll sich bewusst mit dem NEUEN Passwort anmelden — aus dem
-      // Reset-Link heraus entsteht nie eine App-Sitzung.
-      await endRecoverySession({ signOutSession: true });
-
-      setFormSuccess(true);
+      // Das Passwort ist ab hier UNWIDERRUFLICH gesetzt — wird nicht mehr
+      // zurückgerollt, egal was im nächsten Schritt passiert.
+      await finishAfterPasswordSet();
     } catch (err) {
       setFormError(toFriendlyAuthErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Schließt eine noch offene Mitarbeiter-Einladung ab: ein Mitarbeiter,
+  // dessen accept-invite-Sitzungstoken abgelaufen ist, BEVOR dort ein
+  // Passwort gesetzt wurde, hat eine bestätigte E-Mail, aber
+  // profiles.invite_accepted_at bleibt NULL — app/index.tsx leitet ihn sonst
+  // bei JEDEM Login dauerhaft auf /accept-invite um (Redirect-Loop, siehe
+  // 20260906000000_accept_own_invite_recovery_completion.sql). Die RPC
+  // grenzt serverseitig auf role='employee' AND invite_accepted_at IS NULL
+  // ein — für Admins, bereits akzeptierte Mitarbeiter und Legacy-Konten ist
+  // dieser Aufruf ein reines, fehlerfreies No-Op. MUSS vor
+  // endRecoverySession() laufen, solange auth.uid() noch die gültige
+  // Recovery-Session ist — auch beim Retry unten, deshalb hält
+  // handleRetryAcceptInvite die Session bis zum Erfolg bewusst offen.
+  //
+  // Schlägt der AUFRUF SELBST fehl (Netzwerk/Serverfehler, nicht "kein
+  // Treffer" — das ist der oben beschriebene No-Op-Fall ohne Fehler), wird
+  // NICHT stillschweigend zum Login weitergeleitet: ein wirklich betroffener
+  // Mitarbeiter würde dort ohne gültiges Einladungstoken im selben
+  // Umleitungs-Loop wie vor diesem Fix landen. Stattdessen bleibt die Session
+  // offen und der Nutzer bekommt einen echten Retry-Bildschirm.
+  const finishAfterPasswordSet = async () => {
+    const { error: acceptError } = await supabase.rpc("accept_own_invite");
+
+    if (acceptError) {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.warn("accept_own_invite fehlgeschlagen:", acceptError.message);
+      }
+      setAcceptInviteRetryNeeded(true);
+      return;
+    }
+
+    setAcceptInviteRetryNeeded(false);
+
+    // SICHERHEITSGRENZE: Recovery-Modus beenden UND abmelden. Der Nutzer
+    // soll sich bewusst mit dem NEUEN Passwort anmelden — aus dem
+    // Reset-Link heraus entsteht nie eine App-Sitzung.
+    await endRecoverySession({ signOutSession: true });
+
+    setFormSuccess(true);
+  };
+
+  const handleRetryAcceptInvite = async () => {
+    setRetryingAccept(true);
+    try {
+      await finishAfterPasswordSet();
+    } finally {
+      setRetryingAccept(false);
+    }
+  };
+
+  // Ausweg, falls der Abschluss-Schritt wiederholt fehlschlägt (z.B.
+  // dauerhafter Verbindungsfehler): der Nutzer hat trotzdem ein gültiges,
+  // gespeichertes Passwort und soll nicht auf diesem Bildschirm feststecken.
+  const handleContinueAnyway = async () => {
+    setAcceptInviteGaveUp(true);
+    setAcceptInviteRetryNeeded(false);
+    await endRecoverySession({ signOutSession: true });
+    setFormSuccess(true);
   };
 
   // ── Wird geprüft ──
@@ -186,6 +254,17 @@ export default function ResetPasswordScreen() {
           <Text style={styles.centerText}>
             Dein neues Passwort wurde gespeichert. Bitte melde dich damit an.
           </Text>
+          {acceptInviteGaveUp ? (
+            // Nur nach explizitem "Trotzdem fortfahren" auf dem Retry-
+            // Bildschirm (siehe unten): das Passwort ist gesetzt, aber ein
+            // abschließender Serverschritt blieb fehlgeschlagen — falls das
+            // den Zugang betrifft, soll das nicht stillschweigend als
+            // vollständiger Erfolg erscheinen.
+            <Text style={styles.centerText}>
+              Solltest du dich danach nicht wie gewohnt anmelden können, wende
+              dich bitte an deinen Administrator.
+            </Text>
+          ) : null}
 
           <TouchableOpacity
             style={styles.primaryBtn}
@@ -193,6 +272,53 @@ export default function ResetPasswordScreen() {
             activeOpacity={0.82}
           >
             <Text style={styles.primaryBtnText}>Zum Login</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Passwort gesetzt, aber ein abschließender Schritt ist fehlgeschlagen ──
+  // Die Recovery-Session bleibt hier bewusst offen (siehe
+  // finishAfterPasswordSet) — echter Retry statt stillschweigend zum Login,
+  // wo ein wirklich betroffener Mitarbeiter ohne gültiges Einladungstoken im
+  // selben Umleitungs-Loop wie vor diesem Fix landen könnte.
+  if (acceptInviteRetryNeeded) {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+        <StatusBar
+          barStyle={theme.isDark ? "light-content" : "dark-content"}
+          backgroundColor={theme.colors.background}
+        />
+        <View style={styles.centerState}>
+          <View style={styles.errorIconWrap}>
+            <Ionicons name="alert-circle" size={44} color={theme.colors.error} />
+          </View>
+          <Text style={styles.centerTitle}>Fast geschafft</Text>
+          <Text style={styles.centerText}>
+            Dein neues Passwort wurde gespeichert. Ein letzter Schritt zur
+            Fertigstellung deines Kontos ist aber fehlgeschlagen. Bitte
+            versuche es erneut, solange du hier bist.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.primaryBtn, retryingAccept && styles.primaryBtnDisabled]}
+            onPress={handleRetryAcceptInvite}
+            disabled={retryingAccept}
+            activeOpacity={0.82}
+          >
+            {retryingAccept ? (
+              <ActivityIndicator size="small" color={theme.colors.onPrimary} />
+            ) : (
+              <Text style={styles.primaryBtnText}>Erneut versuchen</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.linkBtn}
+            onPress={handleContinueAnyway}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.linkBtnText}>Trotzdem fortfahren</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

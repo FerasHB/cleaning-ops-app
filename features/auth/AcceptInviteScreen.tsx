@@ -54,6 +54,24 @@ export default function AcceptInviteScreen() {
 
   const passwordMeetsLength = newPassword.length >= MIN_PASSWORD_LENGTH;
 
+  // Geräte-QA (Invite-Limbo, Staging 2026-09): "Zurück zum Login" auf dem
+  // Ungültig-Bildschirm navigierte bislang ohne Sign-out — router.replace(
+  // "/login") war dadurch ein STILLES No-Op, weil app/_layout.tsx die
+  // login-Route über <Stack.Protected guard={!hasSession}> komplett aus dem
+  // Navigations-Stack entfernt, SOLANGE eine echte (Nicht-Recovery-)Session
+  // besteht. Genau diese Session bleibt hier bestehen: der Einladungs-Link
+  // stellt beim /verify-Schritt eine ganz normale Supabase-Session her (siehe
+  // useAuthLinkSession, Modus "invite" — bewusst KEIN Recovery-Modus), die
+  // Force-Close/Neustart übersteht. Ohne gültiges frisches Token zeigt dieser
+  // Screen "invalid", die Session bleibt aber aktiv — der Nutzer blieb daher
+  // sichtbar auf diesem Screen hängen, ganz gleich wie oft er auf den Button
+  // tippte. Analog zu ResetPasswordScreens handleAbandonRecovery: erst
+  // abmelden, DANN navigieren.
+  const handleBackToLogin = async () => {
+    await supabase.auth.signOut().catch(() => {});
+    router.replace("/login");
+  };
+
   const handleSubmit = async () => {
     const validationError = validateNewPassword(newPassword, confirmPassword);
     if (validationError) {
@@ -138,7 +156,7 @@ export default function AcceptInviteScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => router.replace("/login")}
+            onPress={handleBackToLogin}
             activeOpacity={0.82}
           >
             <Text style={styles.primaryBtnText}>Zurück zum Login</Text>

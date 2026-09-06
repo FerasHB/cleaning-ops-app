@@ -249,10 +249,17 @@ export default function EmployeeDetailScreen() {
     setResendError("");
     try {
       setResendingInvite(true);
-      await resendInvite(employee.id);
+      const mode = await resendInvite(employee.id);
 
       if (resendSuccessTimerRef.current) clearTimeout(resendSuccessTimerRef.current);
-      setResendSuccess(`${employee.fullName} hat eine neue Einladungs-E-Mail erhalten.`);
+      // "recovery": das Konto war bereits bestätigt (abgelaufene
+      // Einladungs-Sitzung) — es ging ein Passwort-Link raus, keine neue
+      // Einladung (siehe resend-invite/index.ts).
+      setResendSuccess(
+        mode === "recovery"
+          ? `${employee.fullName} hat einen Link zum Passwort-Setzen erhalten.`
+          : `${employee.fullName} hat eine neue Einladungs-E-Mail erhalten.`,
+      );
       resendSuccessTimerRef.current = setTimeout(
         () => setResendSuccess(""),
         3000,
