@@ -684,10 +684,23 @@ end $$;
 -- G. Was diese Phase ausdruecklich NICHT anfasst
 -- =========================================================
 
--- CASE 24: job_assignments ist unberuehrt — keine Anwesenheitserfassung.
--- attendance bleibt 'assigned', die Audit-Zeitstempel bleiben NULL, und
--- counts_for_timesheet (generiert daraus) bleibt false. Der Stundenzettel
--- filtert bewusst NICHT darauf (siehe PR #58 und CASE 5).
+-- CASE 24: der Stundenzettel selbst filtert weiterhin NICHT auf
+-- job_assignments/counts_for_timesheet (siehe PR #58 und CASE 5) — die
+-- geteilte Job-Uhr bleibt die einzige Quelle der offiziellen Dauer.
+--
+-- ZUM STAND DIESER MIGRATION (Phase 7, 20260731000000) hielt dieser Fall
+-- zusaetzlich fest, dass job_assignments dabei komplett unberuehrt bleibt
+-- (attendance='assigned', beide Audit-Zeitstempel NULL, counts_for_timesheet
+-- =false). Migration 20260812000000_employee_worked_time_foundation ("Worked
+-- Time", Phase 1) hat das bewusst geaendert: start_own_job/complete_own_job
+-- pflegen seither zusaetzlich die EIGENE job_assignments-Zeile des
+-- Aufrufers (employee_started_at/employee_completed_at/attendance), auch im
+-- No-Op-Zweig (CASE 6 und CASE 9 oben sind genau solche No-Ops). Dadurch
+-- tragen alle vier hier betrachteten Zeilen (AHMED/MOHAMMED je J1/J2)
+-- inzwischen attendance in (started, completed) und damit
+-- counts_for_timesheet=true. Das aendert NICHT die geteilte Job-Uhr auf
+-- jobs (weiterhin GENAU EINE offizielle Dauer, siehe CASE 4/5) — es ist ein
+-- rein additiver, paralleler Nachweis pro Mitarbeiter.
 do $$
 declare v text;
 begin
@@ -698,8 +711,8 @@ begin
     into v
   from public.job_assignments ja
   where ja.job_id in ('f4000000-0000-0000-0000-000000000001','f4000000-0000-0000-0000-000000000002');
-  insert into _r values (24,'KEINE Anwesenheitserfassung: attendance/Audit-Stempel/counts_for_timesheet unveraendert',
-    'attendance=assigned/emp_start_gesetzt=0/emp_ende_gesetzt=0/counts=false', v);
+  insert into _r values (24,'Seit 20260812000000: eigene Worked-Time-Zeitstempel pro Mitarbeiter gesetzt (Stundenzettel bleibt auf jobs.*)',
+    'attendance=completed,started/emp_start_gesetzt=3/emp_ende_gesetzt=3/counts=true', v);
   raise notice 'CASE 24 -> %', v;
 end $$;
 
