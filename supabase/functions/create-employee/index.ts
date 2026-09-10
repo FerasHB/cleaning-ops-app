@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { resolveAppUrlScheme } from "../_shared/appUrlScheme.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,14 +13,16 @@ type CreateEmployeeBody = {
   email?: string;
 };
 
-// Deep-Link-Ziel der Einladungs-Mail — muss unter Supabase Dashboard →
-// Authentication → URL Configuration → Redirect URLs eingetragen sein, sonst
-// leitet Supabase NICHT dorthin um (siehe DEPLOY.md in diesem Ordner).
-// Statisch, weil inviteUserByEmail server-seitig läuft (kein Linking.createURL
-// möglich wie beim client-seitig ausgelösten Passwort-Reset) — funktioniert
-// daher nur in Dev-Client-/Standalone-Builds mit dem "taskopsmanager"-Scheme,
-// nicht in Expo Go.
-const INVITE_REDIRECT_TO = "taskopsmanager://accept-invite";
+// Deep-Link-Ziel der Einladungs-Mail — muss in der uri_allow_list DES
+// JEWEILIGEN Projekts stehen (Supabase Dashboard → Authentication → URL
+// Configuration → Redirect URLs), sonst leitet Supabase NICHT dorthin um
+// (siehe DEPLOY.md in diesem Ordner). Server-seitig (inviteUserByEmail), daher
+// kein Linking.createURL wie beim client-seitigen Passwort-Reset — das Schema
+// folgt dem Projekt: Produktion taskopsmanager://, Staging taskopsmanagerdev://
+// (siehe ../_shared/appUrlScheme.ts). Funktioniert nur in Dev-Client-/
+// Standalone-Builds, nicht in Expo Go.
+const APP_URL_SCHEME = resolveAppUrlScheme(Deno.env.get("SUPABASE_URL"));
+const INVITE_REDIRECT_TO = `${APP_URL_SCHEME}://accept-invite`;
 
 type AuthUserLookup = { id: string; email?: string };
 

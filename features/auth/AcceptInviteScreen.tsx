@@ -1,5 +1,6 @@
 // features/auth/AcceptInviteScreen.tsx
-// Ziel des Einladungs-Deep-Links (taskopsmanager://accept-invite), verschickt
+// Ziel des Einladungs-Deep-Links (taskopsmanager://accept-invite, von Staging
+// aus taskopsmanagerdev://accept-invite), verschickt
 // von der create-employee/resend-invite Edge Function (admin.inviteUserByEmail).
 // Nutzt dieselbe Link-Einlösung wie der Passwort-Reset (useAuthLinkSession) —
 // eigene Copy/CTA, weil eine abgelaufene Einladung nicht selbstständig erneut

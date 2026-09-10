@@ -57,7 +57,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     // PKCE-Flow für native Deep-Links (z.B. Passwort-Reset).
     // Damit hängt resetPasswordForEmail einen code_challenge an und speichert
     // den zugehörigen code_verifier lokal. Der Recovery-Link kommt dann als
-    // taskopsmanager://reset-password?code=... zurück und wird über
+    // taskopsmanager://reset-password?code=... (Development-Build:
+    // taskopsmanagerdev://…, siehe services/auth/authRedirect.ts) zurück und wird über
     // supabase.auth.exchangeCodeForSession(code) eingelöst
     // (siehe features/auth/ResetPasswordScreen.tsx). Ohne pkce würde kein
     // Verifier gespeichert und der Code-Tausch schlüge fehl.

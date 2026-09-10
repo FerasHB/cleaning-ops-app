@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { resolveAppUrlScheme } from "../_shared/appUrlScheme.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,15 +12,18 @@ type ResendInviteBody = {
   employeeId?: string;
 };
 
-// Muss identisch zum Wert in create-employee/index.ts sein (siehe dortiger
-// Kommentar + DEPLOY.md).
-const INVITE_REDIRECT_TO = "taskopsmanager://accept-invite";
+// Deep-Link-Schema dieses Projekts (Produktion taskopsmanager://, Staging
+// taskopsmanagerdev://) — dieselbe Ableitung wie in create-employee, siehe
+// ../_shared/appUrlScheme.ts + create-employee/DEPLOY.md.
+const APP_URL_SCHEME = resolveAppUrlScheme(Deno.env.get("SUPABASE_URL"));
 
-// Ziel des Passwort-Reset-Deep-Links — muss identisch zu dem Wert sein, den
-// ForgotPasswordScreen/ResetPasswordScreen über Linking.createURL("reset-password")
-// erzeugen (siehe features/auth/ForgotPasswordScreen.tsx), und ist bereits Teil
-// der uri_allow_list (unverändert von dieser Änderung).
-const PASSWORD_RESET_REDIRECT_TO = "taskopsmanager://reset-password";
+const INVITE_REDIRECT_TO = `${APP_URL_SCHEME}://accept-invite`;
+
+// Ziel des Passwort-Reset-Deep-Links — derselbe Pfad, den ForgotPasswordScreen
+// über createAuthRedirectUrl("reset-password") erzeugt
+// (services/auth/authRedirect.ts); steht in der uri_allow_list des jeweiligen
+// Projekts.
+const PASSWORD_RESET_REDIRECT_TO = `${APP_URL_SCHEME}://reset-password`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {

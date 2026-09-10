@@ -55,7 +55,7 @@ export default function IndexScreen() {
       // persistierten Recovery-Session stammt und NICHT aus einem frischen
       // Deep-Link. Nur diese eine Stelle setzt ihn — ein echter Recovery-Link
       // von Supabase trägt ihn nie (Redirect-Ziel ist exakt
-      // `taskopsmanager://reset-password`, siehe uri_allow_list). Damit
+      // `taskopsmanager(dev)://reset-password`, siehe uri_allow_list). Damit
       // braucht der Hook keine Zeitheuristik mehr, um die beiden Fälle zu
       // unterscheiden. Der Parameter allein berechtigt zu NICHTS: der
       // Restore-Pfad verlangt zusätzlich den aktiven Recovery-Marker UND eine

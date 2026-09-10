@@ -1,5 +1,6 @@
 // features/auth/ResetPasswordScreen.tsx
-// Ziel des Passwort-Reset-Deep-Links (taskopsmanager://reset-password).
+// Ziel des Passwort-Reset-Deep-Links (taskopsmanager://reset-password, im
+// Development-Build taskopsmanagerdev://reset-password).
 // Die eigentliche Link-Einlösung (PKCE/Implicit, Mehrfachquellen, Watchdog)
 // steckt in useAuthLinkSession — dieser Screen kümmert sich nur noch um das
 // "neues Passwort setzen"-Formular und die reset-spezifische Copy/CTA.
