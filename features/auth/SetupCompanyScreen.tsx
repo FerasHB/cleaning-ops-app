@@ -1,6 +1,7 @@
 // features/auth/SetupCompanyScreen.tsx
-// Redesign: useAppTheme(), Inter-Font, Onboarding-Gefühl.
-// setupCompanyForAdmin()-Logik bleibt vollständig unverändert.
+// Onboarding-Schritt 2 (Admin ohne Firma): Firma anlegen inkl. Firmen-Kontakt
+// (E-Mail + Telefon Pflicht, Phase 15) und optionaler eigener Telefonnummer.
+// Schreibpfad: setupCompanyForAdmin() → RPC setup_company_for_admin.
 
 import { ErrorBanner, Input } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -22,30 +23,66 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
+import { isValidEmail } from "@/utils/email";
+import { isValidPhone } from "@/utils/phone";
 
 export function SetupCompanyScreen() {
   const theme  = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { refreshProfile } = useAuth();
 
-  const [companyName, setCompanyName] = useState("");
-  const [nameError,   setNameError]   = useState("");
-  const [formError,   setFormError]   = useState("");
-  const [loading,     setLoading]     = useState(false);
+  const [companyName,  setCompanyName]  = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [adminPhone,   setAdminPhone]   = useState("");
+  const [nameError,    setNameError]    = useState("");
+  const [emailError,   setEmailError]   = useState("");
+  const [phoneError,   setPhoneError]   = useState("");
+  const [adminPhoneError, setAdminPhoneError] = useState("");
+  const [formError,    setFormError]    = useState("");
+  const [loading,      setLoading]      = useState(false);
 
-  // ── Abschicken (unveränderte Logik)
+  // ── Abschicken
   async function handleSubmit() {
     setNameError("");
+    setEmailError("");
+    setPhoneError("");
+    setAdminPhoneError("");
     setFormError("");
 
+    let ok = true;
     if (!companyName.trim()) {
       setNameError("Bitte gib einen Firmennamen ein.");
-      return;
+      ok = false;
     }
+    if (!companyEmail.trim()) {
+      setEmailError("Firmen-E-Mail ist erforderlich.");
+      ok = false;
+    } else if (!isValidEmail(companyEmail)) {
+      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      ok = false;
+    }
+    if (!companyPhone.trim()) {
+      setPhoneError("Firmen-Telefon ist erforderlich.");
+      ok = false;
+    } else if (!isValidPhone(companyPhone)) {
+      setPhoneError("Bitte gib eine gültige Telefonnummer ein.");
+      ok = false;
+    }
+    if (adminPhone.trim() && !isValidPhone(adminPhone)) {
+      setAdminPhoneError("Bitte gib eine gültige Telefonnummer ein.");
+      ok = false;
+    }
+    if (!ok) return;
 
     try {
       setLoading(true);
-      await setupCompanyForAdmin(companyName);
+      await setupCompanyForAdmin({
+        companyName,
+        contactEmail: companyEmail,
+        contactPhone: companyPhone,
+        adminPhone: adminPhone.trim() || undefined,
+      });
       await refreshProfile();
       // Erfolgreich → index.tsx übernimmt Weiterleitung
       router.replace("/");
@@ -114,17 +151,67 @@ export function SetupCompanyScreen() {
               }}
               error={nameError}
               autoCapitalize="words"
+              returnKeyType="next"
+              editable={!loading}
+              autoFocus
+            />
+
+            <Input
+              label="Firmen-E-Mail"
+              placeholder="kontakt@firma.de"
+              value={companyEmail}
+              onChangeText={(t) => {
+                setCompanyEmail(t);
+                setEmailError("");
+                setFormError("");
+              }}
+              error={emailError}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              returnKeyType="next"
+              editable={!loading}
+            />
+
+            <Input
+              label="Firmen-Telefon"
+              placeholder="0170 1234567"
+              value={companyPhone}
+              onChangeText={(t) => {
+                setCompanyPhone(t);
+                setPhoneError("");
+                setFormError("");
+              }}
+              error={phoneError}
+              keyboardType="phone-pad"
+              autoComplete="tel"
+              returnKeyType="next"
+              editable={!loading}
+            />
+
+            <Input
+              label="Deine Telefonnummer (optional)"
+              placeholder="0170 1234567"
+              value={adminPhone}
+              onChangeText={(t) => {
+                setAdminPhone(t);
+                setAdminPhoneError("");
+                setFormError("");
+              }}
+              error={adminPhoneError}
+              keyboardType="phone-pad"
+              autoComplete="tel"
               returnKeyType="done"
               onSubmitEditing={handleSubmit}
               editable={!loading}
-              autoFocus
             />
 
             {/* Info-Zeile */}
             <View style={styles.infoRow}>
               <Ionicons name="information-circle-outline" size={14} color={theme.colors.outline} />
               <Text style={styles.infoText}>
-                Der Firmenname kann später in den Einstellungen geändert werden.
+                Firmenname und Kontaktdaten lassen sich später in den
+                Einstellungen ändern.
               </Text>
             </View>
 

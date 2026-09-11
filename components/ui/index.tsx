@@ -38,6 +38,7 @@ export { BackendEnvironmentBadge } from "./BackendEnvironmentBadge";
 export { ErrorBanner } from "./ErrorBanner";
 export { InitialsAvatar } from "./InitialsAvatar";
 export { InfoRow } from "./InfoRow";
+export { PhoneRow } from "./PhoneRow";
 export { KPICard } from "./KPICard";
 export { AnimatedSplash } from "./AnimatedSplash";
 export type { JobStatus } from "./StatusBadge";

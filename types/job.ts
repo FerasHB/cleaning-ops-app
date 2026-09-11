@@ -168,6 +168,8 @@ export type EmployeeOption = {
   id: string;
   fullName: string;
   email?: string | null;
+  /** Rufnummer in E.164 (Phase 15). Null/undefined = nicht hinterlegt. */
+  phone?: string | null;
   role?: "admin" | "employee" | string | null;
   isActive?: boolean | null;
   /** Wann (zuletzt) eine Einladung verschickt wurde, falls vorhanden. */

@@ -61,6 +61,10 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   `jobs.storage.ts` (Job-Cache), `jobs.merge.ts` (Pending-Actions über Server-/Cache-Jobs legen),
   `jobs.sync.ts` (Queue gegen Server synchronisieren).
 - `auth/registerAdmin.ts`, `company/setupCompanyForAdmin.ts`, `employees/createEmployee.ts`.
+- `company/company.service.ts` — `getOwnCompany` (RLS-Read), `updateOwnCompany` (RPC `update_own_company`
+  — companies hat **keine** UPDATE-RLS-Policy, das ist der einzige client-Schreibpfad). Typ `Company`.
+- `profile/updateOwnProfile.ts` — Name + Telefon selbst pflegen (direktes `.update()` über
+  "update own profile"; `enforce_profile_field_guard` schützt phone/full_name **nicht**).
 - `notificationService.ts` — `setupNotifications`, `registerForPushNotifications`.
 
 ### Backend (`lib/`, `supabase/`)
@@ -68,6 +72,11 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
 - `lib/schema.sql` — DB-Schema (Referenz). Tabellen u. a. `companies`, `profiles`, `jobs`,
   `job_comments`, `job_comment_reads`.
   Hinweis: `profiles` hat **keine** `email`-Spalte (E-Mail liegt nur in `auth.users`).
+  `companies` trägt Kontakt-Fundament (20260912000000): `contact_email`/`contact_phone` (E.164),
+  `timezone` (Default `Europe/Berlin`) und `locale` (Default `de`, noch kein UI). `profiles.phone`
+  (E.164, selbst editierbar) + `phone_verified_at` (Reserve). Telefon-Normalisierung/-Format:
+  `utils/phone.ts` (E.164, DE-Default, **ohne** libphonenumber). Tap-auf-Nummer → Bestätigung → Dialer:
+  `callPhone()` in `utils/dialogs.ts` bzw. die `PhoneRow`-Komponente.
   `jobs` hat zusätzlich Terminierungs-Spalten: `job_type` (enum `single`|`recurring`), `date`,
   `start_time`, `recurring_days text[]`, `is_active`. Wiederkehrende Aufträge werden als **eine Regel**
   gespeichert (keine vorausberechneten Einzel-Jobs).

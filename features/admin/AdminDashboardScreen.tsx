@@ -3,8 +3,8 @@
 // Vollständig theme-aware (Light + Dark Mode), nur Lesezugriff auf JobContext/AuthContext.
 //
 // Hinweise:
-// - Firmenname: profile liefert nur company_id (keinen Namen) → neutraler Titel "Dashboard"
-//   (bewusst kein company.name-Fetch im MVP).
+// - Firmenname: über useOwnCompany() (Phase 15). Solange nicht geladen bzw.
+//   kein Name gesetzt ist, dient "Dashboard" als neutraler Platzhalter.
 // - "Heute fällig": isJobToday() aus utils/jobSchedule (single per date/scheduledStart,
 //   recurring per Wochentag, nur aktive) — gleiche Logik wie EmployeeOverviewScreen.
 
@@ -20,6 +20,7 @@ import {
   SectionHeader,
 } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
+import { useOwnCompany } from "@/features/company/hooks/useOwnCompany";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
@@ -42,7 +43,7 @@ import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-const COMPANY_NAME = "Dashboard";
+const COMPANY_NAME_FALLBACK = "Dashboard";
 
 // ── Tageszeit-abhängige Begrüßung
 function getGreeting(date: Date): string {
@@ -88,6 +89,8 @@ export default function AdminDashboardScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { profile } = useAuth();
+  const { company } = useOwnCompany();
+  const companyTitle = company?.name?.trim() || COMPANY_NAME_FALLBACK;
   const {
     jobs,
     employees,
@@ -284,7 +287,7 @@ export default function AdminDashboardScreen() {
               color={theme.colors.onPrimaryContainer}
             />
           </View>
-          <Text style={styles.companyName}>{COMPANY_NAME}</Text>
+          <Text style={styles.companyName} numberOfLines={1}>{companyTitle}</Text>
         </View>
 
         <Text style={styles.greeting}>

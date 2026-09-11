@@ -13,6 +13,10 @@ export type AuthProfile = {
   // Bei bestehenden Profilen (vor diesem Feature) per Migrations-Backfill
   // bereits gesetzt — siehe 20260718000000_employee_invitations.sql.
   invite_accepted_at: string | null;
+  // Persönliche Rufnummer in E.164 (Phase 15). Null = nicht hinterlegt.
+  // Selbst editierbar über die RLS-Policy "update own profile". Die Spalte
+  // `phone` existiert schon seit dem Baseline-Schema — hier gefahrlos wählbar.
+  phone: string | null;
 };
 
 // Unterscheidet "kein Netz" (erwartbar, retryt sich von selbst beim
@@ -35,7 +39,9 @@ export async function getProfileByUserId(
   try {
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, company_id, role, is_active, invite_accepted_at")
+      .select(
+        "id, full_name, company_id, role, is_active, invite_accepted_at, phone",
+      )
       .eq("id", userId)
       .single();
 

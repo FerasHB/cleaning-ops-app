@@ -4,6 +4,8 @@ import { toFriendlyEdgeFunctionErrorMessage } from "@/utils/authErrorMessages";
 type CreateEmployeeInput = {
   fullName: string;
   email: string;
+  /** Optionale Rufnummer, roh oder E.164 — die Edge Function normalisiert. */
+  phone?: string | null;
 };
 
 const DEFAULT_ERROR_MESSAGE = "Einladung konnte nicht verschickt werden.";
@@ -17,6 +19,7 @@ export async function createEmployee(input: CreateEmployeeInput) {
     body: {
       fullName: input.fullName,
       email: input.email,
+      phone: input.phone?.trim() || undefined,
     },
   });
 
