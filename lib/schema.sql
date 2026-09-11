@@ -1316,6 +1316,61 @@ $$;
 grant execute on function public.get_unread_comment_job_ids() to authenticated;
 
 -- =========================================================
+-- RPC: JOB-KOMMENTARE FÜR DIE ANZEIGE (inkl. Autorname)
+-- =========================================================
+-- Liefert die Kommentare eines Jobs mit dem Autornamen (profiles.full_name).
+-- SECURITY DEFINER, damit der Name auch dann sichtbar ist, wenn die
+-- profiles-RLS des Aufrufers die fremde Zeile filtert — ein Mitarbeiter darf
+-- nur die eigene profiles-Zeile lesen und sah Admin-/Kollegen-Kommentare
+-- sonst als "Unbekannt" (siehe Migration 20260911000000). Sichtbarkeit exakt
+-- wie die job_comments-SELECT-Policies: eigene Firma UND (Admin ODER
+-- zugewiesener Mitarbeiter — volle Zuweisungsmenge). Kein weiteres
+-- profiles-Feld wird exponiert. Fehlender/gelöschter Autor -> author_name NULL
+-- -> UI-Fallback "Unbekannt".
+
+create or replace function public.get_job_comments(p_job_id uuid)
+returns table (
+  id          uuid,
+  job_id      uuid,
+  author_id   uuid,
+  author_name text,
+  message     text,
+  created_at  timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    c.id,
+    c.job_id,
+    c.author_id,
+    p.full_name as author_name,
+    c.message,
+    c.created_at
+  from public.job_comments c
+  join public.jobs j on j.id = c.job_id
+  left join public.profiles p on p.id = c.author_id
+  where c.job_id = p_job_id
+    and j.company_id = public.current_user_company_id()
+    and (
+      public.current_user_role() = 'admin'
+      or (
+        public.current_user_role() = 'employee'
+        and (
+          j.assigned_to = auth.uid()
+          or public.is_assigned_to_job(j.id)
+        )
+      )
+    )
+  order by c.created_at asc, c.id asc;
+$$;
+
+revoke execute on function public.get_job_comments(uuid) from public, anon;
+grant  execute on function public.get_job_comments(uuid) to authenticated, service_role;
+
+-- =========================================================
 -- TRIGGERS
 -- =========================================================
 
