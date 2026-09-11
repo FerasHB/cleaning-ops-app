@@ -112,8 +112,8 @@ Active development, currently on a docs/showcase-refresh pass on top of the late
 Requires Node.js 18+ and a Supabase project with the schema in `lib/schema.sql` (reference only — actual schema changes are applied via `supabase/migrations/`).
 
 ```bash
-git clone https://github.com/FerasHB/cleaning-employee-app-2.git
-cd cleaning-employee-app-2
+git clone https://github.com/FerasHB/cleaning-ops-app.git
+cd cleaning-ops-app
 npm install
 cp .env.example .env
 # fill in EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY (publishable/anon key only — never a service-role/secret key)
