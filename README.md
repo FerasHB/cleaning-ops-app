@@ -1,8 +1,10 @@
 # TaskOps Manager
 
-A production-style mobile app for cleaning companies, built with React Native (Expo) and Supabase. Admins create a company, schedule jobs, and assign staff; field employees see their assigned jobs, start and complete work with a shared job timer, and report comments, photos, and absences — all with offline support for the core job workflow.
+A production-style mobile workforce and job management app for field-service teams, built with React Native (Expo) and Supabase. Admins create a company, schedule jobs, and assign staff; field employees see their assigned jobs, start and complete work with a shared job timer, and report comments, photos, and absences — all with offline support for the core job workflow.
 
-The in-app UI and code comments are in German (the target users are German cleaning companies); this document is in English for review purposes.
+The project originally started around cleaning-company workflows and has since evolved into a more general operations platform for businesses that coordinate mobile employees and scheduled jobs — cleaning remains a real, fully-supported use case (see the Staging demo data below), alongside other field-service scenarios with the same shape: a company, a schedule, and staff assigned to jobs.
+
+The in-app UI and code comments are in German (the app was built for German field-service businesses); this document is in English for review purposes.
 
 ## Screenshots
 
@@ -103,13 +105,15 @@ This isn't just a UI prototype — a few things that back that up:
 
 Active development, currently on a docs/showcase-refresh pass on top of the latest feature work (company contact details). Known, deliberate scope limits:
 
-- **Recurring jobs have no per-day occurrences yet.** A recurring job is one rule; status/timestamps apply to the rule, not to "this Tuesday's cleaning" individually. This is documented, intentional MVP scope, not an oversight.
+- **Recurring jobs have no per-day occurrences yet.** A recurring job is one rule; status/timestamps apply to the rule, not to "this Tuesday's visit" individually. This is documented, intentional MVP scope, not an oversight.
 - **Comments and photos are online-only** by design — no offline queue for those, unlike job start/complete/edit.
 - Distribution is via **EAS Build**; an App Store Connect submission profile is configured for iOS.
 
 ## Local Development
 
 Requires Node.js 18+ and a Supabase project with the schema in `lib/schema.sql` (reference only — actual schema changes are applied via `supabase/migrations/`).
+
+*Note: the GitHub repository is still named `cleaning-ops-app`, a holdover from the project's original scope — the product itself is TaskOps Manager.*
 
 ```bash
 git clone https://github.com/FerasHB/cleaning-ops-app.git
