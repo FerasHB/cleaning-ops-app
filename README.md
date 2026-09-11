@@ -1,8 +1,8 @@
 # TaskOps Manager
 
-A production-style mobile workforce and job management app for field-service teams, built with React Native (Expo) and Supabase. Admins create a company, schedule jobs, and assign staff; field employees see their assigned jobs, start and complete work with a shared job timer, and report comments, photos, and absences — all with offline support for the core job workflow.
+TaskOps Manager is a mobile workforce and job management app for field-service teams, built with React Native, Expo, and Supabase. Admins schedule and assign work, while field employees manage jobs, track progress, communicate, and report absences from the mobile app.
 
-The project originally started around cleaning-company workflows and has since evolved into a more general operations platform for businesses that coordinate mobile employees and scheduled jobs — cleaning remains a real, fully-supported use case (see the Staging demo data below), alongside other field-service scenarios with the same shape: a company, a schedule, and staff assigned to jobs.
+Originally built around cleaning-company workflows, TaskOps Manager has evolved into a broader field-operations platform. Cleaning remains one real-world use case, demonstrated by the staging data and screenshots below.
 
 The in-app UI and code comments are in German (the app was built for German field-service businesses); this document is in English for review purposes.
 
@@ -66,8 +66,8 @@ An admin registers, sets up their company, and adds employees. They create jobs 
 
 **Authentication & Security**
 - Supabase Auth with role-based routing (admin vs. employee), password reset, and a minimum password-length policy
-- Row Level Security on every table; write paths are re-validated server-side (not just gated in the UI)
-- Company contact data (email/phone) with a dedicated update RPC, since the `companies` table has no client-writable UPDATE policy by design
+- Row Level Security protects application data, with sensitive write paths validated server-side through RPCs
+- Company contact details (email/phone) that admins can view and update from the app
 
 ## Tech Stack
 
@@ -97,17 +97,18 @@ This isn't just a UI prototype — a few things that back that up:
 - Separate **Staging** and **Production** Supabase projects, with environment separation enforced at the client (a visible "Staging" badge in non-production builds) and verified before any data-affecting operation
 - Every write path is protected by **Row Level Security**, re-checked independently of the UI
 - Auth hardening: password length policy, rate limiting, and user-facing German error messages mapped from Supabase's error codes (not raw API text)
-- **EAS Build** with separate development/preview/production profiles and a configured App Store Connect submission profile
+- **EAS Build** with separate development/preview/production profiles, distributed for beta testing via TestFlight and Google Play Internal Testing
 - Migration-based schema management (`supabase/migrations/`) with accompanying `pgTAP`-style SQL tests (`supabase/tests/`) for RLS and RPC behavior
 - Server-side validation of scheduling input (`buildSchedulePayload`) so a single-vs-recurring job can't be created in an inconsistent state, regardless of what the client sends
 
 ## Current Status
 
-Active development, currently on a docs/showcase-refresh pass on top of the latest feature work (company contact details). Known, deliberate scope limits:
+Active development. Production builds have been distributed for beta testing through TestFlight and Google Play Internal Testing.
+
+Known, deliberate scope limits:
 
 - **Recurring jobs have no per-day occurrences yet.** A recurring job is one rule; status/timestamps apply to the rule, not to "this Tuesday's visit" individually. This is documented, intentional MVP scope, not an oversight.
 - **Comments and photos are online-only** by design — no offline queue for those, unlike job start/complete/edit.
-- Distribution is via **EAS Build**; an App Store Connect submission profile is configured for iOS.
 
 ## Local Development
 
