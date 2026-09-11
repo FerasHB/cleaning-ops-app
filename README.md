@@ -1,181 +1,133 @@
-# Cleaning Ops App 🧹
+# TaskOps Manager
 
-A mobile-first operations app for cleaning companies.
+TaskOps Manager is a mobile workforce and job management app for field-service teams, built with React Native, Expo, and Supabase. Admins schedule and assign work, while field employees manage jobs, track progress, communicate, and report absences from the mobile app.
 
-## Features
-- Job list for employees
-- Start & complete jobs
-- Admin panel to create jobs
-- Clean architecture (Expo Router + Context)
-## 📸 App Screenshots
+Originally built around cleaning-company workflows, TaskOps Manager has evolved into a broader field-operations platform. Cleaning remains one real-world use case, demonstrated by the staging data and screenshots below.
 
-<p align="center">
-  <img src="./screenshots/home.png" alt="Employee Home" width="280" />
-  <img src="./screenshots/create-job.png" alt="Create Job Admin" width="280" />
-</p>
+The in-app UI and code comments are in German (the app was built for German field-service businesses); this document is in English for review purposes.
+
+## Screenshots
+
+Captured from the live app running against a populated Staging environment (fictional demo data — see [Current Status](#current-status)).
+
+| Admin Dashboard | Admin Jobs | Admin Calendar |
+|---|---|---|
+| ![Admin Dashboard](docs/screenshots/admin-dashboard.png) | ![Admin Jobs](docs/screenshots/admin-jobs.png) | ![Admin Calendar](docs/screenshots/admin-calendar.png) |
+
+| Employee Detail & Absences | Job Comments | Active Job / Shared Timer |
+|---|---|---|
+| ![Employee Detail and Absences](docs/screenshots/admin-absences.png) | ![Job Comments](docs/screenshots/job-comments.png) | ![Active Job](docs/screenshots/employee-job-active.png) |
+
+<details>
+<summary>3 more screenshots (employee overview, job start, job assignment)</summary>
+
+| Employee Overview | Job Details, Not Started | Job Details (Assignment) |
+|---|---|---|
+| ![Employee Overview](docs/screenshots/employee-overview.png) | ![Employee Job Detail](docs/screenshots/employee-job-detail.png) | ![Job Detail](docs/screenshots/job-detail.png) |
+
+</details>
+
+## What it does
+
+An admin registers, sets up their company, and adds employees. They create jobs — one-off or recurring by weekday — with a customer, service type, location, schedule, and one or more assigned employees. Employees see their jobs for today and ahead, start a job to begin the shared job timer, complete it when done, leave comments, and attach photos as proof of work. Absences (vacation and sickness) go through a request/approval flow with basic overlap checking. Everything updates in real time across devices, and the core job list keeps working offline, queuing actions until the connection returns.
+
+## Core Features
+
+**Operations**
+- Admin dashboard with live KPIs (open / in progress / completed / due today) and a "who's working on what" employee activity feed
+- Job creation and editing: one-off jobs (date + time) or recurring jobs (weekdays + time, with an active/paused toggle)
+- Multiple employees per job, with per-assignment tracking that survives account deletion (name snapshot)
+- Admin and employee calendar views
+
+**Employee Workflow**
+- Personalized job list and "today" overview
+- Start / Complete actions enforced server-side (RLS + RPC), not just in the UI
+- Shared job timer: one official duration per job (`completed_at - started_at`), credited to every assigned employee regardless of who tapped Start/Complete
+- Photo upload as proof of work, stored in a private bucket scoped per company/job
+
+**Communication**
+- Append-only job comments with author names, visible to admin and all assignees
+- Unread-comment indicators, tracked per user per job
+
+**Absence / Vacation**
+- Employee self-service vacation requests and sickness reports, with overlap validation
+- Admin approval workflow for vacation, including a vacation-day ledger and per-employee entitlement configuration
+- Admin can also record an absence manually (e.g. a phone call)
+
+**Scheduling & Timesheets**
+- Planned duration per job, worked-time tracking, and a PDF timesheet export for admins
+
+**Notifications**
+- Push notifications (Expo Push Service / FCM) on job assignment, status changes, and new comments
+
+**Reliability / Offline**
+- Offline queue for job actions (start/complete/etc.) with optimistic UI updates and sync on reconnect
+- Realtime sync via Supabase Realtime on the jobs table
+
+**Authentication & Security**
+- Supabase Auth with role-based routing (admin vs. employee), password reset, and a minimum password-length policy
+- Row Level Security protects application data, with sensitive write paths validated server-side through RPCs
+- Company contact details (email/phone) that admins can view and update from the app
 
 ## Tech Stack
-- React Native (Expo)
-- TypeScript
-- Expo Router
-# 🧹 CleanOps — Field Management App for Cleaning Companies
-
-> A mobile-first SaaS application that connects cleaning teams with their daily jobs — in real time.
-
-CleanOps helps cleaning companies ditch the group chats and spreadsheets. Admins create and assign jobs, employees see exactly what they need to do, and everyone stays in sync — automatically.
-
----
-
-## ✨ Features
-
-### For Employees
-- View all assigned jobs at a glance
-- Start a job with one tap to mark it as in progress
-- Complete jobs and update status in real time
-
-### For Admins
-- Create new cleaning jobs with full details
-- Assign jobs to specific employees
-- Edit or delete jobs at any time
-- Monitor the status of every job across the team
-
-### System
-- 🔄 Real-time updates powered by Supabase Realtime
-- 🔔 Push notifications via Expo Notifications
-- 🔐 Role-based navigation (Admin vs. Employee views)
-- 🎨 Clean, consistent UI with a custom theme and reusable components
-- 📦 Job status flow: `open` → `in_progress` → `completed`
-
----
-
-## 📱 Screens
-
-| Screen | Role | Description |
-|---|---|---|
-| Login | Both | Secure email/password login via Supabase Auth |
-| Job List | Both | Personalized job feed based on role |
-| Job Detail | Both | Full job info, status, and action buttons |
-| Create Job | Admin | Form to create and assign a new job |
-| Edit Job | Admin | Modify job details or reassignment |
-| Admin Dashboard | Admin | Overview of all jobs and their statuses |
-| Notifications | Both | Push notification history |
-
----
-
-## 🛠 Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | React Native + Expo |
+| Framework | React Native 0.81, Expo SDK 54, expo-router 6 (file-based routing) |
 | Language | TypeScript |
-| Backend | Supabase (Auth, PostgreSQL, Realtime) |
-| Navigation | Expo Router (file-based routing) |
-| Notifications | Expo Notifications |
-| State / Context | React Context API |
+| Backend | Supabase — Postgres, Auth, Realtime, Storage, Edge Functions (Deno) |
+| Push | Expo Notifications |
+| Offline | `@react-native-community/netinfo` + AsyncStorage-backed action queue |
+| Fonts | Inter (`@expo-google-fonts/inter`) |
+| Build/Distribution | EAS Build (development / preview / production profiles), EAS Submit |
 
----
+## Architecture
 
-## 🗂 Project Structure
+- **Role-based access**: every screen and action checks `role` (`admin` | `employee`) from the user's profile, but the UI gate is a convenience — the actual authorization boundary is Postgres Row Level Security and a set of `SECURITY DEFINER` RPCs (e.g. `start_own_job`, `complete_own_job`, `set_job_assignments`, `admin_review_vacation`). A client can't do anything RLS doesn't also allow.
+- **Server-side transitions**: job start/complete, vacation approval, and company setup all go through RPCs rather than direct table writes, so business rules (e.g. "a job can't be completed before it's started", "vacation deduction is confirmed, not just computed") are enforced once, in the database.
+- **Multi-employee assignments**: a separate `job_assignments` table (not just a single `assigned_to` column) tracks the full assignment set per job, with a name snapshot so history survives account deletion. Two authorization "gates" — one for start/complete, one for comments/photos — are defined once in `utils/jobAssignees.ts` and reused everywhere rather than re-implemented per screen.
+- **Recurring jobs as rules, not occurrences**: a recurring job is stored as a single row (weekdays + time), not pre-materialized per-day rows. This is a deliberate MVP scope decision — see [Current Status](#current-status).
+- **Offline-first job actions**: job start/complete/edit actions are queued locally when offline, applied optimistically to the UI, and synced against the server on reconnect — while comments and photos are intentionally online-only (append-only, no offline queue).
+- **Service layer**: all Supabase calls live in `services/`, mapping DB snake_case rows to camelCase app types; screens never talk to Supabase directly.
 
-```
-/app            → All screens and routes (file-based via Expo Router)
-/components     → Reusable UI elements (buttons, cards, badges, etc.)
-/features       → Feature-specific logic grouped by domain (e.g. jobs, auth)
-/context        → Global state providers (e.g. AuthContext, ThemeContext)
-/services       → Supabase queries and API communication layer
-/types          → TypeScript interfaces and type definitions
-/constants      → App-wide constants: colors, fonts, status labels, etc.
-```
+## Production-like Engineering
 
-**Why this structure?**  
-Each folder has a single clear responsibility. This makes it easy to find things, test independently, and scale the codebase without things getting messy.
+This isn't just a UI prototype — a few things that back that up:
 
----
+- Separate **Staging** and **Production** Supabase projects, with environment separation enforced at the client (a visible "Staging" badge in non-production builds) and verified before any data-affecting operation
+- Every write path is protected by **Row Level Security**, re-checked independently of the UI
+- Auth hardening: password length policy, rate limiting, and user-facing German error messages mapped from Supabase's error codes (not raw API text)
+- **EAS Build** with separate development/preview/production profiles, distributed for beta testing via TestFlight and Google Play Internal Testing
+- Migration-based schema management (`supabase/migrations/`) with accompanying `pgTAP`-style SQL tests (`supabase/tests/`) for RLS and RPC behavior
+- Server-side validation of scheduling input (`buildSchedulePayload`) so a single-vs-recurring job can't be created in an inconsistent state, regardless of what the client sends
 
-## 🚀 Getting Started
+## Current Status
 
-### Prerequisites
+Active development. Production builds have been distributed for beta testing through TestFlight and Google Play Internal Testing.
 
-- Node.js 18+
-- Expo CLI (`npm install -g expo-cli`)
-- A [Supabase](https://supabase.com) project set up with your schema
+Known, deliberate scope limits:
 
-### Installation
+- **Recurring jobs have no per-day occurrences yet.** A recurring job is one rule; status/timestamps apply to the rule, not to "this Tuesday's visit" individually. This is documented, intentional MVP scope, not an oversight.
+- **Comments and photos are online-only** by design — no offline queue for those, unlike job start/complete/edit.
+
+## Local Development
+
+Requires Node.js 18+ and a Supabase project with the schema in `lib/schema.sql` (reference only — actual schema changes are applied via `supabase/migrations/`).
+
+*Note: the GitHub repository is still named `cleaning-ops-app`, a holdover from the project's original scope — the product itself is TaskOps Manager.*
 
 ```bash
-# 1. Clone the repo
 git clone https://github.com/FerasHB/cleaning-ops-app.git
 cd cleaning-ops-app
-
-# 2. Install dependencies
 npm install
-
-# 3. Set up your environment variables
 cp .env.example .env
-# Fill in your Supabase credentials (see below)
-
-# 4. Start the development server
-npx expo start
+# fill in EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY (publishable/anon key only — never a service-role/secret key)
+npm start
 ```
 
-Scan the QR code with **Expo Go** on your phone, or press `i` / `a` to open in an iOS/Android simulator.
-
----
-
-## 🔑 Environment Variables
-
-Create a `.env` file in the root of the project:
-
-```env
-EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+```bash
+npm run ios      # iOS simulator
+npm run android   # Android emulator
+npm run web       # web (dev only)
+npm run lint      # expo lint
 ```
-
-> **Why `EXPO_PUBLIC_`?**  
-> Expo requires this prefix for any variable that needs to be accessible in client-side code. Never put secret keys here — only use the public anon key.
-
-You can find these values in your Supabase project under **Settings → API**.
-
----
-
-## 🏗 Architecture Overview
-
-CleanOps follows a clean, layered architecture:
-
-```
-UI (screens + components)
-        ↓
-Features (business logic per domain)
-        ↓
-Services (Supabase queries)
-        ↓
-Supabase (Auth + DB + Realtime)
-```
-
-- **Screens** only handle display and user interaction
-- **Features** contain the logic (e.g. what happens when a job is started)
-- **Services** are the only place that talks to Supabase — keeping everything testable and swappable
-- **Context** holds global state like the current user and their role
-- **Realtime** subscriptions keep the job list updated without any manual refresh
-
----
-
-## 🗺 Roadmap
-
-- [ ] Filter and search jobs by date, status, or employee
-- [ ] Admin analytics dashboard (jobs completed per week, per employee)
-- [ ] In-app chat between admin and employee per job
-- [ ] Photo upload on job completion as proof of work
-- [ ] Multi-company / tenant support
-- [ ] Offline mode with sync on reconnect
-
----
-
-## 👤 Author
-
-**Feras Hababa**  
-GitHub: [github.com/FerasHB](https://github.com/FerasHB)
-
----
-
-> Built with ❤️ using React Native, Expo, and Supabase.
