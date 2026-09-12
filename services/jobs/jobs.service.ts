@@ -8,6 +8,7 @@ import {
 } from "@/types/job";
 import { normalizeTime } from "@/utils/date";
 import { buildLegacyAssignees } from "@/utils/jobAssignees";
+import { isNetworkError } from "@/utils/networkError";
 
 // Wird von updateJob() geworfen, wenn set_job_assignments bereits
 // erfolgreich committed wurde, das nachfolgende jobs-UPDATE und/oder
@@ -86,7 +87,8 @@ type JobRow = {
 
 // Einfaches DB-Format für Mitarbeiter
 // Hinweis: profiles hat KEINE email-Spalte (siehe lib/schema.sql) — die
-// E-Mail liegt nur in auth.users. Daher wird email hier NICHT selektiert.
+// E-Mail liegt nur in auth.users und wird separat über die RPC
+// get_company_employee_emails() geladen und unten per id gemerged.
 type EmployeeRow = {
   id: string;
   full_name: string | null;
@@ -521,11 +523,37 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
     throw error;
   }
 
+  // E-Mails best-effort dazumergen: EINE zusätzliche RPC (get_company_employee_emails,
+  // SECURITY DEFINER, Migration 20260912000001) statt eines Aufrufs pro
+  // Mitarbeiter. Für Nicht-Admins liefert sie fail-closed eine leere Menge
+  // (kein Fehler) — email bleibt dann wie bisher null. Schlägt der Aufruf
+  // selbst fehl (z. B. Netzwerk), darf das die Mitarbeiter-Liste nicht
+  // sprengen: gleiches Muster wie das best-effort Ungelesen-Merge in
+  // JobContext (getUnreadCommentJobIds).
+  const emailById = new Map<string, string>();
+  try {
+    const { data: emailRows, error: emailError } = await supabase.rpc(
+      "get_company_employee_emails",
+    );
+
+    if (emailError) {
+      throw emailError;
+    }
+
+    for (const row of (emailRows ?? []) as { id: string; email: string }[]) {
+      emailById.set(row.id, row.email);
+    }
+  } catch (emailErr) {
+    // Netzwerkfehler hier erwartbar (Verbindung verloren) → kein Redbox.
+    if (!isNetworkError(emailErr)) {
+      console.error("Failed to load employee emails:", emailErr);
+    }
+  }
+
   return ((data ?? []) as EmployeeRow[]).map((item) => ({
     id: item.id,
     fullName: item.full_name ?? "Unbenannt",
-    // profiles.email existiert nicht → bewusst null, UI zeigt Fallback
-    email: null,
+    email: emailById.get(item.id) ?? null,
     phone: item.phone ?? null,
     role: item.role ?? "employee",
     isActive: item.is_active ?? null,

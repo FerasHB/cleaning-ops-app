@@ -3,14 +3,16 @@
 // Reines Lesen aus dem JobContext (employees + jobs) — keine Business-Logik.
 //
 // Hinweis zu Datenquellen:
-// - EmployeeOption liefert id, fullName, role, isActive (aus profiles).
-// - profiles hat KEINE email-Spalte → email ist immer null, UI zeigt
-//   "Nicht hinterlegt". Keine erfundenen Daten.
+// - EmployeeOption liefert id, fullName, role, isActive, phone (aus profiles)
+//   sowie email — profiles hat KEINE email-Spalte, die Adresse kommt separat
+//   über die RPC get_company_employee_emails() (services/jobs/jobs.service.ts,
+//   Migration 20260912000001) und wird dort per id gemerged.
 
 import {
   AppHeader,
   Button,
   Card,
+  EmailRow,
   EmptyState,
   ErrorBanner,
   InfoRow,
@@ -213,7 +215,6 @@ export default function EmployeeDetailScreen() {
   // Konto-Status aus profiles.is_active (neutraler Fallback: nicht "inaktiv"
   // behaupten, wenn der Wert fehlt).
   const accountActive = employee.isActive !== false;
-  const emailDisplay = employee.email?.trim() ? employee.email : "Nicht hinterlegt";
 
   // Einladungs-Status (Eingeladen/Aktiv/Inaktiv) — dieselbe Ableitung wie in
   // der Mitarbeiter-Liste, siehe utils/employeeStatus.ts.
@@ -372,7 +373,7 @@ export default function EmployeeDetailScreen() {
             icon="briefcase-outline"
           />
           <View style={styles.rowDivider} />
-          <InfoRow label="E-Mail" value={emailDisplay} icon="mail-outline" />
+          <EmailRow email={employee.email} />
           <View style={styles.rowDivider} />
           <PhoneRow phone={employee.phone} contactName={employee.fullName} />
           <View style={styles.rowDivider} />

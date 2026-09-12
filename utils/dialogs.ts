@@ -144,3 +144,35 @@ export async function callPhone(
     return false;
   }
 }
+
+// ─────────────────────────────────────────────────────────────────
+// emailContact — die EINE wiederverwendbare mailto:-Aktion.
+//
+// Analog zu callPhone(), aber OHNE Bestätigungsdialog: eine E-Mail zu
+// öffnen ist (anders als ein platzierter Anruf) keine Aktion, die vorher
+// bestätigt werden muss — der Nutzer landet nur im Compose-Screen der
+// Mail-App, es wird noch nichts verschickt.
+// ─────────────────────────────────────────────────────────────────
+export async function emailContact(
+  email: string | null | undefined,
+): Promise<boolean> {
+  const trimmed = email?.trim();
+  if (!trimmed) {
+    await alertDialog(
+      "E-Mail nicht möglich",
+      "Für diesen Kontakt ist keine E-Mail-Adresse hinterlegt.",
+    );
+    return false;
+  }
+
+  try {
+    await Linking.openURL(`mailto:${trimmed}`);
+    return true;
+  } catch {
+    await alertDialog(
+      "E-Mail nicht möglich",
+      `Es konnte keine E-Mail-App geöffnet werden. Adresse: ${trimmed}`,
+    );
+    return false;
+  }
+}

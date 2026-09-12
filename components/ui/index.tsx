@@ -39,6 +39,7 @@ export { ErrorBanner } from "./ErrorBanner";
 export { InitialsAvatar } from "./InitialsAvatar";
 export { InfoRow } from "./InfoRow";
 export { PhoneRow } from "./PhoneRow";
+export { EmailRow } from "./EmailRow";
 export { KPICard } from "./KPICard";
 export { AnimatedSplash } from "./AnimatedSplash";
 export type { JobStatus } from "./StatusBadge";
