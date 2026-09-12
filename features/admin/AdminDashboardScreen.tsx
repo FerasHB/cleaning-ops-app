@@ -144,9 +144,39 @@ export default function AdminDashboardScreen() {
     }
   }, [todayKey]);
 
+  // ── Realtime-Echo für die KPI-Kacheln ────────────────────────────────────
+  // Kein eigener Supabase-Kanal: JobContext hält bereits GENAU EINEN
+  // "jobs"-Realtime-Kanal, der bei jeder Job-Änderung refreshJobs() aufruft und
+  // ein neues `jobs`-Array liefert. Die übrigen Admin-Flächen (Kalender,
+  // Mitarbeiter-Aktivität, Letzte Aktivitäten) hängen daran — die KPI-Kacheln
+  // bisher NICHT: getScheduleKpis lief nur bei Mount / Pull-to-Refresh, sodass
+  // ein Start/Abschluss die Zähler nicht aktualisierte. Hier wird `jobs` NUR als
+  // Signal beobachtet (gleiche Bauform wie AdminJobsCalendarScreen): ändert sich
+  // Status, Datum oder Abschlusszeit eines Jobs, werden die serverseitigen
+  // Zähler (unveränderte Fenster-/Filter-Semantik) neu geladen — leicht
+  // entprellt, weil ein Realtime-Event oft mehrere State-Updates auslöst.
+  const jobsKpiSignature = useMemo(
+    () =>
+      jobs
+        .map((j) => `${j.id}:${j.status}:${j.date ?? ""}:${j.completedAt ?? ""}`)
+        .sort()
+        .join("|"),
+    [jobs],
+  );
+  const didMountKpiSignatureRef = useRef(false);
+
   useEffect(() => {
-    void loadKpis();
-  }, [loadKpis]);
+    // Erster Lauf = Mount: der initiale Ladevorgang läuft bereits über den
+    // useFocusEffect weiter unten, hier nur registrieren.
+    if (!didMountKpiSignatureRef.current) {
+      didMountKpiSignatureRef.current = true;
+      return;
+    }
+    const timeout = setTimeout(() => {
+      void loadKpis();
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [jobsKpiSignature, loadKpis]);
 
   // ── Abwesenheiten (Phase C — Admin Absence Workflow) ──────────────────────
   // Zwei leichte Signale, keine Zeilenlisten: die Anzahl offener Urlaubs-
@@ -179,10 +209,15 @@ export default function AdminDashboardScreen() {
     }
   }, [todayKey]);
 
+  // Initialer KPI-Ladevorgang + Aktualisierung bei jedem Fokus (gleiche
+  // Semantik wie loadAbsenceSignals): nach Rückkehr auf das Dashboard sollen
+  // die Zähler sofort stimmen, ohne Pull-to-Refresh. Der Realtime-Echo-Effect
+  // oben deckt Änderungen ab, WÄHREND das Dashboard sichtbar ist.
   useFocusEffect(
     useCallback(() => {
+      void loadKpis();
       void loadAbsenceSignals();
-    }, [loadAbsenceSignals]),
+    }, [loadKpis, loadAbsenceSignals]),
   );
 
   const absenceByEmployeeId = useMemo(() => {
