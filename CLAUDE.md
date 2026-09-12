@@ -17,7 +17,8 @@ Code-Kommentare und UI-Texte sind auf Deutsch.
 
 ## Befehle
 
-- `npm start` — Expo Dev Server (`expo start`)
+- `npm start` — Expo Dev Server (`APP_VARIANT=development expo start` — Metro-Manifest = Dev-Variante,
+  passend zum Development-Build mit Schema `taskopsmanagerdev`)
 - `npm run ios` / `npm run android` / `npm run web`
 - `npm run lint` — `expo lint` (eslint, `eslint-config-expo`)
 - `npm run reset-project` — Reset-Skript
@@ -133,6 +134,11 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
 - Offline-First für Jobs: bei fehlender Verbindung werden Aktionen in die Queue gelegt, optimistisch
   im State gespiegelt und bei Reconnect synchronisiert — neue Job-Logik soll dieses Muster wahren.
 - Neue Screens/Komponenten: `useAppTheme()` statt der deprecated Theme-Exports.
+- **Auth-Deep-Links nie selbst bauen:** client-seitige `redirectTo` für Auth-Mails ausschließlich über
+  `createAuthRedirectUrl()` (`services/auth/authRedirect.ts`) — Produktions-Build → `taskopsmanager://`,
+  Development-Build → `taskopsmanagerdev://`. Server-seitig (Edge Functions) über
+  `supabase/functions/_shared/appUrlScheme.ts` (Staging-Projekt → Dev-Schema). Jede Supabase-`uri_allow_list`
+  enthält **nur das eigene Schema** — sonst öffnet ein Staging-Link die Produktions-App (Phase 14).
 - Terminierung: Maßgeblich sind `jobType`/`date`/`startTime`/`recurringDays`/`isActive`. Für **single**-Jobs
   wird `scheduled_start` zusätzlich aus Datum+Uhrzeit befüllt (Detail-/Monats-Anzeigen bleiben lauffähig);
   **recurring**-Jobs haben `scheduled_start = null`. Validierung der Kombination erfolgt serverseitig in

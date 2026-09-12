@@ -5,10 +5,10 @@
 import { ErrorBanner, Input } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
+import { createAuthRedirectUrl } from "@/services/auth/authRedirect";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { isValidEmail, normalizeEmail } from "@/utils/email";
 import { Ionicons } from "@expo/vector-icons";
-import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
@@ -51,13 +51,15 @@ export default function ForgotPasswordScreen() {
     try {
       setLoading(true);
 
-      // Linking.createURL baut automatisch die passende Deep-Link-URL für die
-      // aktuelle Umgebung (taskopsmanager://reset-password im Standalone-/
-      // Dev-Client-Build, die passende exp://-Proxy-URL unter Expo Go/Dev).
-      // WICHTIG: Diese URL muss in Supabase unter Authentication → URL
-      // Configuration → Redirect URLs eingetragen sein, sonst leitet Supabase
-      // NICHT dorthin um (siehe Abschlussbericht für den exakten Wert).
-      const redirectTo = Linking.createURL("reset-password");
+      // Das Schema folgt der laufenden App-Variante (Produktions-Build:
+      // taskopsmanager://reset-password, Development-Build:
+      // taskopsmanagerdev://reset-password) — der Link muss in GENAU dieser
+      // Installation landen, denn nur hier liegt der PKCE-code_verifier.
+      // Siehe services/auth/authRedirect.ts. WICHTIG: Die URL muss in der
+      // uri_allow_list des jeweiligen Supabase-Projekts stehen (Authentication
+      // → URL Configuration → Redirect URLs), sonst leitet Supabase NICHT
+      // dorthin um.
+      const redirectTo = createAuthRedirectUrl("reset-password");
 
       const { error } = await supabase.auth.resetPasswordForEmail(
         normalizeEmail(email),

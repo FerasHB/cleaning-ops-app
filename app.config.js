@@ -15,8 +15,10 @@
 //     interpretierte den Pfad als Route -> „Unmatched Route".
 //
 // Die Variante wird AUSSCHLIESSLICH über APP_VARIANT gesteuert, gesetzt im
-// EAS-Build-Profil "development" (eas.json). Ohne die Variable bleibt alles
-// exakt wie bisher — preview und production sind damit unverändert.
+// EAS-Build-Profil "development" (eas.json) und in `npm start` (damit auch
+// das Metro-Manifest des Dev-Clients die Variante kennt). Ohne die Variable
+// bleibt alles exakt wie bisher — preview und production sind damit
+// unverändert.
 // ─────────────────────────────────────────────────────────────────
 
 const IS_DEV = process.env.APP_VARIANT === "development";

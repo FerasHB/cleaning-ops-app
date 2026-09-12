@@ -2,7 +2,9 @@
 
 Mitarbeiter-Einladungsflow: Admin lädt per E-Mail ein (`admin.inviteUserByEmail`),
 der Mitarbeiter setzt sein eigenes Passwort über einen Deep-Link
-(`taskopsmanager://accept-invite`, siehe `features/auth/AcceptInviteScreen.tsx`).
+(`taskopsmanager://accept-invite` in Production, `taskopsmanagerdev://accept-invite`
+auf Staging — siehe `features/auth/AcceptInviteScreen.tsx` und
+„Deep-Link-Schema pro Umgebung" unten).
 
 ## Reihenfolge (wichtig)
 
@@ -27,27 +29,34 @@ der Mitarbeiter setzt sein eigenes Passwort über einen Deep-Link
    selbst (`verify_jwt = false` in `config.toml`) und sind auf `role = 'admin'`
    der eigenen Firma beschränkt.
 
-3. **Redirect-URL im Dashboard eintragen (Pflicht, sonst schlägt jede
-   Einladung fehl):**
+3. **Redirect-URLs im Dashboard eintragen (Pflicht, sonst schlägt jede
+   Einladung fehl) — pro Projekt GENAU das eigene Schema:**
 
-   **Dashboard → Authentication → URL Configuration → Redirect URLs** —
-   folgenden Wert hinzufügen:
+   **Dashboard → (Projekt wählen) → Authentication → URL Configuration →
+   Redirect URLs**
 
-   ```
-   taskopsmanager://accept-invite
-   ```
+   | Projekt | Redirect URLs (exakt diese, keine weiteren App-Schemata) |
+   |---|---|
+   | Production (`ivzsbspopudqgobunsdv`) | `taskopsmanager://reset-password`, `taskopsmanager://accept-invite` |
+   | Staging (`legzogskvcmicdgowyax`) | `taskopsmanagerdev://reset-password`, `taskopsmanagerdev://accept-invite` |
 
-   Ohne diesen Eintrag leitet Supabase den Einladungs-Link nicht zur App
-   um (identische Anforderung besteht bereits für `taskopsmanager://reset-password`,
-   falls das noch nicht eingetragen ist, ebenfalls prüfen).
+   **Niemals das Schema der anderen Umgebung eintragen:** Supabase würde einen
+   so angeforderten Link akzeptieren, und die Mail öffnete die App der
+   falschen Umgebung (Phase 14: Staging-Reset-Link öffnete die
+   Produktions-App, der PKCE-code_verifier fehlte dort). Ohne passenden
+   Eintrag fällt Supabase auf die Site URL zurück — der Link ist dann defekt,
+   landet aber nie in der falschen App.
 
-## Bekannte Einschränkung: nur Dev-Client-/Standalone-Builds
+## Deep-Link-Schema pro Umgebung
 
 `inviteUserByEmail` läuft server-seitig in der Edge Function — anders als beim
-client-ausgelösten Passwort-Reset (`Linking.createURL(...)`) kennt die
-Function die aktuelle Expo-Go-Proxy-URL nicht. Die `redirectTo` ist daher fest
-auf das `taskopsmanager://`-Scheme gesetzt. Einladungs-Links funktionieren
-folglich nur in Dev-Client- oder Standalone-Builds, **nicht** in Expo Go.
+client-ausgelösten Passwort-Reset (`createAuthRedirectUrl(...)`, siehe
+`services/auth/authRedirect.ts`) kennt die Function die App-Installation nicht.
+Die `redirectTo` folgt daher dem Projekt (`../_shared/appUrlScheme.ts`,
+abgeleitet aus dem automatisch injizierten `SUPABASE_URL`): Staging →
+`taskopsmanagerdev://`, alles andere → `taskopsmanager://`. Nach einer Änderung
+an `_shared/` **beide** Functions neu deployen. Einladungs-Links funktionieren
+nur in Dev-Client- oder Standalone-Builds, **nicht** in Expo Go.
 
 ## E-Mail-Template
 

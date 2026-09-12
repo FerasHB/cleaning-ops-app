@@ -447,7 +447,7 @@ export function useAuthLinkSession(
   //   • und nur bei `restored=1` — dem DETERMINISTISCHEN Signal aus
   //     app/index.tsx. Genau diese eine Stelle setzt es; ein echter
   //     Recovery-Link von Supabase trägt es nie, weil dessen Redirect-Ziel
-  //     exakt `taskopsmanager://reset-password` ohne Query ist (uri_allow_list).
+  //     exakt `taskopsmanager(dev)://reset-password` ohne Query ist (uri_allow_list).
   //     Damit gibt es keinen Zeitwettlauf mehr zwischen Restore und frischem
   //     Link: ein frischer Link kommt schlicht ohne dieses Signal an und
   //     löst immer seinen eigenen Code ein.
