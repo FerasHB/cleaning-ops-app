@@ -25,6 +25,30 @@ Code-Kommentare und UI-Texte sind auf Deutsch.
 
 Umgebungsvariablen: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` (siehe `lib/supabase.ts`).
 
+### EAS-Build-Profile und Umgebungen (`eas.json`)
+
+EAS kennt genau drei Umgebungen (`production`, `preview`, `development`) — es gibt **keine**
+eigene „staging"-Umgebung. Die Supabase-Werte liegen deshalb in den EAS Environment Variables
+(**nie** in `eas.json`, damit kein Key im Git landet), das Build-Profil wählt nur die Umgebung:
+
+| Profil | EAS-Umgebung | Backend | Schema | Distribution |
+|---|---|---|---|---|
+| `production` | `production` | Produktion | `taskopsmanager` | store (`autoIncrement`) |
+| `preview` | `preview` | Produktion | `taskopsmanager` | internal |
+| `preview-staging` | `development` | **Staging** | `taskopsmanagerdev` | internal |
+| `development` | `development` | **Staging** | `taskopsmanagerdev` | internal (Dev-Client) |
+
+`preview-staging` ist das RC1-Rehearsal-Profil: echte Standalone-App (kein Dev-Client) gegen
+Staging, installierbar auf physischen Geräten. **Regel: jedes Profil mit `APP_VARIANT=development`
+(= Schema `taskopsmanagerdev`) MUSS auf Staging zeigen** — die `uri_allow_list` der Projekte ist pro
+Umgebung getrennt (Produktion nur `taskopsmanager://`, Staging nur `taskopsmanagerdev://`), ein
+Dev-Schema-Build gegen Produktion bekäme seine Auth-Links also abgelehnt. Produktions-Allow-List
+deshalb **nicht** um das Dev-Schema erweitern.
+
+Hinweis: `android.package` ist bei allen Profilen `com.ferash.taskopsmanager` (nur ein Client in
+`google-services.json`, sonst stirbt FCM-Push) — der Staging-Android-Build **ersetzt** die
+Produktions-App auf demselben Gerät. iOS ist über `com.ferash.taskopsmanager.dev` getrennt.
+
 ## Architektur
 
 ### Routing (`app/`)

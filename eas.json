@@ -16,6 +16,13 @@
       "distribution": "internal",
       "environment": "preview"
     },
+    "preview-staging": {
+      "distribution": "internal",
+      "environment": "development",
+      "env": {
+        "APP_VARIANT": "development"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "environment": "production"
