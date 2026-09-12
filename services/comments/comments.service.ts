@@ -6,7 +6,8 @@
 import { supabase } from "@/lib/supabase";
 import { CreateCommentInput, JobComment } from "@/types/comment";
 
-// So sieht ein Kommentar direkt aus der Datenbank aus
+// So sieht ein Kommentar direkt aus der Datenbank aus (PostgREST-Embed —
+// nur noch für addJobComment, siehe COMMENT_SELECT).
 type JobCommentRow = {
   id: string;
   job_id: string;
@@ -20,7 +21,18 @@ type JobCommentRow = {
     | null;
 };
 
-// Wandelt einen DB-Kommentar in unser App-Format um
+// Flache Zeile aus der RPC public.get_job_comments — kein verschachteltes
+// profiles-Objekt, der Autorname kommt direkt als Spalte.
+type JobCommentRpcRow = {
+  id: string;
+  job_id: string;
+  author_id: string | null;
+  author_name: string | null;
+  message: string;
+  created_at: string;
+};
+
+// Wandelt einen DB-Kommentar (PostgREST-Embed) in unser App-Format um.
 function mapComment(row: JobCommentRow): JobComment {
   return {
     id: row.id,
@@ -29,6 +41,18 @@ function mapComment(row: JobCommentRow): JobComment {
     authorName: Array.isArray(row.profiles)
       ? row.profiles[0]?.full_name ?? null
       : row.profiles?.full_name ?? null,
+    message: row.message,
+    createdAt: row.created_at,
+  };
+}
+
+// Wandelt eine RPC-Zeile in unser App-Format um.
+function mapCommentRpcRow(row: JobCommentRpcRow): JobComment {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    authorId: row.author_id,
+    authorName: row.author_name,
     message: row.message,
     createdAt: row.created_at,
   };
@@ -47,18 +71,25 @@ const COMMENT_SELECT = `
 `;
 
 // Holt alle Kommentare zu einem Job (älteste zuerst, chronologisch).
+//
+// Über die RPC public.get_job_comments statt über den RLS-gefilterten
+// profiles-Embed: ein Mitarbeiter darf fremde profiles-Zeilen nicht lesen und
+// sah den Admin-/Kollegen-Autornamen deshalb als "Unbekannt". Die RPC ist
+// SECURITY DEFINER und koppelt ihre Sichtbarkeit exakt an die
+// job_comments-SELECT-Policies (eigene Firma UND Admin oder zugewiesener
+// Mitarbeiter) — siehe Migration 20260911000000_get_job_comments_rpc.sql.
 export async function getJobComments(jobId: string): Promise<JobComment[]> {
-  const { data, error } = await supabase
-    .from("job_comments")
-    .select(COMMENT_SELECT)
-    .eq("job_id", jobId)
-    .order("created_at", { ascending: true });
+  const { data, error } = await supabase.rpc("get_job_comments", {
+    p_job_id: jobId,
+  });
 
   if (error) {
     throw error;
   }
 
-  return (data ?? []).map((item) => mapComment(item as JobCommentRow));
+  // Die RPC sortiert bereits created_at asc (dann id) — Reihenfolge bleibt
+  // wie beim bisherigen .order("created_at", { ascending: true }).
+  return ((data ?? []) as JobCommentRpcRow[]).map(mapCommentRpcRow);
 }
 
 // Legt einen neuen Kommentar an und gibt ihn im App-Format zurück.

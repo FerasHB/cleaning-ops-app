@@ -55,7 +55,10 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   App-`Job`-Format (camelCase). Schreib-Operationen prüfen `role === "admin"`. Versendet Push bei
   Job-Zuweisung. Terminierung wird in `buildSchedulePayload` serverseitig validiert (single vs. recurring).
 - `comments/comments.service.ts` — Job-Kommentare (append-only, **online-only**, keine Offline-Queue):
-  `getJobComments`, `addJobComment`, `getUnreadCommentJobIds` (RPC `get_unread_comment_job_ids`),
+  `getJobComments` (RPC `get_job_comments` — **nicht** der `profiles:author_id`-Embed: dessen RLS
+  filtert für Mitarbeiter fremde `profiles`-Zeilen weg → Autorname „Unbekannt"; die RPC ist
+  SECURITY DEFINER mit Sichtbarkeit exakt wie die `job_comments`-SELECT-Policies, Migration
+  `20260911000000`), `addJobComment`, `getUnreadCommentJobIds` (RPC `get_unread_comment_job_ids`),
   `markJobCommentsAsRead` (Upsert auf `job_comment_reads`).
 - `offline/` — Offline-Queue für Job-Aktionen: `jobs.queue.ts` (Pending-Actions in AsyncStorage),
   `jobs.storage.ts` (Job-Cache), `jobs.merge.ts` (Pending-Actions über Server-/Cache-Jobs legen),
