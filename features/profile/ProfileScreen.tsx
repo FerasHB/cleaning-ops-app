@@ -11,9 +11,11 @@
 // jetzt als nicht tippbare Info-Zeilen ohne Chevron.
 
 import { Card, InitialsAvatar } from "@/components/ui";
-import { alertDialog, confirmDialog } from "@/utils/dialogs";
+import { alertDialog, callPhone, confirmDialog } from "@/utils/dialogs";
 import { useAuth } from "@/context/AuthContext";
+import { useOwnCompany } from "@/features/company/hooks/useOwnCompany";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { formatPhoneForDisplay } from "@/utils/phone";
 import type { AppTheme } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
@@ -44,11 +46,14 @@ export default function ProfileScreen({
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { user, profile, role, signOut } = useAuth();
+  const { company } = useOwnCompany();
 
   const email = user?.email ?? "Keine E-Mail";
   const fullName = profile?.full_name?.trim() || email;
+  const phone = profile?.phone?.trim() || null;
   const isAdmin = role === "admin";
   const hasCompany = !!profile?.company_id;
+  const companyLabel = company?.name?.trim() || (hasCompany ? "Firma verbunden" : null);
 
   // ── Logout mit Bestätigung
   // Läuft über confirmDialog/alertDialog statt direkt über Alert.alert:
@@ -137,14 +142,16 @@ export default function ProfileScreen({
                 </Text>
               </View>
 
-              {hasCompany && (
+              {companyLabel && (
                 <View style={styles.companyBadge}>
                   <Ionicons
                     name="business-outline"
                     size={12}
                     color={theme.colors.onSurfaceVariant}
                   />
-                  <Text style={styles.companyText}>Firma verbunden</Text>
+                  <Text style={styles.companyText} numberOfLines={1}>
+                    {companyLabel}
+                  </Text>
                 </View>
               )}
             </View>
@@ -178,6 +185,22 @@ export default function ProfileScreen({
 
         {/* ── Account ── */}
         <SettingsSection title="Account" styles={styles} theme={theme}>
+          <SettingsRow
+            icon="person-outline"
+            label="Profil bearbeiten"
+            value={fullName}
+            onPress={() => router.push("/profile/edit")}
+            styles={styles}
+            theme={theme}
+          />
+          <SettingsRow
+            icon="call-outline"
+            label="Telefon"
+            value={phone ? formatPhoneForDisplay(phone) : "Nicht hinterlegt"}
+            onPress={phone ? () => void callPhone(phone, { label: fullName }) : undefined}
+            styles={styles}
+            theme={theme}
+          />
           <SettingsRow
             icon="mail-outline"
             label="E-Mail"
@@ -229,6 +252,14 @@ export default function ProfileScreen({
             styles={styles}
             theme={theme}
           >
+            <SettingsRow
+              icon="business-outline"
+              label="Firmendaten"
+              value={company?.name ?? undefined}
+              onPress={() => router.push("/company-settings")}
+              styles={styles}
+              theme={theme}
+            />
             <SettingsRow
               icon="people-outline"
               label="Team verwalten"

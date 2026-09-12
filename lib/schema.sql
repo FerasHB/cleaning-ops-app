@@ -48,6 +48,20 @@ create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   slug text not null unique,
+  -- Kontakt-Fundament (20260912000000). contact_email ist KEINE Auth-Identitaet
+  -- (unabhaengig von der Login-Mail des Admins). Schreibpfad ausschliesslich
+  -- ueber RPC update_own_company / setup_company_for_admin — companies hat
+  -- bewusst keine UPDATE-RLS-Policy. E.164-Phone + E-Mail-Format per CHECK.
+  contact_email text,
+  contact_phone text,
+  -- Reserve, sichere Defaults, noch kein UI:
+  timezone text not null default 'Europe/Berlin',
+  locale   text not null default 'de',
+  constraint chk_companies_contact_email check (
+    contact_email is null or contact_email ~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
+  constraint chk_companies_contact_phone check (
+    contact_phone is null or contact_phone ~ '^\+[1-9][0-9]{6,14}$'),
+  constraint chk_companies_locale check (locale in ('de', 'en')),
   -- Urlaubs-Defaults (20260823000000): greifen für jeden Mitarbeiter, dessen
   -- eigener Wert NULL ist. default_vacation_management_enabled ist nur ein
   -- Vorschlagswert für neu angelegte Mitarbeiter, kein rückwirkender Schalter.
@@ -70,9 +84,15 @@ create table if not exists public.profiles (
   company_id uuid references public.companies(id) on delete set null,
   full_name text,
   role public.app_role not null default 'employee',
+  -- Persoenliche Rufnummer in E.164 (20260912000000). Selbst editierbar ueber
+  -- "update own profile" (enforce_profile_field_guard schuetzt phone NICHT).
   phone text,
+  -- Reserve fuer die kuenftige Telefon-Verifizierung — noch kein UI.
+  phone_verified_at timestamptz,
   is_active boolean not null default true,
   expo_push_token text,
+  constraint chk_profiles_phone check (
+    phone is null or phone ~ '^\+[1-9][0-9]{6,14}$'),
   -- Einladungs-Flow (siehe 20260718000000_employee_invitations.sql):
   -- invited_at = zuletzt eingeladen, invite_accepted_at = eigenes Passwort
   -- gesetzt (null = Einladung noch offen). Bestehende Zeilen sind per
@@ -701,10 +721,21 @@ revoke all on function public.recover_stale_account_deletion_reservations() from
 grant execute on function public.recover_stale_account_deletion_reservations() to service_role;
 
 -- =========================================================
--- RPC: SETUP COMPANY FOR ADMIN
+-- RPC: SETUP COMPANY FOR ADMIN  (4-arg seit 20260912000000)
 -- =========================================================
+-- Optionale Kontaktfelder + optionale Admin-Telefonnummer. Named-Arg-Aufrufer
+-- mit nur { company_name } bleiben kompatibel (Defaults NULL). Telefon-
+-- Normalisierung (0->+49, 00->+) macht der Client — hier nur Trenner strippen
+-- + E.164-Guard.
 
-create or replace function public.setup_company_for_admin(company_name text)
+drop function if exists public.setup_company_for_admin(text);
+
+create or replace function public.setup_company_for_admin(
+  company_name    text,
+  p_contact_email text default null,
+  p_contact_phone text default null,
+  p_admin_phone   text default null
+)
 returns uuid
 language plpgsql
 security definer
@@ -713,6 +744,9 @@ as $$
 declare
   new_company_id uuid;
   new_slug text;
+  v_email  text;
+  v_cphone text;
+  v_aphone text;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -723,12 +757,24 @@ begin
   end if;
 
   if exists (
-    select 1
-    from public.profiles
-    where id = auth.uid()
-      and company_id is not null
+    select 1 from public.profiles
+    where id = auth.uid() and company_id is not null
   ) then
     raise exception 'User already belongs to a company';
+  end if;
+
+  v_email  := nullif(lower(btrim(coalesce(p_contact_email, ''))), '');
+  v_cphone := nullif(regexp_replace(btrim(coalesce(p_contact_phone, '')), '[[:space:]/().-]', '', 'g'), '');
+  v_aphone := nullif(regexp_replace(btrim(coalesce(p_admin_phone, '')),   '[[:space:]/().-]', '', 'g'), '');
+
+  if v_email is not null and v_email !~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    raise exception 'Ungueltige Firmen-E-Mail';
+  end if;
+  if v_cphone is not null and v_cphone !~ '^\+[1-9][0-9]{6,14}$' then
+    raise exception 'Ungueltige Firmen-Telefonnummer';
+  end if;
+  if v_aphone is not null and v_aphone !~ '^\+[1-9][0-9]{6,14}$' then
+    raise exception 'Ungueltige Telefonnummer';
   end if;
 
   new_slug := lower(trim(company_name));
@@ -736,21 +782,77 @@ begin
   new_slug := regexp_replace(new_slug, '[^a-z0-9\-]', '', 'g');
   new_slug := new_slug || '-' || substring(replace(gen_random_uuid()::text, '-', '') from 1 for 6);
 
-  insert into public.companies (name, slug)
-  values (trim(company_name), new_slug)
+  insert into public.companies (name, slug, contact_email, contact_phone)
+  values (trim(company_name), new_slug, v_email, v_cphone)
   returning id into new_company_id;
 
   update public.profiles
-  set
-    company_id = new_company_id,
-    role = 'admin'
+  set company_id = new_company_id,
+      role       = 'admin',
+      phone      = coalesce(v_aphone, phone)
   where id = auth.uid();
 
   return new_company_id;
 end;
 $$;
 
-grant execute on function public.setup_company_for_admin(text) to authenticated;
+revoke execute on function public.setup_company_for_admin(text, text, text, text) from public, anon;
+grant  execute on function public.setup_company_for_admin(text, text, text, text) to authenticated, service_role;
+
+-- =========================================================
+-- RPC: UPDATE OWN COMPANY  (20260912000000)
+-- =========================================================
+-- Der EINZIGE client-erreichbare Schreibpfad auf companies (keine UPDATE-RLS-
+-- Policy). Explizite 3-Feld-Allowlist (name/contact_email/contact_phone) — es
+-- gibt strukturell keinen Weg, id/slug/created_at/timezone/locale zu aendern.
+create or replace function public.update_own_company(
+  p_name          text,
+  p_contact_email text,
+  p_contact_phone text
+)
+returns public.companies
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_company_id uuid := public.current_user_company_id();
+  v_role       text := public.current_user_role();
+  v_email      text;
+  v_phone      text;
+  v_row        public.companies;
+begin
+  if v_company_id is null then
+    raise exception 'Keine Firma zugeordnet' using errcode = '42501';
+  end if;
+  if v_role is distinct from 'admin' then
+    raise exception 'Nur Admins duerfen Firmendaten aendern' using errcode = '42501';
+  end if;
+  if p_name is null or btrim(p_name) = '' then
+    raise exception 'Firmenname ist erforderlich';
+  end if;
+
+  v_email := nullif(lower(btrim(coalesce(p_contact_email, ''))), '');
+  v_phone := nullif(regexp_replace(btrim(coalesce(p_contact_phone, '')), '[[:space:]/().-]', '', 'g'), '');
+
+  if v_email is not null and v_email !~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    raise exception 'Ungueltige E-Mail-Adresse';
+  end if;
+  if v_phone is not null and v_phone !~ '^\+[1-9][0-9]{6,14}$' then
+    raise exception 'Ungueltige Telefonnummer (Format +49...)';
+  end if;
+
+  update public.companies
+     set name = btrim(p_name), contact_email = v_email, contact_phone = v_phone
+   where id = v_company_id
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+revoke execute on function public.update_own_company(text, text, text) from public, anon;
+grant  execute on function public.update_own_company(text, text, text) to authenticated, service_role;
 
 -- =========================================================
 -- RPC: UPDATE OWN PUSH TOKEN
@@ -2210,8 +2312,10 @@ comment on function public.update_job_occurrences(uuid) is
 alter table public.profiles
 alter column expo_push_token drop default;
 
-comment on function public.setup_company_for_admin(text) is
-'Creates a company for the current user, assigns company_id and promotes the user to admin.';
+comment on function public.setup_company_for_admin(text, text, text, text) is
+'Creates a company for the current user (optional contact_email/contact_phone),
+assigns company_id, promotes the user to admin and optionally stores the admin''s
+own phone. Named-arg callers with only { company_name } stay compatible.';
 
 comment on function public.update_my_push_token(text) is
 'Updates only the current user expo push token safely via RPC. Fails if the caller profile is inactive.';

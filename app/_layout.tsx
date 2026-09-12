@@ -233,6 +233,7 @@ function RootNavigator() {
           <Stack.Screen name="jobs/create" />
           <Stack.Screen name="jobs/[id]/edit" />
           <Stack.Screen name="employees/[id]/index" />
+          <Stack.Screen name="company-settings" />
         </Stack.Protected>
 
         {/* Employee-Bereich: nur die eigenen Tabs. */}
@@ -248,6 +249,7 @@ function RootNavigator() {
           <Stack.Screen name="jobs/[id]/index" />
           <Stack.Screen name="change-password" />
           <Stack.Screen name="timesheets/index" />
+          <Stack.Screen name="profile/edit" />
         </Stack.Protected>
       </Stack>
     </JobProvider>

@@ -14,15 +14,17 @@ type ResendInviteBody = {
 
 // Deep-Link-Schema dieses Projekts (Produktion taskopsmanager://, Staging
 // taskopsmanagerdev://) — dieselbe Ableitung wie in create-employee, siehe
-// ../_shared/appUrlScheme.ts + create-employee/DEPLOY.md.
+// ../_shared/appUrlScheme.ts + create-employee/DEPLOY.md (Phase 14).
 const APP_URL_SCHEME = resolveAppUrlScheme(Deno.env.get("SUPABASE_URL"));
 
+// Muss identisch zum Wert in create-employee/index.ts sein (siehe dortiger
+// Kommentar + DEPLOY.md).
 const INVITE_REDIRECT_TO = `${APP_URL_SCHEME}://accept-invite`;
 
-// Ziel des Passwort-Reset-Deep-Links — derselbe Pfad, den ForgotPasswordScreen
-// über createAuthRedirectUrl("reset-password") erzeugt
-// (services/auth/authRedirect.ts); steht in der uri_allow_list des jeweiligen
-// Projekts.
+// Ziel des Passwort-Reset-Deep-Links — muss identisch zu dem Wert sein, den
+// ForgotPasswordScreen/ResetPasswordScreen über Linking.createURL("reset-password")
+// erzeugen (siehe features/auth/ForgotPasswordScreen.tsx), und ist bereits Teil
+// der uri_allow_list (unverändert von dieser Änderung).
 const PASSWORD_RESET_REDIRECT_TO = `${APP_URL_SCHEME}://reset-password`;
 
 Deno.serve(async (req) => {

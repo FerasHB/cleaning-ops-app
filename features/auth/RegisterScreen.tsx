@@ -17,6 +17,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -25,6 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { isValidEmail } from "@/utils/email";
+import { isValidPhone } from "@/utils/phone";
 import {
   MIN_PASSWORD_LENGTH,
   PASSWORD_MISMATCH_MESSAGE,
@@ -38,14 +40,21 @@ export default function RegisterScreen() {
 
   // Felder
   const [fullName,     setFullName]     = useState("");
+  const [adminPhone,   setAdminPhone]   = useState("");
   const [companyName,  setCompanyName]  = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [sameAsMyPhone, setSameAsMyPhone] = useState(false);
   const [email,        setEmail]        = useState("");
   const [password,     setPassword]     = useState("");
   const [passwordConf, setPasswordConf] = useState("");
 
   // Fehler pro Feld
   const [fullNameError,     setFullNameError]     = useState("");
+  const [adminPhoneError,   setAdminPhoneError]   = useState("");
   const [companyNameError,  setCompanyNameError]  = useState("");
+  const [companyEmailError, setCompanyEmailError] = useState("");
+  const [companyPhoneError, setCompanyPhoneError] = useState("");
   const [emailError,        setEmailError]        = useState("");
   const [passwordError,     setPasswordError]     = useState("");
   const [passwordConfError, setPasswordConfError] = useState("");
@@ -69,18 +78,57 @@ export default function RegisterScreen() {
     setFormError("");
   }
 
+  // Firmen-Telefon spiegelt die eigene Nummer, solange der Schalter an ist.
+  const handleAdminPhoneChange = (t: string) => {
+    setAdminPhone(t);
+    setAdminPhoneError("");
+    clearError();
+    if (sameAsMyPhone) {
+      setCompanyPhone(t);
+      setCompanyPhoneError("");
+    }
+  };
+
+  const handleSameAsMyPhoneToggle = (next: boolean) => {
+    setSameAsMyPhone(next);
+    if (next) {
+      setCompanyPhone(adminPhone);
+      setCompanyPhoneError("");
+    }
+  };
+
   // ── Validierung
   function validate(): boolean {
     let valid = true;
-    setFullNameError(""); setCompanyNameError(""); setEmailError("");
+    setFullNameError(""); setAdminPhoneError("");
+    setCompanyNameError(""); setCompanyEmailError(""); setCompanyPhoneError("");
+    setEmailError("");
     setPasswordError(""); setPasswordConfError(""); setFormError("");
 
     if (!fullName.trim()) {
       setFullNameError("Name ist erforderlich.");
       valid = false;
     }
+    if (adminPhone.trim() && !isValidPhone(adminPhone)) {
+      setAdminPhoneError("Bitte gib eine gültige Telefonnummer ein.");
+      valid = false;
+    }
     if (!companyName.trim()) {
       setCompanyNameError("Firmenname ist erforderlich.");
+      valid = false;
+    }
+    if (!companyEmail.trim()) {
+      setCompanyEmailError("Firmen-E-Mail ist erforderlich.");
+      valid = false;
+    } else if (!isValidEmail(companyEmail)) {
+      setCompanyEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      valid = false;
+    }
+    if (!companyPhone.trim()) {
+      setCompanyPhoneError("Firmen-Telefon ist erforderlich.");
+      valid = false;
+    } else if (!isValidPhone(companyPhone)) {
+      setCompanyPhoneError("Bitte gib eine gültige Telefonnummer ein.");
       valid = false;
     }
     if (!email.trim()) {
@@ -111,7 +159,15 @@ export default function RegisterScreen() {
     if (!validate()) return;
     try {
       setLoading(true);
-      await registerAdmin({ fullName, email, password, companyName });
+      await registerAdmin({
+        fullName,
+        email,
+        password,
+        companyName,
+        companyEmail,
+        companyPhone,
+        adminPhone: adminPhone.trim() || undefined,
+      });
       await refreshProfile();
       // Erfolgreich → index.tsx übernimmt Weiterleitung
       router.replace("/");
@@ -190,22 +246,67 @@ export default function RegisterScreen() {
                   returnKeyType="next"
                   editable={!loading}
                 />
+                <Input
+                  label="Deine Telefonnummer (optional)"
+                  placeholder="0170 1234567"
+                  value={adminPhone}
+                  onChangeText={handleAdminPhoneChange}
+                  error={adminPhoneError}
+                  keyboardType="phone-pad"
+                  autoComplete="tel"
+                  returnKeyType="next"
+                  editable={!loading}
+                />
               </View>
             </View>
 
             {/* ── Abschnitt: Firma ── */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>FIRMA</Text>
-              <Input
-                label="Firmenname"
-                placeholder="Muster Reinigung GmbH"
-                value={companyName}
-                onChangeText={(t) => { setCompanyName(t); setCompanyNameError(""); clearError(); }}
-                error={companyNameError}
-                autoCapitalize="words"
-                returnKeyType="next"
-                editable={!loading}
-              />
+              <View style={styles.fields}>
+                <Input
+                  label="Firmenname"
+                  placeholder="Muster Reinigung GmbH"
+                  value={companyName}
+                  onChangeText={(t) => { setCompanyName(t); setCompanyNameError(""); clearError(); }}
+                  error={companyNameError}
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                  editable={!loading}
+                />
+                <Input
+                  label="Firmen-E-Mail"
+                  placeholder="kontakt@firma.de"
+                  value={companyEmail}
+                  onChangeText={(t) => { setCompanyEmail(t); setCompanyEmailError(""); clearError(); }}
+                  error={companyEmailError}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoComplete="email"
+                  returnKeyType="next"
+                  editable={!loading}
+                />
+                <Input
+                  label="Firmen-Telefon"
+                  placeholder="0170 1234567"
+                  value={companyPhone}
+                  onChangeText={(t) => { setCompanyPhone(t); setCompanyPhoneError(""); clearError(); }}
+                  error={companyPhoneError}
+                  keyboardType="phone-pad"
+                  autoComplete="tel"
+                  returnKeyType="next"
+                  editable={!loading && !sameAsMyPhone}
+                />
+                <View style={styles.toggleRow}>
+                  <Text style={styles.toggleLabel}>Gleiche Nummer wie meine</Text>
+                  <Switch
+                    value={sameAsMyPhone}
+                    onValueChange={handleSameAsMyPhoneToggle}
+                    disabled={loading || !adminPhone.trim()}
+                    trackColor={{ false: theme.colors.outlineVariant, true: theme.colors.primary }}
+                  />
+                </View>
+              </View>
             </View>
 
             {/* ── Abschnitt: Passwort ── */}
@@ -333,6 +434,18 @@ function createStyles(theme: AppTheme) {
 
     // Abschnitte
     section: { gap: theme.spacing.sm },
+    toggleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingTop: 2,
+    },
+    toggleLabel: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurface,
+    },
     sectionLabel: {
       fontSize: theme.typography.size.xs,
       fontWeight: theme.typography.weight.semibold,

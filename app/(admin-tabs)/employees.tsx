@@ -27,6 +27,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { getEmployeeStatus } from "@/utils/employeeStatus";
 import { isValidEmail, normalizeEmail } from "@/utils/email";
+import { isValidPhone } from "@/utils/phone";
 import { toUserMessage } from "@/utils/userMessages";
 
 // Erfolgs-Banner blendet sich nach dieser Zeit selbst wieder aus — identisch
@@ -54,6 +55,7 @@ export default function EmployeesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [creating, setCreating] = useState(false);
   const [modalError, setModalError] = useState("");
 
@@ -82,6 +84,7 @@ export default function EmployeesScreen() {
     setModalVisible(false);
     setFullName("");
     setEmail("");
+    setPhone("");
     setModalError("");
   };
 
@@ -107,6 +110,11 @@ export default function EmployeesScreen() {
       return;
     }
 
+    if (phone.trim() && !isValidPhone(phone)) {
+      setModalError("Bitte gib eine gültige Telefonnummer ein oder lass das Feld leer.");
+      return;
+    }
+
     setModalError("");
 
     try {
@@ -115,6 +123,7 @@ export default function EmployeesScreen() {
       await createEmployee({
         fullName: trimmedName,
         email: trimmedEmail,
+        phone: phone.trim() || undefined,
       });
 
       await refreshEmployees();
@@ -322,6 +331,19 @@ export default function EmployeesScreen() {
                 placeholderTextColor={theme.colors.outline}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                style={styles.input}
+                editable={!creating}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Telefon (optional)</Text>
+              <TextInput
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="0170 1234567"
+                placeholderTextColor={theme.colors.outline}
+                keyboardType="phone-pad"
                 style={styles.input}
                 editable={!creating}
               />

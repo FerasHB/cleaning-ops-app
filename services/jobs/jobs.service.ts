@@ -90,6 +90,7 @@ type JobRow = {
 type EmployeeRow = {
   id: string;
   full_name: string | null;
+  phone: string | null;
   role: "admin" | "employee" | null;
   is_active: boolean | null;
   invited_at: string | null;
@@ -510,7 +511,7 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
   // hier in der Datenquelle.
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role, is_active, invited_at, invite_accepted_at")
+    .select("id, full_name, phone, role, is_active, invited_at, invite_accepted_at")
     .eq("company_id", profile.company_id)
     .eq("role", "employee")
     .order("is_active", { ascending: false }) // aktive zuerst
@@ -525,6 +526,7 @@ export async function getEmployees(): Promise<EmployeeOption[]> {
     fullName: item.full_name ?? "Unbenannt",
     // profiles.email existiert nicht → bewusst null, UI zeigt Fallback
     email: null,
+    phone: item.phone ?? null,
     role: item.role ?? "employee",
     isActive: item.is_active ?? null,
     invitedAt: item.invited_at ?? null,

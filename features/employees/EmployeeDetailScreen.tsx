@@ -17,6 +17,7 @@ import {
   InitialsAvatar,
   KPICard,
   LoadingScreen,
+  PhoneRow,
 } from "@/components/ui";
 import JobCard from "@/components/JobCard";
 import { useJobs } from "@/context/JobContext";
@@ -372,6 +373,8 @@ export default function EmployeeDetailScreen() {
           />
           <View style={styles.rowDivider} />
           <InfoRow label="E-Mail" value={emailDisplay} icon="mail-outline" />
+          <View style={styles.rowDivider} />
+          <PhoneRow phone={employee.phone} contactName={employee.fullName} />
           <View style={styles.rowDivider} />
           <InfoRow label="Konto-Status" value={status.label} icon="pulse-outline" />
           {invitePending && invitedAtText ? (

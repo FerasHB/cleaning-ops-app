@@ -9,6 +9,12 @@ type RegisterAdminInput = {
     email: string;
     password: string;
     companyName: string;
+    /** Firmen-Kontakt-E-Mail (Pflicht in der Registrierungs-UX). */
+    companyEmail: string;
+    /** Firmen-Rufnummer, roh (wird in setupCompanyForAdmin normalisiert). */
+    companyPhone: string;
+    /** Persönliche Rufnummer des Admins (optional). */
+    adminPhone?: string;
 };
 
 export async function registerAdmin({
@@ -16,6 +22,9 @@ export async function registerAdmin({
     email,
     password,
     companyName,
+    companyEmail,
+    companyPhone,
+    adminPhone,
 }: RegisterAdminInput): Promise<void> {
     const trimmedFullName = fullName.trim();
     const trimmedEmail = normalizeEmail(email);
@@ -36,6 +45,14 @@ export async function registerAdmin({
 
     if (!trimmedCompanyName) {
         throw new Error("Firmenname fehlt.");
+    }
+
+    if (!companyEmail?.trim()) {
+        throw new Error("Firmen-E-Mail fehlt.");
+    }
+
+    if (!companyPhone?.trim()) {
+        throw new Error("Firmen-Telefon fehlt.");
     }
 
     const { data, error } = await supabase.auth.signUp({
@@ -66,5 +83,10 @@ export async function registerAdmin({
         );
     }
 
-    await setupCompanyForAdmin(trimmedCompanyName);
+    await setupCompanyForAdmin({
+        companyName: trimmedCompanyName,
+        contactEmail: companyEmail,
+        contactPhone: companyPhone,
+        adminPhone,
+    });
 }

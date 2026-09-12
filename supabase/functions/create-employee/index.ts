@@ -11,7 +11,22 @@ const corsHeaders = {
 type CreateEmployeeBody = {
   fullName?: string;
   email?: string;
+  /** Optionale Rufnummer — wird nach E.164 normalisiert; ungültige ignoriert. */
+  phone?: string;
 };
+
+// E.164-Normalisierung (deckungsgleich mit utils/phone.ts::normalizePhone,
+// Standardland DE). Gibt null zurück, wenn daraus keine gültige Nummer wird.
+function normalizePhoneE164(raw: string | undefined | null): string | null {
+  if (raw == null) return null;
+  let v = String(raw).replace(/[\s/().-]/g, "");
+  if (v === "") return null;
+  if (v.startsWith("00")) v = "+" + v.slice(2);
+  else if (v.startsWith("+")) { /* wie eingegeben */ }
+  else if (v.startsWith("0")) v = "+49" + v.slice(1);
+  else if (/^\d+$/.test(v)) v = "+" + v;
+  return /^\+[1-9]\d{6,14}$/.test(v) ? v : null;
+}
 
 // Deep-Link-Ziel der Einladungs-Mail — muss in der uri_allow_list DES
 // JEWEILIGEN Projekts stehen (Supabase Dashboard → Authentication → URL
@@ -19,7 +34,7 @@ type CreateEmployeeBody = {
 // (siehe DEPLOY.md in diesem Ordner). Server-seitig (inviteUserByEmail), daher
 // kein Linking.createURL wie beim client-seitigen Passwort-Reset — das Schema
 // folgt dem Projekt: Produktion taskopsmanager://, Staging taskopsmanagerdev://
-// (siehe ../_shared/appUrlScheme.ts). Funktioniert nur in Dev-Client-/
+// (siehe ../_shared/appUrlScheme.ts, Phase 14). Funktioniert nur in Dev-Client-/
 // Standalone-Builds, nicht in Expo Go.
 const APP_URL_SCHEME = resolveAppUrlScheme(Deno.env.get("SUPABASE_URL"));
 const INVITE_REDIRECT_TO = `${APP_URL_SCHEME}://accept-invite`;
@@ -176,6 +191,9 @@ Deno.serve(async (req) => {
 
     const fullName = body.fullName?.trim();
     const email = body.email?.trim().toLowerCase();
+    // Optional: ungültige/leere Nummer wird still verworfen (kein harter Fehler
+    // — der Mitarbeiter kann die Nummer später selbst im Profil setzen).
+    const phone = normalizePhoneE164(body.phone);
 
     if (!fullName) {
       return Response.json(
@@ -331,6 +349,10 @@ Deno.serve(async (req) => {
         company_id: adminProfile.company_id,
         is_active: true,
         invited_at: invitedAt,
+        // Nur setzen, wenn eine gültige Nummer übergeben wurde — sonst NICHT
+        // in den Upsert aufnehmen (ein erneutes Senden ohne Nummer soll eine
+        // vorhandene Nummer nicht löschen).
+        ...(phone ? { phone } : {}),
       });
 
     if (upsertProfileError) {

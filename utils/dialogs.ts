@@ -31,7 +31,8 @@
 //   try/catch, ein Fehler darin wurde also zu einer unbehandelten Promise.
 // ─────────────────────────────────────────────────────────────────
 
-import { Alert, Platform } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
+import { formatPhoneForDisplay, normalizePhone } from "@/utils/phone";
 
 type ConfirmOptions = {
   title: string;
@@ -94,4 +95,52 @@ export function alertDialog(title: string, message: string): Promise<void> {
   return new Promise((resolve) => {
     Alert.alert(title, message, [{ text: "OK", onPress: () => resolve() }]);
   });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// callPhone — die EINE wiederverwendbare Anruf-Aktion.
+//
+// Überall, wo eine Telefonnummer antippbar ist (Mitarbeiter-Detail, künftig
+// Firmen-Kontakt, Kunden-Nummern …), läuft der Tap hier durch:
+//   1. Bestätigungsdialog ("… anrufen?") — web-sicher über confirmDialog.
+//   2. Erst nach Bestätigung: tel:-Link öffnen.
+//   3. Scheitert das Öffnen (Desktop-Web, kein Dialer), klare Rückmeldung
+//      statt stiller Nichtreaktion.
+//
+// `phone` darf roh oder E.164 sein — wird hier normalisiert. Ungültige
+// Nummern lösen gar keinen Dialog aus (Rückgabe false).
+// ─────────────────────────────────────────────────────────────────
+export async function callPhone(
+  phone: string | null | undefined,
+  opts: { label?: string } = {},
+): Promise<boolean> {
+  const e164 = normalizePhone(phone);
+  if (!e164) {
+    await alertDialog(
+      "Anruf nicht möglich",
+      "Für diesen Kontakt ist keine gültige Telefonnummer hinterlegt.",
+    );
+    return false;
+  }
+
+  const pretty = formatPhoneForDisplay(e164);
+  const who = opts.label?.trim();
+  const confirmed = await confirmDialog({
+    title: "Anrufen",
+    message: who ? `${who} anrufen?\n\n${pretty}` : `Diese Nummer anrufen?\n\n${pretty}`,
+    confirmLabel: "Anrufen",
+  });
+
+  if (!confirmed) return false;
+
+  try {
+    await Linking.openURL(`tel:${e164}`);
+    return true;
+  } catch {
+    await alertDialog(
+      "Anruf nicht möglich",
+      `Es konnte kein Anruf gestartet werden. Nummer: ${pretty}`,
+    );
+    return false;
+  }
 }
