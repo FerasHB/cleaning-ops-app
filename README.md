@@ -1,133 +1,153 @@
 # TaskOps Manager
 
-TaskOps Manager is a mobile workforce and job management app for field-service teams, built with React Native, Expo, and Supabase. Admins schedule and assign work, while field employees manage jobs, track progress, communicate, and report absences from the mobile app.
+TaskOps Manager ist eine mobile App zur Mitarbeiter- und Auftragsverwaltung für Teams im Außeneinsatz, entwickelt mit React Native, Expo und Supabase. Administratoren planen und verteilen Aufträge. Mitarbeitende verwalten ihre Einsätze, verfolgen den Fortschritt, kommunizieren und melden Abwesenheiten direkt in der App.
 
-Originally built around cleaning-company workflows, TaskOps Manager has evolved into a broader field-operations platform. Cleaning remains one real-world use case, demonstrated by the staging data and screenshots below.
+Ursprünglich für die Abläufe eines Reinigungsunternehmens entwickelt, unterstützt TaskOps Manager inzwischen auch andere Dienstleistungsbetriebe im Außeneinsatz. Die Reinigung bleibt ein praktisches Anwendungsbeispiel, wie die Staging-Daten und Bildschirmaufnahmen unten zeigen.
 
-The in-app UI and code comments are in German (the app was built for German field-service businesses); this document is in English for review purposes.
+Die App wurde für deutschsprachige Dienstleistungsbetriebe entwickelt. Diese Dokumentation beschreibt Funktionen, Architektur und den aktuellen Beta-Stand.
 
-## Screenshots
+## Beta testen
 
-Captured from the live app running against a populated Staging environment (fictional demo data — see [Current Status](#current-status)).
+**TaskOps Manager befindet sich in der Beta-Phase und wird aktiv weiterentwickelt. Die App ist noch nicht allgemein veröffentlicht.**
 
-| Admin Dashboard | Admin Jobs | Admin Calendar |
+| Plattform | Beta-Zugang |
+|---|---|
+| iOS | [Über TestFlight an der Beta teilnehmen](https://testflight.apple.com/join/nG5cwtP9) |
+| Android | [TaskOps Manager bei Google Play öffnen](https://play.google.com/store/apps/details?id=com.ferash.taskopsmanager) — Zugang nur für freigeschaltete Testpersonen. |
+
+**Zugang für Android:** Die E-Mail-Adresse deines Google-Kontos muss vorab zur Testerliste hinzugefügt werden. Wende dich dafür privat an die Person, die deinen Beta-Zugang organisiert. Folge anschließend deren Anleitung zur Testteilnahme mit demselben Google-Konto. Der Link oben führt zur App-Seite, nicht zur Anmeldung für den Test, und schaltet den Zugang nicht automatisch frei. Veröffentliche deine E-Mail-Adresse oder Zugangsdaten bitte nicht in öffentlichen Issues.
+
+## Bildschirmaufnahmen
+
+Die Aufnahmen stammen aus der laufenden App mit einer befüllten Staging-Umgebung. Alle gezeigten Daten sind fiktive Demodaten — siehe [Aktueller Stand](#aktueller-stand).
+
+| Admin-Übersicht | Auftragsverwaltung | Admin-Kalender |
 |---|---|---|
-| ![Admin Dashboard](docs/screenshots/admin-dashboard.png) | ![Admin Jobs](docs/screenshots/admin-jobs.png) | ![Admin Calendar](docs/screenshots/admin-calendar.png) |
+| ![Admin-Übersicht](docs/screenshots/admin-dashboard.png) | ![Auftragsverwaltung](docs/screenshots/admin-jobs.png) | ![Admin-Kalender](docs/screenshots/admin-calendar.png) |
 
-| Employee Detail & Absences | Job Comments | Active Job / Shared Timer |
+| Mitarbeiterdetails und Abwesenheiten | Auftragskommentare | Aktiver Auftrag und gemeinsame Zeiterfassung |
 |---|---|---|
-| ![Employee Detail and Absences](docs/screenshots/admin-absences.png) | ![Job Comments](docs/screenshots/job-comments.png) | ![Active Job](docs/screenshots/employee-job-active.png) |
+| ![Mitarbeiterdetails und Abwesenheiten](docs/screenshots/admin-absences.png) | ![Auftragskommentare](docs/screenshots/job-comments.png) | ![Aktiver Auftrag](docs/screenshots/employee-job-active.png) |
 
 <details>
-<summary>3 more screenshots (employee overview, job start, job assignment)</summary>
+<summary>3 weitere Bildschirmaufnahmen (Mitarbeiterübersicht, Auftragsstart, Zuweisung)</summary>
 
-| Employee Overview | Job Details, Not Started | Job Details (Assignment) |
+| Mitarbeiterübersicht | Auftragsdetails vor dem Start | Auftragsdetails mit Zuweisung |
 |---|---|---|
-| ![Employee Overview](docs/screenshots/employee-overview.png) | ![Employee Job Detail](docs/screenshots/employee-job-detail.png) | ![Job Detail](docs/screenshots/job-detail.png) |
+| ![Mitarbeiterübersicht](docs/screenshots/employee-overview.png) | ![Auftragsdetails vor dem Start](docs/screenshots/employee-job-detail.png) | ![Auftragsdetails mit Zuweisung](docs/screenshots/job-detail.png) |
 
 </details>
 
-## What it does
+## So funktioniert die App
 
-An admin registers, sets up their company, and adds employees. They create jobs — one-off or recurring by weekday — with a customer, service type, location, schedule, and one or more assigned employees. Employees see their jobs for today and ahead, start a job to begin the shared job timer, complete it when done, leave comments, and attach photos as proof of work. Absences (vacation and sickness) go through a request/approval flow with basic overlap checking. Everything updates in real time across devices, and the core job list keeps working offline, queuing actions until the connection returns.
+Ein Administrator registriert sich, richtet das Unternehmen ein und fügt Mitarbeitende hinzu. Anschließend erstellt er einmalige oder nach Wochentagen wiederkehrende Aufträge mit Kunde, Leistungsart, Einsatzort, Termin und einer oder mehreren zugewiesenen Personen. Mitarbeitende sehen ihre heutigen und kommenden Aufträge. Beim Start eines Auftrags beginnt die gemeinsame Zeiterfassung. Nach Abschluss können sie den Auftrag abschließen, Kommentare hinterlassen und Fotos als Arbeitsnachweis anhängen. Abwesenheiten wie Urlaub und Krankheit werden über einen Melde- bzw. Genehmigungsablauf mit grundlegender Prüfung auf Überschneidungen verwaltet. Änderungen werden in Echtzeit zwischen Geräten synchronisiert. Die zentrale Auftragsliste funktioniert auch offline; Aktionen werden bis zur nächsten Verbindung zwischengespeichert.
 
-## Core Features
+## Zentrale Funktionen
 
-**Operations**
-- Admin dashboard with live KPIs (open / in progress / completed / due today) and a "who's working on what" employee activity feed
-- Job creation and editing: one-off jobs (date + time) or recurring jobs (weekdays + time, with an active/paused toggle)
-- Multiple employees per job, with per-assignment tracking that survives account deletion (name snapshot)
-- Admin and employee calendar views
+**Einsatzverwaltung**
 
-**Employee Workflow**
-- Personalized job list and "today" overview
-- Start / Complete actions enforced server-side (RLS + RPC), not just in the UI
-- Shared job timer: one official duration per job (`completed_at - started_at`), credited to every assigned employee regardless of who tapped Start/Complete
-- Photo upload as proof of work, stored in a private bucket scoped per company/job
+- Admin-Übersicht mit aktuellen Kennzahlen (offen / in Bearbeitung / abgeschlossen / heute fällig) und einer Anzeige, wer gerade an welchem Auftrag arbeitet
+- Aufträge erstellen und bearbeiten: einmalig mit Datum und Uhrzeit oder wiederkehrend mit Wochentagen und Uhrzeit sowie einer Umschaltung zwischen aktiv und pausiert
+- Mehrere Mitarbeitende pro Auftrag, mit Nachverfolgung je Zuweisung und gespeichertem Namen, der auch nach einer Kontolöschung erhalten bleibt
+- Kalenderansichten für Administratoren und Mitarbeitende
 
-**Communication**
-- Append-only job comments with author names, visible to admin and all assignees
-- Unread-comment indicators, tracked per user per job
+**Arbeitsablauf für Mitarbeitende**
 
-**Absence / Vacation**
-- Employee self-service vacation requests and sickness reports, with overlap validation
-- Admin approval workflow for vacation, including a vacation-day ledger and per-employee entitlement configuration
-- Admin can also record an absence manually (e.g. a phone call)
+- Persönliche Auftragsliste und Tagesübersicht
+- Serverseitige Prüfung von Start- und Abschlussaktionen über RLS und RPC, zusätzlich zur Prüfung in der Oberfläche
+- Gemeinsame Zeiterfassung: eine maßgebliche Dauer pro Auftrag (`completed_at - started_at`), die allen zugewiesenen Mitarbeitenden angerechnet wird, unabhängig davon, wer den Auftrag startet oder abschließt
+- Foto-Upload als Arbeitsnachweis, gespeichert in einem privaten Speicherbereich mit Zugriffsbeschränkung nach Unternehmen und Auftrag
 
-**Scheduling & Timesheets**
-- Planned duration per job, worked-time tracking, and a PDF timesheet export for admins
+**Kommunikation**
 
-**Notifications**
-- Push notifications (Expo Push Service / FCM) on job assignment, status changes, and new comments
+- Auftragskommentare mit Verfassernamen, sichtbar für Administratoren und alle zugewiesenen Personen; Kommentare können nur hinzugefügt werden
+- Kennzeichnung ungelesener Kommentare je Nutzer und Auftrag
 
-**Reliability / Offline**
-- Offline queue for job actions (start/complete/etc.) with optimistic UI updates and sync on reconnect
-- Realtime sync via Supabase Realtime on the jobs table
+**Abwesenheit und Urlaub**
 
-**Authentication & Security**
-- Supabase Auth with role-based routing (admin vs. employee), password reset, and a minimum password-length policy
-- Row Level Security protects application data, with sensitive write paths validated server-side through RPCs
-- Company contact details (email/phone) that admins can view and update from the app
+- Eigenständige Urlaubsanträge und Krankmeldungen durch Mitarbeitende mit Prüfung auf Überschneidungen
+- Genehmigungsablauf für Urlaub, einschließlich Urlaubstagekonto und individuell konfigurierbarem Urlaubsanspruch
+- Manuelle Erfassung von Abwesenheiten durch Administratoren, etwa nach einer telefonischen Meldung
 
-## Tech Stack
+**Planung und Arbeitszeitnachweise**
 
-| Layer | Technology |
+- Geplante Auftragsdauer, Erfassung geleisteter Arbeitszeit und Export von Arbeitszeitnachweisen als PDF für Administratoren
+
+**Benachrichtigungen**
+
+- Push-Benachrichtigungen über Expo Push Service / FCM bei Auftragszuweisungen, Statusänderungen und neuen Kommentaren
+
+**Zuverlässigkeit und Offline-Nutzung**
+
+- Lokale Warteschlange für Auftragsaktionen wie Start und Abschluss; die Oberfläche zeigt Änderungen sofort an und synchronisiert sie bei erneuter Verbindung
+- Echtzeitsynchronisierung der Auftragstabelle über Supabase Realtime
+
+**Anmeldung und Sicherheit**
+
+- Supabase Auth mit rollenbasierter Navigation für Administratoren und Mitarbeitende, Zurücksetzen des Passworts und Vorgabe einer Mindestlänge für Passwörter
+- Row Level Security schützt die Anwendungsdaten; sensible Schreibvorgänge werden serverseitig über RPCs geprüft
+- Kontaktangaben des Unternehmens (E-Mail und Telefon), die Administratoren in der App einsehen und bearbeiten können
+
+## Eingesetzte Technologien
+
+| Bereich | Technologie |
 |---|---|
-| Framework | React Native 0.81, Expo SDK 54, expo-router 6 (file-based routing) |
-| Language | TypeScript |
+| Framework | React Native 0.81, Expo SDK 54, expo-router 6 (dateibasierte Navigation) |
+| Programmiersprache | TypeScript |
 | Backend | Supabase — Postgres, Auth, Realtime, Storage, Edge Functions (Deno) |
-| Push | Expo Notifications |
-| Offline | `@react-native-community/netinfo` + AsyncStorage-backed action queue |
-| Fonts | Inter (`@expo-google-fonts/inter`) |
-| Build/Distribution | EAS Build (development / preview / production profiles), EAS Submit |
+| Push-Benachrichtigungen | Expo Notifications |
+| Offline-Nutzung | `@react-native-community/netinfo` und eine über AsyncStorage gespeicherte Aktionswarteschlange |
+| Schriftart | Inter (`@expo-google-fonts/inter`) |
+| Erstellung und Verteilung | EAS Build (Profile: development / preview / production), EAS Submit |
 
-## Architecture
+## Architektur
 
-- **Role-based access**: every screen and action checks `role` (`admin` | `employee`) from the user's profile, but the UI gate is a convenience — the actual authorization boundary is Postgres Row Level Security and a set of `SECURITY DEFINER` RPCs (e.g. `start_own_job`, `complete_own_job`, `set_job_assignments`, `admin_review_vacation`). A client can't do anything RLS doesn't also allow.
-- **Server-side transitions**: job start/complete, vacation approval, and company setup all go through RPCs rather than direct table writes, so business rules (e.g. "a job can't be completed before it's started", "vacation deduction is confirmed, not just computed") are enforced once, in the database.
-- **Multi-employee assignments**: a separate `job_assignments` table (not just a single `assigned_to` column) tracks the full assignment set per job, with a name snapshot so history survives account deletion. Two authorization "gates" — one for start/complete, one for comments/photos — are defined once in `utils/jobAssignees.ts` and reused everywhere rather than re-implemented per screen.
-- **Recurring jobs as rules, not occurrences**: a recurring job is stored as a single row (weekdays + time), not pre-materialized per-day rows. This is a deliberate MVP scope decision — see [Current Status](#current-status).
-- **Offline-first job actions**: job start/complete/edit actions are queued locally when offline, applied optimistically to the UI, and synced against the server on reconnect — while comments and photos are intentionally online-only (append-only, no offline queue).
-- **Service layer**: all Supabase calls live in `services/`, mapping DB snake_case rows to camelCase app types; screens never talk to Supabase directly.
+- **Rollenbasierter Zugriff:** Jede Ansicht und Aktion prüft `role` (`admin` | `employee`) aus dem Nutzerprofil. Die Prüfung in der Oberfläche dient der Nutzerführung; die tatsächliche Zugriffskontrolle erfolgt durch Postgres Row Level Security und `SECURITY DEFINER`-RPCs, etwa `start_own_job`, `complete_own_job`, `set_job_assignments` und `admin_review_vacation`. Ein Client kann keine Aktion ausführen, die RLS nicht erlaubt.
+- **Serverseitige Statuswechsel:** Auftragsstart und -abschluss, Urlaubsgenehmigungen und die Unternehmenseinrichtung laufen über RPCs statt über direkte Schreibzugriffe auf Tabellen. Geschäftsregeln werden dadurch zentral in der Datenbank durchgesetzt, etwa dass ein Auftrag erst nach seinem Start abgeschlossen werden kann und ein Urlaubsabzug verbindlich bestätigt statt nur berechnet wird.
+- **Zuweisung mehrerer Mitarbeitender:** Eine eigene Tabelle `job_assignments` erfasst alle Zuweisungen eines Auftrags statt nur einer einzelnen Spalte `assigned_to`. Ein gespeicherter Namensstand erhält die Historie auch nach einer Kontolöschung. Zwei Berechtigungsprüfungen — für Start und Abschluss sowie für Kommentare und Fotos — sind zentral in `utils/jobAssignees.ts` definiert und werden in den Ansichten wiederverwendet.
+- **Wiederkehrende Aufträge als Regeln:** Ein wiederkehrender Auftrag wird als einzelner Datensatz mit Wochentagen und Uhrzeit gespeichert. Es werden keine separaten Datensätze für einzelne Einsatztage vorab angelegt. Dies ist eine bewusste Begrenzung des MVP-Umfangs — siehe [Aktueller Stand](#aktueller-stand).
+- **Offline-fähige Auftragsaktionen:** Start, Abschluss und Bearbeitung werden ohne Verbindung lokal zwischengespeichert, sofort in der Oberfläche angezeigt und bei erneuter Verbindung mit dem Server synchronisiert. Kommentare und Fotos benötigen bewusst eine Online-Verbindung; sie können nur hinzugefügt werden und besitzen keine Offline-Warteschlange.
+- **Serviceschicht:** Alle Supabase-Aufrufe liegen in `services/`. Dort werden Datenbankfelder in snake_case auf die camelCase-Typen der App abgebildet. Ansichten greifen nicht direkt auf Supabase zu.
 
-## Production-like Engineering
+## Technische Grundlagen für den produktiven Einsatz
 
-This isn't just a UI prototype — a few things that back that up:
+Die Umsetzung umfasst folgende Maßnahmen:
 
-- Separate **Staging** and **Production** Supabase projects, with environment separation enforced at the client (a visible "Staging" badge in non-production builds) and verified before any data-affecting operation
-- Every write path is protected by **Row Level Security**, re-checked independently of the UI
-- Auth hardening: password length policy, rate limiting, and user-facing German error messages mapped from Supabase's error codes (not raw API text)
-- **EAS Build** with separate development/preview/production profiles, distributed for beta testing via TestFlight and Google Play Internal Testing
-- Migration-based schema management (`supabase/migrations/`) with accompanying `pgTAP`-style SQL tests (`supabase/tests/`) for RLS and RPC behavior
-- Server-side validation of scheduling input (`buildSchedulePayload`) so a single-vs-recurring job can't be created in an inconsistent state, regardless of what the client sends
+- Getrennte Supabase-Projekte für **Staging** und **Production**, mit clientseitig durchgesetzter Umgebungstrennung, sichtbarer Staging-Kennzeichnung in nichtproduktiven Builds und Prüfung vor datenverändernden Vorgängen
+- Schutz aller Schreibzugriffe durch **Row Level Security**, unabhängig von den Prüfungen in der Oberfläche
+- Absicherung der Anmeldung durch Passwort-Mindestlänge, Begrenzung der Anfragerate und verständliche deutsche Fehlermeldungen, die aus Supabase-Fehlercodes abgeleitet werden
+- **EAS Build** mit separaten Profilen für development, preview und production; Verteilung zur Beta-Erprobung über TestFlight und zugangsbeschränkte Google-Play-Tests
+- Schemaverwaltung über Migrationen (`supabase/migrations/`) mit begleitenden SQL-Tests im Stil von `pgTAP` (`supabase/tests/`) für RLS- und RPC-Verhalten
+- Serverseitige Prüfung von Planungsdaten (`buildSchedulePayload`), damit einmalige und wiederkehrende Aufträge unabhängig von den Client-Eingaben nicht in einem widersprüchlichen Zustand angelegt werden können
 
-## Current Status
+## Aktueller Stand
 
-Active development. Production builds have been distributed for beta testing through TestFlight and Google Play Internal Testing.
+Beta- und Pilotphase mit aktiver Weiterentwicklung; noch keine allgemeine Veröffentlichung. Informationen zum Zugang für iOS und Android stehen unter [Beta testen](#beta-testen). Für Android ist die vorherige Aufnahme in die Testerliste erforderlich.
 
-Known, deliberate scope limits:
+Bekannte, bewusst gewählte Einschränkungen des Funktionsumfangs:
 
-- **Recurring jobs have no per-day occurrences yet.** A recurring job is one rule; status/timestamps apply to the rule, not to "this Tuesday's visit" individually. This is documented, intentional MVP scope, not an oversight.
-- **Comments and photos are online-only** by design — no offline queue for those, unlike job start/complete/edit.
+- **Wiederkehrende Aufträge haben noch keine separaten Einträge pro Einsatztag.** Ein wiederkehrender Auftrag ist eine Regel. Status und Zeitstempel beziehen sich auf diese Regel und nicht auf einen einzelnen Besuch, etwa am kommenden Dienstag. Dies ist eine dokumentierte, bewusste Begrenzung des MVP-Umfangs.
+- **Kommentare und Fotos benötigen eine Online-Verbindung.** Anders als Start, Abschluss und Bearbeitung von Aufträgen besitzen sie keine Offline-Warteschlange.
 
-## Local Development
+## Lokale Entwicklung
 
-Requires Node.js 18+ and a Supabase project with the schema in `lib/schema.sql` (reference only — actual schema changes are applied via `supabase/migrations/`).
+Vorausgesetzt werden Node.js 18+ und ein Supabase-Projekt mit dem Schema aus `lib/schema.sql`. Diese Datei dient nur als Referenz; tatsächliche Schemaänderungen werden über `supabase/migrations/` angewendet.
 
-*Note: the GitHub repository is still named `cleaning-ops-app`, a holdover from the project's original scope — the product itself is TaskOps Manager.*
+*Hinweis: Das GitHub-Repository heißt weiterhin `cleaning-ops-app`, entsprechend dem ursprünglichen Projektumfang. Der Produktname lautet TaskOps Manager.*
 
 ```bash
 git clone https://github.com/FerasHB/cleaning-ops-app.git
 cd cleaning-ops-app
 npm install
 cp .env.example .env
-# fill in EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY (publishable/anon key only — never a service-role/secret key)
+# EXPO_PUBLIC_SUPABASE_URL und EXPO_PUBLIC_SUPABASE_ANON_KEY eintragen
+# Nur einen Publishable-/Anon-Schlüssel verwenden, niemals einen Service-Role-/Secret-Schlüssel
 npm start
 ```
 
 ```bash
-npm run ios      # iOS simulator
-npm run android   # Android emulator
-npm run web       # web (dev only)
-npm run lint      # expo lint
+npm run ios      # iOS-Simulator
+npm run android   # Android-Emulator
+npm run web       # Webansicht (nur für die Entwicklung)
+npm run lint      # Codeprüfung mit Expo
 ```
