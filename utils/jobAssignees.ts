@@ -150,6 +150,68 @@ export function canRunJobActions(
   return isAssignedTo(job, employeeId) || isPrimaryAssignee(job, employeeId);
 }
 
+/** Die EIGENE Zuweisungszeile dieses Nutzers — oder null. */
+export function getOwnAssignee(
+  job: Pick<Job, "assignees">,
+  employeeId: string | null | undefined,
+): JobAssignee | null {
+  if (!employeeId) return null;
+  return getAssignees(job).find((a) => a.employeeId === employeeId) ?? null;
+}
+
+/**
+ * Darf dieser Nutzer seine EIGENE Teilnahme abschliessen? (Phase 16)
+ *
+ * Spiegelt das Server-Praedikat von complete_own_job (Migration
+ * 20260917000000): zusaetzlich zu den Bedingungen von `canRunJobActions` muss
+ * die EIGENE Zuweisungszeile bereits einen eigenen Start tragen. Der Start
+ * eines KOLLEGEN berechtigt ausdruecklich NICHT mehr zum Abschluss — genau
+ * das war die Ursache des Vorfalls vom 2026-09-16.
+ *
+ * KEIN Legacy-Zweig: ohne echte job_assignments-Zeile gibt es kein
+ * employee_started_at, und die RPC lehnt dann zwingend ab. Ein Button waere
+ * dort garantiert wirkungslos.
+ */
+export function canCompleteOwnAssignment(
+  job: Pick<
+    Job,
+    "employeeId" | "jobType" | "assignees" | "parentJobId" | "isActive" | "status"
+  >,
+  role: string | null | undefined,
+  employeeId: string | null | undefined,
+): boolean {
+  if (!canRunJobActions(job, role, employeeId)) return false;
+  return !!getOwnAssignee(job, employeeId)?.employeeStartedAt;
+}
+
+/**
+ * Hat dieser Nutzer seine eigene Teilnahme bereits abgeschlossen? Grundlage
+ * fuer den Zustand „mein Teil ist fertig, der Auftrag laeuft noch" (Phase 16).
+ */
+export function hasCompletedOwnAssignment(
+  job: Pick<Job, "assignees">,
+  employeeId: string | null | undefined,
+): boolean {
+  return !!getOwnAssignee(job, employeeId)?.employeeCompletedAt;
+}
+
+/**
+ * IDs aller Zugewiesenen, die ihre Teilnahme bereits BEGONNEN haben und
+ * deshalb nicht mehr aus der Zuweisung entfernt werden koennen (Phase 16).
+ *
+ * Spiegelt die Ablehnung in set_job_assignments: eine Zeile mit
+ * employee_started_at IS NOT NULL laesst sich nicht entfernen, der Versuch
+ * lehnt den GESAMTEN Speichervorgang ab. Der Picker muss das vorher zeigen,
+ * sonst faellt der Admin in eine Ablehnung, die er nicht kommen sieht.
+ */
+export function getStartedAssigneeIds(
+  job: Pick<Job, "assignees">,
+): string[] {
+  return getAssignees(job)
+    .filter((a) => !!a.employeeStartedAt && !!a.employeeId)
+    .map((a) => a.employeeId as string);
+}
+
 /**
  * Baut aus den LEGACY-Feldern (`employeeId`/`employeeName`) eine sichere
  * Ein-Element-Zuweisungsliste.

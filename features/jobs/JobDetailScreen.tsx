@@ -31,6 +31,7 @@ import {
   TimeCorrectionSheet,
   type TimeCorrectionTarget,
 } from "@/features/timesheets/components/TimeCorrectionSheet";
+import { ForceCompleteSheet } from "@/features/jobs/components/ForceCompleteSheet";
 import { JobActionFooter } from "@/features/jobs/components/JobActionFooter";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { JobDetailHeader } from "@/features/jobs/components/JobDetailHeader";
@@ -44,7 +45,14 @@ import { JobStatusOverview } from "@/features/jobs/components/JobStatusOverview"
 import { JobTimelineCard } from "@/features/jobs/components/JobTimelineCard";
 import { OccurrenceOriginLink } from "@/features/jobs/components/OccurrenceOriginLink";
 import { getJobById } from "@/services/jobs/jobs.service";
-import { canRunJobActions, isAssignedTo, isPrimaryAssignee } from "@/utils/jobAssignees";
+import {
+  canCompleteOwnAssignment,
+  canRunJobActions,
+  hasCompletedOwnAssignment,
+  isAssignedTo,
+  isPrimaryAssignee,
+} from "@/utils/jobAssignees";
+import { getStartBlockMessage } from "@/utils/jobSchedule";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import type { Job } from "@/types/job";
 import { useFocusEffect } from "@react-navigation/native";
@@ -95,6 +103,7 @@ export default function JobDetailScreen() {
     jobs,
     startJob,
     completeJob,
+    forceCompleteJob,
     loading,
     online,
     pendingActions,
@@ -107,6 +116,9 @@ export default function JobDetailScreen() {
   // zusätzlich serverseitig.
   const [correctionTarget, setCorrectionTarget] =
     useState<TimeCorrectionTarget | null>(null);
+
+  // PHASE 16: Admin-Zwangsabschluss (hängender Auftrag, Abschluss vergessen).
+  const [forceCompleteOpen, setForceCompleteOpen] = useState(false);
 
   // Cache-first: zuerst aus dem (ggf. begrenzten) Context-Fenster.
   const cachedJob = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -309,6 +321,13 @@ export default function JobDetailScreen() {
     router.push(`/jobs/${job.id}/edit`);
   };
 
+  // Der Dialog zeigt Fehler selbst an — hier bewusst KEIN try/catch, damit eine
+  // serverseitige Ablehnung (z. B. „erst nicht teilnehmende Mitarbeiter
+  // entfernen") im Dialog sichtbar bleibt statt ihn zu schließen.
+  const handleForceComplete = async (reason: string) => {
+    await forceCompleteJob(job.id, reason);
+  };
+
   // ── Maps öffnen (plattform-spezifischer URL-Schema)
   const handleOpenInMaps = () => {
     setActionError("");
@@ -334,9 +353,42 @@ export default function JobDetailScreen() {
   // möglich (eigener Screen weiter oben) und `canRunJobActions` prüft
   // jobType='single' ohnehin selbst.
   const canRunActions = canRunJobActions(job, role, profile?.id);
-  const canStart = canRunActions && job.status === "open";
-  const canComplete = canRunActions && job.status === "in_progress";
+
+  // PHASE 16 — START nur am Geschäftstermin (Nachtzuschlag für Spätdienste ab
+  // 20:00 bis 02:00 des Folgetags). Spiegelt start_own_job; maßgeblich bleibt
+  // der Server, die Prüfung hier verhindert nur einen Button, der garantiert
+  // abgelehnt würde, und erlaubt eine Meldung, die den Termin nennt.
+  const startBlockedReason =
+    canRunActions && job.status === "open" ? getStartBlockMessage(job) : null;
+
+  const canStart =
+    canRunActions && job.status === "open" && !startBlockedReason;
+
+  // PHASE 16 — ABSCHLUSS nur der EIGENEN Teilnahme und nur nach EIGENEM Start.
+  // Der Start eines Kollegen berechtigt ausdrücklich nicht (Vorfall
+  // 2026-09-16); zusätzlich verschwindet der Button, sobald die eigene
+  // Teilnahme erfasst ist.
+  const ownCompleted = hasCompletedOwnAssignment(job, profile?.id);
+  const canComplete =
+    canCompleteOwnAssignment(job, role, profile?.id) &&
+    job.status === "in_progress" &&
+    !ownCompleted;
+
+  // „Mein Teil ist fertig, der Auftrag läuft weiter" (Phase 16).
+  const waitingOnOthers = ownCompleted && job.status === "in_progress";
+
   const isDone = job.status === "completed";
+
+  // PHASE 16 — Admin-Wiederherstellung: nur bei laufendem Auftrag anbieten, und
+  // nur wenn tatsächlich jemand gestartet, aber nicht abgeschlossen hat (genau
+  // der Fall, den die RPC annimmt). Nie gestartete Zuweisungen lehnt der Server
+  // ab — die gehören regulär aus der Zuweisung entfernt.
+  const showForceComplete =
+    isAdmin &&
+    job.status === "in_progress" &&
+    (job.assignees ?? []).some(
+      (a) => !!a.employeeStartedAt && !a.employeeCompletedAt,
+    );
 
   // Foto-Upload: Admin immer; Employee, wenn ihm der Auftrag zugewiesen ist
   // (volle Zuweisungsmenge, nicht nur der Legacy-Primär). Seit 20260826000001
@@ -468,8 +520,19 @@ export default function JobDetailScreen() {
         onComplete={handleComplete}
         showEdit={isAdmin}
         onEdit={handleEdit}
+        waitingOnOthers={waitingOnOthers}
+        startBlockedReason={startBlockedReason}
+        showForceComplete={showForceComplete}
+        onForceComplete={() => setForceCompleteOpen(true)}
       />
       </KeyboardAvoidingView>
+
+      <ForceCompleteSheet
+        visible={forceCompleteOpen}
+        customerName={job.customerName}
+        onClose={() => setForceCompleteOpen(false)}
+        onConfirm={handleForceComplete}
+      />
 
       <TimeCorrectionSheet
         visible={!!correctionTarget}

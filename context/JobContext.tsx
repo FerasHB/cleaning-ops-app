@@ -1,6 +1,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
+  adminForceCompleteJob as adminForceCompleteJobService,
   completeJob as completeJobService,
   createJob as createJobService,
   deleteJob as deleteJobService,
@@ -75,6 +76,11 @@ type JobContextType = {
   deleteJob: (jobId: string) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
   completeJob: (jobId: string) => Promise<void>;
+  /**
+   * Admin-Zwangsabschluss eines haengenden Auftrags (Phase 16). Online-only —
+   * ein Lebenszyklus-Eingriff gehoert nicht in die Offline-Warteschlange.
+   */
+  forceCompleteJob: (jobId: string, reason: string) => Promise<void>;
   // Markiert die Kommentare eines Jobs als gesehen (entfernt den roten Punkt).
   markJobCommentsAsRead: (jobId: string) => Promise<void>;
 
@@ -700,15 +706,23 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const online = await isOnline();
 
       if (online) {
-        const completedAt = await completeJobService(jobId);
+        const { completedAt, jobStatus } = await completeJobService(jobId);
 
         setJobs((prevJobs) => {
+          // PHASE 16: der eigene Abschluss schliesst den AUFTRAG nur dann,
+          // wenn keine ungeloeste Zuweisung mehr existiert. Der Status kommt
+          // deshalb frisch vom Server (completeJobService liest ihn nach) und
+          // wird NICHT mehr optimistisch auf "completed" gesetzt — sonst
+          // zeigte die App einem Mitarbeiter "erledigt", waehrend ein Kollege
+          // noch arbeitet.
           const nextJobs = updateJobInList(prevJobs, jobId, {
-            status: "completed",
-            completedAt,
-            // Siehe Begründung bei startJob: Akteur optimistisch, Anzeige
-            // nennt ihn nur, wenn es ein anderer war.
-            completedBy: userId,
+            status: jobStatus,
+            // Die AUFTRAGS-Abschlusszeit gilt nur, wenn der Auftrag wirklich
+            // geschlossen wurde. Die EIGENE Zeit steht in assignees und kommt
+            // mit dem naechsten Refresh/Realtime-Event.
+            ...(jobStatus === "completed"
+              ? { completedAt, completedBy: userId }
+              : {}),
           });
 
           saveCachedJobs(userId, nextJobs).catch((err) =>
@@ -746,11 +760,25 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setPendingCount(nextActions.length);
 
       setJobs((prevJobs) => {
+        // PHASE 16 offline: der Server entscheidet beim Sync, ob der AUFTRAG
+        // schliesst. Lokal wird dieselbe Regel auf den Cache angewandt —
+        // bleibt eine andere Zuweisung ungeloest (kein eigener Abschluss,
+        // Konto lebt oder sie hat selbst gestartet), bleibt der Auftrag in
+        // Arbeit. Sonst zeigte die App "erledigt", obwohl ein Kollege noch
+        // arbeitet, und korrigierte sich erst beim naechsten Refresh.
+        const current = prevJobs.find((j) => j.id === jobId);
+        const othersPending = (current?.assignees ?? []).some(
+          (a) =>
+            a.employeeId !== userId &&
+            !a.employeeCompletedAt &&
+            (!!a.employeeId || !!a.employeeStartedAt),
+        );
+
         const nextJobs = updateJobInList(prevJobs, jobId, {
-          status: "completed",
-          completedAt: timestamp,
-          // Offline eindeutig der lokale Nutzer (siehe startJob).
-          completedBy: userId,
+          status: othersPending ? "in_progress" : "completed",
+          ...(othersPending
+            ? {}
+            : { completedAt: timestamp, completedBy: userId }),
         });
 
         saveCachedJobs(userId, nextJobs).catch((err) =>
@@ -764,6 +792,27 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       throw err;
     }
   }, [userId]);
+
+  const forceCompleteJob = useCallback(
+    async (jobId: string, reason: string) => {
+      const updated = await adminForceCompleteJobService(jobId, reason);
+      if (!updated) return;
+
+      setJobs((prevJobs) => {
+        const exists = prevJobs.some((job) => job.id === updated.id);
+        const nextJobs = exists
+          ? prevJobs.map((job) => (job.id === updated.id ? updated : job))
+          : prevJobs;
+
+        saveCachedJobs(userId, nextJobs).catch((err) =>
+          console.error("Failed to cache jobs after force complete:", err),
+        );
+
+        return nextJobs;
+      });
+    },
+    [userId],
+  );
 
   const markJobCommentsAsRead = useCallback(async (jobId: string) => {
     // Optimistisch sofort den Punkt entfernen (gute UX, kein Warten auf DB).
@@ -800,6 +849,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      forceCompleteJob,
       markJobCommentsAsRead,
       unreadJobIds,
       hasUnread: unreadJobIds.length > 0,
@@ -823,6 +873,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      forceCompleteJob,
       markJobCommentsAsRead,
       unreadJobIds,
       online,
