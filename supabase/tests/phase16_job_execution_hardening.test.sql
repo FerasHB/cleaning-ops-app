@@ -939,6 +939,72 @@ end $$;
 
 
 -- =========================================================
+-- TEIL 8 — Legacy-Bestandsfall (assigned_to ohne Zuweisungszeile)
+-- =========================================================
+-- Deckt die Luecke, die CASE 20 der durch Phase 16 ueberholten Suite
+-- shared_job_time_multi_assignment.test.sql abgedeckt hat.
+--
+-- BEFUND (gemessen, nicht angenommen): ein reiner Legacy-Schreibvorgang auf
+-- jobs.assigned_to bleibt NICHT ohne Zuweisungszeile — die
+-- Phase-2-Kompatibilitaetstrigger (20260726000000/20260729000000, Richtung
+-- assigned_to -> job_assignments) legen sie automatisch an. Damit stempelt
+-- start_own_job auch hier eine EIGENE Startzeit, und der Abschluss
+-- funktioniert regulaer.
+--
+-- Das ist der Grund, warum die Sorge "Legacy-Zeile ohne Zuweisung kann nach
+-- Phase 16 nie abgeschlossen werden" praktisch nicht eintritt: die
+-- Kompatibilitaetsschicht haelt beide Richtungen synchron. Passend dazu fand
+-- die Vorpruefung auf Produktion (2026-09-17) NULL aktionierbare Auftraege mit
+-- assigned_to ohne zugehoerige job_assignments-Zeile.
+do $$
+declare v text; v_cnt int;
+begin
+  insert into public.jobs (id, company_id, assigned_to, created_by, customer_name,
+                           service_name, location_address, status, job_type, date,
+                           start_time, is_active, created_at, updated_at)
+  values ('a4000000-0000-0000-0000-000000000070','a1000000-0000-0000-0000-000000000001',
+          'a2000000-0000-0000-0000-000000000002','a2000000-0000-0000-0000-000000000001',
+          'Legacy Kunde','S','O','open','single', pg_temp.bdate(now()), time '08:00', true,
+          timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00');
+  -- BEWUSST keine job_assignments-Zeile.
+
+  perform pg_temp.act_as('a2000000-0000-0000-0000-000000000002');
+  execute 'set local role authenticated';
+  begin
+    perform public.start_own_job('a4000000-0000-0000-0000-000000000070', now());
+    v := 'OK';
+  exception when others then v := 'ABGELEHNT:'||sqlerrm;
+  end;
+  execute 'reset role';
+  perform pg_temp.note(71,'Legacy','Legacy-Primaer ohne Zuweisungszeile kann weiterhin starten','OK',v);
+
+  select status::text into v from public.jobs where id='a4000000-0000-0000-0000-000000000070';
+  perform pg_temp.note(72,'Legacy','Auftrag wechselt dabei regulaer auf in_progress','in_progress',v);
+
+  -- Die Kompatibilitaetstrigger haben die Zuweisungszeile bereits beim INSERT
+  -- des Auftrags angelegt (Richtung assigned_to -> job_assignments).
+  select count(*)::int into v_cnt from public.job_assignments
+  where job_id='a4000000-0000-0000-0000-000000000070';
+  perform pg_temp.note(73,'Legacy','Kompatibilitaetstrigger legt die Zuweisungszeile selbst an','1',v_cnt::text);
+
+  select case when employee_started_at is not null then 'gestempelt' else 'leer' end into v
+  from public.job_assignments where job_id='a4000000-0000-0000-0000-000000000070';
+  perform pg_temp.note(75,'Legacy','Dadurch wird auch die EIGENE Startzeit gestempelt','gestempelt',v);
+
+  perform pg_temp.act_as('a2000000-0000-0000-0000-000000000002');
+  execute 'set local role authenticated';
+  begin
+    perform public.complete_own_job('a4000000-0000-0000-0000-000000000070', now());
+    v := 'OK';
+  exception when others then
+    v := case when sqlerrm like '%zuerst selbst starten%' then 'ABGELEHNT_OHNE_START' else 'ABGELEHNT_ANDERS:'||sqlerrm end;
+  end;
+  execute 'reset role';
+  perform pg_temp.note(74,'Legacy','Abschluss gelingt regulaer (eigene Startzeit ist vorhanden)','OK',v);
+end $$;
+
+
+-- =========================================================
 -- Ergebnisuebersicht
 -- =========================================================
 select case_no, bereich, beschreibung, erwartet, ergebnis,

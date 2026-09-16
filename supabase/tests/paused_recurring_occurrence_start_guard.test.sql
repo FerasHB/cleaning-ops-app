@@ -1,4 +1,34 @@
 -- =========================================================
+-- ⚠️  DURCH PHASE 16 TEILWEISE UEBERHOLT (Stand 2026-09-17)
+-- =========================================================
+-- Diese Suite legt ihre Termine bewusst in die ZUKUNFT (current_date + 7 / +10
+-- / +3 / +2), weil sie nur den Pausiert-Guard pruefen wollte und der Termin
+-- damals keine Rolle spielte. Seit Phase 16 (Migration 20260917000000) darf ein
+-- Auftrag nur am eigenen Geschaeftstermin gestartet werden (Regel 1) — ein
+-- Termin in 7 Tagen ist damit korrekt NICHT startbar.
+--
+-- Deshalb schlagen 4 der 13 Faelle fehl, alle aus genau diesem Grund
+-- (gemessen auf Staging):
+--   CASE A  (#1)  aktive Occurrence  -> erwartet AKZEPTIERT, jetzt ABGELEHNT
+--   CASE D2 (#7)  gestartete Occurrence abschliessbar -> die Fixture setzt
+--                 status/started_at direkt auf der jobs-Zeile, ohne die RPC;
+--                 es existiert daher keine EIGENE Startzeit und der Abschluss
+--                 wird nach Regel 4 korrekt abgelehnt.
+--   CASE F2 (#10) reaktivierte Zukunfts-Occurrence -> erwartet AKZEPTIERT
+--   CASE G  (#11) gewoehnlicher Einzelauftrag      -> erwartet AKZEPTIERT
+--
+-- Alle vier sind INTENDIERTE Folgen der neuen Terminregel, kein Logikfehler.
+-- Der eigentliche Gegenstand dieser Suite — pausierte Occurrences sind nicht
+-- startbar — gilt unveraendert und ist zusaetzlich als CASE 44 in
+-- phase16_job_execution_hardening.test.sql abgedeckt (dort mit heutigem
+-- Termin, deshalb gruen).
+--
+-- Eine Anpassung der Fixture-Daten auf "heute" waere mechanisch moeglich,
+-- wuerde aber den Pruefgegenstand mehrerer Faelle verschieben; das gehoert in
+-- einen eigenen, reviewbaren Schritt und nicht in Phase 16.
+-- =========================================================
+
+-- =========================================================
 -- TEST: pausierte Dauerauftrags-Occurrence ist nicht startbar
 -- (Migration 20260829000000_block_start_of_paused_recurring_occurrence)
 -- =========================================================

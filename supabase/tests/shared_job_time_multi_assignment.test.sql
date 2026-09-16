@@ -1,4 +1,36 @@
 -- =========================================================
+-- ⚠️  DURCH PHASE 16 TEILWEISE UEBERHOLT (Stand 2026-09-17)
+-- =========================================================
+-- Diese Suite beschreibt die Phase-7-Semantik "geteilte Job-Uhr": JEDER
+-- Zugewiesene darf starten UND abschliessen, auch ohne selbst gestartet zu
+-- haben. Genau das hat Phase 16 (Migration 20260917000000) bewusst
+-- abgeschafft — es war die Ursache des Vorfalls vom 2026-09-16.
+--
+-- Gegen den Phase-16-Stand schlagen 13 der 27 Faelle fehl. Klassifiziert
+-- (gemessen auf Staging, nicht geschaetzt):
+--
+--   * MECHANISCH (Fixture, kein Logikfehler): die Faelle uebergeben feste
+--     Uhrzeiten wie '08:00'/'10:00' auf current_date. Laeuft die Suite
+--     spaeter als 12h nach dieser Uhrzeit, lehnt das neue
+--     Zeitstempel-Vertrauensfenster (Regel 3: max. 12h alt) sie ab —
+--     Fehlertext "Diese Aktion ist aelter als 12 Stunden". Betrifft
+--     CASE 1, 3, 8, 20 direkt und 2, 4, 5, 6, 7, 9, 10, 23, 24 als Folge
+--     (deren Vorbedingung nie zustande kam).
+--   * FACHLICH UEBERHOLT: CASE 3 behauptet zusaetzlich, ein Sekundaerer duerfe
+--     ohne eigenen Start abschliessen. Das ist seit Phase 16 korrekt
+--     abgelehnt (Regel 4) und darf NICHT wieder "repariert" werden.
+--
+-- Die noch gueltigen Aussagen (Firmen-/Rollengrenzen, deaktivierte Konten,
+-- Recurring-Parent nicht startbar, kein direktes UPDATE auf jobs) sind in
+-- phase16_job_execution_hardening.test.sql nicht dupliziert und bleiben hier
+-- die Referenz — sie bestehen weiterhin.
+--
+-- Eine Neufassung dieser Datei ist bewusst NICHT Teil von Phase 16: sie wuerde
+-- die Testabsicht von Phase 7 neu festlegen und gehoert deshalb in einen
+-- eigenen, reviewbaren Schritt.
+-- =========================================================
+
+-- =========================================================
 -- TEST: Shared Job Time — Start/Abschluss fuer JEDEN Zugewiesenen
 -- (Migration 20260731000000_shared_job_time_multi_assignment)
 -- =========================================================
