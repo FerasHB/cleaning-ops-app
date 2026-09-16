@@ -15,6 +15,7 @@ import {
   formatDateISO,
   formatTimeHHmm,
   formatToISO,
+  localDateTimeFrom,
   timeStringToDate,
 } from "@/utils/date";
 import type { WeekdayKey } from "@/utils/recurrence";
@@ -170,9 +171,17 @@ export default function EditJobScreen() {
   useEffect(() => {
     if (!job) return;
 
-    const parsedStart = job.scheduledStart ? new Date(job.scheduledStart) : null;
+    // Aus date + startTime, NICHT aus scheduledStart — sonst verschiebt der
+    // UTC-Versatz die vorbelegte Uhrzeit (siehe localDateTimeFrom). Bei einem
+    // generierten Termin würde schon das Speichern eines unbeteiligten Feldes
+    // die Uhrzeit verstellen und ihn damit fälschlich zum einzeln angepassten
+    // „Abweichender Termin" machen (Migration 20260916000000).
+    // Fallback auf scheduledStart nur für Altzeilen ohne date/startTime.
     const singleDateTime =
-      parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null;
+      localDateTimeFrom(job.date, job.startTime) ??
+      (job.scheduledStart && !isNaN(new Date(job.scheduledStart).getTime())
+        ? new Date(job.scheduledStart)
+        : null);
 
     setValues({
       customerName: job.customerName,
@@ -225,9 +234,14 @@ export default function EditJobScreen() {
 
     // Terminierung je nach Typ
     if (values.jobType === "single") {
-      const originalStartMs = job.scheduledStart
-        ? new Date(job.scheduledStart).getTime()
-        : null;
+      // Gegen DIESELBE Quelle vergleichen, aus der das Formular vorbelegt
+      // wurde — sonst gälte jeder Termin sofort als geändert.
+      const originalStart =
+        localDateTimeFrom(job.date, job.startTime) ??
+        (job.scheduledStart && !isNaN(new Date(job.scheduledStart).getTime())
+          ? new Date(job.scheduledStart)
+          : null);
+      const originalStartMs = originalStart ? originalStart.getTime() : null;
       const currentStartMs = values.singleDateTime
         ? values.singleDateTime.getTime()
         : null;

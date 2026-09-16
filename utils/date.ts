@@ -55,6 +55,40 @@ export function timeStringToDate(time: string | null | undefined): Date | null {
   return d;
 }
 
+/**
+ * Baut aus den MASSGEBLICHEN Terminfeldern `date` ("YYYY-MM-DD") und
+ * `start_time` ("HH:mm[:ss]") ein LOKALES Date für die Datum-/Uhrzeit-Picker.
+ *
+ * Bewusst NICHT aus `scheduled_start` ableiten: diese Spalte wird
+ * serverseitig per einfacher Konkatenation (`date || ' ' || start_time`)
+ * in die Zeitzone der Datenbank (UTC) geschrieben. `new Date(scheduledStart)`
+ * rendert sie danach in der LOKALEN Zeitzone und verschiebt die Uhrzeit um den
+ * UTC-Versatz — aus 19:30 würde in Deutschland 21:30. Wird ein Formular so
+ * vorbelegt, schreibt schon das Speichern eines unbeteiligten Feldes eine
+ * verschobene Uhrzeit zurück; bei einem generierten Termin gilt er damit als
+ * einzeln angepasst ("Abweichender Termin", siehe Migration 20260916000000).
+ * `date` + `start_time` sind laut CLAUDE.md ohnehin die maßgebliche Quelle.
+ */
+export function localDateTimeFrom(
+  dateKey: string | null | undefined,
+  time: string | null | undefined,
+): Date | null {
+  if (!dateKey) return null;
+  const parts = dateKey.slice(0, 10).split("-");
+  if (parts.length !== 3) return null;
+  const [year, month, day] = parts.map((n) => parseInt(n, 10));
+  if (!year || !month || !day) return null;
+
+  const normalized = normalizeTime(time);
+  const [hours, minutes] = normalized
+    ? normalized.split(":").map((n) => parseInt(n, 10))
+    : [0, 0];
+  if (isNaN(hours) || isNaN(minutes)) return null;
+
+  const d = new Date(year, month - 1, day, hours, minutes, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 /** Formatiert ein Datum als lokales "YYYY-MM-DD" (für DB-Spalte date). */
 export function formatDateISO(date: Date | null | undefined): string | null {
   if (!date) return null;

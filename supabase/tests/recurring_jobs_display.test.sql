@@ -129,13 +129,17 @@ values
    'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
    null,'Regelkunde','Unterhaltsreinigung','Regelweg 1',
    'open','single', current_date + 3, '08:00', true, null, null),
-  -- Zugewiesen an Employee A2: offen, +3 Tage.
-  -- Abweichende Uhrzeit (09:00), weil idx_jobs_occurrence_unique
-  -- (parent_job_id, date, start_time) sonst mit c4..8 kollidiert.
+  -- Zugewiesen an Employee A2: offen, +5 Tage.
+  -- ANDERER TAG als c4..8 und c4..4 (nicht nur eine andere Uhrzeit): seit
+  -- 20260916000000 ist die Identität eines generierten Termins
+  -- (parent_job_id, occurrence_date) — zwei Termine derselben Regel am
+  -- selben Tag sind genau der Zustand, den der Fix ausschließt. Für diesen
+  -- Test ist nur der Mitarbeiter-Filter relevant; beide Tage liegen im
+  -- selben Fenster [morgen..+30], die Zähl-Assertions bleiben unverändert.
   ('c4000000-0000-0000-0000-000000000009','c1000000-0000-0000-0000-000000000001',
    'c3000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000001',
    'c2000000-0000-0000-0000-000000000004','Regelkunde','Unterhaltsreinigung','Regelweg 1',
-   'open','single', current_date + 3, '09:00', true, null, null);
+   'open','single', current_date + 5, '08:00', true, null, null);
 
 -- Firma B: eigener Job (für Cross-Company-Test)
 insert into public.jobs
