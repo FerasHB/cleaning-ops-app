@@ -1,31 +1,34 @@
 -- =========================================================
--- ⚠️  DURCH PHASE 16 TEILWEISE UEBERHOLT (Stand 2026-09-17)
+-- AKTUALISIERT FUER PHASE 16 (2026-09-17, Migration 20260917000000)
 -- =========================================================
--- Diese Suite legt ihre Termine bewusst in die ZUKUNFT (current_date + 7 / +10
--- / +3 / +2), weil sie nur den Pausiert-Guard pruefen wollte und der Termin
--- damals keine Rolle spielte. Seit Phase 16 (Migration 20260917000000) darf ein
--- Auftrag nur am eigenen Geschaeftstermin gestartet werden (Regel 1) — ein
--- Termin in 7 Tagen ist damit korrekt NICHT startbar.
+-- Diese Suite legte ihre Termine urspruenglich in die ZUKUNFT (current_date
+-- + 7 / +10 / +3 / +2), weil nur der Pausiert-Guard gepruegt werden sollte
+-- und der Termin selbst keine Rolle spielte. Seit Phase 16 darf ein Auftrag
+-- nur am eigenen Geschaeftstermin gestartet werden (Regel 1) — ein Termin in
+-- 7 Tagen waere damit (zu Recht) nicht startbar und haette den eigentlichen
+-- Pruefgegenstand (Pausiert-Guard) verdeckt.
 --
--- Deshalb schlagen 4 der 13 Faelle fehl, alle aus genau diesem Grund
--- (gemessen auf Staging):
---   CASE A  (#1)  aktive Occurrence  -> erwartet AKZEPTIERT, jetzt ABGELEHNT
---   CASE D2 (#7)  gestartete Occurrence abschliessbar -> die Fixture setzt
---                 status/started_at direkt auf der jobs-Zeile, ohne die RPC;
---                 es existiert daher keine EIGENE Startzeit und der Abschluss
---                 wird nach Regel 4 korrekt abgelehnt.
---   CASE F2 (#10) reaktivierte Zukunfts-Occurrence -> erwartet AKZEPTIERT
---   CASE G  (#11) gewoehnlicher Einzelauftrag      -> erwartet AKZEPTIERT
+-- Fix, mechanisch, OHNE den Pruefgegenstand zu verschieben:
+--   * d_a/d_p/d_s/d_c laufen jetzt alle auf current_date — jede Occurrence
+--     ist "heute" datiert, die Terminpruefung ist damit fuer jeden
+--     try_start()-Aufruf in dieser Datei erfuellt, unabhaengig davon, WANN
+--     die Suite tatsaechlich laeuft (keine Zeitzonen-/Mitternachts-Annahme
+--     noetig, da alle try_start-Aufrufe now() als Aktionszeitpunkt nutzen —
+--     derselbe Kalendertag wie current_date, da now() transaktionsweit
+--     konstant ist).
+--   * o_started/o_completed werden weiterhin DIREKT (ohne RPC) mit
+--     status/started_at/completed_at auf der jobs-Zeile angelegt — das
+--     bleibt unveraendert der Zweck dieser beiden Zeilen (Historie, die die
+--     Pausierung ueberlebt). NEU: die zugehoerige job_assignments-Zeile von
+--     A1 traegt jetzt ZUSAETZLICH employee_started_at (o_started) bzw.
+--     employee_started_at + employee_completed_at (o_completed) — ohne das
+--     wuerde CASE D2 (gestartete Occurrence bleibt abschliessbar) an Phase
+--     16s neuer Eigenstart-Pflicht scheitern, obwohl der eigentliche
+--     Pruefgegenstand (Pausiert-Guard beeintraechtigt eine GESTARTETE
+--     Occurrence nicht) davon unabhaengig ist.
 --
--- Alle vier sind INTENDIERTE Folgen der neuen Terminregel, kein Logikfehler.
--- Der eigentliche Gegenstand dieser Suite — pausierte Occurrences sind nicht
--- startbar — gilt unveraendert und ist zusaetzlich als CASE 44 in
--- phase16_job_execution_hardening.test.sql abgedeckt (dort mit heutigem
--- Termin, deshalb gruen).
---
--- Eine Anpassung der Fixture-Daten auf "heute" waere mechanisch moeglich,
--- wuerde aber den Pruefgegenstand mehrerer Faelle verschieben; das gehoert in
--- einen eigenen, reviewbaren Schritt und nicht in Phase 16.
+-- Alle 13 Faelle sind damit wieder gruen UND pruefen weiterhin exakt das
+-- urspruengliche Verhalten (A–H unten unveraendert).
 -- =========================================================
 
 -- =========================================================
@@ -151,12 +154,34 @@ create temporary table _r (
 -- =========================================================
 do $$
 declare
-  d_a  date := current_date + 7;
-  d_p  date := current_date + 10;
-  d_s  date := current_date + 3;
-  d_c  date := current_date + 2;
-  wd_a text := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from current_date + 7)::int + 1];
-  wd_p text := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from current_date + 10)::int + 1];
+  -- PHASE 16: alle vier auf current_date, statt in die Zukunft versetzt —
+  -- siehe Kopf-Kommentar. wd_a/wd_p faellen dadurch auf denselben Wochentag
+  -- zusammen; ein doppelter Eintrag im recurring_days-Array ist fuer die
+  -- @>-Pruefung unten harmlos (kein struktureller Unterschied zu einem
+  -- Array mit einem Element).
+  --
+  -- SLOT vs. TATSAECHLICHER TERMIN (wichtig seit 20260916000000): der neue
+  -- UNIQUE INDEX idx_jobs_occurrence_slot_unique erlaubt hoechstens EINE
+  -- Zeile je (parent_job_id, occurrence_date) — zwei Geschwister-Occurrences
+  -- koennen also nicht denselben Slot teilen, selbst wenn ihr TATSAECHLICHES
+  -- Datum (date) identisch ist. o_active und o_paused muessen deshalb
+  -- unterschiedliche SLOTS (occurrence_date) bekommen; o_paused erhaelt
+  -- seinen tatsaechlichen Termin (date=heute, fuer CASE B1) trotzdem ueber
+  -- schedule_overridden=true — das haelt update_job_occurrences' RESCHEDULE-
+  -- Schritt (der sonst date wieder auf occurrence_date zurückzoege) fern,
+  -- exakt die vorgesehene Bedeutung dieser Spalte fuer einen einzeln
+  -- angepassten Termin. o_started/o_completed werden nie ueber die RPC
+  -- gestartet (ihr Status wird direkt gesetzt) — ihr `date` ist deshalb
+  -- terminlich irrelevant, sie brauchen nur einen eigenen, freien Slot.
+  d_a      date := current_date;       -- o_active: Slot = tatsaechlicher Termin
+  d_p      date := current_date;       -- o_paused: TATSAECHLICHER Termin (heute, fuer CASE B1)
+  d_p_slot date := current_date + 1;   -- o_paused: SLOT (bewusst ein anderer Tag als o_active)
+  d_s_slot date := current_date + 2;   -- o_started: eigener, sonst unbenutzter Slot
+  d_c_slot date := current_date + 3;   -- o_completed: eigener, sonst unbenutzter Slot
+  d_s  date := current_date;
+  d_c  date := current_date;
+  wd_a text := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from current_date)::int + 1];
+  wd_p text := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from current_date + 1)::int + 1];
 begin
   -- Parent-Regel R (Firma A)
   insert into public.jobs
@@ -180,23 +205,41 @@ begin
      'open','recurring', array[wd_a]::text[], '08:00', true,
      current_date, current_date + 21);
 
-  -- Occurrences von R
+  -- Occurrences von R. occurrence_date/schedule_overridden jetzt EXPLIZIT
+  -- gesetzt (siehe Kopf-Kommentar) — ohne das wuerde der Trigger
+  -- occurrence_date := date ableiten und alle vier Zeilen kollidierten unter
+  -- demselben Slot (heute) am UNIQUE INDEX.
   insert into public.jobs
     (id, company_id, parent_job_id, created_by, customer_name, service_name, location_address,
-     status, job_type, date, start_time, is_active, started_at, completed_at)
+     status, job_type, date, start_time, is_active, started_at, completed_at,
+     occurrence_date, schedule_overridden)
   values
     ('f4000000-0000-0000-0000-0000000000a1','f1000000-0000-0000-0000-000000000001','f3000000-0000-0000-0000-000000000001',
      'f2000000-0000-0000-0000-000000000001','Regelkunde A','Unterhaltsreinigung','Regelweg 1',
-     'open','single', d_a, '08:00', true, null, null),
+     'open','single', d_a, '08:00', true, null, null,
+     d_a, false),
     ('f4000000-0000-0000-0000-0000000000b1','f1000000-0000-0000-0000-000000000001','f3000000-0000-0000-0000-000000000001',
      'f2000000-0000-0000-0000-000000000001','Regelkunde A','Unterhaltsreinigung','Regelweg 1',
-     'open','single', d_p, '08:00', false, null, null),
+     -- date=HEUTE (fuer CASE B1, direkt pausiert UND terminlich gueltig),
+     -- occurrence_date=ein ANDERER Slot als o_active, schedule_overridden=true
+     -- haelt RESCHEDULE davon ab, date wieder auf occurrence_date zu ziehen.
+     'open','single', d_p, '08:00', false, null, null,
+     d_p_slot, true),
     ('f4000000-0000-0000-0000-0000000000c1','f1000000-0000-0000-0000-000000000001','f3000000-0000-0000-0000-000000000001',
      'f2000000-0000-0000-0000-000000000001','Regelkunde A','Unterhaltsreinigung','Regelweg 1',
-     'in_progress','single', d_s, '08:00', true, (current_date + 3)::timestamptz, null),
+     -- PHASE 16: started_at relativ zu now() (nicht mehr current_date+3) —
+     -- CASE D2 ruft complete_own_job() mit dem Default now() auf, dessen
+     -- 12h-Vertrauens-/Plausibilitaetsfenster gegen den EIGENEN Start
+     -- (job_assignments.employee_started_at unten) prueft, unabhaengig von
+     -- der Tageszeit, zu der diese Suite laeuft. date/occurrence_date sind
+     -- terminlich irrelevant (nie ueber die RPC gestartet), brauchen aber
+     -- einen eigenen freien Slot.
+     'in_progress','single', d_s, '08:00', true, now() - interval '2 hours', null,
+     d_s_slot, false),
     ('f4000000-0000-0000-0000-0000000000d1','f1000000-0000-0000-0000-000000000001','f3000000-0000-0000-0000-000000000001',
      'f2000000-0000-0000-0000-000000000001','Regelkunde A','Unterhaltsreinigung','Regelweg 1',
-     'completed','single', d_c, '08:00', true, (current_date + 2)::timestamptz, (current_date + 2)::timestamptz);
+     'completed','single', d_c, '08:00', true, now() - interval '4 hours', now() - interval '2 hours',
+     d_c_slot, false);
 
   -- gewöhnlicher Einzelauftrag (Firma A)
   insert into public.jobs
@@ -223,13 +266,22 @@ end $$;
 insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_by) values
   ('f3000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001');
 
--- Zuweisungen Mitarbeiter A1 auf die Occurrences
-insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_by) values
-  ('f4000000-0000-0000-0000-0000000000a1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001'),
-  ('f4000000-0000-0000-0000-0000000000b1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001'),
-  ('f4000000-0000-0000-0000-0000000000c1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001'),
-  ('f4000000-0000-0000-0000-0000000000d1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001'),
-  ('f4000000-0000-0000-0000-0000000000e1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001');
+-- Zuweisungen Mitarbeiter A1 auf die Occurrences.
+-- PHASE 16: o_started/o_completed bekommen zusaetzlich employee_started_at
+-- (bzw. auch employee_completed_at fuer o_completed) auf DIESER Zeile —
+-- passend zum direkt gesetzten started_at/completed_at auf der jobs-Zeile
+-- oben. Ohne das haette A1 fuer diese beiden Occurrences keinen EIGENEN
+-- Start, und CASE D2 (gestartete Occurrence bleibt trotz pausierter Regel
+-- abschliessbar) wuerde an der neuen Eigenstart-Pflicht scheitern — nicht
+-- am hier eigentlich zu pruefenden Pausiert-Guard.
+-- employee_started_at/completed_at gespiegelt zur jobs-Zeile oben (now()-
+-- relativ, nicht current_date — siehe dortiger Kommentar).
+insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_by, employee_started_at, employee_completed_at) values
+  ('f4000000-0000-0000-0000-0000000000a1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001', null, null),
+  ('f4000000-0000-0000-0000-0000000000b1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001', null, null),
+  ('f4000000-0000-0000-0000-0000000000c1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001', now() - interval '2 hours', null),
+  ('f4000000-0000-0000-0000-0000000000d1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001', now() - interval '4 hours', now() - interval '2 hours'),
+  ('f4000000-0000-0000-0000-0000000000e1','f2000000-0000-0000-0000-000000000002','Mitarbeiter A1','f2000000-0000-0000-0000-000000000001', null, null);
 -- Zuweisung Mitarbeiter B1 auf die Fremd-Occurrence
 insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_by) values
   ('f4000000-0000-0000-0000-0000000000f1','f2000000-0000-0000-0000-000000000005','Mitarbeiter B1','f2000000-0000-0000-0000-000000000004');
@@ -320,8 +372,10 @@ begin
   select j.status, j.started_at into v_status, v_started
   from public.jobs j where j.id='f4000000-0000-0000-0000-0000000000c1';
 
+  -- PHASE 16: started_at kommt jetzt aus now() - 2h statt current_date+3 —
+  -- Erwartung entsprechend gegen denselben Ausdruck geprueft.
   insert into _r values (6, 'CASE D1: gestartete Occurrence bleibt in_progress + started_at erhalten',
-    'in_progress|'||(current_date + 3)::text,
+    'in_progress|'||(now() - interval '2 hours')::date::text,
     coalesce(v_status,'FEHLT')||'|'||coalesce(v_started::date::text,'FEHLT'));
 
   insert into _r values (7, 'CASE D2: gestartete Occurrence bleibt abschließbar (trotz pausierter Regel)',
@@ -338,8 +392,9 @@ begin
   select j.status||'|'||coalesce(j.started_at::date::text,'-')||'|'||coalesce(j.completed_at::date::text,'-')
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-0000000000d1';
+  -- PHASE 16: started_at/completed_at kommen jetzt aus now()-4h/now()-2h.
   insert into _r values (8, 'CASE E: abgeschlossene Occurrence unverändert nach Deaktivierung',
-    'completed|'||(current_date + 2)::text||'|'||(current_date + 2)::text,
+    'completed|'||(now() - interval '4 hours')::date::text||'|'||(now() - interval '2 hours')::date::text,
     coalesce(v,'FEHLT'));
 end $$;
 
