@@ -360,7 +360,9 @@
     "editSectionTitle": "تعديل تفاصيل المهمة",
     "editRequiredFieldsHint": "الحقول المميزة بـ * إلزامية",
     "employeesSectionTitle": "الموظفون",
-    "employeesSectionSubtitle": "يمكن تغيير التعيين في أي وقت",
+    "employeesSectionSubtitle": "يمكن تغيير التعيين طالما لم يبدأ أحد",
+    "employeesSectionSubtitleLocked": "مهمة مكتملة – التعيين مقفل",
+    "employeesLockedBannerMessage": "تم إنجاز هذه المهمة. لم يعد بالإمكان تغيير التعيين. لا يزال بالإمكان إجراء تصحيح لاحق لوقت العمل من تفاصيل المهمة.",
     "noEmployeesAvailable": "لا يوجد موظفون متاحون.",
     "saveButton": "حفظ التغييرات",
     "noChangesButton": "لا توجد تغييرات",
@@ -423,6 +425,7 @@
     "employeeSelector": {
       "inactiveSublabel": "غير نشط – لا يمكن تغيير التحديد هنا",
       "activeSublabel": "موظف",
+      "startedSublabel": "بدأ بالفعل – لا يمكن الإزالة",
       "unassignedHint": "لم يتم تعيين أحد – تبقى المهمة مفتوحة."
     },
     "ruleFilterSheet": {

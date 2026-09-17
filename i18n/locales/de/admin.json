@@ -352,7 +352,9 @@
     "editSectionTitle": "Job-Details bearbeiten",
     "editRequiredFieldsHint": "Pflichtfelder sind mit * markiert",
     "employeesSectionTitle": "Mitarbeiter",
-    "employeesSectionSubtitle": "Zuweisung kann jederzeit geändert werden",
+    "employeesSectionSubtitle": "Zuweisung kann geändert werden, solange niemand gestartet hat",
+    "employeesSectionSubtitleLocked": "Abgeschlossener Auftrag – Zuweisung ist gesperrt",
+    "employeesLockedBannerMessage": "Dieser Auftrag ist abgeschlossen. Die Zuweisung kann nicht mehr geändert werden. Eine nachträgliche Arbeitszeit-Korrektur ist weiterhin über die Auftrags-Details möglich.",
     "noEmployeesAvailable": "Keine Mitarbeiter verfügbar.",
     "saveButton": "Änderungen speichern",
     "noChangesButton": "Keine Änderungen",
@@ -415,6 +417,7 @@
     "employeeSelector": {
       "inactiveSublabel": "Inaktiv – Auswahl kann hier nicht geändert werden",
       "activeSublabel": "Mitarbeiter",
+      "startedSublabel": "Bereits gestartet – kann nicht entfernt werden",
       "unassignedHint": "Niemand zugewiesen – Job bleibt offen."
     },
     "ruleFilterSheet": {

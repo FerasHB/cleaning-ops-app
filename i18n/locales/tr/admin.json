@@ -352,7 +352,9 @@
     "editSectionTitle": "İş Detaylarını Düzenle",
     "editRequiredFieldsHint": "* ile işaretli alanlar zorunludur",
     "employeesSectionTitle": "Çalışanlar",
-    "employeesSectionSubtitle": "Atama istediğin zaman değiştirilebilir",
+    "employeesSectionSubtitle": "Kimse başlamadığı sürece atama değiştirilebilir",
+    "employeesSectionSubtitleLocked": "Tamamlanmış iş – atama kilitli",
+    "employeesLockedBannerMessage": "Bu iş tamamlandı. Atama artık değiştirilemez. İş detaylarından sonradan çalışma süresi düzeltmesi yapılabilir.",
     "noEmployeesAvailable": "Kullanılabilir çalışan yok.",
     "saveButton": "Değişiklikleri Kaydet",
     "noChangesButton": "Değişiklik Yok",
@@ -415,6 +417,7 @@
     "employeeSelector": {
       "inactiveSublabel": "Pasif – seçim burada değiştirilemez",
       "activeSublabel": "Çalışan",
+      "startedSublabel": "Zaten başladı – kaldırılamaz",
       "unassignedHint": "Kimse atanmadı – iş açık kalır."
     },
     "ruleFilterSheet": {

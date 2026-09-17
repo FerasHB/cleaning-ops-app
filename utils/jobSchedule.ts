@@ -14,7 +14,6 @@
 import type { Job } from "@/types/job";
 import {
   formatDateISO,
-  formatDateOnlyDE,
   isSameLocalDate,
   normalizeTime,
 } from "@/utils/date";
@@ -149,26 +148,42 @@ export function isJobStartDateAllowed(
 
 /**
  * Warum darf dieser Auftrag JETZT nicht gestartet werden? `null`, wenn er
- * gestartet werden darf. Wortlaut deckungsgleich mit den Meldungen aus
- * start_own_job, damit Client und Server dasselbe sagen.
+ * gestartet werden darf. Rein client-seitige UX-Vorschau — die tatsächliche
+ * Durchsetzung bleibt bei start_own_job; dessen eigene Ablehnung kommt
+ * bewusst weiterhin auf Deutsch zurück (server-seitiger Fallback-Text, siehe
+ * CLAUDE.md), unabhängig von der hier gewählten App-Sprache.
+ *
+ * `t`/`localeTag` kommen vom Aufrufer (useTranslation()/i18n.language),
+ * damit diese reine Utility-Funktion nicht selbst an die i18next-Instanz
+ * gebunden ist.
  */
 export function getStartBlockMessage(
   job: Pick<Job, "date" | "startTime">,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  localeTag: string,
   ref: Date = new Date(),
 ): string | null {
   if (isJobStartDateAllowed(job, ref)) return null;
 
   const dateKey = job.date?.slice(0, 10);
   if (!dateKey) {
-    return "Für diesen Auftrag ist kein Termin hinterlegt. Bitte wende dich an deinen Administrator.";
+    return t("jobs:startBlock.noDateConfigured");
   }
 
-  const label = formatDateOnlyDE(dateKey) ?? dateKey;
+  const [y, m, d] = dateKey.split("-").map((n) => parseInt(n, 10));
+  const label =
+    y && m && d
+      ? new Date(y, m - 1, d).toLocaleDateString(localeTag, {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : dateKey;
   const todayKey = formatDateISO(ref) ?? "";
 
   return dateKey > todayKey
-    ? `Dieser Einsatz ist für den ${label} geplant und kann noch nicht gestartet werden.`
-    : `Dieser Einsatz war für den ${label} geplant und kann nicht mehr gestartet werden.`;
+    ? t("jobs:startBlock.scheduledFuture", { date: label })
+    : t("jobs:startBlock.scheduledPast", { date: label });
 }
 
 /**

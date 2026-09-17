@@ -23,7 +23,13 @@
   "activeJob": {
     "title": "Aktif İş",
     "runningSince": "{{time}} beri devam ediyor",
-    "completeButton": "İşi Tamamla"
+    "completeButton": "İşi Tamamla",
+    "startOwnButton": "Kendi Katılımımı Başlat"
+  },
+  "startBlock": {
+    "noDateConfigured": "Bu iş için bir tarih belirlenmemiş. Lütfen yöneticinle iletişime geç.",
+    "scheduledFuture": "Bu iş {{date}} tarihi için planlandı ve henüz başlatılamaz.",
+    "scheduledPast": "Bu iş {{date}} tarihi için planlanmıştı ve artık başlatılamaz."
   },
   "upcoming": {
     "title": "Bugün Yaklaşan",

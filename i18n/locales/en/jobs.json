@@ -23,7 +23,13 @@
   "activeJob": {
     "title": "Active Job",
     "runningSince": "Running since {{time}}",
-    "completeButton": "Complete Job"
+    "completeButton": "Complete Job",
+    "startOwnButton": "Start My Participation"
+  },
+  "startBlock": {
+    "noDateConfigured": "No date is set for this job. Please contact your administrator.",
+    "scheduledFuture": "This job is scheduled for {{date}} and can't be started yet.",
+    "scheduledPast": "This job was scheduled for {{date}} and can no longer be started."
   },
   "upcoming": {
     "title": "Coming Up Today",

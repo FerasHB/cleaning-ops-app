@@ -23,7 +23,13 @@
   "activeJob": {
     "title": "المهمة النشطة",
     "runningSince": "جارية منذ {{time}}",
-    "completeButton": "إنهاء المهمة"
+    "completeButton": "إنهاء المهمة",
+    "startOwnButton": "بدء مشاركتي"
+  },
+  "startBlock": {
+    "noDateConfigured": "لا يوجد موعد محدد لهذه المهمة. يرجى التواصل مع المسؤول.",
+    "scheduledFuture": "هذه المهمة مجدولة ليوم {{date}} ولا يمكن بدؤها بعد.",
+    "scheduledPast": "كانت هذه المهمة مجدولة ليوم {{date}} ولم يعد بالإمكان بدؤها."
   },
   "upcoming": {
     "title": "القادم اليوم",

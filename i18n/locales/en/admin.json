@@ -352,7 +352,9 @@
     "editSectionTitle": "Edit Job Details",
     "editRequiredFieldsHint": "Required fields are marked with *",
     "employeesSectionTitle": "Employees",
-    "employeesSectionSubtitle": "The assignment can be changed at any time",
+    "employeesSectionSubtitle": "The assignment can be changed as long as no one has started",
+    "employeesSectionSubtitleLocked": "Completed job – assignment is locked",
+    "employeesLockedBannerMessage": "This job is completed. The assignment can no longer be changed. A worked-time correction is still possible afterwards from the job details.",
     "noEmployeesAvailable": "No employees available.",
     "saveButton": "Save Changes",
     "noChangesButton": "No Changes",
@@ -415,6 +417,7 @@
     "employeeSelector": {
       "inactiveSublabel": "Inactive – selection can't be changed here",
       "activeSublabel": "Employee",
+      "startedSublabel": "Already started – can't be removed",
       "unassignedHint": "No one assigned – job stays open."
     },
     "ruleFilterSheet": {

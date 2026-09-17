@@ -23,7 +23,13 @@
   "activeJob": {
     "title": "Aktiver Job",
     "runningSince": "Läuft seit {{time}}",
-    "completeButton": "Job abschließen"
+    "completeButton": "Job abschließen",
+    "startOwnButton": "Eigene Teilnahme starten"
+  },
+  "startBlock": {
+    "noDateConfigured": "Für diesen Auftrag ist kein Termin hinterlegt. Bitte wende dich an deinen Administrator.",
+    "scheduledFuture": "Dieser Einsatz ist für den {{date}} geplant und kann noch nicht gestartet werden.",
+    "scheduledPast": "Dieser Einsatz war für den {{date}} geplant und kann nicht mehr gestartet werden."
   },
   "upcoming": {
     "title": "Heute anstehend",

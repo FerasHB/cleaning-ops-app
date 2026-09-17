@@ -74,6 +74,7 @@ import {
 import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
 import { useTranslation } from "react-i18next";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 // ─────────────────────────────────────────────
 // JobDetailScreen
@@ -81,7 +82,8 @@ import { useTranslation } from "react-i18next";
 export default function JobDetailScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const localeTag = INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE";
 
   // Offset für KeyboardAvoidingView: oberer Safe-Area-Inset + Header-Höhe,
   // damit das Input-Feld beim Öffnen der Tastatur sichtbar bleibt (kein Overlap).
@@ -368,7 +370,9 @@ export default function JobDetailScreen() {
   // verhindert nur einen Button, der garantiert abgelehnt würde, und liefert
   // eine Meldung, die den Termin nennt.
   const eligibleToStart = canStartOwnAssignment(job, role, profile?.id);
-  const startBlockedReason = eligibleToStart ? getStartBlockMessage(job) : null;
+  const startBlockedReason = eligibleToStart
+    ? getStartBlockMessage(job, t, localeTag)
+    : null;
   const canStart = eligibleToStart && !startBlockedReason;
 
   // PHASE 16 — ABSCHLUSS nur der EIGENEN Teilnahme und nur nach EIGENEM Start.
