@@ -793,10 +793,20 @@ begin
   raise notice 'CASE 26 -> %', v;
 end $$;
 
--- CASE 27: Neustart eines abgeschlossenen Auftrags aendert nichts (J1 ist
--- completed, siehe CASE 6). Derselbe Anker wie Ahmeds urspruenglicher
--- Start — schliesst jedes Risiko einer Terminablehnung durch Zeitversatz
+-- CASE 27: Neustart eines abgeschlossenen Auftrags (J1 ist completed,
+-- siehe CASE 6). Derselbe Anker wie Ahmeds urspruenglicher Start —
+-- schliesst jedes Risiko einer Terminablehnung durch Zeitversatz
 -- kategorisch aus, unabhaengig davon, welche Uhrzeit "jetzt" gerade ist.
+--
+-- HINWEIS (20260918, Post-Deploy Hardening): vor Astra-Audit Befund 2 war
+-- dies ein stiller No-Op (OK, keine Ablehnung) — start_own_job pruefte nur
+-- `status <> 'open'` und behandelte 'completed' wie 'in_progress'. Genau
+-- das war der Befund: ein verspaeteter/erneuter Start auf einen bereits
+-- abgeschlossenen Auftrag durfte keine Zuweisungszeile mutieren UND musste
+-- als Ablehnung erkennbar sein (dauerhafter Geschaeftszustands-Konflikt,
+-- kein Nachzuegler-Fall). Die neue erwartete Ausgabe ist deshalb eine harte
+-- Ablehnung statt eines No-Ops; status/completed_by bleiben unveraendert
+-- (keine Mutation), was hier weiterhin explizit mitgeprueft wird.
 do $$
 declare v text;
 begin
@@ -806,7 +816,8 @@ begin
     perform public.start_own_job('f4000000-0000-0000-0000-000000000001',
                                  current_setting('phase16_test.anchor_j1')::timestamptz);
     v := 'OK(No-Op)';
-  exception when others then v := 'FEHLER: '||sqlerrm;
+  exception when others then
+    v := case when sqlerrm like '%bereits abgeschlossen%' then 'ABGELEHNT' else 'FEHLER:'||sqlerrm end;
   end;
   execute 'reset role';
 
@@ -815,8 +826,8 @@ begin
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-000000000001';
 
-  insert into _r values (27,'Neustart auf einem abgeschlossenen Auftrag ist No-Op und nullt den Abschluss NICHT',
-    'OK(No-Op)/status=completed/ende_by=f2000000-0000-0000-0000-000000000003', v);
+  insert into _r values (27,'Neustart auf einem abgeschlossenen Auftrag wird abgelehnt und nullt den Abschluss NICHT',
+    'ABGELEHNT/status=completed/ende_by=f2000000-0000-0000-0000-000000000003', v);
   raise notice 'CASE 27 -> %', v;
 end $$;
 

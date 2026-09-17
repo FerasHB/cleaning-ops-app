@@ -485,6 +485,17 @@ end $$;
 -- =========================================================
 -- TEIL 4 — Lebenszyklus / Aggregation
 -- =========================================================
+-- HINWEIS (20260918, Post-Deploy Hardening): admin_force_complete_job
+-- prueft seither server-seitig app_config.force_complete_enabled (Astra-
+-- Audit Befund 3) — zuvor war der Schalter rein clientseitig und diese
+-- Suite konnte die RPC unabhaengig vom Config-Stand aufrufen. Fuer den Rest
+-- dieser Datei (alle admin_force_complete_job-Faelle unten testen deren
+-- EIGENE Geschaeftslogik: Grund/Status/Pending-Zuweisungen/Firmen-Isolation
+-- — nicht den Schalter selbst, der hat seine eigene Suite in
+-- phase16_post_hardening.test.sql) wird er deshalb hier einmalig aktiviert
+-- und am Dateiende wieder auf den sicheren Default zurueckgesetzt.
+update public.app_config set value='true'::jsonb where key='force_complete_enabled';
+
 do $$
 declare v text; v_cnt int;
 begin
@@ -1002,6 +1013,10 @@ begin
   execute 'reset role';
   perform pg_temp.note(74,'Legacy','Abschluss gelingt regulaer (eigene Startzeit ist vorhanden)','OK',v);
 end $$;
+
+-- Sicheren Default fuer den Rest der Transaktion/Suite wiederherstellen
+-- (siehe HINWEIS bei TEIL 4).
+update public.app_config set value='false'::jsonb where key='force_complete_enabled';
 
 
 -- =========================================================
