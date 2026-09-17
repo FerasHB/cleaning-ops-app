@@ -2,22 +2,32 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export type PendingJobActionType = "start_job" | "complete_job";
 
+// pending: wartet auf den nächsten Sync-Versuch (Normalfall).
+// failed_permanent: der Server hat die Aktion inhaltlich/autoritativ
+// abgelehnt (falsche App-Version, Abschluss ohne eigenen Start, Auftrag
+// nicht mehr im passenden Status, …) — ein erneuter Versuch mit denselben
+// Daten würde IMMER wieder dasselbe Ergebnis liefern. Wird deshalb nicht
+// mehr automatisch erneut versucht, aber auch nicht stillschweigend
+// gelöscht — sichtbar für den Nutzer, bis er sie ausdrücklich bestätigt
+// (siehe dismissFailedJobAction).
+export type PendingActionStatus = "pending" | "failed_permanent";
+
+type PendingJobActionBase = {
+  id: string;
+  /** Besitzer der Aktion — nur DIESER Nutzer darf sie ausführen. */
+  userId: string;
+  jobId: string;
+  timestamp: string;
+  status: PendingActionStatus;
+  /** Nur bei status="failed_permanent": die dem Nutzer bereits sicher
+   *  anzeigbare Ablehnungsmeldung (toUserMessage-Ausgabe zum Zeitpunkt des
+   *  Fehlschlags), damit die UI sie nicht erneut herleiten muss. */
+  failureMessage?: string;
+};
+
 export type PendingJobAction =
-  | {
-      id: string;
-      /** Besitzer der Aktion — nur DIESER Nutzer darf sie ausführen. */
-      userId: string;
-      type: "start_job";
-      jobId: string;
-      timestamp: string;
-    }
-  | {
-      id: string;
-      userId: string;
-      type: "complete_job";
-      jobId: string;
-      timestamp: string;
-    };
+  | (PendingJobActionBase & { type: "start_job" })
+  | (PendingJobActionBase & { type: "complete_job" });
 
 const JOBS_QUEUE_STORAGE_KEY = "offline_jobs_queue";
 
@@ -35,7 +45,13 @@ const JOBS_QUEUE_STORAGE_KEY = "offline_jobs_queue";
 // Auftrag zugewiesen" ist damit kein Randfall mehr, sondern bei
 // mehrfach zugewiesenen Aufträgen der Normalfall — die Besitzer-Bindung
 // dieser Warteschlange ist dadurch WICHTIGER geworden, nicht weniger wichtig.
-export const JOBS_QUEUE_VERSION = 2;
+//
+// v3 (Client-Compatibility-Fundament, Migration 20260916120000): jede
+// Aktion trägt jetzt `status`. v2-Zeilen sind weiterhin vollständig
+// zuordenbar (userId vorhanden) — anders als der v1→v2-Sprung werden sie
+// deshalb NICHT verworfen, sondern beim Lesen auf status="pending"
+// hochgezogen (siehe readAllActions).
+export const JOBS_QUEUE_VERSION = 3;
 
 type StoredQueuePayload = {
   version: number;
@@ -55,8 +71,27 @@ function isValidAction(value: unknown): value is PendingJobAction {
     !!a.userId &&
     (a.type === "start_job" || a.type === "complete_job") &&
     typeof a.jobId === "string" &&
-    typeof a.timestamp === "string"
+    typeof a.timestamp === "string" &&
+    (a.status === "pending" || a.status === "failed_permanent")
   );
+}
+
+// v2-Zeile (vor status) auf v3 hochziehen — vollständig zuordenbar, deshalb
+// keine Verwerfung wie beim v1→v2-Sprung (siehe readAllActions).
+function migrateV2Action(value: unknown): PendingJobAction | null {
+  if (!value || typeof value !== "object") return null;
+  const a = value as Partial<PendingJobAction>;
+  if (
+    typeof a.id !== "string" ||
+    typeof a.userId !== "string" ||
+    !a.userId ||
+    (a.type !== "start_job" && a.type !== "complete_job") ||
+    typeof a.jobId !== "string" ||
+    typeof a.timestamp !== "string"
+  ) {
+    return null;
+  }
+  return { ...a, type: a.type, status: "pending" } as PendingJobAction;
 }
 
 /**
@@ -89,11 +124,20 @@ async function readAllActions(): Promise<PendingJobAction[]> {
   }
 
   const payload = parsed as Partial<StoredQueuePayload> | null;
-  if (
-    !payload ||
-    payload.version !== JOBS_QUEUE_VERSION ||
-    !Array.isArray(payload.actions)
-  ) {
+  if (!payload || !Array.isArray(payload.actions)) {
+    await AsyncStorage.removeItem(JOBS_QUEUE_STORAGE_KEY);
+    return [];
+  }
+
+  // v2 → v3: status fehlt, aber die Zeilen sind vollständig zuordenbar —
+  // hochziehen statt verwerfen (siehe JOBS_QUEUE_VERSION-Kommentar).
+  if (payload.version === 2) {
+    return payload.actions
+      .map(migrateV2Action)
+      .filter((a): a is PendingJobAction => a !== null);
+  }
+
+  if (payload.version !== JOBS_QUEUE_VERSION) {
     await AsyncStorage.removeItem(JOBS_QUEUE_STORAGE_KEY);
     return [];
   }
@@ -160,6 +204,7 @@ export async function addPendingJobAction(input: {
     userId: input.userId,
     jobId: input.jobId,
     timestamp: input.timestamp ?? new Date().toISOString(),
+    status: "pending" as const,
   };
 
   const nextAction: PendingJobAction =
@@ -174,8 +219,10 @@ export async function addPendingJobAction(input: {
 }
 
 /**
- * Entfernt eine erfolgreich synchronisierte Aktion. Fremde Aktionen bleiben
- * dabei unangetastet erhalten.
+ * Entfernt eine Aktion endgültig — sowohl für den Erfolgsfall (erfolgreich
+ * synchronisiert) als auch für das bewusste Bestätigen/Ausblenden eines
+ * dauerhaft fehlgeschlagenen Eintrags durch den Nutzer (dismissFailedJobAction
+ * unten ruft dieselbe Funktion auf). Fremde Aktionen bleiben unangetastet.
  */
 export async function removePendingJobAction(
   actionId: string,
@@ -186,6 +233,43 @@ export async function removePendingJobAction(
   await savePendingJobActions(nextAll);
 
   return nextAll;
+}
+
+/**
+ * Markiert eine Aktion als DAUERHAFT fehlgeschlagen (server-autoritative
+ * Ablehnung, z. B. falsche App-Version, Abschluss ohne eigenen Start, Auftrag
+ * nicht mehr im passenden Status) — wird NICHT gelöscht (kein stiller
+ * Datenverlust) und NICHT weiter automatisch erneut versucht (ein erneuter
+ * Versuch mit denselben Daten würde immer wieder dasselbe Ergebnis liefern).
+ * Bleibt sichtbar, bis der Nutzer sie ausdrücklich bestätigt
+ * (removePendingJobAction/dismissFailedJobAction).
+ */
+export async function markPendingJobActionFailed(
+  actionId: string,
+  failureMessage: string,
+): Promise<PendingJobAction[]> {
+  const allActions = await getAllPendingJobActions();
+  const nextAll = allActions.map((action) =>
+    action.id === actionId
+      ? { ...action, status: "failed_permanent" as const, failureMessage }
+      : action,
+  );
+
+  await savePendingJobActions(nextAll);
+
+  return nextAll;
+}
+
+/**
+ * Bestätigt/entfernt einen dauerhaft fehlgeschlagenen Eintrag — löscht NUR
+ * den lokalen Warteschlangen-Eintrag, verändert nie den Server-Zustand (der
+ * Auftrag selbst ist davon nie betroffen, die Aktion ist ja nie erfolgreich
+ * ausgeführt worden).
+ */
+export async function dismissFailedJobAction(
+  actionId: string,
+): Promise<PendingJobAction[]> {
+  return removePendingJobAction(actionId);
 }
 
 export async function clearPendingJobActions(): Promise<void> {

@@ -27,6 +27,7 @@ export default function IndexScreen() {
     signOut,
     isRecoverySession,
     endRecoverySession,
+    isVersionBlocked,
   } = useAuth();
   const theme = useAppTheme();
   const [retrying, setRetrying] = useState(false);
@@ -67,7 +68,15 @@ export default function IndexScreen() {
       // explizite Nutzeraktion erreichbar (Link "Firma registrieren").
       redirectTo = "/login";
     } else if (profile) {
-      if (!profile.company_id) redirectTo = "/setup-company";
+      // Client-Compatibility-Fundament (20260916120000): UX-Gate, nicht die
+      // Sicherheitsgrenze — die ist ausschließlich die serverseitige
+      // enforce_min_client_version()-Prüfung. Greift NACH Login/Profil-Laden
+      // ("nach Authentifizierung"), VOR jeder rollenbasierten Weiterleitung,
+      // damit ein zu alter Build unabhängig von company_id/Rolle blockiert.
+      // isVersionBlocked ist fail-open, solange app_config nicht geladen
+      // werden konnte — siehe AuthContext.tsx.
+      if (isVersionBlocked) redirectTo = "/update-required";
+      else if (!profile.company_id) redirectTo = "/setup-company";
       else if (role === "admin") redirectTo = "/(admin-tabs)/dashboard";
       else if (role === "employee") {
         // Einladung noch nicht abgeschlossen (kein eigenes Passwort gesetzt) →

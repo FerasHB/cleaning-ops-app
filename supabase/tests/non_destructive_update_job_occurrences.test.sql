@@ -277,10 +277,18 @@ select 18, 'Firma B Occurrence unberührt (Isolation)', 'OK',
 
 -- =========================================================
 -- EDIT 2: Uhrzeit ändern 08:00 -> 09:30. Danach:
---   * a4…3 (unberührt, passend zur alten Zeit) → jetzt nicht passend →
---     PRUNE entfernt sie
---   * a4…4 (mit Anhängen, alte Zeit) → nicht passend ABER geschützt → bleibt
---   * neue 09:30-Occurrences werden erzeugt (CASE 14)
+--   * a4…3 (unberührt) → auf 09:30 VERSCHOBEN, gleiche id
+--   * a4…4 (mit Anhängen) → ebenfalls auf 09:30 VERSCHOBEN, Anhänge intakt
+--   * neue 09:30-Occurrences werden für noch leere Slots erzeugt (CASE 14)
+--
+-- GEÄNDERTES VERHALTEN seit 20260916000000 (Occurrence-Slot als Identität):
+--   Bis dahin war eine Uhrzeit-Änderung kein Verschieben, sondern Löschen der
+--   alten und Einfügen einer neuen Zeile. Ließ sich die alte Zeile nicht
+--   löschen (Kommentar, Foto oder Lesestatus), entstand daneben trotzdem eine
+--   zweite — zwei aktive Termine für denselben Tag. CASE 10 und 21 prüften
+--   genau dieses Löschen/Stehenbleiben und prüfen jetzt das Verschieben.
+--   Der Schutz selbst ist unverändert: Vergangenheit, in_progress/completed
+--   und Zeitstempel werden weiterhin nicht angefasst (CASE 1-3, 7, 15).
 -- =========================================================
 do $$
 declare ret int;
@@ -292,17 +300,28 @@ begin
   execute 'reset role';
 end $$;
 
--- CASE 10: unberührte, nicht mehr passende Zukunfts-Occurrence entfernt (a4…3, alte Zeit 08:00)
+-- CASE 10: unberührte Zukunfts-Occurrence wird auf die neue Regel-Uhrzeit
+-- verschoben statt gelöscht — gleiche id, kein Row-Churn (a4…3).
 insert into _nd_results
-select 10, 'Unberührte, nicht passende Zukunfts-Occurrence entfernt', 'REMOVED',
-  case when not exists (select 1 from public.jobs where id='a4000000-0000-0000-0000-000000000003')
-       then 'REMOVED' else 'NOCH_DA' end;
+select 10, 'Unberührte Zukunfts-Occurrence auf neue Uhrzeit verschoben (gleiche id)', 'MOVED',
+  case when exists (select 1 from public.jobs
+                    where id='a4000000-0000-0000-0000-000000000003' and start_time='09:30')
+       then 'MOVED' else 'WEG_ODER_ALTE_ZEIT' end;
 
--- CASE 8b: geschützte a4…4 (alte Zeit, aber mit Anhängen) NICHT entfernt
+-- CASE 8b: a4…4 (mit Kommentar/Foto/Lesestatus) wird EBENFALLS verschoben —
+-- und eben NICHT als zweiter Termin desselben Tages verdoppelt. Genau hier
+-- entstand früher das Duplikat.
 insert into _nd_results
-select 21, 'Nicht passende ABER geschützte Occurrence bleibt (abgekoppelt)', 'PRESERVED',
-  case when exists (select 1 from public.jobs where id='a4000000-0000-0000-0000-000000000004' and start_time='08:00')
-       then 'PRESERVED' else 'WEG' end;
+select 21, 'Occurrence mit Anhängen wird verschoben, nicht dupliziert', 'MOVED',
+  case when (select count(*) from public.jobs
+             where parent_job_id='a3000000-0000-0000-0000-000000000001'
+               and date = (select date from public.jobs where id='a4000000-0000-0000-0000-000000000004')) = 1
+        and exists (select 1 from public.jobs
+                    where id='a4000000-0000-0000-0000-000000000004' and start_time='09:30')
+        and exists (select 1 from public.job_comments      x where x.job_id='a4000000-0000-0000-0000-000000000004')
+        and exists (select 1 from public.job_photos        x where x.job_id='a4000000-0000-0000-0000-000000000004')
+        and exists (select 1 from public.job_comment_reads x where x.job_id='a4000000-0000-0000-0000-000000000004')
+       then 'MOVED' else 'DUPLIZIERT_ODER_VERLOREN' end;
 
 -- CASE 14: nach Zeitänderung existieren neue 09:30-Occurrences
 insert into _nd_results

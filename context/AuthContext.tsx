@@ -20,6 +20,12 @@ import {
   markRecoveryModeActive,
 } from "@/services/auth/recoveryMode";
 import { isNetworkError } from "@/utils/networkError";
+import { fetchAppConfig, type AppConfig } from "@/services/appConfig.service";
+import {
+  getCachedAppConfig,
+  saveCachedAppConfig,
+} from "@/services/offline/appConfig.storage";
+import { getClientBuildNumber, getClientPlatform } from "@/utils/clientBuild";
 import NetInfo from "@react-native-community/netinfo";
 import { Session, User } from "@supabase/supabase-js";
 import React, {
@@ -58,6 +64,22 @@ type AuthContextType = {
   endRecoverySession: (options?: { signOutSession?: boolean }) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  /**
+   * Client-Compatibility-Fundament (Migration 20260916120000). UX-Gate,
+   * NICHT die Sicherheitsgrenze — die ist ausschließlich die serverseitige
+   * enforce_min_client_version()-Prüfung in start_own_job/complete_own_job/
+   * set_job_assignments. Ein Ladefehler hier blockiert nie die App (fail
+   * open); nur ein tatsächlich bekannter zu alter Build blockiert.
+   */
+  isVersionBlocked: boolean;
+  /** Update-Ziel für die aktuelle Plattform, falls von app_config gesetzt. */
+  updateUrl: string | null;
+  /**
+   * Force-Complete-Capability-Flag (app_config.force_complete_enabled).
+   * Fail CLOSED: fehlt die Konfiguration oder schlägt der Fetch fehl, bleibt
+   * dies false — die Aktion bleibt verborgen, nie versehentlich sichtbar.
+   */
+  forceCompleteEnabled: boolean;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -103,6 +125,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   // SICHERHEITSGRENZE — siehe services/auth/recoveryMode.ts.
   const [isRecoverySession, setIsRecoverySession] = useState(false);
+  // Client-Compatibility-Fundament (20260916120000) — siehe loadAppConfig
+  // weiter unten für das fail-open-Verhalten.
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const hasLoadedAppConfigRef = useRef(false);
   // Synchroner Spiegel: applySession() läuft teils VOR dem nächsten Render und
   // muss die Entscheidung "Profil laden ja/nein" sofort treffen können.
   const isRecoverySessionRef = useRef(false);
@@ -428,8 +454,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Schlägt außerdem serverseitig fehl, wenn das Profil inaktiv ist
       // (siehe update_my_push_token in lib/schema.sql) — ein deaktivierter
       // Mitarbeiter kann sich so keinen frischen Token mehr registrieren.
+      //
+      // app_build_number/app_platform (20260916120000): rein beratende
+      // Adoptions-Telemetrie, huckepack auf diesem ohnehin bei jedem Login
+      // UND jedem Foreground-Wechsel laufenden Aufruf — kein zusätzlicher
+      // Roundtrip. Beide Parameter sind serverseitig optional (Default
+      // null), ein alter Client, der sie nicht mitschickt, bleibt gültig.
       const { error } = await supabase.rpc("update_my_push_token", {
         new_token: expoPushToken,
+        app_build_number: getClientBuildNumber(),
+        app_platform: getClientPlatform(),
       });
 
       if (error) {
@@ -450,6 +484,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } finally {
       syncingPushTokenRef.current = false;
+    }
+  }, []);
+
+  // Client-Compatibility-Fundament (20260916120000): lädt app_config und
+  // fällt bei Fehlschlag auf den zuletzt bekannten Stand zurück — erst den
+  // bereits geladenen In-Memory-Wert (falls diese Session schon einmal
+  // erfolgreich war), sonst den AsyncStorage-Cache. Bleiben BEIDE aus (erster
+  // Start, offline), NULL — app/index.tsx blockiert dann nicht (fail open):
+  // die serverseitige RPC-Prüfung bleibt ohnehin die einzige Autorität, ein
+  // fehlgeschlagener Konfigurations-Fetch darf niemals die App verriegeln.
+  const loadAppConfig = useCallback(async () => {
+    try {
+      const fresh = await fetchAppConfig();
+      setAppConfig(fresh);
+      hasLoadedAppConfigRef.current = true;
+      saveCachedAppConfig(fresh).catch(() => {});
+    } catch (err) {
+      if (!isNetworkError(err)) {
+        console.error("Failed to fetch app_config:", err);
+      }
+      if (!hasLoadedAppConfigRef.current) {
+        const cached = await getCachedAppConfig();
+        if (cached) {
+          setAppConfig(cached);
+          hasLoadedAppConfigRef.current = true;
+        }
+      }
     }
   }, []);
 
@@ -644,6 +705,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Unabhängig von Session/Recovery-Zustand: app_config ist öffentlich
+      // lesbar und hat nichts mit Auth zu tun. Schließt die Lücke, dass ein
+      // Client, der offline war, als er zu alt wurde, es erst beim nächsten
+      // Foreground-Wechsel statt sofort bei Reconnect erfährt.
+      loadAppConfig().catch(() => {});
+
       // SICHERHEITSGRENZE: Im Recovery-Modus gar nicht erst versuchen.
       // refreshProfile()/loadAndApplyProfile() blockieren zwar ohnehin, aber
       // ohne diesen Riegel würde hier bei jedem Reconnect das irreführende
@@ -683,7 +750,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [session, profile, loading, refreshProfile]);
+  }, [session, profile, loading, refreshProfile, loadAppConfig]);
 
   // Live-Deaktivierung — REALTIME-Pfad (schnelle Reaktion, aber nur wirksam,
   // wenn profiles in der supabase_realtime-Publication liegt; das richtet die
@@ -753,11 +820,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // dieser catch ist nur ein zusätzliches Sicherheitsnetz gegen eine
           // unbehandelte Rejection bei einem Foreground-Wechsel.
         });
+        // Client-Compatibility-Fundament: derselbe Re-Check-Zeitpunkt wie
+        // Profil/Push-Token — fängt einen Client, der während der Hintergrund-
+        // Zeit unter das Minimum gefallen ist (Enforcement wurde aktiviert).
+        loadAppConfig().catch(() => {});
       }
     });
 
     return () => subscription.remove();
-  }, [session, refreshProfile, syncPushToken]);
+  }, [session, refreshProfile, syncPushToken, loadAppConfig]);
 
   // ── SICHERHEITSGRENZE: Recovery-Modus betreten/verlassen ────────────────
   // beginRecoverySession() MUSS aufgerufen werden, BEVOR der PKCE-/Token-
@@ -870,6 +941,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isOfflineProfileRef.current = false;
   }, [clearOwnPushTokenBestEffort, invalidatePendingAuthWork]);
 
+  // Erster Fetch beim App-Start — unabhängig von Session/Profil, damit der
+  // Wert möglichst schon feststeht, sobald app/index.tsx seine Routing-
+  // Entscheidung trifft. Kein Blocker: läuft parallel zum Profil-Bootstrap.
+  useEffect(() => {
+    loadAppConfig().catch(() => {});
+  }, [loadAppConfig]);
+
+  // Nativer Build/Plattform ändern sich nie während der Laufzeit eines
+  // Prozesses — einmalig berechnen statt bei jedem Render neu zu lesen.
+  const clientPlatform = useMemo(() => getClientPlatform(), []);
+  const clientBuild = useMemo(() => getClientBuildNumber(), []);
+
+  // UX-Gate, NICHT die Sicherheitsgrenze (siehe Typ-Kommentar oben). Bewusst
+  // UNABHÄNGIG von enforcement_enabled: min_build_* ist der weiche
+  // Update-Hinweis, den man schon VOR der serverseitigen Durchsetzung zeigen
+  // will (Adoptions-Phase) — die Kopplung an enforcement_enabled war ein
+  // Fehler des ersten Entwurfs, in der Staging-QA gefunden (min_build hoch
+  // gesetzt, enforcement bewusst noch aus, Screen blieb trotzdem aus, weil
+  // hier zusätzlich enforcement_enabled verlangt wurde). Web/unbekannte
+  // Plattform: dieses Gate gilt nur für die mobile App, ein Web-Build hat
+  // ohnehin keinen Store-Update-Pfad, den der Screen anbieten könnte —
+  // niemals blockieren. Das ist NUR der weiche UX-Hinweis; es bedeutet
+  // NICHT, dass Web von der harten Server-Durchsetzung ausgenommen ist —
+  // Job-Schreibpfade sind offiziell nur nativ (iOS/Android) supported, Web
+  // ist Dev-/QA-Ziel (siehe getClientPlatform() in utils/clientBuild.ts,
+  // compatibilityHeaders in lib/supabase.ts). Mobil ohne ermittelbaren Build
+  // (Edgecase): blockiert, genau wie ein zu alter Build.
+  const isVersionBlocked = useMemo(() => {
+    if (!appConfig) return false;
+    if (!clientPlatform) return false;
+    if (!clientBuild) return true;
+    const min =
+      clientPlatform === "ios" ? appConfig.minBuildIos : appConfig.minBuildAndroid;
+    return clientBuild < min;
+  }, [appConfig, clientPlatform, clientBuild]);
+
+  const updateUrl = useMemo(() => {
+    if (!appConfig || !clientPlatform) return null;
+    return clientPlatform === "ios" ? appConfig.updateUrlIos : appConfig.updateUrlAndroid;
+  }, [appConfig, clientPlatform]);
+
+  // Fail CLOSED: appConfig===null (noch nicht geladen, Fetch fehlgeschlagen
+  // und kein Cache) ergibt hier false, nicht true — siehe Typ-Kommentar oben.
+  const forceCompleteEnabled = appConfig?.forceCompleteEnabled ?? false;
+
   const value = useMemo(
     () => ({
       session,
@@ -883,6 +999,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       endRecoverySession,
       signOut,
       refreshProfile,
+      isVersionBlocked,
+      updateUrl,
+      forceCompleteEnabled,
     }),
     [
       session,
@@ -895,6 +1014,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       endRecoverySession,
       signOut,
       refreshProfile,
+      isVersionBlocked,
+      updateUrl,
+      forceCompleteEnabled,
     ],
   );
 

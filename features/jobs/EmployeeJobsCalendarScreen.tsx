@@ -43,6 +43,7 @@ import { DayAgendaSheet } from "@/features/jobs/components/DayAgendaSheet";
 import { MonthGrid } from "@/features/jobs/components/MonthGrid";
 import { MonthYearPickerSheet } from "@/features/jobs/components/MonthYearPickerSheet";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import type { Job } from "@/types/job";
 import { getOwnAbsencesInRange } from "@/services/absences/absences.service";
 import type { Absence } from "@/types/absence";
 import {
@@ -58,8 +59,15 @@ import {
   monthKeyOf,
 } from "@/utils/calendarMonth";
 import { formatDateISO } from "@/utils/date";
-import { canRunJobActions } from "@/utils/jobAssignees";
-import { isPausedRecurringOccurrence } from "@/utils/jobSchedule";
+import {
+  canCompleteOwnAssignment,
+  canRunJobActions,
+  canStartOwnAssignment,
+} from "@/utils/jobAssignees";
+import {
+  isJobStartDateAllowed,
+  isPausedRecurringOccurrence,
+} from "@/utils/jobSchedule";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
@@ -304,6 +312,18 @@ export default function EmployeeJobsCalendarScreen() {
     [role, profile?.id],
   );
 
+  // PHASE 16: siehe DayAgendaSheet.tsx canStart/canComplete-Kommentar.
+  const canStartAction = useCallback(
+    (job: Job) =>
+      canStartOwnAssignment(job, role, profile?.id) &&
+      isJobStartDateAllowed(job),
+    [role, profile?.id],
+  );
+  const canCompleteAction = useCallback(
+    (job: Job) => canCompleteOwnAssignment(job, role, profile?.id),
+    [role, profile?.id],
+  );
+
   const isOnTodayMonth = monthKey === todayMonthKey;
 
   if (loading) return <LoadingScreen />;
@@ -431,6 +451,8 @@ export default function EmployeeJobsCalendarScreen() {
         onClose={() => setSheetOpen(false)}
         onOpenJob={handleOpenJob}
         canRunActions={canRunActions}
+        canStart={canStartAction}
+        canComplete={canCompleteAction}
         onStart={handleStart}
         onComplete={handleComplete}
         errorMessage={actionError}

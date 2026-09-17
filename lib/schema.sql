@@ -171,6 +171,17 @@ create table if not exists public.jobs (
   -- NULL bei normalen Single-Jobs und bei Recurring-Parent-Regeln selbst.
   -- ON DELETE CASCADE: Parent löschen → alle Occurrences verschwinden automatisch.
   parent_job_id uuid references public.jobs(id) on delete cascade,
+  -- Slot des generierten Termins: der Kalendertag der REGEL, für den diese
+  -- Zeile erzeugt wurde (20260916000000). Zusammen mit parent_job_id die
+  -- logische Identität eines Termins — unveränderlich per Trigger. date und
+  -- start_time halten dagegen den TATSÄCHLICH geplanten Termin und dürfen
+  -- davon abweichen (siehe schedule_overridden).
+  occurrence_date date,
+  -- TRUE, sobald Datum oder Uhrzeit dieses Termins EINZELN geändert wurden
+  -- (echter „abweichender Termin"). update_job_occurrences lässt die
+  -- Terminierung solcher Zeilen unangetastet. Wird ausschließlich vom Trigger
+  -- trg_jobs_mark_schedule_override gesetzt, nie vom Client.
+  schedule_overridden boolean not null default false,
   -- Gültigkeitszeitraum der Recurring-Regel (nur auf Parent-Zeilen gesetzt).
   -- recurrence_start_date: frühestmöglicher Termin (Pflicht bei recurring).
   -- recurrence_end_date:   letzter Termin, optional (NULL = läuft weiter).
@@ -192,6 +203,8 @@ alter table public.jobs add column if not exists parent_job_id uuid references p
 alter table public.jobs add column if not exists recurrence_start_date date;
 alter table public.jobs add column if not exists recurrence_end_date   date;
 alter table public.jobs add column if not exists planned_duration_minutes integer;
+alter table public.jobs add column if not exists occurrence_date date;
+alter table public.jobs add column if not exists schedule_overridden boolean not null default false;
 
 -- Constraint: Enddatum darf nicht vor Startdatum liegen (NULL-Werte ausgenommen).
 alter table public.jobs
@@ -461,9 +474,12 @@ create index if not exists idx_jobs_job_type on public.jobs(job_type);
 create index if not exists idx_jobs_is_active on public.jobs(is_active);
 create index if not exists idx_jobs_parent_job_id on public.jobs(parent_job_id);
 
--- Verhindert Duplikate: Pro Parent + Datum + Uhrzeit nur eine Occurrence.
-create unique index if not exists idx_jobs_occurrence_unique
-  on public.jobs(parent_job_id, date, start_time)
+-- Verhindert Duplikate: pro Regel und Slot genau EINE Occurrence
+-- (20260916000000). Die frühere Variante (parent_job_id, date, start_time)
+-- bildete die falsche Identität ab — eine Uhrzeit-Änderung an der Regel ließ
+-- dadurch einen ZWEITEN Termin für denselben Tag zu.
+create unique index if not exists idx_jobs_occurrence_slot_unique
+  on public.jobs(parent_job_id, occurrence_date)
   where parent_job_id is not null;
 
 create index if not exists idx_job_comments_job_id on public.job_comments(job_id);

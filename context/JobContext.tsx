@@ -1,6 +1,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
+  adminForceCompleteJob as adminForceCompleteJobService,
   completeJob as completeJobService,
   createJob as createJobService,
   deleteJob as deleteJobService,
@@ -20,6 +21,7 @@ import { dispatchAdminNotifications } from "@/services/notifications/adminNotifi
 import { applyPendingActionsToJobs } from "@/services/offline/jobs.merge";
 import {
   addPendingJobAction,
+  dismissFailedJobAction,
   getPendingJobActions,
   PendingJobAction,
 } from "@/services/offline/jobs.queue";
@@ -75,6 +77,11 @@ type JobContextType = {
   deleteJob: (jobId: string) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
   completeJob: (jobId: string) => Promise<void>;
+  /**
+   * Admin-Zwangsabschluss eines haengenden Auftrags (Phase 16). Online-only —
+   * ein Lebenszyklus-Eingriff gehoert nicht in die Offline-Warteschlange.
+   */
+  forceCompleteJob: (jobId: string, reason: string) => Promise<void>;
   // Markiert die Kommentare eines Jobs als gesehen (entfernt den roten Punkt).
   markJobCommentsAsRead: (jobId: string) => Promise<void>;
 
@@ -86,8 +93,20 @@ type JobContextType = {
   // ── Nur lesbare UI-State-Werte für die Save-Status-Anzeige ──
   // (keine neue Offline-Logik — nur sichtbar gemachte Queue-/Netz-Infos)
   online: boolean;
+  /** Nur status="pending" — wartet noch auf den nächsten Sync-Versuch. */
   pendingCount: number;
   pendingActions: PendingJobAction[];
+  /**
+   * Dauerhaft fehlgeschlagene Aktionen (Client-Compatibility-Fundament,
+   * 20260916120000) — server-autoritativ abgelehnt, wird NICHT mehr
+   * automatisch erneut versucht. Getrennt von pendingActions, damit die UI
+   * "wartet noch" klar von "konnte nicht ausgeführt werden" unterscheiden
+   * kann.
+   */
+  failedActions: PendingJobAction[];
+  /** Bestätigt/entfernt einen Eintrag aus failedActions — rein lokal, ändert
+   *  nie den Server-Zustand (die Aktion wurde ja nie ausgeführt). */
+  dismissFailedAction: (actionId: string) => Promise<void>;
   isSyncing: boolean;
   syncFailed: boolean;
   retrySync: () => Promise<void>;
@@ -181,6 +200,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const [online, setOnline] = useState(true);
   const [pendingActions, setPendingActions] = useState<PendingJobAction[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  const [failedActions, setFailedActions] = useState<PendingJobAction[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFailed, setSyncFailed] = useState(false);
 
@@ -194,12 +214,23 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     if (!userId) {
       setPendingActions([]);
       setPendingCount(0);
+      setFailedActions([]);
       return;
     }
     const actions = await getPendingJobActions(userId);
-    setPendingActions(actions);
-    setPendingCount(actions.length);
+    const stillPending = actions.filter((a) => a.status === "pending");
+    setPendingActions(stillPending);
+    setPendingCount(stillPending.length);
+    setFailedActions(actions.filter((a) => a.status === "failed_permanent"));
   }, [userId]);
+
+  const dismissFailedAction = useCallback(
+    async (actionId: string) => {
+      await dismissFailedJobAction(actionId);
+      await refreshPendingState();
+    },
+    [refreshPendingState],
+  );
 
   const runPendingSyncSafely = useCallback(async () => {
     if (syncInProgressRef.current || !userId) {
@@ -244,7 +275,12 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         const serverJobs = await loadJobsForRole(isAdmin);
         await saveCachedJobs(userId, serverJobs);
 
-        const pendingActions = await getPendingJobActions(userId);
+        // Nur "pending" spiegeln — ein dauerhaft abgelehnter Eintrag ist am
+        // Server definitiv NICHT passiert und darf die Anzeige nicht mehr
+        // optimistisch so tun, als wäre er es.
+        const pendingActions = (await getPendingJobActions(userId)).filter(
+          (a) => a.status === "pending",
+        );
         const mergedJobs = applyPendingActionsToJobs(
           serverJobs,
           pendingActions,
@@ -271,7 +307,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         console.log("[Jobs] Quelle: cache (offline)");
       }
       const cachedJobs = await getCachedJobs(userId);
-      const pendingActions = await getPendingJobActions(userId);
+      const pendingActions = (await getPendingJobActions(userId)).filter(
+        (a) => a.status === "pending",
+      );
       const mergedJobs = applyPendingActionsToJobs(cachedJobs, pendingActions);
 
       setJobs(mergedJobs);
@@ -288,7 +326,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const cachedJobs = await getCachedJobs(userId);
-        const pendingActions = await getPendingJobActions(userId);
+        const pendingActions = (await getPendingJobActions(userId)).filter(
+          (a) => a.status === "pending",
+        );
         const mergedJobs = applyPendingActionsToJobs(
           cachedJobs,
           pendingActions,
@@ -391,13 +431,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       //    schlechtem/erstem NetInfo-Status hängen blieb, bevor loading=false lief.
       setError(null);
       try {
-        const [cachedJobs, pending] = await Promise.all([
+        const [cachedJobs, allPending] = await Promise.all([
           getCachedJobs(userId),
           getPendingJobActions(userId),
         ]);
+        const pending = allPending.filter((a) => a.status === "pending");
         setJobs(applyPendingActionsToJobs(cachedJobs, pending));
         setPendingActions(pending);
         setPendingCount(pending.length);
+        setFailedActions(
+          allPending.filter((a) => a.status === "failed_permanent"),
+        );
       } catch (err) {
         console.error("Failed to load cached jobs on init:", err);
       } finally {
@@ -700,15 +744,23 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const online = await isOnline();
 
       if (online) {
-        const completedAt = await completeJobService(jobId);
+        const { completedAt, jobStatus } = await completeJobService(jobId);
 
         setJobs((prevJobs) => {
+          // PHASE 16: der eigene Abschluss schliesst den AUFTRAG nur dann,
+          // wenn keine ungeloeste Zuweisung mehr existiert. Der Status kommt
+          // deshalb frisch vom Server (completeJobService liest ihn nach) und
+          // wird NICHT mehr optimistisch auf "completed" gesetzt — sonst
+          // zeigte die App einem Mitarbeiter "erledigt", waehrend ein Kollege
+          // noch arbeitet.
           const nextJobs = updateJobInList(prevJobs, jobId, {
-            status: "completed",
-            completedAt,
-            // Siehe Begründung bei startJob: Akteur optimistisch, Anzeige
-            // nennt ihn nur, wenn es ein anderer war.
-            completedBy: userId,
+            status: jobStatus,
+            // Die AUFTRAGS-Abschlusszeit gilt nur, wenn der Auftrag wirklich
+            // geschlossen wurde. Die EIGENE Zeit steht in assignees und kommt
+            // mit dem naechsten Refresh/Realtime-Event.
+            ...(jobStatus === "completed"
+              ? { completedAt, completedBy: userId }
+              : {}),
           });
 
           saveCachedJobs(userId, nextJobs).catch((err) =>
@@ -746,11 +798,25 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setPendingCount(nextActions.length);
 
       setJobs((prevJobs) => {
+        // PHASE 16 offline: der Server entscheidet beim Sync, ob der AUFTRAG
+        // schliesst. Lokal wird dieselbe Regel auf den Cache angewandt —
+        // bleibt eine andere Zuweisung ungeloest (kein eigener Abschluss,
+        // Konto lebt oder sie hat selbst gestartet), bleibt der Auftrag in
+        // Arbeit. Sonst zeigte die App "erledigt", obwohl ein Kollege noch
+        // arbeitet, und korrigierte sich erst beim naechsten Refresh.
+        const current = prevJobs.find((j) => j.id === jobId);
+        const othersPending = (current?.assignees ?? []).some(
+          (a) =>
+            a.employeeId !== userId &&
+            !a.employeeCompletedAt &&
+            (!!a.employeeId || !!a.employeeStartedAt),
+        );
+
         const nextJobs = updateJobInList(prevJobs, jobId, {
-          status: "completed",
-          completedAt: timestamp,
-          // Offline eindeutig der lokale Nutzer (siehe startJob).
-          completedBy: userId,
+          status: othersPending ? "in_progress" : "completed",
+          ...(othersPending
+            ? {}
+            : { completedAt: timestamp, completedBy: userId }),
         });
 
         saveCachedJobs(userId, nextJobs).catch((err) =>
@@ -764,6 +830,27 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       throw err;
     }
   }, [userId]);
+
+  const forceCompleteJob = useCallback(
+    async (jobId: string, reason: string) => {
+      const updated = await adminForceCompleteJobService(jobId, reason);
+      if (!updated) return;
+
+      setJobs((prevJobs) => {
+        const exists = prevJobs.some((job) => job.id === updated.id);
+        const nextJobs = exists
+          ? prevJobs.map((job) => (job.id === updated.id ? updated : job))
+          : prevJobs;
+
+        saveCachedJobs(userId, nextJobs).catch((err) =>
+          console.error("Failed to cache jobs after force complete:", err),
+        );
+
+        return nextJobs;
+      });
+    },
+    [userId],
+  );
 
   const markJobCommentsAsRead = useCallback(async (jobId: string) => {
     // Optimistisch sofort den Punkt entfernen (gute UX, kein Warten auf DB).
@@ -800,12 +887,15 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      forceCompleteJob,
       markJobCommentsAsRead,
       unreadJobIds,
       hasUnread: unreadJobIds.length > 0,
       online,
       pendingCount,
       pendingActions,
+      failedActions,
+      dismissFailedAction,
       isSyncing,
       syncFailed,
       retrySync,
@@ -823,11 +913,14 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      forceCompleteJob,
       markJobCommentsAsRead,
       unreadJobIds,
       online,
       pendingCount,
       pendingActions,
+      failedActions,
+      dismissFailedAction,
       isSyncing,
       syncFailed,
       retrySync,

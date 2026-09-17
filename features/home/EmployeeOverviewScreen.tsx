@@ -19,13 +19,17 @@ import {
 } from "@/components/ui";
 import JobCard from "@/components/JobCard";
 import { useAuth } from "@/context/AuthContext";
-import { canRunJobActions } from "@/utils/jobAssignees";
+import {
+  canCompleteOwnAssignment,
+  canRunJobActions,
+  canStartOwnAssignment,
+} from "@/utils/jobAssignees";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
-import { isJobToday } from "@/utils/jobSchedule";
+import { isJobStartDateAllowed, isJobToday } from "@/utils/jobSchedule";
 import { getJobStatusLabel, JOB_STATUS_ORDER } from "@/utils/jobStatus";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import { toUserMessage } from "@/utils/userMessages";
@@ -232,10 +236,11 @@ export default function EmployeeOverviewScreen() {
   ).length;
 
   // ── Aktiver Job (erster in_progress über alle eigenen Jobs)
-  // Seit Phase 7 („Shared Job Time") gehört die Abschluss-Karte JEDEM
-  // Zugewiesenen: hat eine Kollegin den Auftrag gestartet, darf ihn auch der
-  // Mitarbeiter abschließen, der Start nie gedrückt hat — beide erhalten
-  // dieselbe geteilte Arbeitszeit. canRunJobActions kapselt genau das.
+  // Die Karte bleibt fuer JEDEN Zugewiesenen eines laufenden Auftrags
+  // sichtbar (informativ: Kunde/Ort/Laufzeit), auch wenn er seine EIGENE
+  // Teilnahme noch nicht begonnen hat — WELCHE Aktion sie anbietet, klärt
+  // activeJobOwnState weiter unten (Phase 16: das ist seit dem eigenen Start
+  // nicht mehr dasselbe wie "der Auftrag läuft").
   const activeJob = useMemo(
     () =>
       jobs.find(
@@ -244,6 +249,21 @@ export default function EmployeeOverviewScreen() {
       ),
     [jobs, role, profile?.id],
   );
+
+  // PHASE 16: welche Quick-Action passt zur EIGENEN Teilnahme an activeJob?
+  //   - noch nicht selbst gestartet (Nachzügler) + Termin gültig -> "Start"
+  //   - selbst gestartet, noch nicht selbst abgeschlossen           -> "Abschließen"
+  //   - selbst bereits abgeschlossen (wartet auf andere)            -> keine Aktion
+  const activeJobOwnAction = useMemo(() => {
+    if (!activeJob) return null;
+    if (canCompleteOwnAssignment(activeJob, role, profile?.id)) return "complete";
+    if (
+      canStartOwnAssignment(activeJob, role, profile?.id) &&
+      isJobStartDateAllowed(activeJob)
+    )
+      return "start";
+    return null;
+  }, [activeJob, role, profile?.id]);
 
   // Laufzeit des aktiven Jobs. Der Hook muss unbedingt bei JEDEM Render
   // aufgerufen werden (Hook-Regeln) — ohne aktiven Job wird ein neutraler
@@ -495,21 +515,49 @@ export default function EmployeeOverviewScreen() {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
-              activeOpacity={0.85}
-              disabled={actionBusy}
-              onPress={() => {
-                handleCompleteActiveJob(activeJob.id).catch(() => {});
-              }}
-            >
-              <Ionicons
-                name="checkmark"
-                size={16}
-                color={theme.colors.statusCompleted}
-              />
-              <Text style={styles.completeBtnText}>Job abschließen</Text>
-            </TouchableOpacity>
+            {/* PHASE 16: welche Aktion (falls überhaupt eine) passt zur
+                EIGENEN Teilnahme — siehe activeJobOwnAction. Hat der Nutzer
+                seinen eigenen Teil bereits abgeschlossen, bleibt die Karte
+                rein informativ (kein Button), bis der Auftrag insgesamt
+                schließt oder aus der Liste fällt. */}
+            {activeJobOwnAction === "complete" ? (
+              <TouchableOpacity
+                style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
+                activeOpacity={0.85}
+                disabled={actionBusy}
+                onPress={() => {
+                  handleCompleteActiveJob(activeJob.id).catch(() => {});
+                }}
+              >
+                <Ionicons
+                  name="checkmark"
+                  size={16}
+                  color={theme.colors.statusCompleted}
+                />
+                <Text style={styles.completeBtnText}>Job abschließen</Text>
+              </TouchableOpacity>
+            ) : activeJobOwnAction === "start" ? (
+              // Nachzügler: der Auftrag läuft bereits durch eine Kollegin,
+              // die EIGENE Teilnahme hat aber noch nicht begonnen. Bewusst
+              // ohne Bestätigungsdialog — wie jeder andere Start auch.
+              <TouchableOpacity
+                style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
+                activeOpacity={0.85}
+                disabled={actionBusy}
+                onPress={() => {
+                  handleStart(activeJob.id).catch(() => {});
+                }}
+              >
+                <Ionicons
+                  name="play"
+                  size={16}
+                  color={theme.colors.statusCompleted}
+                />
+                <Text style={styles.completeBtnText}>
+                  Eigene Teilnahme starten
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       )}
@@ -586,6 +634,13 @@ export default function EmployeeOverviewScreen() {
                     ? () => handleComplete(job.id)
                     : undefined
                 }
+                // PHASE 16: canRunJobActions allein reicht als Sichtbarkeits-
+                // Test nicht mehr — siehe Props-Kommentar in JobCard.tsx.
+                canStart={
+                  canStartOwnAssignment(job, role, profile?.id) &&
+                  isJobStartDateAllowed(job)
+                }
+                canComplete={canCompleteOwnAssignment(job, role, profile?.id)}
               />
             ))}
 

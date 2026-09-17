@@ -15,10 +15,11 @@ import {
   formatDateISO,
   formatTimeHHmm,
   formatToISO,
+  localDateTimeFrom,
   timeStringToDate,
 } from "@/utils/date";
 import type { WeekdayKey } from "@/utils/recurrence";
-import { getAssignees } from "@/utils/jobAssignees";
+import { getAssignees, getStartedAssigneeIds } from "@/utils/jobAssignees";
 import { getJobById, PartialUpdateError } from "@/services/jobs/jobs.service";
 import type { Job } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
@@ -104,6 +105,21 @@ export default function EditJobScreen() {
     return [...active, ...assignedButInactive];
   }, [employees, assignedEmployeeIds]);
 
+  // PHASE 16 — bereits GESTARTETE Zuweisungen sind nicht entfernbar
+  // (set_job_assignments lehnt den gesamten Speichervorgang ab). Der Picker
+  // stellt sie deshalb ausgewählt+gesperrt dar, statt den Admin in eine
+  // unerwartete Ablehnung laufen zu lassen.
+  const startedAssigneeIds = useMemo(
+    () => getStartedAssigneeIds(job ?? { assignees: [] }),
+    [job],
+  );
+
+  // PHASE 16 — bei einem ABGESCHLOSSENEN Auftrag sind Zuweisungsänderungen
+  // serverseitig gesperrt (sonst entstünde ein abgeschlossener Auftrag mit
+  // neuer ungelöster Zuweisung und einer Phantom-Lücke im Stundenzettel).
+  // Die Oberfläche spiegelt das, damit die Sperre erklärt statt überrascht.
+  const isCompletedJob = job?.status === "completed";
+
   // BLOCKIERT das Speichern vollständig, solange der Auftrag mindestens
   // einem INAKTIVEN Mitarbeiter zugewiesen ist.
   //
@@ -170,9 +186,17 @@ export default function EditJobScreen() {
   useEffect(() => {
     if (!job) return;
 
-    const parsedStart = job.scheduledStart ? new Date(job.scheduledStart) : null;
+    // Aus date + startTime, NICHT aus scheduledStart — sonst verschiebt der
+    // UTC-Versatz die vorbelegte Uhrzeit (siehe localDateTimeFrom). Bei einem
+    // generierten Termin würde schon das Speichern eines unbeteiligten Feldes
+    // die Uhrzeit verstellen und ihn damit fälschlich zum einzeln angepassten
+    // „Abweichender Termin" machen (Migration 20260916000000).
+    // Fallback auf scheduledStart nur für Altzeilen ohne date/startTime.
     const singleDateTime =
-      parsedStart && !isNaN(parsedStart.getTime()) ? parsedStart : null;
+      localDateTimeFrom(job.date, job.startTime) ??
+      (job.scheduledStart && !isNaN(new Date(job.scheduledStart).getTime())
+        ? new Date(job.scheduledStart)
+        : null);
 
     setValues({
       customerName: job.customerName,
@@ -225,9 +249,14 @@ export default function EditJobScreen() {
 
     // Terminierung je nach Typ
     if (values.jobType === "single") {
-      const originalStartMs = job.scheduledStart
-        ? new Date(job.scheduledStart).getTime()
-        : null;
+      // Gegen DIESELBE Quelle vergleichen, aus der das Formular vorbelegt
+      // wurde — sonst gälte jeder Termin sofort als geändert.
+      const originalStart =
+        localDateTimeFrom(job.date, job.startTime) ??
+        (job.scheduledStart && !isNaN(new Date(job.scheduledStart).getTime())
+          ? new Date(job.scheduledStart)
+          : null);
+      const originalStartMs = originalStart ? originalStart.getTime() : null;
       const currentStartMs = values.singleDateTime
         ? values.singleDateTime.getTime()
         : null;
@@ -509,7 +538,9 @@ export default function EditJobScreen() {
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>Mitarbeiter</Text>
             <Text style={styles.sectionSubtitle}>
-              Zuweisung kann jederzeit geändert werden
+              {isCompletedJob
+                ? "Abgeschlossener Auftrag – Zuweisung ist gesperrt"
+                : "Zuweisung kann geändert werden, solange niemand gestartet hat"}
             </Text>
 
             <Divider style={styles.sectionDivider} />
@@ -531,11 +562,29 @@ export default function EditJobScreen() {
               </View>
             ) : null}
 
+            {isCompletedJob ? (
+              <View style={{ marginBottom: theme.spacing.sm }}>
+                <ErrorBanner
+                  type="warning"
+                  message={
+                    "Dieser Auftrag ist abgeschlossen. Die Zuweisung kann nicht " +
+                    "mehr geändert werden. Eine nachträgliche Arbeitszeit-" +
+                    "Korrektur ist weiterhin über die Auftrags-Details möglich."
+                  }
+                />
+              </View>
+            ) : null}
+
             <EmployeeMultiSelector
               employees={pickerEmployees}
               selectedEmployeeIds={values.employeeIds}
               onChange={(ids) => setField("employeeIds", ids)}
               emptyLabel="Keine Mitarbeiter verfügbar."
+              lockedEmployeeIds={
+                isCompletedJob
+                  ? pickerEmployees.map((e) => e.id)
+                  : startedAssigneeIds
+              }
             />
           </Card>
 
