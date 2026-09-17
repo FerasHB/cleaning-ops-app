@@ -16,6 +16,7 @@ import type { Job } from "@/types/job";
 import { isUnassigned } from "@/utils/jobAssignees";
 import { getWeekdayKey } from "@/utils/recurrence";
 import { normalizeTime } from "@/utils/date";
+import { i18next } from "@/i18n";
 
 // "YYYY-MM-DD" → lokales Date (ohne Zeitzonen-Verschiebung).
 function localDateFromKey(key: string): Date | null {
@@ -123,21 +124,25 @@ export function deriveRuleHealth(
     return {
       state: "completed_rule",
       severity: "warning",
-      label: "Warnung",
-      hint: "Regel-Status ist »erledigt« — bitte prüfen.",
+      label: i18next.t("admin:recurringRules.health.completedRuleLabel"),
+      hint: i18next.t("admin:recurringRules.health.completedRuleHint"),
     };
   }
 
   if (rule.isActive === false) {
-    return { state: "inactive", severity: "info", label: "Inaktiv" };
+    return {
+      state: "inactive",
+      severity: "info",
+      label: i18next.t("admin:recurringRules.badgeInactive"),
+    };
   }
 
   if (rule.recurrenceEndDate && rule.recurrenceEndDate < today) {
     return {
       state: "horizon_expired",
       severity: "info",
-      label: "Zeitraum abgelaufen",
-      hint: "Das Enddatum der Regel liegt in der Vergangenheit.",
+      label: i18next.t("admin:recurringRules.health.horizonExpiredLabel"),
+      hint: i18next.t("admin:recurringRules.health.horizonExpiredHint"),
     };
   }
 
@@ -145,8 +150,8 @@ export function deriveRuleHealth(
     return {
       state: "no_occurrences",
       severity: "warning",
-      label: "Keine Termine generiert",
-      hint: "Für diese Regel wurden keine Termine erzeugt.",
+      label: i18next.t("admin:recurringRules.health.noOccurrencesLabel"),
+      hint: i18next.t("admin:recurringRules.health.noOccurrencesHint"),
     };
   }
 
@@ -158,10 +163,14 @@ export function deriveRuleHealth(
     return {
       state: "inactive_employee",
       severity: "warning",
-      label: "Mitarbeiter inaktiv",
-      hint: "Mindestens ein zugewiesener Mitarbeiter ist deaktiviert.",
+      label: i18next.t("admin:recurringRules.health.inactiveEmployeeLabel"),
+      hint: i18next.t("admin:recurringRules.health.inactiveEmployeeHint"),
     };
   }
 
-  return { state: "healthy", severity: "ok", label: "Aktiv" };
+  return {
+    state: "healthy",
+    severity: "ok",
+    label: i18next.t("admin:recurringRules.badgeActive"),
+  };
 }

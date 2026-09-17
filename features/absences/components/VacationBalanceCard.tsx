@@ -14,9 +14,10 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Absence } from "@/types/absence";
 import type { VacationBalance } from "@/types/vacationLedger";
-import { formatDays } from "@/utils/vacationBalance";
-import { formatDateOnlyDE } from "@/utils/date";
+import { formatDaysLocalized } from "@/utils/vacationBalance";
+import { formatDateOnlyLocalized } from "@/utils/date";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -27,47 +28,56 @@ type Props = {
 export function VacationBalanceCard({ balance, pending }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   // Kein Konto / nicht eingerichtet -> gar nichts anzeigen (siehe Kopf).
   if (!balance) return null;
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Urlaub {balance.year}</Text>
+      <Text style={styles.title}>{t("absences:balance.title", { year: balance.year })}</Text>
 
       <View style={styles.row}>
-        <Text style={styles.label}>Jahresanspruch</Text>
-        <Text style={styles.value}>{formatDays(balance.annualEntitlement)} Tage</Text>
+        <Text style={styles.label}>{t("absences:balance.annualEntitlement")}</Text>
+        <Text style={styles.value}>
+          {t("absences:balance.days", { count: formatDaysLocalized(balance.annualEntitlement) })}
+        </Text>
       </View>
       <View style={styles.row}>
-        <Text style={styles.label}>Verbraucht</Text>
-        <Text style={styles.value}>{formatDays(balance.usedDays)} Tage</Text>
+        <Text style={styles.label}>{t("absences:balance.used")}</Text>
+        <Text style={styles.value}>
+          {t("absences:balance.days", { count: formatDaysLocalized(balance.usedDays) })}
+        </Text>
       </View>
       {balance.adjustments !== 0 ? (
         <View style={styles.row}>
-          <Text style={styles.label}>Korrekturen</Text>
-          <Text style={styles.value}>{formatDays(balance.adjustments)} Tage</Text>
+          <Text style={styles.label}>{t("absences:balance.adjustments")}</Text>
+          <Text style={styles.value}>
+            {t("absences:balance.days", { count: formatDaysLocalized(balance.adjustments) })}
+          </Text>
         </View>
       ) : null}
 
       <View style={styles.divider} />
       <View style={styles.row}>
-        <Text style={styles.strongLabel}>Resturlaub</Text>
-        <Text style={styles.strongValue}>{formatDays(balance.remaining)} Tage</Text>
+        <Text style={styles.strongLabel}>{t("absences:balance.remaining")}</Text>
+        <Text style={styles.strongValue}>
+          {t("absences:balance.days", { count: formatDaysLocalized(balance.remaining) })}
+        </Text>
       </View>
 
       {pending.length > 0 ? (
         <>
           <View style={styles.divider} />
-          <Text style={styles.label}>Offene Anträge</Text>
+          <Text style={styles.label}>{t("absences:balance.pendingRequests")}</Text>
           {pending.map((absence) => (
             <Text key={absence.id} style={styles.pendingLine}>
-              {formatDateOnlyDE(absence.startDate)}
-              {absence.endDate ? ` – ${formatDateOnlyDE(absence.endDate)}` : ""}
+              {formatDateOnlyLocalized(absence.startDate)}
+              {absence.endDate ? ` – ${formatDateOnlyLocalized(absence.endDate)}` : ""}
             </Text>
           ))}
           <Text style={styles.footnote}>
-            Die angerechneten Tage stehen erst mit der Genehmigung fest.
+            {t("absences:balance.pendingFootnote")}
           </Text>
         </>
       ) : null}

@@ -24,7 +24,6 @@
 //                dominieren (siehe Screen).
 // ─────────────────────────────────────────────────────────────────
 
-import { MONTH_NAMES_DE } from "@/utils/calendarMonth";
 import { formatDateISO } from "@/utils/date";
 import { canRunJobActions } from "@/utils/jobAssignees";
 import {
@@ -32,8 +31,8 @@ import {
   isJobToday,
   isPausedRecurringOccurrence,
 } from "@/utils/jobSchedule";
-import { getWeekdayKey, WEEKDAYS } from "@/utils/recurrence";
 import type { Job, JobStatus } from "@/types/job";
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 export type JobStatusFilter = "all" | JobStatus;
 
@@ -62,11 +61,6 @@ export type TodayStatusCounts = {
   completed: number;
 };
 
-function fullWeekdayLabel(date: Date): string {
-  const key = getWeekdayKey(date);
-  return WEEKDAYS.find((w) => w.key === key)?.label ?? "";
-}
-
 // Erwartet einen reinen "YYYY-MM-DD"-Schlüssel und baut daraus LOKAL ein
 // Datum (kein `new Date("YYYY-MM-DD")` — das parst als UTC-Mitternacht und
 // kann je nach Zeitzone auf den Vortag rutschen).
@@ -76,13 +70,22 @@ function dateFromKey(key: string): Date | null {
   return new Date(y, m - 1, d);
 }
 
+// "Heute"/"Morgen" sind übersetzt (kein Datumsformat, reines Vokabular).
+// Wochentag + Monatsname laufen über Intl in der aktiven App-Sprache (Phase
+// C.1) — dieselbe Zuordnung (INTL_LOCALE_TAGS) wie utils/calendarMonth.ts.
+// Reagiert live auf Sprachwechsel, da i18next.language bei jedem Aufruf
+// frisch gelesen wird.
 function dateGroupLabel(key: string, todayKey: string, tomorrowKey: string): string {
-  if (key === todayKey) return "Heute";
-  if (key === tomorrowKey) return "Morgen";
+  if (key === todayKey) return i18next.t("jobs:dateGroups.today");
+  if (key === tomorrowKey) return i18next.t("jobs:dateGroups.tomorrow");
   const date = dateFromKey(key);
   if (!date) return key;
-  const monthName = MONTH_NAMES_DE[date.getMonth()];
-  return `${fullWeekdayLabel(date)}, ${date.getDate()}. ${monthName}`;
+  const localeTag = INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+  return date.toLocaleDateString(localeTag, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 }
 
 // Anzeige-Uhrzeit als sortierbarer String; Jobs ohne Uhrzeit sortieren ans
@@ -194,7 +197,7 @@ export function buildJobQueueSections(
 
   const today: JobDateGroup | null =
     todayJobs.length > 0
-      ? { key: todayKey, label: "Heute", jobs: sortDayJobs(todayJobs) }
+      ? { key: todayKey, label: i18next.t("jobs:dateGroups.today"), jobs: sortDayJobs(todayJobs) }
       : null;
 
   const future: JobDateGroup[] = [...futureByDate.entries()]

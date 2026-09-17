@@ -33,6 +33,7 @@ import { EmployeeOption } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useTranslation } from "react-i18next";
 import type { AppTheme } from "@/constants/theme";
 
 type Props = {
@@ -64,11 +65,13 @@ export function EmployeeMultiSelector({
   employees,
   selectedEmployeeIds,
   onChange,
-  emptyLabel = "Keine Mitarbeiter verfügbar.",
+  emptyLabel,
   lockedEmployeeIds = [],
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
+  const resolvedEmptyLabel = emptyLabel ?? t("admin:jobForm.noEmployeesAvailable");
 
   const uniqueEmployees = useMemo(() => dedupeById(employees), [employees]);
   const selectedSet = useMemo(
@@ -92,7 +95,7 @@ export function EmployeeMultiSelector({
   if (uniqueEmployees.length === 0) {
     return (
       <View style={styles.wrapper}>
-        <Text style={styles.emptyText}>{emptyLabel}</Text>
+        <Text style={styles.emptyText}>{resolvedEmptyLabel}</Text>
       </View>
     );
   }
@@ -105,10 +108,10 @@ export function EmployeeMultiSelector({
         // Gestartet hat Vorrang vor inaktiv: die Meldung ist die
         // handlungsrelevante von beiden.
         const sublabel = isLocked
-          ? "Bereits gestartet – kann nicht entfernt werden."
+          ? t("admin:jobForm.employeeSelector.startedSublabel")
           : isInactive
-            ? "Inaktiv – Auswahl kann hier nicht geändert werden"
-            : "Mitarbeiter";
+            ? t("admin:jobForm.employeeSelector.inactiveSublabel")
+            : t("admin:jobForm.employeeSelector.activeSublabel");
         return (
           <EmployeeCheckboxRow
             key={emp.id}
@@ -123,7 +126,7 @@ export function EmployeeMultiSelector({
 
       {selectedEmployeeIds.length === 0 ? (
         <Text style={styles.unassignedHint}>
-          Niemand zugewiesen – Job bleibt offen.
+          {t("admin:jobForm.employeeSelector.unassignedHint")}
         </Text>
       ) : null}
     </View>

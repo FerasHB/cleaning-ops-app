@@ -33,7 +33,7 @@ import type { Job } from "@/types/job";
 import { formatDateISO } from "@/utils/date";
 import { isDetachedOccurrence, type RuleSchedule } from "@/utils/recurringRule";
 import {
-  SCHEDULE_FILTERS,
+  getScheduleFilters,
   groupByDate,
   matchesSearch,
   type ScheduleFilter,
@@ -48,6 +48,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -75,6 +76,8 @@ export default function AdminScheduleScreen({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const scheduleFilters = useMemo(() => getScheduleFilters(), [i18n.language]);
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
 
@@ -163,7 +166,7 @@ export default function AdminScheduleScreen({
         // Letzte verbliebene Roh-Fehlerstelle dieses Screens: err.message kam
         // direkt aus Supabase/PostgREST und konnte Tabellen-/Policy-Namen
         // anzeigen. Jetzt über den zentralen Mapper (siehe utils/userMessages).
-        setError(toUserMessage(err, "Zeitplan konnte nicht geladen werden."));
+        setError(toUserMessage(err, t("admin:schedule.loadFailed")));
       } finally {
         loadInProgress.current = false;
         setLoading(false);
@@ -283,7 +286,7 @@ export default function AdminScheduleScreen({
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Objekt, Kunde, Adresse, Service, Mitarbeiter …"
+            placeholder={t("admin:schedule.searchPlaceholder")}
             placeholderTextColor={theme.colors.outline}
             style={styles.searchInput}
             autoCapitalize="none"
@@ -295,7 +298,7 @@ export default function AdminScheduleScreen({
             <TouchableOpacity
               onPress={() => setSearch("")}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel="Suche löschen"
+              accessibilityLabel={t("admin:schedule.clearSearchA11y")}
             >
               <Ionicons
                 name="close-circle"
@@ -309,7 +312,7 @@ export default function AdminScheduleScreen({
 
       {/* ── 2. Status-/Zeit-Filter ── */}
       <View style={styles.filterRow}>
-        {SCHEDULE_FILTERS.map((f) => {
+        {scheduleFilters.map((f) => {
           const active = filter === f.key;
           return (
             <TouchableOpacity
@@ -338,13 +341,13 @@ export default function AdminScheduleScreen({
               color={theme.colors.onPrimaryContainer}
             />
             <Text style={styles.activeFilterText} numberOfLines={1}>
-              Mitarbeiter: {employeeLabel}
+              {t("admin:schedule.employeeFilterChip", { label: employeeLabel })}
             </Text>
             <TouchableOpacity
               onPress={onClearEmployee}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityRole="button"
-              accessibilityLabel={`Mitarbeiter-Filter ${employeeLabel} entfernen`}
+              accessibilityLabel={t("admin:schedule.removeEmployeeFilterA11y", { label: employeeLabel })}
             >
               <Ionicons
                 name="close"
@@ -363,14 +366,14 @@ export default function AdminScheduleScreen({
       {/* Ergebniszähler (nur wenn Treffer vorhanden) */}
       {!loading && visibleJobs.length > 0 ? (
         <Text style={styles.resultCount}>
-          {visibleJobs.length} {visibleJobs.length === 1 ? "Termin" : "Termine"}
+          {t("admin:schedule.resultCount", { count: visibleJobs.length })}
         </Text>
       ) : null}
 
       {loading ? (
         <View style={styles.centerBox}>
           <ActivityIndicator color={theme.colors.primary} />
-          <Text style={styles.centerText}>Zeitplan wird geladen …</Text>
+          <Text style={styles.centerText}>{t("admin:schedule.loading")}</Text>
         </View>
       ) : (
         <SectionList
@@ -412,14 +415,14 @@ export default function AdminScheduleScreen({
           ListEmptyComponent={
             hasActiveQuery ? (
               <EmptyState
-                title="Keine passenden Termine"
-                message="Passe Suche oder Mitarbeiter-Filter an."
+                title={t("admin:schedule.noMatchingTitle")}
+                message={t("admin:schedule.noMatchingMessage")}
                 icon="search-outline"
               />
             ) : (
               <EmptyState
-                title="Keine Termine"
-                message={emptyMessageFor(filter)}
+                title={t("admin:schedule.noAppointmentsTitle")}
+                message={emptyMessageFor(filter, t)}
                 icon="calendar-outline"
               />
             )
@@ -430,16 +433,19 @@ export default function AdminScheduleScreen({
   );
 }
 
-function emptyMessageFor(filter: ScheduleFilter): string {
+function emptyMessageFor(
+  filter: ScheduleFilter,
+  t: (key: string) => string,
+): string {
   switch (filter) {
     case "heute":
-      return "Für heute sind keine Termine geplant.";
+      return t("admin:schedule.emptyToday");
     case "bevorstehend":
-      return "In den nächsten Wochen sind keine Termine geplant.";
+      return t("admin:schedule.emptyUpcoming");
     case "ueberfaellig":
-      return "Es gibt keine überfälligen Termine. 👍";
+      return t("admin:schedule.emptyOverdue");
     case "erledigt":
-      return "Noch keine abgeschlossenen Termine.";
+      return t("admin:schedule.emptyCompleted");
   }
 }
 

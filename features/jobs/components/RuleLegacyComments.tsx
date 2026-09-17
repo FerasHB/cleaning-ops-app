@@ -25,32 +25,40 @@ import { Card } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useJobComments } from "@/features/jobs/hooks/useJobComments";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { formatDateISO, isSameLocalDate } from "@/utils/date";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
-// Gleiche Zeitformatierung wie in JobComments: heutige Einträge kompakt.
-function formatDateTime(iso?: string | null): string | null {
+// Gleiche Zeitformatierung wie in JobComments: heutige Einträge kompakt,
+// sprachabhängig über dieselben jobs:comments.todayAt/dateAt-Keys.
+function formatDateTime(
+  iso: string | null | undefined,
+  t: (key: string, opts: Record<string, string>) => string,
+  localeTag: string,
+): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
 
-  const timePart = date.toLocaleTimeString("de-DE", {
+  const timePart = date.toLocaleTimeString(localeTag, {
     hour: "2-digit",
     minute: "2-digit",
   });
 
   if (isSameLocalDate(formatDateISO(date), new Date())) {
-    return `Heute um ${timePart}`;
+    return t("jobs:comments.todayAt", { time: timePart });
   }
 
-  const datePart = date.toLocaleDateString("de-DE", {
+  const datePart = date.toLocaleDateString(localeTag, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   });
-  return `${datePart} um ${timePart}`;
+  return t("jobs:comments.dateAt", { date: datePart, time: timePart });
 }
 
 type Props = {
@@ -60,7 +68,10 @@ type Props = {
 
 export function RuleLegacyComments({ jobId }: Props) {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const localeTag = INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE";
 
   // Ausschließlich der Lesepfad des bestehenden Hooks — `submit` wird hier
   // bewusst nicht entgegengenommen.
@@ -89,18 +100,22 @@ export function RuleLegacyComments({ jobId }: Props) {
         activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`Kommentare zur Regel, ${comments.length} ${
-          comments.length === 1 ? "Eintrag" : "Einträge"
-        }`}
-        accessibilityHint={open ? "Zum Einklappen antippen" : "Zum Aufklappen antippen"}
+        accessibilityLabel={t("admin:recurringRules.legacyComments.a11yLabel", {
+          count: comments.length,
+        })}
+        accessibilityHint={
+          open
+            ? t("admin:recurringRules.legacyComments.collapseHint")
+            : t("admin:recurringRules.legacyComments.expandHint")
+        }
       >
         <Ionicons
-          name={open ? "chevron-down" : "chevron-forward"}
+          name={open ? "chevron-down" : isRTL ? "chevron-back" : "chevron-forward"}
           size={16}
           color={theme.colors.onSurfaceVariant}
         />
         <Text style={styles.title} numberOfLines={1}>
-          Kommentare zur Regel
+          {t("admin:recurringRules.legacyComments.title")}
         </Text>
         <Text style={styles.count}>{comments.length}</Text>
       </TouchableOpacity>
@@ -108,9 +123,7 @@ export function RuleLegacyComments({ jobId }: Props) {
       {open ? (
         <View style={styles.body}>
           <Text style={styles.legacyHint}>
-            Altbestand: Kommentare an einer Regel erreichen keine Mitarbeitenden.
-            Sie werden hier nur noch zur Einsicht angezeigt. Schreibe Kommentare
-            stattdessen am konkreten Termin.
+            {t("admin:recurringRules.legacyComments.hint")}
           </Text>
 
           <View style={styles.list}>
@@ -118,10 +131,10 @@ export function RuleLegacyComments({ jobId }: Props) {
               <View key={comment.id} style={styles.comment}>
                 <View style={styles.commentHeader}>
                   <Text style={styles.commentAuthor} numberOfLines={1}>
-                    {comment.authorName ?? "Unbekannt"}
+                    {comment.authorName ?? t("jobs:comments.unknownAuthor")}
                   </Text>
                   <Text style={styles.commentTime}>
-                    {formatDateTime(comment.createdAt) ?? ""}
+                    {formatDateTime(comment.createdAt, t, localeTag) ?? ""}
                   </Text>
                 </View>
                 <Text style={styles.commentText}>{comment.message}</Text>

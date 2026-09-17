@@ -19,6 +19,7 @@ import { clearCachedProfile } from "@/services/offline/profile.storage";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
@@ -34,6 +35,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function DeleteAccountScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { user, role } = useAuth();
   const isAdmin = role === "admin";
@@ -41,7 +43,7 @@ export default function DeleteAccountScreen() {
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const email = user?.email ?? "dein Konto";
+  const email = user?.email ?? t("profile:fallback.myAccount");
 
   // Leert ALLE lokalen persistenten Caches, damit auf einem geteilten Gerät
   // keine Daten des gelöschten Kontos zurückbleiben.
@@ -62,12 +64,17 @@ export default function DeleteAccountScreen() {
     if (!result.ok) {
       setLoading(false);
 
+      // result.message kommt aus der Edge Function delete-account (siehe
+      // services/account/deleteAccount.ts) — server-seitig formulierter
+      // Text, bislang ausschließlich Deutsch. Server-seitige Lokalisierung
+      // ist eine spätere Phase (außerhalb des Scopes hier); der Dialog-TITEL
+      // ist client-seitig und deshalb übersetzt.
       if (result.code === "last_admin") {
-        Alert.alert("Löschung nicht möglich", result.message);
+        Alert.alert(t("profile:deleteAccount.notPossibleTitle"), result.message);
         return;
       }
 
-      Alert.alert("Fehler", result.message);
+      Alert.alert(t("common:errors.title"), result.message);
       return;
     }
 
@@ -90,13 +97,12 @@ export default function DeleteAccountScreen() {
     }
 
     Alert.alert(
-      "Konto endgültig löschen?",
-      "Diese Aktion kann nicht rückgängig gemacht werden. Dein Konto und dein " +
-        "Profil werden dauerhaft gelöscht.",
+      t("profile:deleteAccount.confirmDialogTitle"),
+      t("profile:deleteAccount.confirmDialogMessage"),
       [
-        { text: "Abbrechen", style: "cancel" },
+        { text: t("common:actions.cancel"), style: "cancel" },
         {
-          text: "Endgültig löschen",
+          text: t("profile:deleteAccount.confirmDialogConfirm"),
           style: "destructive",
           onPress: () => {
             void runDeletion();
@@ -114,7 +120,7 @@ export default function DeleteAccountScreen() {
       />
 
       <AppHeader
-        title="Konto löschen"
+        title={t("profile:deleteAccount.headerTitle")}
         showBack
         onBack={() => {
           if (loading) return;
@@ -139,10 +145,9 @@ export default function DeleteAccountScreen() {
               color={theme.colors.error}
             />
           </View>
-          <Text style={styles.warnTitle}>Konto dauerhaft löschen</Text>
+          <Text style={styles.warnTitle}>{t("profile:deleteAccount.heroTitle")}</Text>
           <Text style={styles.warnSubtitle}>
-            Diese Aktion ist unwiderruflich und kann nicht rückgängig gemacht
-            werden.
+            {t("profile:deleteAccount.heroSubtitle")}
           </Text>
           <View style={styles.emailChip}>
             <Ionicons
@@ -157,22 +162,22 @@ export default function DeleteAccountScreen() {
         </View>
 
         {/* ── Was passiert ── */}
-        <Section title="Was passiert bei der Löschung?" theme={theme} styles={styles}>
+        <Section title={t("profile:deleteAccount.whatHappensTitle")} theme={theme} styles={styles}>
           <Bullet
             icon="person-remove-outline"
-            text="Dein Anmeldekonto (E-Mail und Passwort) wird dauerhaft entfernt."
+            text={t("profile:deleteAccount.whatHappensBullet1")}
             theme={theme}
             styles={styles}
           />
           <Bullet
             icon="id-card-outline"
-            text="Dein Profil (Name, Telefonnummer, Push-Token) wird gelöscht."
+            text={t("profile:deleteAccount.whatHappensBullet2")}
             theme={theme}
             styles={styles}
           />
           <Bullet
             icon="log-out-outline"
-            text="Du wirst sofort abgemeldet und verlierst den Zugriff auf die App."
+            text={t("profile:deleteAccount.whatHappensBullet3")}
             theme={theme}
             styles={styles}
             isLast
@@ -181,26 +186,19 @@ export default function DeleteAccountScreen() {
 
         {/* ── Verbleibende Daten (anonymisiert) ── */}
         <Section
-          title="Welche Daten bleiben erhalten?"
+          title={t("profile:deleteAccount.remainingDataTitle")}
           theme={theme}
           styles={styles}
         >
           <Bullet
             icon="briefcase-outline"
-            text={
-              "Aufträge, Kommentare und Fotos, die du erstellt oder bearbeitet " +
-              "hast, bleiben aus betrieblichen und rechtlichen Gründen bei " +
-              "deinem Unternehmen erhalten."
-            }
+            text={t("profile:deleteAccount.remainingDataBullet1")}
             theme={theme}
             styles={styles}
           />
           <Bullet
             icon="eye-off-outline"
-            text={
-              "Diese Einträge werden jedoch anonymisiert – sie sind danach nicht " +
-              "mehr mit deinem Namen oder Konto verknüpft."
-            }
+            text={t("profile:deleteAccount.remainingDataBullet2")}
             theme={theme}
             styles={styles}
             isLast
@@ -216,10 +214,7 @@ export default function DeleteAccountScreen() {
               color={theme.colors.statusInProgress}
             />
             <Text style={styles.adminNoteText}>
-              Als Administrator kannst du dein Konto nur löschen, wenn ein
-              weiterer aktiver Administrator existiert. Bist du der einzige
-              Administrator deiner Firma, löse zuerst die Firma auf oder ernenne
-              einen weiteren Administrator.
+              {t("profile:deleteAccount.adminNote")}
             </Text>
           </View>
         )}
@@ -243,8 +238,7 @@ export default function DeleteAccountScreen() {
             )}
           </View>
           <Text style={styles.checkboxLabel}>
-            Ich verstehe, dass diese Aktion unwiderruflich ist und mein Konto
-            dauerhaft gelöscht wird.
+            {t("profile:deleteAccount.checkboxLabel")}
           </Text>
         </TouchableOpacity>
 
@@ -267,7 +261,9 @@ export default function DeleteAccountScreen() {
                 size={18}
                 color={theme.colors.error}
               />
-              <Text style={styles.deleteButtonText}>Konto endgültig löschen</Text>
+              <Text style={styles.deleteButtonText}>
+                {t("profile:deleteAccount.deleteButton")}
+              </Text>
             </>
           )}
         </TouchableOpacity>
@@ -285,7 +281,7 @@ export default function DeleteAccountScreen() {
           }}
           disabled={loading}
         >
-          <Text style={styles.cancelButtonText}>Abbrechen</Text>
+          <Text style={styles.cancelButtonText}>{t("common:actions.cancel")}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -419,7 +415,7 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onSurfaceVariant,
       letterSpacing: theme.typography.letterSpacing.wider,
       textTransform: "uppercase",
-      marginLeft: theme.spacing.xs,
+      marginStart: theme.spacing.xs,
     },
     sectionInner: {
       paddingHorizontal: theme.spacing.md,

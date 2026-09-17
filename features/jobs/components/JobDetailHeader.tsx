@@ -8,6 +8,7 @@ import { AppHeader } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { ActivityIndicator, StyleSheet, TouchableOpacity } from "react-native";
 import type { AppTheme } from "@/constants/theme";
 
@@ -21,10 +22,11 @@ type Props = {
 export function JobDetailHeader({ showMenu, menuBusy, onMenuPress }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   return (
     <AppHeader
-      title="Job-Details"
+      title={t("jobs:detail.headerTitle")}
       showBack
       right={
         showMenu ? (
@@ -35,8 +37,8 @@ export function JobDetailHeader({ showMenu, menuBusy, onMenuPress }: Props) {
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel="Aktionen für diesen Dauerauftrag"
-            accessibilityHint="Öffnet Bearbeiten, Aktivieren/Deaktivieren und Löschen"
+            accessibilityLabel={t("jobs:detail.ruleMenuA11y")}
+            accessibilityHint={t("jobs:detail.ruleMenuHint")}
           >
             {menuBusy ? (
               <ActivityIndicator size="small" color={theme.colors.primary} />

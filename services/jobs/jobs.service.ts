@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { i18next } from "@/i18n";
 import {
   CreateJobInput,
   EmployeeOption,
@@ -616,7 +617,7 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
 
   // Sicherheitshalber prüfen, ob wirklich jemand eingeloggt ist
   if (!userId) {
-    throw new Error("Kein eingeloggter Benutzer gefunden.");
+    throw new Error(i18next.t("common:errors.notAuthenticated"));
   }
 
   // Profil vom aktuellen User laden
@@ -811,7 +812,7 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
   const userId = authData.user?.id;
 
   if (!userId) {
-    throw new Error("Kein eingeloggter Benutzer gefunden.");
+    throw new Error(i18next.t("common:errors.notAuthenticated"));
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -1105,7 +1106,7 @@ export async function deleteJob(jobId: string): Promise<void> {
   const userId = authData.user?.id;
 
   if (!userId) {
-    throw new Error("Kein eingeloggter Benutzer gefunden.");
+    throw new Error(i18next.t("common:errors.notAuthenticated"));
   }
 
   const { data: profile, error: profileError } = await supabase

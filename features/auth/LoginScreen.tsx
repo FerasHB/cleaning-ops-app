@@ -9,6 +9,7 @@ import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { isValidEmail, normalizeEmail } from "@/utils/email";
 import { router } from "expo-router";
 import React, { useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Animated,
   KeyboardAvoidingView,
@@ -26,6 +27,7 @@ import type { AppTheme } from "@/constants/theme";
 export default function LoginScreen() {
   const theme  = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [email,     setEmail]     = useState("");
   const [password,  setPassword]  = useState("");
@@ -54,14 +56,14 @@ export default function LoginScreen() {
     setFormError("");
 
     if (!email.trim()) {
-      setEmailError("E-Mail ist erforderlich.");
+      setEmailError(t("auth:login.validation.emailRequired"));
       valid = false;
     } else if (!isValidEmail(email)) {
-      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      setEmailError(t("auth:login.validation.emailInvalid"));
       valid = false;
     }
     if (!password) {
-      setPasswordError("Passwort ist erforderlich.");
+      setPasswordError(t("auth:login.validation.passwordRequired"));
       valid = false;
     }
     return valid;
@@ -77,13 +79,13 @@ export default function LoginScreen() {
         password,
       });
       if (error) {
-        setFormError(toFriendlyAuthErrorMessage(error, "E-Mail oder Passwort ist falsch."));
+        setFormError(toFriendlyAuthErrorMessage(error, t("auth:login.errors.loginFailed")));
         return;
       }
       // Erfolgreich → index.tsx übernimmt die Weiterleitung
       router.replace("/");
     } catch (err) {
-      setFormError(toFriendlyAuthErrorMessage(err, "Login fehlgeschlagen. Bitte erneut versuchen."));
+      setFormError(toFriendlyAuthErrorMessage(err, t("auth:login.errors.unexpectedFailed")));
     } finally {
       setLoading(false);
     }
@@ -107,7 +109,7 @@ export default function LoginScreen() {
         >
           {/* ── Branding ── */}
           <Animated.View style={{ opacity: fadeAnim }}>
-            <AuthBrand tagline="Für autorisierte Mitarbeiter" />
+            <AuthBrand tagline={t("auth:login.tagline")} />
           </Animated.View>
 
           {/* ── Formular-Karte ── */}
@@ -119,8 +121,8 @@ export default function LoginScreen() {
           >
             {/* Karten-Header */}
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Willkommen zurück</Text>
-              <Text style={styles.cardSubtitle}>Melde dich mit deinem Konto an</Text>
+              <Text style={styles.cardTitle}>{t("auth:login.cardTitle")}</Text>
+              <Text style={styles.cardSubtitle}>{t("auth:login.cardSubtitle")}</Text>
             </View>
 
             {/* Fehler-Banner */}
@@ -134,10 +136,10 @@ export default function LoginScreen() {
             {/* Felder */}
             <View style={styles.fields}>
               <Input
-                label="E-Mail"
-                placeholder="name@firma.de"
+                label={t("auth:login.emailLabel")}
+                placeholder={t("auth:login.emailPlaceholder")}
                 value={email}
-                onChangeText={(t) => { setEmail(t); setEmailError(""); setFormError(""); }}
+                onChangeText={(v) => { setEmail(v); setEmailError(""); setFormError(""); }}
                 error={emailError}
                 autoCapitalize="none"
                 keyboardType="email-address"
@@ -149,10 +151,10 @@ export default function LoginScreen() {
               {/* Passwort + "Vergessen?"-Link */}
               <View style={styles.passwordBlock}>
                 <PasswordInput
-                  label="Passwort"
+                  label={t("auth:login.passwordLabel")}
                   placeholder="••••••••"
                   value={password}
-                  onChangeText={(t) => { setPassword(t); setPasswordError(""); setFormError(""); }}
+                  onChangeText={(v) => { setPassword(v); setPasswordError(""); setFormError(""); }}
                   error={passwordError}
                   autoComplete="password"
                   returnKeyType="done"
@@ -164,7 +166,7 @@ export default function LoginScreen() {
                   activeOpacity={0.7}
                   style={styles.forgotLink}
                 >
-                  <Text style={styles.forgotLinkText}>Passwort vergessen?</Text>
+                  <Text style={styles.forgotLinkText}>{t("auth:login.forgotLink")}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -176,18 +178,18 @@ export default function LoginScreen() {
               disabled={loading}
               activeOpacity={0.82}
               accessibilityRole="button"
-              accessibilityLabel="Anmelden"
+              accessibilityLabel={t("auth:login.loginButtonA11y")}
               accessibilityState={{ disabled: loading, busy: loading }}
             >
               <Text style={styles.loginBtnText}>
-                {loading ? "Anmelden..." : "Anmelden"}
+                {loading ? t("auth:login.loginButtonLoading") : t("auth:login.loginButton")}
               </Text>
             </TouchableOpacity>
 
             {/* Divider */}
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>oder</Text>
+              <Text style={styles.dividerText}>{t("auth:login.divider")}</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -198,14 +200,14 @@ export default function LoginScreen() {
               style={styles.registerRow}
               disabled={loading}
             >
-              <Text style={styles.registerText}>Noch kein Konto?{" "}</Text>
-              <Text style={styles.registerLink}>Firma registrieren</Text>
+              <Text style={styles.registerText}>{t("auth:login.noAccountText")}{" "}</Text>
+              <Text style={styles.registerLink}>{t("auth:login.registerLink")}</Text>
             </TouchableOpacity>
           </Animated.View>
 
           {/* ── Footer ── */}
           <Animated.View style={{ opacity: fadeAnim }}>
-            <Text style={styles.footer}>Nur für autorisierte Mitarbeiter</Text>
+            <Text style={styles.footer}>{t("auth:login.footer")}</Text>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>

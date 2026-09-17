@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { i18next } from "@/i18n";
 
 // Ergebnis der Kontolöschung. Klar getrennt, damit die UI den Sonderfall
 // „letzter Admin" (409) mit einem erklärenden Hinweis behandeln kann, statt
@@ -17,9 +18,6 @@ export type DeleteAccountErrorCode =
   | "rollback_failed"
   | "server_error"
   | "unknown";
-
-const DEFAULT_ERROR =
-  "Dein Konto konnte nicht gelöscht werden. Bitte versuche es später erneut.";
 
 // Ruft die Edge Function delete-account auf. Der Server ermittelt die zu
 // löschende Identität ausschließlich aus der Session (kein Body-Parameter) —
@@ -48,13 +46,13 @@ export async function requestAccountDeletion(): Promise<DeleteAccountResult> {
       return {
         ok: false,
         code: body.code ?? "unknown",
-        message: body.error ?? DEFAULT_ERROR,
+        message: body.error ?? i18next.t("profile:deleteAccount.genericError"),
       };
     }
 
     return { ok: true };
   } catch {
-    return { ok: false, code: "unknown", message: DEFAULT_ERROR };
+    return { ok: false, code: "unknown", message: i18next.t("profile:deleteAccount.genericError") };
   }
 }
 
@@ -77,12 +75,12 @@ async function parseFunctionError(
       };
       return {
         code: body?.code ?? "unknown",
-        message: body?.error ?? DEFAULT_ERROR,
+        message: body?.error ?? i18next.t("profile:deleteAccount.genericError"),
       };
     } catch {
       // Body nicht lesbar/kein JSON → generischer Fehler.
     }
   }
 
-  return { code: "unknown", message: DEFAULT_ERROR };
+  return { code: "unknown", message: i18next.t("profile:deleteAccount.genericError") };
 }

@@ -1,0 +1,94 @@
+{
+  "title": "Absences",
+  "actions": {
+    "requestVacation": "Request Vacation",
+    "reportSickness": "Report Sickness"
+  },
+  "empty": {
+    "noAbsences": "No absences recorded yet."
+  },
+  "groups": {
+    "current": "Current",
+    "upcoming": "Upcoming",
+    "past": "Past"
+  },
+  "types": {
+    "vacation": "Vacation",
+    "sickness": "Sickness"
+  },
+  "status": {
+    "requested": "Requested",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "cancelled": "Cancelled",
+    "reported": "Reported"
+  },
+  "card": {
+    "adminNoteLabel": "Note from admin",
+    "cancelVacationConfirmTitle": "Cancel Request",
+    "cancelVacationConfirmMessage": "Do you really want to cancel this vacation request?",
+    "cancelSicknessConfirmTitle": "Cancel Sickness Report",
+    "cancelSicknessConfirmMessage": "Do you really want to cancel this sickness report?",
+    "cancelConfirm": "Cancel Request",
+    "cancelVacationAction": "Cancel Request",
+    "cancelSicknessAction": "Cancel Sickness Report",
+    "updateEndAction": "Update End Date",
+    "expectedUntilLabel": "Expected until",
+    "noEndDatePlaceholder": "No end date known",
+    "removeEndDate": "Remove End Date",
+    "rangeSincePrefix": "Since"
+  },
+  "balance": {
+    "title": "Vacation {{year}}",
+    "annualEntitlement": "Annual Entitlement",
+    "used": "Used",
+    "adjustments": "Adjustments",
+    "remaining": "Remaining",
+    "days": "{{count}} days",
+    "pendingRequests": "Pending Requests",
+    "pendingFootnote": "The days counted are only final once approved."
+  },
+  "requestVacation": {
+    "title": "Request Vacation",
+    "fromLabel": "From",
+    "toLabel": "To",
+    "noteLabel": "Note (optional)",
+    "notePlaceholder": "e.g. reason or note for the admin",
+    "submitButton": "Request Vacation",
+    "successTitle": "Vacation Requested",
+    "successMessage": "Your vacation request has been submitted and is awaiting review."
+  },
+  "reportSickness": {
+    "title": "Report Sickness",
+    "sinceLabel": "Sick since",
+    "untilLabel": "Expected until (optional)",
+    "untilPlaceholder": "Not yet known",
+    "noteLabel": "Note (optional)",
+    "notePlaceholder": "e.g. type of illness, cover arrangements",
+    "submitButton": "Report Sickness",
+    "successTitle": "Sickness Report Saved",
+    "successMessage": "Your sickness report has been recorded."
+  },
+  "errors": {
+    "loadFailed": "The absences could not be loaded.",
+    "actionFailed": "The action could not be completed.",
+    "loadSingleFailed": "The absence could not be loaded.",
+    "onlyEmployeesVacation": "Only employees can request vacation.",
+    "onlyEmployeesSickness": "Only employees can report a sickness.",
+    "onlyEmployeesCancelVacation": "Only employees can cancel their own vacation.",
+    "onlyEmployeesCancelSickness": "Only employees can cancel their own sickness report.",
+    "onlyEmployeesUpdateSickness": "Only employees can update their own sickness report.",
+    "datesRequired": "Please provide a from and to date.",
+    "startDateRequired": "Please provide a start date.",
+    "endBeforeStart": "The end date can't be before the start date.",
+    "overlapsVacation": "This period overlaps with an existing vacation request.",
+    "overlapsSickness": "This period overlaps with an already active sickness report.",
+    "vacationNotCancellable": "This vacation can no longer be cancelled — it has either already passed or has already been reviewed.",
+    "sicknessNotFound": "This sickness report could not be found or has already been closed.",
+    "requestFailed": "The vacation request could not be submitted.",
+    "reportFailed": "The sickness report could not be saved.",
+    "cancelVacationFailed": "The vacation could not be cancelled.",
+    "cancelSicknessFailed": "The sickness report could not be cancelled.",
+    "updateEndFailed": "The end date could not be updated."
+  }
+}

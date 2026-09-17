@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Redirect, router } from "expo-router";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -30,6 +31,7 @@ export default function IndexScreen() {
     isVersionBlocked,
   } = useAuth();
   const theme = useAppTheme();
+  const { t } = useTranslation();
   const [retrying, setRetrying] = useState(false);
 
   // Selbstheilung: Marker ohne Session bedeutet, die Recovery-Sitzung ist weg
@@ -128,13 +130,12 @@ export default function IndexScreen() {
       >
         <View style={styles.errorBox}>
           <Text style={[styles.errorTitle, { color: theme.colors.onSurface }]}>
-            Profil konnte nicht geladen werden
+            {t("common:bootError.profileFailedTitle")}
           </Text>
           <Text
             style={[styles.errorMessage, { color: theme.colors.onSurfaceVariant }]}
           >
-            Es gab ein Problem beim Laden deines Kontos. Bitte versuche es
-            erneut oder melde dich ab und wieder an.
+            {t("common:bootError.profileFailedMessage")}
           </Text>
 
           <TouchableOpacity
@@ -147,7 +148,7 @@ export default function IndexScreen() {
               <ActivityIndicator size="small" color={theme.colors.onPrimary} />
             ) : (
               <Text style={[styles.retryBtnText, { color: theme.colors.onPrimary }]}>
-                Erneut versuchen
+                {t("common:actions.retry")}
               </Text>
             )}
           </TouchableOpacity>
@@ -158,7 +159,7 @@ export default function IndexScreen() {
             activeOpacity={0.7}
           >
             <Text style={[styles.logoutBtnText, { color: theme.colors.error }]}>
-              Abmelden
+              {t("profile:dialogs.logout")}
             </Text>
           </TouchableOpacity>
         </View>
@@ -178,13 +179,12 @@ export default function IndexScreen() {
       >
         <View style={styles.errorBox}>
           <Text style={[styles.errorTitle, { color: theme.colors.onSurface }]}>
-            Keine Verbindung
+            {t("common:bootError.offlineTitle")}
           </Text>
           <Text
             style={[styles.errorMessage, { color: theme.colors.onSurfaceVariant }]}
           >
-            Keine Verbindung und keine lokalen Daten verfügbar. Sobald du wieder
-            online bist, kannst du es erneut versuchen.
+            {t("common:bootError.offlineMessage")}
           </Text>
 
           <TouchableOpacity
@@ -197,7 +197,7 @@ export default function IndexScreen() {
               <ActivityIndicator size="small" color={theme.colors.onPrimary} />
             ) : (
               <Text style={[styles.retryBtnText, { color: theme.colors.onPrimary }]}>
-                Erneut versuchen
+                {t("common:actions.retry")}
               </Text>
             )}
           </TouchableOpacity>
@@ -208,7 +208,7 @@ export default function IndexScreen() {
             activeOpacity={0.7}
           >
             <Text style={[styles.logoutBtnText, { color: theme.colors.error }]}>
-              Abmelden
+              {t("profile:dialogs.logout")}
             </Text>
           </TouchableOpacity>
         </View>

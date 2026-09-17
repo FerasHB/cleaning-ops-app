@@ -1,5 +1,6 @@
 import type { Job, JobAssignee } from "@/types/job";
 import { isPausedRecurringOccurrence } from "@/utils/jobSchedule";
+import { i18next } from "@/i18n";
 
 /**
  * Zentrale Helfer für die Anzeige der Zuweisungsmenge eines Auftrags.
@@ -33,10 +34,14 @@ import { isPausedRecurringOccurrence } from "@/utils/jobSchedule";
  * abbildet, ist falsch. Fällt mit Phase 11.
  */
 
-export const UNASSIGNED_LABEL = "Nicht zugewiesen";
+export function getUnassignedLabel(): string {
+  return i18next.t("common:states.unassigned");
+}
 
 /** Kennzeichnung für Zuweisungen, deren Mitarbeiterkonto gelöscht wurde. */
-export const DELETED_SUFFIX = " (ehemalig)";
+export function getDeletedSuffix(): string {
+  return i18next.t("common:states.deletedSuffix");
+}
 
 /** Alle Zugewiesenen eines Jobs — nie undefined, auch bei Alt-Daten. */
 export function getAssignees(job: Pick<Job, "assignees">): JobAssignee[] {
@@ -46,7 +51,7 @@ export function getAssignees(job: Pick<Job, "assignees">): JobAssignee[] {
 /** Namen aller Zugewiesenen in stabiler Reihenfolge (Service sortiert bereits). */
 export function getAssigneeNames(job: Pick<Job, "assignees">): string[] {
   return getAssignees(job).map((a) =>
-    a.isDeleted ? `${a.fullName}${DELETED_SUFFIX}` : a.fullName,
+    a.isDeleted ? `${a.fullName}${getDeletedSuffix()}` : a.fullName,
   );
 }
 
@@ -327,7 +332,7 @@ export function buildLegacyAssignees(
     {
       assignmentId: `legacy:${job.id}:${job.employeeId}`,
       employeeId: job.employeeId,
-      fullName: job.employeeName?.trim() || "Unbekannt",
+      fullName: job.employeeName?.trim() || i18next.t("common:states.unknown"),
       isDeleted: false,
       // HART null (Phase B1): dieser Zweig kennt die echte Zuweisungszeile
       // nicht. Die geteilte Job-Uhr hier einzusetzen würde einem Mitarbeiter
@@ -356,7 +361,7 @@ export function formatAssigneesShort(
   maxNames: number = 2,
 ): string {
   const names = getAssigneeNames(job);
-  if (names.length === 0) return UNASSIGNED_LABEL;
+  if (names.length === 0) return getUnassignedLabel();
   if (names.length <= maxNames) return names.join(", ");
   return `${names.slice(0, maxNames).join(", ")} +${names.length - maxNames}`;
 }
@@ -367,5 +372,5 @@ export function formatAssigneesShort(
  */
 export function formatAssigneesFull(job: Pick<Job, "assignees">): string {
   const names = getAssigneeNames(job);
-  return names.length === 0 ? UNASSIGNED_LABEL : names.join(", ");
+  return names.length === 0 ? getUnassignedLabel() : names.join(", ");
 }

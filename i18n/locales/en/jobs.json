@@ -1,0 +1,224 @@
+{
+  "greeting": {
+    "morning": "Good morning",
+    "day": "Good afternoon",
+    "evening": "Good evening"
+  },
+  "actions": {
+    "start": "Start",
+    "complete": "Complete"
+  },
+  "labels": {
+    "total": "Total"
+  },
+  "dateGroups": {
+    "today": "Today",
+    "tomorrow": "Tomorrow"
+  },
+  "today": {
+    "title": "Today",
+    "subtitle": "Your day at a glance",
+    "jobsToday": "Jobs today"
+  },
+  "activeJob": {
+    "title": "Active Job",
+    "runningSince": "Running since {{time}}",
+    "completeButton": "Complete Job"
+  },
+  "upcoming": {
+    "title": "Coming Up Today",
+    "subtitle_one": "{{count}} job today",
+    "subtitle_other": "{{count}} jobs today",
+    "emptyAllTitle": "No Jobs Today",
+    "emptyAllMessage": "No jobs are scheduled for you today.",
+    "emptyFilteredTitle": "No Matching Jobs",
+    "emptyFilteredMessage": "You have no jobs today with the status \"{{status}}\". Select \"All\" to see all {{count}}.",
+    "showMore_one": "{{count}} more job today — show all",
+    "showMore_other": "{{count}} more jobs today — show all"
+  },
+  "month": {
+    "title": "This Month",
+    "subtitle": "Your personal activity"
+  },
+  "errors": {
+    "startFailed": "Job could not be started.",
+    "completeFailed": "Job could not be completed."
+  },
+  "card": {
+    "scheduleTime": "{{time}}",
+    "scheduleTimeRange": "{{start}} – {{end}}",
+    "rule": "Rule",
+    "detachedSchedule": "Deviating Schedule",
+    "dueToday": "Due Today",
+    "startsAt": "Starts at {{time}}",
+    "notStartedYet": "Not Started Yet",
+    "unreadComments": "Unread comments",
+    "assigneeLabel_one": "Employee: {{names}}",
+    "assigneeLabel_other": "Employees: {{names}}",
+    "assigneesHeading_one": "Employee",
+    "assigneesHeading_other": "Employees"
+  },
+  "dialogs": {
+    "completeTitle": "Complete job?",
+    "completeMessage": "The job will be marked as completed."
+  },
+  "absenceConflict": {
+    "typeVacation": "Vacation",
+    "typeSickness": "Sick",
+    "titleSingular": "Absence found",
+    "titlePlural": "Absences found",
+    "confirmCreate": "Create anyway",
+    "confirmAssign": "Assign anyway",
+    "recurringIntro_one": "There are absences for {{count}} scheduled occurrence:",
+    "recurringIntro_other": "There are absences for {{count}} scheduled occurrences:",
+    "singleConflictVacation": "{{name}} is on vacation on {{date}}.",
+    "singleConflictSickness": "{{name}} is on sick leave on {{date}}.",
+    "multiEmployeesIntro_one": "{{count}} employee is absent that day:",
+    "multiEmployeesIntro_other": "{{count}} employees are absent that day:",
+    "moreRows": "+ {{count}} more"
+  },
+  "smart": {
+    "title": "My Jobs",
+    "noJobsToday": "No jobs are scheduled today.",
+    "todayChip": "Today {{count}}",
+    "overdue": "Overdue",
+    "overdueSubtitle_one": "{{count}} overdue job",
+    "overdueSubtitle_other": "{{count}} overdue jobs",
+    "next": "Up Next",
+    "showMore": "Show {{count}} more"
+  },
+  "detail": {
+    "notFoundTitle": "Job Not Found",
+    "notFoundMessage": "The requested job is no longer available.",
+    "noAddress": "No address available to open.",
+    "mapsFailed": "Could not open Maps app.",
+    "addressLabel": "Address",
+    "addressMissing": "No address on file",
+    "openInMaps": "Open in Maps",
+    "openInMapsA11y": "Open address in Maps",
+    "addressMissingHint": "No address is set for this job.",
+    "jobTypeLabel": "Job Type",
+    "jobTypeSingle": "One-time",
+    "plannedStart": "Planned Start",
+    "noScheduledDate": "No date scheduled",
+    "plannedDuration": "Planned Duration",
+    "plannedEnd": "Planned End",
+    "serviceLabel": "Service",
+    "scheduledFor": "Scheduled for {{date}}.",
+    "noScheduleHint": "No date is scheduled for this job yet.",
+    "headerTitle": "Job Details",
+    "ruleMenuA11y": "Actions for this recurring job",
+    "ruleMenuHint": "Opens edit, activate/deactivate, and delete"
+  },
+  "footer": {
+    "startButton": "Start Job",
+    "doneMessage": "This job is completed.",
+    "editButton": "Edit",
+    "editButtonA11y": "Edit job"
+  },
+  "comments": {
+    "title": "COMMENTS",
+    "unknownAuthor": "Unknown",
+    "emptyTitle": "No Comments Yet",
+    "emptyMessage": "Write the first message for this job.",
+    "placeholder": "Write a comment…",
+    "send": "Send",
+    "readOnlyHint": "You can read along here. Only the job's primary responsible employee can currently write comments.",
+    "offlineError": "Comment can't be sent while offline. Please try again with an internet connection.",
+    "sendFailed": "Comment could not be sent.",
+    "todayAt": "Today at {{time}}",
+    "dateAt": "{{date}} at {{time}}",
+    "offlineLoadError": "Comments aren't available offline.",
+    "loadFailed": "Comments could not be loaded."
+  },
+  "pending": {
+    "startWaiting": "Start waiting for internet",
+    "completeWaiting": "Completion waiting to sync",
+    "changeWaiting": "Change waiting to sync"
+  },
+  "agenda": {
+    "jobsCount_one": "{{count}} job",
+    "jobsCount_other": "{{count}} jobs",
+    "close": "Close day view",
+    "jobsSectionTitle": "Jobs",
+    "absencesSectionTitle": "Absences",
+    "emptyDefault": "No jobs are assigned to you for this day.",
+    "typeVacation": "Vacation",
+    "typeSickness": "Sick",
+    "a11yOpenDetails": "{{name}}, {{type}}, open details"
+  },
+  "picker": {
+    "title": "Month and Year",
+    "close": "Close selection",
+    "prevYear": "Previous year",
+    "nextYear": "Next year",
+    "yearA11y": "Year {{year}}",
+    "monthA11y": "{{month}} {{year}}"
+  },
+  "calendar": {
+    "selectMonthYear": "Select month and year",
+    "jumpToToday": "Jump to today",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "emptyMonthHint": "No jobs are assigned to you this month.",
+    "jobCountPill_one": "{{count}} job",
+    "jobCountPill_other": "{{count}} jobs",
+    "a11yNoJobs": "No jobs."
+  },
+  "smartEmpty": {
+    "allTitle": "No Jobs",
+    "allMessage": "No jobs are currently scheduled for you.",
+    "openTitle": "No Open Jobs",
+    "openMessage": "You have no open jobs assigned right now.",
+    "inProgressTitle": "No Job In Progress",
+    "inProgressMessage": "No job is currently in progress.",
+    "completedTitle": "No Completed Jobs Yet",
+    "completedMessage": "Completed jobs will appear here."
+  },
+  "photos": {
+    "label": "PHOTOS",
+    "addButton": "Add Photo",
+    "uploadingButton": "Uploading…",
+    "offlineHint": "Photo upload requires an internet connection.",
+    "successMessage": "Photo uploaded successfully.",
+    "emptyOffline": "Photos aren't available offline.",
+    "emptyDefault": "No photos yet.",
+    "previewA11y": "View photo full-screen",
+    "previewCloseA11y": "Close preview",
+    "sourceDialogTitle": "Add Photo",
+    "sourceDialogMessage": "Choose a source:",
+    "sourceCameraOption": "Take Photo",
+    "sourceLibraryOption": "Choose from Library",
+    "cameraPermissionDeniedError": "Camera access denied. Please allow access in Settings.",
+    "cameraPermissionDeniedTitle": "Camera Access Denied",
+    "cameraPermissionDeniedMessage": "To take a photo, the app needs access to your camera. Please allow access in Settings.",
+    "libraryPermissionDeniedError": "Photo library access denied. Please allow access in Settings.",
+    "libraryPermissionDeniedTitle": "Access Denied",
+    "libraryPermissionDeniedMessage": "To upload photos, the app needs access to your photo library. Please allow access in Settings.",
+    "unsupportedFormatError": "This file format isn't supported. Please choose a photo in JPEG, PNG, or WebP format.",
+    "fileTooLargeError": "The photo is too large ({{actualMb}} MB). Maximum allowed is {{maxMb}} MB.",
+    "uploadFailedFallback": "Upload failed.",
+    "loadFailedFallback": "Photos could not be loaded.",
+    "noCompanyError": "No company linked. Please sign in again.",
+    "uploadFailedStorage": "The photo could not be uploaded.",
+    "uploadFailedMetadata": "The photo could not be saved. Please try again.",
+    "loadFailedService": "The photos could not be loaded."
+  },
+  "workedTime": {
+    "cardTitle": "Total Job Time",
+    "startedLabel": "STARTED",
+    "completedLabel": "COMPLETED",
+    "runningLabel": "Running…",
+    "actorPrefix": "by {{name}}",
+    "minutes_one": "{{count}} minute",
+    "minutes_other": "{{count}} minutes",
+    "individualHeadingAdmin": "INDIVIDUAL WORKING TIME",
+    "individualHeadingMine": "YOUR WORKING TIME",
+    "rangeLabel": "{{start}} – {{end}}",
+    "fromIncomplete": "from {{start}} · incomplete",
+    "toIncomplete": "until {{end}} · incomplete",
+    "notRecorded": "not recorded",
+    "infoText": "This is the job's total duration — it may differ from an individual employee's working time.",
+    "infoTextSharedSuffix": "It is calculated from the job's start and completion, regardless of who pressed them."
+  }
+}

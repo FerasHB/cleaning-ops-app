@@ -20,12 +20,14 @@ import JobCard from "@/components/JobCard";
 import { ErrorBanner } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import type { Absence } from "@/types/absence";
 import type { Job } from "@/types/job";
 import { formatAbsenceDateRange } from "@/utils/absenceFormat";
 import { formatDayLabel } from "@/utils/calendarMonth";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Modal,
   Pressable,
@@ -106,14 +108,22 @@ export function DayAgendaSheet({
   errorMessage,
   onDismissError,
   showEmployeeName = false,
-  emptyMessage = "Für diesen Tag sind dir keine Aufträge zugewiesen.",
+  emptyMessage,
   absences,
   onOpenAbsence,
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const resolvedEmptyMessage = emptyMessage ?? t("jobs:agenda.emptyDefault");
 
-  const dayLabel = useMemo(() => (dayKey ? formatDayLabel(dayKey) : ""), [dayKey]);
+  // i18n.language in den Deps: formatDayLabel liest die aktive Sprache
+  // intern (i18next.language) — ohne diese Abhängigkeit bliebe der Titel
+  // nach einem Sprachwechsel auf dem alten Stand, bis sich `dayKey` ändert.
+  const dayLabel = useMemo(
+    () => (dayKey ? formatDayLabel(dayKey) : ""),
+    [dayKey, i18n.language],
+  );
   // Zwei-Abschnitte-Layout nur, wenn der Aufrufer absences überhaupt
   // übergibt (auch leeres Array zählt) — ein Aufrufer, der die Prop
   // weglässt, sieht exakt das bisherige Ein-Abschnitt-Layout.
@@ -134,7 +144,7 @@ export function DayAgendaSheet({
                 {dayLabel}
               </Text>
               <Text style={styles.subtitle}>
-                {jobs.length === 1 ? "1 Auftrag" : `${jobs.length} Aufträge`}
+                {t("jobs:agenda.jobsCount", { count: jobs.length })}
               </Text>
             </View>
 
@@ -144,7 +154,7 @@ export function DayAgendaSheet({
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Tagesansicht schließen"
+              accessibilityLabel={t("jobs:agenda.close")}
             >
               <Ionicons name="close" size={20} color={theme.colors.onSurfaceVariant} />
             </TouchableOpacity>
@@ -163,14 +173,14 @@ export function DayAgendaSheet({
                 Layout — sonst bliebe "Keine Aufträge" unten mehrdeutig,
                 sobald daneben ein Abwesenheiten-Abschnitt steht. */}
             {showSections ? (
-              <Text style={styles.sectionLabel}>Aufträge</Text>
+              <Text style={styles.sectionLabel}>{t("jobs:agenda.jobsSectionTitle")}</Text>
             ) : null}
 
             {/* Kann eintreten, wenn der letzte Auftrag des Tages bei offenem
                 Sheet per Realtime verschwindet — dann hier eine ruhige Zeile
                 statt einer leeren Fläche. */}
             {jobs.length === 0 ? (
-              <Text style={styles.emptyHint}>{emptyMessage}</Text>
+              <Text style={styles.emptyHint}>{resolvedEmptyMessage}</Text>
             ) : null}
 
             {jobs.map((job) => (
@@ -192,7 +202,7 @@ export function DayAgendaSheet({
             {hasAbsences ? (
               <>
                 <Text style={[styles.sectionLabel, styles.absenceSectionLabel]}>
-                  Abwesenheiten
+                  {t("jobs:agenda.absencesSectionTitle")}
                 </Text>
                 {absences!.map((absence) => (
                   <AbsenceAgendaRow
@@ -228,7 +238,10 @@ function AbsenceAgendaRow({
   theme: AppTheme;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const { t } = useTranslation();
+  const isRTL = useIsRTL();
   const isVacation = absence.type === "vacation";
+  const typeLabel = isVacation ? t("jobs:agenda.typeVacation") : t("jobs:agenda.typeSickness");
 
   return (
     <TouchableOpacity
@@ -239,7 +252,7 @@ function AbsenceAgendaRow({
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={
         onPress
-          ? `${absence.employeeName}, ${isVacation ? "Urlaub" : "Krank"}, Details öffnen`
+          ? t("jobs:agenda.a11yOpenDetails", { name: absence.employeeName, type: typeLabel })
           : undefined
       }
     >
@@ -264,11 +277,11 @@ function AbsenceAgendaRow({
           {absence.employeeName}
         </Text>
         <Text style={styles.absenceRowMeta} numberOfLines={1}>
-          {isVacation ? "Urlaub" : "Krank"} · {formatAbsenceDateRange(absence)}
+          {typeLabel} · {formatAbsenceDateRange(absence)}
         </Text>
       </View>
       {onPress ? (
-        <Ionicons name="chevron-forward" size={16} color={theme.colors.onSurfaceVariant} />
+        <Ionicons name={isRTL ? "chevron-back" : "chevron-forward"} size={16} color={theme.colors.onSurfaceVariant} />
       ) : null}
     </TouchableOpacity>
   );

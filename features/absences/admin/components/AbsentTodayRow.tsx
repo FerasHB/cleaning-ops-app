@@ -12,12 +12,14 @@
 // AdminAbsenceRow, DayAgendaSheet).
 
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import type { AppTheme } from "@/constants/theme";
 import type { Absence } from "@/types/absence";
 import { formatAbsenceDateRange } from "@/utils/absenceFormat";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   absence: Absence;
@@ -30,9 +32,14 @@ type Props = {
 
 export function AbsentTodayRow({ absence, onPress }: Props) {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const isVacation = absence.type === "vacation";
+  const typeLabel = t(
+    isVacation ? "absences:types.vacation" : "timesheets:absenceSection.typeSickness",
+  );
 
   return (
     <TouchableOpacity
@@ -43,7 +50,10 @@ export function AbsentTodayRow({ absence, onPress }: Props) {
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={
         onPress
-          ? `${absence.employeeName}, ${isVacation ? "Urlaub" : "Krank"}, Mitarbeiterdetails öffnen`
+          ? t("admin:absenceAdmin.openEmployeeA11y", {
+              name: absence.employeeName,
+              type: typeLabel,
+            })
           : undefined
       }
     >
@@ -69,12 +79,12 @@ export function AbsentTodayRow({ absence, onPress }: Props) {
           {absence.employeeName}
         </Text>
         <Text style={styles.meta} numberOfLines={1}>
-          {isVacation ? "Urlaub" : "Krank"} · {formatAbsenceDateRange(absence)}
+          {typeLabel} · {formatAbsenceDateRange(absence)}
         </Text>
       </View>
 
       {onPress ? (
-        <Ionicons name="chevron-forward" size={16} color={theme.colors.outline} />
+        <Ionicons name={isRTL ? "chevron-back" : "chevron-forward"} size={16} color={theme.colors.outline} />
       ) : null}
     </TouchableOpacity>
   );

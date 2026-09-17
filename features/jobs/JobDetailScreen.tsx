@@ -73,6 +73,7 @@ import {
 } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
+import { useTranslation } from "react-i18next";
 
 // ─────────────────────────────────────────────
 // JobDetailScreen
@@ -80,6 +81,7 @@ import { toUserMessage } from "@/utils/userMessages";
 export default function JobDetailScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   // Offset für KeyboardAvoidingView: oberer Safe-Area-Inset + Header-Höhe,
   // damit das Input-Feld beim Öffnen der Tastatur sichtbar bleibt (kein Overlap).
@@ -255,10 +257,10 @@ export default function JobDetailScreen() {
         <JobDetailHeader showMenu={false} menuBusy={false} onMenuPress={() => {}} />
         <View style={styles.emptyWrap}>
           <EmptyState
-            title="Job nicht gefunden"
-            message="Der gesuchte Job ist nicht (mehr) verfügbar."
+            title={t("jobs:detail.notFoundTitle")}
+            message={t("jobs:detail.notFoundMessage")}
             icon="alert-circle-outline"
-            ctaLabel="Zurück"
+            ctaLabel={t("common:actions.back")}
             onCta={() => router.back()}
           />
         </View>
@@ -288,7 +290,7 @@ export default function JobDetailScreen() {
       await startJob(job.id);
     } catch (err: unknown) {
       setActionError(
-        toUserMessage(err, "Job konnte nicht gestartet werden.")
+        toUserMessage(err, t("jobs:errors.startFailed"))
       );
     } finally {
       setSubmitting(false);
@@ -310,7 +312,7 @@ export default function JobDetailScreen() {
       await completeJob(job.id);
     } catch (err: unknown) {
       setActionError(
-        toUserMessage(err, "Job konnte nicht abgeschlossen werden.")
+        toUserMessage(err, t("jobs:errors.completeFailed"))
       );
     } finally {
       setSubmitting(false);
@@ -332,7 +334,7 @@ export default function JobDetailScreen() {
   const handleOpenInMaps = () => {
     setActionError("");
     if (!job.location?.trim()) {
-      setActionError("Keine Adresse zum Öffnen vorhanden.");
+      setActionError(t("jobs:detail.noAddress"));
       return;
     }
     const query = encodeURIComponent(job.location.trim());
@@ -342,7 +344,7 @@ export default function JobDetailScreen() {
       default: `https://www.google.com/maps/search/?api=1&query=${query}`,
     });
     Linking.openURL(url!).catch(() => {
-      setActionError("Maps-App konnte nicht geöffnet werden.");
+      setActionError(t("jobs:detail.mapsFailed"));
     });
   };
 

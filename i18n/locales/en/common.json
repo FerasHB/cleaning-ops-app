@@ -1,0 +1,126 @@
+{
+  "language": {
+    "sectionTitle": "App",
+    "label": "Language",
+    "restartTitle": "Restart required",
+    "restartMessage": "For the full right-to-left layout to take effect, please fully close and reopen the app.",
+    "restartConfirm": "Got it"
+  },
+  "actions": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "ok": "OK",
+    "back": "Back",
+    "next": "Next",
+    "retry": "Try Again",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "selectDate": "Select date",
+    "selectTime": "Select time"
+  },
+  "status": {
+    "open": "Open",
+    "inProgress": "In Progress",
+    "completed": "Completed"
+  },
+  "filters": {
+    "all": "All"
+  },
+  "states": {
+    "notProvided": "Not provided",
+    "unknown": "Unknown",
+    "unassigned": "Not assigned",
+    "deletedSuffix": " (former)"
+  },
+  "phoneCall": {
+    "notPossibleTitle": "Call Not Possible",
+    "noNumberMessage": "No valid phone number is on file for this contact.",
+    "confirmTitle": "Call",
+    "confirmWithName": "Call {{name}}?\n\n{{number}}",
+    "confirmGeneric": "Call this number?\n\n{{number}}",
+    "confirmButton": "Call",
+    "failedMessage": "The call could not be started. Number: {{number}}"
+  },
+  "emailContact": {
+    "notPossibleTitle": "Email Not Possible",
+    "noAddressMessage": "No email address is on file for this contact.",
+    "failedMessage": "No email app could be opened. Address: {{email}}"
+  },
+  "a11y": {
+    "closeMenu": "Close menu",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "statusFilter": "Status filter: {{label}}"
+  },
+  "errors": {
+    "title": "Error",
+    "generic": "The action could not be completed.",
+    "offline": "No internet connection. Please try again.",
+    "permission": "You don't have permission for this action.",
+    "notFound": "This entry could not be found or is no longer available.",
+    "conflict": "This entry already exists.",
+    "inUse": "This entry is still in use and can't be deleted.",
+    "invalidInput": "The information entered is incomplete or invalid.",
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "serverUnavailable": "The server is currently unavailable. Please try again later.",
+    "timeout": "The request took too long. Please try again.",
+    "loadFailed": "The data could not be loaded.",
+    "saveFailed": "The changes could not be saved.",
+    "unknown": "Unknown error.",
+    "notAuthenticated": "No signed-in user found."
+  },
+  "authErrors": {
+    "generic": "An unexpected error occurred.",
+    "offline": "No internet connection. Please check your connection and try again.",
+    "invalidCredentials": "Email or password is incorrect.",
+    "emailNotConfirmed": "Please confirm your email address first.",
+    "invalidEmail": "Please enter a valid email address.",
+    "emailExists": "An account already exists for this email address.",
+    "weakPassword": "The password doesn't meet the minimum requirements.",
+    "rateLimit": "Too many attempts. Please wait a moment and try again."
+  },
+  "validation": {
+    "passwordRequired": "Please enter a password.",
+    "passwordMinLength": "The password must be at least {{min}} characters long.",
+    "passwordTooLong": "The password is too long.",
+    "passwordMismatch": "The passwords don't match."
+  },
+  "tabs": {
+    "overview": "Overview",
+    "jobs": "Jobs",
+    "calendar": "Calendar",
+    "profile": "Profile"
+  },
+  "unsavedChanges": {
+    "title": "Discard changes?",
+    "message": "Unsaved changes will be lost.",
+    "confirm": "Discard",
+    "cancel": "Keep editing"
+  },
+  "bootError": {
+    "profileFailedTitle": "Couldn't load your profile",
+    "profileFailedMessage": "There was a problem loading your account. Please try again or sign out and back in.",
+    "offlineTitle": "No connection",
+    "offlineMessage": "No connection and no local data available. As soon as you're back online, you can try again."
+  },
+  "sync": {
+    "offlineTitle": "No internet — changes won't be lost",
+    "savingTitle": "Saving changes…",
+    "errorTitle": "Changes could not be saved",
+    "pendingLabel_one": "{{count}} change waiting",
+    "pendingLabel_other": "{{count}} changes waiting",
+    "detailsButton": "Details",
+    "noPendingChanges": "No changes waiting",
+    "hintOnline": "Your changes are saved automatically.",
+    "hintOffline": "As soon as you're back online, your changes will be saved.",
+    "closeButton": "Close",
+    "startJobWaiting": "Start job waiting",
+    "completeJobWaiting": "Complete job waiting",
+    "genericChangeWaiting": "Change waiting",
+    "a11yOffline": "No internet. Changes won't be lost.",
+    "a11ySaving": "Changes are being saved.",
+    "a11yError": "Changes could not be saved."
+  }
+}

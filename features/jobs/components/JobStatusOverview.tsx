@@ -18,9 +18,10 @@ import { StatusBadge } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job } from "@/types/job";
-import { formatDateTimeDE } from "@/utils/date";
+import { formatDateTimeLocalized } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -30,11 +31,12 @@ type Props = {
 export function JobStatusOverview({ job }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   // Kompakte Terminzeile — deckt Einzeltermine UND generierte Occurrences ab
   // (beide tragen scheduledStart).
   const scheduleSummary =
-    formatDateTimeDE(job.scheduledStart) ?? "Kein Termin geplant";
+    formatDateTimeLocalized(job.scheduledStart) ?? t("jobs:detail.noScheduledDate");
 
   return (
     <View style={styles.hero}>

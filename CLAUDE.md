@@ -105,6 +105,14 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   (E.164, selbst editierbar) + `phone_verified_at` (Reserve). Telefon-Normalisierung/-Format:
   `utils/phone.ts` (E.164, DE-Default, **ohne** libphonenumber). Tap-auf-Nummer → Bestätigung → Dialer:
   `callPhone()` in `utils/dialogs.ts` bzw. die `PhoneRow`-Komponente.
+  `profiles.locale` (20260915000000, Default `de`, `de`/`en`/`ar`/`tr`) ist die **Sprache pro Nutzer**
+  (nicht pro Firma — `companies.locale` bleibt Firmen-Default, z. B. für Rechnungen, und wird NICHT
+  für Push verwendet). Selbst editierbar wie `phone` (kein Guard-Trigger-Eintrag nötig). Wird bei
+  explizitem Sprachwechsel im Client synchronisiert (`services/profile/updateOwnLocale.ts`), nie beim
+  Kaltstart, und blockiert den lokalen Wechsel bei Fehler/Offline nie. `claim_notification_deliveries()`
+  liefert sie als `recipient_locale` an `dispatch-notifications` (Push-Text-Lokalisierung, deutscher
+  Fallback bei fehlendem/ungültigem Wert; Server übersetzt nur Grammatik/Labels, nie gespeicherte
+  Geschäftsdaten wie Kunden-/Mitarbeitername).
   `jobs` hat zusätzlich Terminierungs-Spalten: `job_type` (enum `single`|`recurring`), `date`,
   `start_time`, `recurring_days text[]`, `is_active`. Wiederkehrende Aufträge werden als **eine Regel**
   gespeichert (keine vorausberechneten Einzel-Jobs).

@@ -4,6 +4,7 @@
 // Schreibrechte werden serverseitig zusätzlich per RLS geprüft (siehe lib/schema.sql).
 
 import { supabase } from "@/lib/supabase";
+import { i18next } from "@/i18n";
 import { CreateCommentInput, JobComment } from "@/types/comment";
 
 // So sieht ein Kommentar direkt aus der Datenbank aus (PostgREST-Embed —
@@ -113,7 +114,7 @@ export async function addJobComment(
   const userId = authData.user?.id;
 
   if (!userId) {
-    throw new Error("Kein eingeloggter Benutzer gefunden.");
+    throw new Error(i18next.t("common:errors.notAuthenticated"));
   }
 
   // company_id aus dem Profil laden — wird für RLS (company-Scope) benötigt.
@@ -185,7 +186,7 @@ export async function markJobCommentsAsRead(jobId: string): Promise<void> {
   const userId = authData.user?.id;
 
   if (!userId) {
-    throw new Error("Kein eingeloggter Benutzer gefunden.");
+    throw new Error(i18next.t("common:errors.notAuthenticated"));
   }
 
   const { error } = await supabase

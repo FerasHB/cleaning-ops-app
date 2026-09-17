@@ -1,0 +1,224 @@
+{
+  "greeting": {
+    "morning": "Guten Morgen",
+    "day": "Guten Tag",
+    "evening": "Guten Abend"
+  },
+  "actions": {
+    "start": "Start",
+    "complete": "Abschließen"
+  },
+  "labels": {
+    "total": "Gesamt"
+  },
+  "dateGroups": {
+    "today": "Heute",
+    "tomorrow": "Morgen"
+  },
+  "today": {
+    "title": "Heute",
+    "subtitle": "Dein Tag auf einen Blick",
+    "jobsToday": "Jobs heute"
+  },
+  "activeJob": {
+    "title": "Aktiver Job",
+    "runningSince": "Läuft seit {{time}}",
+    "completeButton": "Job abschließen"
+  },
+  "upcoming": {
+    "title": "Heute anstehend",
+    "subtitle_one": "{{count}} Auftrag heute",
+    "subtitle_other": "{{count}} Aufträge heute",
+    "emptyAllTitle": "Heute keine Aufträge",
+    "emptyAllMessage": "Für heute sind keine Aufträge für dich geplant.",
+    "emptyFilteredTitle": "Keine passenden Aufträge",
+    "emptyFilteredMessage": "Heute hast du keine Aufträge mit dem Status „{{status}}“. Wähle „Alle“, um alle {{count}} zu sehen.",
+    "showMore_one": "{{count}} weiterer Auftrag heute — alle anzeigen",
+    "showMore_other": "{{count}} weitere Aufträge heute — alle anzeigen"
+  },
+  "month": {
+    "title": "Diesen Monat",
+    "subtitle": "Deine persönliche Aktivität"
+  },
+  "errors": {
+    "startFailed": "Job konnte nicht gestartet werden.",
+    "completeFailed": "Job konnte nicht abgeschlossen werden."
+  },
+  "card": {
+    "scheduleTime": "{{time}} Uhr",
+    "scheduleTimeRange": "{{start}} – {{end}} Uhr",
+    "rule": "Regel",
+    "detachedSchedule": "Abweichender Termin",
+    "dueToday": "Heute fällig",
+    "startsAt": "Startet um {{time}}",
+    "notStartedYet": "Noch nicht gestartet",
+    "unreadComments": "Ungelesene Kommentare",
+    "assigneeLabel_one": "Mitarbeiter: {{names}}",
+    "assigneeLabel_other": "Mitarbeitende: {{names}}",
+    "assigneesHeading_one": "Mitarbeiter",
+    "assigneesHeading_other": "Mitarbeitende"
+  },
+  "dialogs": {
+    "completeTitle": "Auftrag abschließen?",
+    "completeMessage": "Der Auftrag wird als erledigt markiert."
+  },
+  "absenceConflict": {
+    "typeVacation": "Urlaub",
+    "typeSickness": "Krank",
+    "titleSingular": "Abwesenheit gefunden",
+    "titlePlural": "Abwesenheiten gefunden",
+    "confirmCreate": "Trotzdem erstellen",
+    "confirmAssign": "Trotzdem zuweisen",
+    "recurringIntro_one": "Bei {{count}} geplantem Einsatz gibt es Abwesenheiten:",
+    "recurringIntro_other": "Bei {{count}} geplanten Einsätzen gibt es Abwesenheiten:",
+    "singleConflictVacation": "{{name}} ist am {{date}} im Urlaub.",
+    "singleConflictSickness": "{{name}} ist am {{date}} krank gemeldet.",
+    "multiEmployeesIntro_one": "{{count}} Mitarbeiter ist an diesem Tag abwesend:",
+    "multiEmployeesIntro_other": "{{count}} Mitarbeiter sind an diesem Tag abwesend:",
+    "moreRows": "+ {{count}} weitere"
+  },
+  "smart": {
+    "title": "Meine Aufträge",
+    "noJobsToday": "Heute sind keine Aufträge geplant.",
+    "todayChip": "Heute {{count}}",
+    "overdue": "Überfällig",
+    "overdueSubtitle_one": "{{count}} überfälliger Auftrag",
+    "overdueSubtitle_other": "{{count}} überfällige Aufträge",
+    "next": "Als Nächstes",
+    "showMore": "Weitere {{count}} anzeigen"
+  },
+  "detail": {
+    "notFoundTitle": "Job nicht gefunden",
+    "notFoundMessage": "Der gesuchte Job ist nicht (mehr) verfügbar.",
+    "noAddress": "Keine Adresse zum Öffnen vorhanden.",
+    "mapsFailed": "Maps-App konnte nicht geöffnet werden.",
+    "addressLabel": "Adresse",
+    "addressMissing": "Keine Adresse hinterlegt",
+    "openInMaps": "In Maps öffnen",
+    "openInMapsA11y": "Adresse in Maps öffnen",
+    "addressMissingHint": "Für diesen Auftrag ist keine Adresse gepflegt.",
+    "jobTypeLabel": "Auftragstyp",
+    "jobTypeSingle": "Einmalig",
+    "plannedStart": "Geplanter Start",
+    "noScheduledDate": "Kein Termin geplant",
+    "plannedDuration": "Geplante Dauer",
+    "plannedEnd": "Geplantes Ende",
+    "serviceLabel": "Service",
+    "scheduledFor": "Geplant für {{date}}.",
+    "noScheduleHint": "Für diesen Auftrag ist noch kein Termin geplant.",
+    "headerTitle": "Job-Details",
+    "ruleMenuA11y": "Aktionen für diesen Dauerauftrag",
+    "ruleMenuHint": "Öffnet Bearbeiten, Aktivieren/Deaktivieren und Löschen"
+  },
+  "footer": {
+    "startButton": "Job starten",
+    "doneMessage": "Dieser Job ist abgeschlossen.",
+    "editButton": "Bearbeiten",
+    "editButtonA11y": "Job bearbeiten"
+  },
+  "comments": {
+    "title": "KOMMENTARE",
+    "unknownAuthor": "Unbekannt",
+    "emptyTitle": "Noch keine Kommentare",
+    "emptyMessage": "Schreibe die erste Nachricht zu diesem Auftrag.",
+    "placeholder": "Kommentar schreiben…",
+    "send": "Senden",
+    "readOnlyHint": "Du kannst hier mitlesen. Kommentare schreiben kann derzeit nur der hauptverantwortliche Mitarbeiter des Auftrags.",
+    "offlineError": "Kommentar kann offline nicht gesendet werden. Bitte mit Internet erneut versuchen.",
+    "sendFailed": "Kommentar konnte nicht gesendet werden.",
+    "todayAt": "Heute um {{time}}",
+    "dateAt": "{{date}} um {{time}}",
+    "offlineLoadError": "Kommentare sind offline nicht verfügbar.",
+    "loadFailed": "Kommentare konnten nicht geladen werden."
+  },
+  "pending": {
+    "startWaiting": "Start wartet auf Internet",
+    "completeWaiting": "Abschluss wartet auf Synchronisierung",
+    "changeWaiting": "Änderung wartet auf Synchronisierung"
+  },
+  "agenda": {
+    "jobsCount_one": "{{count}} Auftrag",
+    "jobsCount_other": "{{count}} Aufträge",
+    "close": "Tagesansicht schließen",
+    "jobsSectionTitle": "Aufträge",
+    "absencesSectionTitle": "Abwesenheiten",
+    "emptyDefault": "Für diesen Tag sind dir keine Aufträge zugewiesen.",
+    "typeVacation": "Urlaub",
+    "typeSickness": "Krank",
+    "a11yOpenDetails": "{{name}}, {{type}}, Details öffnen"
+  },
+  "picker": {
+    "title": "Monat und Jahr",
+    "close": "Auswahl schließen",
+    "prevYear": "Vorheriges Jahr",
+    "nextYear": "Nächstes Jahr",
+    "yearA11y": "Jahr {{year}}",
+    "monthA11y": "{{month}} {{year}}"
+  },
+  "calendar": {
+    "selectMonthYear": "Monat und Jahr auswählen",
+    "jumpToToday": "Zu heute springen",
+    "prevMonth": "Vorheriger Monat",
+    "nextMonth": "Nächster Monat",
+    "emptyMonthHint": "In diesem Monat sind dir keine Aufträge zugewiesen.",
+    "jobCountPill_one": "{{count}} Job",
+    "jobCountPill_other": "{{count}} Jobs",
+    "a11yNoJobs": "Keine Aufträge."
+  },
+  "smartEmpty": {
+    "allTitle": "Keine Aufträge",
+    "allMessage": "Aktuell sind keine Aufträge für dich geplant.",
+    "openTitle": "Keine offenen Aufträge",
+    "openMessage": "Aktuell sind dir keine offenen Aufträge zugewiesen.",
+    "inProgressTitle": "Kein Auftrag in Arbeit",
+    "inProgressMessage": "Aktuell läuft kein Auftrag.",
+    "completedTitle": "Noch keine erledigten Aufträge",
+    "completedMessage": "Abgeschlossene Aufträge erscheinen hier."
+  },
+  "photos": {
+    "label": "FOTOS",
+    "addButton": "Foto hinzufügen",
+    "uploadingButton": "Wird hochgeladen …",
+    "offlineHint": "Foto-Upload nur mit Internetverbindung möglich.",
+    "successMessage": "Foto erfolgreich hochgeladen.",
+    "emptyOffline": "Fotos sind offline nicht verfügbar.",
+    "emptyDefault": "Noch keine Fotos vorhanden.",
+    "previewA11y": "Foto groß anzeigen",
+    "previewCloseA11y": "Vorschau schließen",
+    "sourceDialogTitle": "Foto hinzufügen",
+    "sourceDialogMessage": "Wähle eine Quelle:",
+    "sourceCameraOption": "Foto aufnehmen",
+    "sourceLibraryOption": "Aus Galerie wählen",
+    "cameraPermissionDeniedError": "Kamera-Zugriff verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
+    "cameraPermissionDeniedTitle": "Kamera-Zugriff verweigert",
+    "cameraPermissionDeniedMessage": "Damit du ein Foto aufnehmen kannst, benötigt die App Zugriff auf die Kamera. Bitte erteile die Berechtigung in den Einstellungen.",
+    "libraryPermissionDeniedError": "Zugriff auf die Fotomediathek verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
+    "libraryPermissionDeniedTitle": "Zugriff verweigert",
+    "libraryPermissionDeniedMessage": "Damit du Fotos hochladen kannst, benötigt die App Zugriff auf deine Fotomediathek. Bitte erteile die Berechtigung in den Einstellungen.",
+    "unsupportedFormatError": "Dieses Dateiformat wird nicht unterstützt. Bitte wähle ein Foto im Format JPEG, PNG oder WebP.",
+    "fileTooLargeError": "Das Foto ist zu groß ({{actualMb}} MB). Maximal erlaubt sind {{maxMb}} MB.",
+    "uploadFailedFallback": "Upload fehlgeschlagen.",
+    "loadFailedFallback": "Fotos konnten nicht geladen werden.",
+    "noCompanyError": "Kein Unternehmen verknüpft. Bitte neu einloggen.",
+    "uploadFailedStorage": "Das Foto konnte nicht hochgeladen werden.",
+    "uploadFailedMetadata": "Das Foto konnte nicht gespeichert werden. Bitte versuche es erneut.",
+    "loadFailedService": "Die Fotos konnten nicht geladen werden."
+  },
+  "workedTime": {
+    "cardTitle": "Gesamtzeit Auftrag",
+    "startedLabel": "GESTARTET",
+    "completedLabel": "ERLEDIGT",
+    "runningLabel": "Läuft…",
+    "actorPrefix": "von {{name}}",
+    "minutes_one": "{{count}} Minute",
+    "minutes_other": "{{count}} Minuten",
+    "individualHeadingAdmin": "INDIVIDUELLE ARBEITSZEIT",
+    "individualHeadingMine": "DEINE ARBEITSZEIT",
+    "rangeLabel": "{{start}} – {{end}}",
+    "fromIncomplete": "ab {{start}} · unvollständig",
+    "toIncomplete": "bis {{end}} · unvollständig",
+    "notRecorded": "nicht erfasst",
+    "infoText": "Dies ist die Gesamtlaufzeit des Auftrags — sie kann von der individuellen Arbeitszeit einzelner Mitarbeitender abweichen.",
+    "infoTextSharedSuffix": "Sie wird aus Start und Abschluss des Auftrags berechnet, unabhängig davon, wer sie gedrückt hat."
+  }
+}

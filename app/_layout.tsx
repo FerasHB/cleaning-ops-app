@@ -8,6 +8,7 @@ import { JobProvider } from "@/context/JobContext";
 import { AuthLinkUrlProvider } from "@/features/auth/AuthLinkUrlProvider";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useNotificationNavigation } from "@/hooks/useNotificationNavigation";
+import { initI18n } from "@/i18n";
 import { setupNotifications } from "@/services/notificationService";
 import { installNetworkErrorGuard } from "@/utils/networkError";
 import {
@@ -347,6 +348,22 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
+  // Sprache auflösen (gespeichert → Gerät → Deutsch) und i18next
+  // initialisieren, BEVOR der erste Frame mit echtem Inhalt rendert — siehe
+  // initI18n() in i18n/index.ts. Wie beim Font-Loading blockiert das den
+  // Render unten (kein erster Frame in Deutsch, der dann auf die
+  // gespeicherte/Geräte-Sprache umspringt).
+  const [i18nReady, setI18nReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    initI18n().finally(() => {
+      if (!cancelled) setI18nReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Nativen Splash ausblenden, sobald Fonts geladen (oder fehlgeschlagen) sind.
   // Bewusst HIER (oberhalb der AppErrorBoundary): Der animierte Splash wird im
   // selben Render committed → lückenloser Übergang; UND der Effekt läuft auch,
@@ -370,9 +387,9 @@ export default function RootLayout() {
     setupNotifications();
   }, []);
 
-  // Nichts rendern solange Fonts noch laden
+  // Nichts rendern solange Fonts oder i18n noch laden
   // (fontError: Inter-Fallback auf System-Font — App bleibt funktionsfähig)
-  if (!fontsLoaded && !fontError) {
+  if ((!fontsLoaded && !fontError) || !i18nReady) {
     return null;
   }
 

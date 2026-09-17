@@ -28,6 +28,7 @@ import {
   AbsenceType,
 } from "@/types/absence";
 import { toUserMessage } from "@/utils/userMessages";
+import { i18next } from "@/i18n";
 
 export type AdminCreateAbsenceInput = {
   employeeId: string;
@@ -48,51 +49,47 @@ const PENDING_REQUESTS_LIMIT = 100;
 // Bekannte englische RPC-Ablehnungen der Admin-RPCs → deutsche Nutzer-
 // Meldung. Reihenfolge spezifisch → grob, gleiche Bauform wie
 // services/absences/absences.service.ts (translateRpcError).
-const ADMIN_RPC_MESSAGE_MAP: { match: string; message: string }[] = [
-  {
-    match: "Only admins can review vacation requests",
-    message: "Nur Admins können Urlaubsanträge bearbeiten.",
-  },
-  {
-    match: "Only admins can manually record an absence",
-    message: "Nur Admins können Abwesenheiten manuell erfassen.",
-  },
-  {
-    match: "Vacation request not found, not in your company, or already reviewed",
-    message:
-      "Dieser Antrag wurde bereits bearbeitet oder ist nicht mehr verfügbar.",
-  },
-  {
-    match: "Employee not found in your company",
-    message: "Dieser Mitarbeiter wurde nicht gefunden.",
-  },
-  {
-    match: "start_date is required",
-    message: "Bitte ein Startdatum angeben.",
-  },
-  {
-    match: "end_date is required for vacation",
-    message: "Bitte ein Enddatum für den Urlaub angeben.",
-  },
-  {
-    match: "end_date must not be before start_date",
-    message: "Das Enddatum darf nicht vor dem Startdatum liegen.",
-  },
-  {
-    match: "Overlaps an existing vacation request",
-    message:
-      "Dieser Zeitraum überschneidet sich mit einem bereits bestehenden Urlaubsantrag.",
-  },
-  {
-    match: "Overlaps an existing active sickness report",
-    message:
-      "Dieser Zeitraum überschneidet sich mit einer bereits aktiven Krankmeldung.",
-  },
-  {
-    match: "decision must be",
-    message: "Ungültige Entscheidung.",
-  },
-];
+function adminRpcMessageMap(): { match: string; key: string }[] {
+  return [
+    {
+      match: "Only admins can review vacation requests",
+      key: "admin:absenceAdmin.rpcErrors.onlyAdminsReview",
+    },
+    {
+      match: "Only admins can manually record an absence",
+      key: "admin:absenceAdmin.rpcErrors.onlyAdminsCreate",
+    },
+    {
+      match: "Vacation request not found, not in your company, or already reviewed",
+      key: "admin:absenceAdmin.rpcErrors.requestNotFound",
+    },
+    {
+      match: "Employee not found in your company",
+      key: "admin:absenceAdmin.rpcErrors.employeeNotFound",
+    },
+    {
+      match: "start_date is required",
+      key: "admin:absenceAdmin.create.startDateRequiredError",
+    },
+    {
+      match: "end_date is required for vacation",
+      key: "admin:absenceAdmin.create.endDateRequiredError",
+    },
+    {
+      match: "end_date must not be before start_date",
+      key: "admin:absenceAdmin.create.endBeforeStartError",
+    },
+    {
+      match: "Overlaps an existing vacation request",
+      key: "admin:absenceAdmin.rpcErrors.overlapsVacation",
+    },
+    {
+      match: "Overlaps an existing active sickness report",
+      key: "admin:absenceAdmin.rpcErrors.overlapsSickness",
+    },
+    { match: "decision must be", key: "admin:absenceAdmin.rpcErrors.invalidDecision" },
+  ];
+}
 
 function translateAdminRpcError(err: unknown, fallback: string): string {
   const raw =
@@ -100,8 +97,8 @@ function translateAdminRpcError(err: unknown, fallback: string): string {
       ? String((err as { message?: unknown }).message ?? "")
       : "";
 
-  const hit = ADMIN_RPC_MESSAGE_MAP.find((entry) => raw.includes(entry.match));
-  if (hit) return hit.message;
+  const hit = adminRpcMessageMap().find((entry) => raw.includes(entry.match));
+  if (hit) return i18next.t(hit.key);
 
   return toUserMessage(err, fallback);
 }
@@ -109,7 +106,7 @@ function translateAdminRpcError(err: unknown, fallback: string): string {
 function firstRow(data: AbsenceRow[] | null): Absence {
   const row = data?.[0];
   if (!row) {
-    throw new Error("Die Abwesenheit konnte nicht geladen werden.");
+    throw new Error(i18next.t("admin:absenceAdmin.loadErrors.loadAbsenceFailed"));
   }
   return mapAbsence(row);
 }
@@ -144,7 +141,7 @@ export async function getCompanyAbsences(params?: {
   const { data, error } = await query;
   if (error) {
     throw new Error(
-      translateAdminRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+      translateAdminRpcError(error, i18next.t("admin:absenceAdmin.loadErrors.loadAbsencesFailed")),
     );
   }
   return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
@@ -187,7 +184,7 @@ export async function getCompanyAbsencesInRange(params: {
   const { data, error } = await query;
   if (error) {
     throw new Error(
-      translateAdminRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+      translateAdminRpcError(error, i18next.t("admin:absenceAdmin.loadErrors.loadAbsencesFailed")),
     );
   }
   return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
@@ -207,7 +204,7 @@ export async function getEmployeeAbsences(
 
   if (error) {
     throw new Error(
-      translateAdminRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+      translateAdminRpcError(error, i18next.t("admin:absenceAdmin.loadErrors.loadAbsencesFailed")),
     );
   }
   return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
@@ -223,7 +220,7 @@ export async function getPendingVacationCount(): Promise<number> {
 
   if (error) {
     throw new Error(
-      translateAdminRpcError(error, "Die Anzahl offener Anträge konnte nicht geladen werden."),
+      translateAdminRpcError(error, i18next.t("admin:absenceAdmin.loadErrors.loadPendingCountFailed")),
     );
   }
   return count ?? 0;
@@ -241,7 +238,7 @@ export async function getPendingVacationRequests(): Promise<Absence[]> {
 
   if (error) {
     throw new Error(
-      translateAdminRpcError(error, "Die Urlaubsanträge konnten nicht geladen werden."),
+      translateAdminRpcError(error, i18next.t("admin:absenceAdmin.loadErrors.loadPendingRequestsFailed")),
     );
   }
   return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
@@ -269,7 +266,7 @@ export async function getSicknessReports(params?: {
   const { data, error } = await query;
   if (error) {
     throw new Error(
-      translateAdminRpcError(error, "Die Krankmeldungen konnten nicht geladen werden."),
+      translateAdminRpcError(error, i18next.t("admin:absenceAdmin.loadErrors.loadSicknessFailed")),
     );
   }
   return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
@@ -296,7 +293,7 @@ export async function getCurrentCompanyAbsences(
 
   if (error) {
     throw new Error(
-      translateAdminRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+      translateAdminRpcError(error, i18next.t("admin:absenceAdmin.loadErrors.loadAbsencesFailed")),
     );
   }
   return (data ?? []).map((row) => mapAbsence(row as AbsenceRow));
@@ -334,8 +331,8 @@ export async function reviewVacation(
       translateAdminRpcError(
         error,
         decision === "approved"
-          ? "Der Urlaub konnte nicht genehmigt werden."
-          : "Der Urlaub konnte nicht abgelehnt werden.",
+          ? i18next.t("admin:absenceAdmin.loadErrors.approveFailed")
+          : i18next.t("admin:absenceAdmin.loadErrors.rejectFailed"),
       ),
     );
   }
@@ -361,7 +358,7 @@ export async function adminCreateAbsence(
 
   if (error) {
     throw new Error(
-      translateAdminRpcError(error, "Die Abwesenheit konnte nicht erfasst werden."),
+      translateAdminRpcError(error, i18next.t("admin:absenceAdmin.create.createFailedFallback")),
     );
   }
   return firstRow(data as AbsenceRow[] | null);

@@ -7,8 +7,8 @@
 // rein clientseitig auf den bereits geladenen Monatsdaten. Ein Umschalten
 // hier löst NIE einen Netzwerk-Request aus.
 //
-// Wortlaut und Farben kommen ausschließlich aus utils/jobStatus.ts
-// (JOB_STATUS_ORDER/JOB_STATUS_LABELS/getJobStatusMeta) — keine zweite
+// Farben kommen aus utils/jobStatus.ts (JOB_STATUS_ORDER/getJobStatusMeta),
+// Beschriftungen aus hooks/useJobStatusLabels.ts (i18n) — keine zweite
 // Status-Tabelle, dieselbe Quelle wie Kalender-Punkte und Job-Karten.
 //
 // Horizontal scrollbar statt umbrechend: bei vier Chips + Mitarbeiter-Icon-
@@ -18,22 +18,20 @@
 
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import type { JobStatus } from "@/types/job";
-import {
-  JOB_STATUS_LABELS,
-  JOB_STATUS_ORDER,
-  getJobStatusMeta,
-} from "@/utils/jobStatus";
+import { JOB_STATUS_ORDER, getJobStatusMeta } from "@/utils/jobStatus";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { ScrollView, StyleSheet, Text, TouchableOpacity } from "react-native";
 
 export type StatusSelection = "all" | JobStatus;
 
-export const ALL_STATUS_LABEL = "Alle";
-
 /** Lesbares Label der aktuellen Auswahl (für Chip/Accessibility). */
-export function statusSelectionLabel(selection: StatusSelection): string {
-  return selection === "all" ? ALL_STATUS_LABEL : JOB_STATUS_LABELS[selection];
+export function useStatusSelectionLabel(selection: StatusSelection): string {
+  const { t } = useTranslation();
+  const labels = useJobStatusLabels();
+  return selection === "all" ? t("common:filters.all") : labels[selection];
 }
 
 type Props = {
@@ -43,6 +41,8 @@ type Props = {
 
 export function StatusFilterRow({ value, onChange }: Props) {
   const theme = useAppTheme();
+  const { t } = useTranslation();
+  const labels = useJobStatusLabels();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
@@ -52,7 +52,7 @@ export function StatusFilterRow({ value, onChange }: Props) {
       contentContainerStyle={styles.row}
     >
       <Chip
-        label={ALL_STATUS_LABEL}
+        label={t("common:filters.all")}
         active={value === "all"}
         onPress={() => onChange("all")}
         activeBg={theme.colors.primaryContainer}
@@ -61,7 +61,7 @@ export function StatusFilterRow({ value, onChange }: Props) {
         styles={styles}
       />
       {JOB_STATUS_ORDER.map((status) => {
-        const meta = getJobStatusMeta(status, theme.colors);
+        const meta = getJobStatusMeta(status, theme.colors, labels[status]);
         return (
           <Chip
             key={status}
@@ -96,6 +96,7 @@ function Chip({
   activeText: string;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const { t } = useTranslation();
   return (
     <TouchableOpacity
       style={[
@@ -106,7 +107,7 @@ function Chip({
       activeOpacity={0.8}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      accessibilityLabel={`Status-Filter: ${label}`}
+      accessibilityLabel={t("common:a11y.statusFilter", { label })}
     >
       <Text
         style={[

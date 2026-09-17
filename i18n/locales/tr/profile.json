@@ -1,0 +1,78 @@
+{
+  "fallback": {
+    "noEmail": "E-posta yok",
+    "companyConnected": "Firma bağlı",
+    "myAccount": "hesabın"
+  },
+  "roles": {
+    "admin": "Yönetici",
+    "employee": "Çalışan"
+  },
+  "sections": {
+    "myWork": "Çalışmalarım",
+    "account": "Hesap",
+    "other": "Diğer"
+  },
+  "rows": {
+    "myWorkingHours": "Çalışma Saatlerim",
+    "absences": "İzinler",
+    "editProfile": "Profili Düzenle",
+    "phone": "Telefon",
+    "email": "E-posta",
+    "changePassword": "Şifre Değiştir",
+    "appearance": "Görünüm",
+    "appearanceValue": "Sistem ayarı",
+    "deleteAccount": "Hesabı Sil",
+    "appVersion": "Uygulama Sürümü",
+    "appVersionValue": "Sürüm {{version}}"
+  },
+  "dialogs": {
+    "appearanceTitle": "Görünüm",
+    "appearanceMessage": "Uygulama, cihazının açık/koyu tema ayarını otomatik olarak takip eder.",
+    "logout": "Çıkış Yap",
+    "logoutMessage": "Çıkış yapmak istediğinden emin misin?",
+    "logoutFailedTitle": "Çıkış Başarısız",
+    "logoutFailedSuffix": "Hâlâ oturumun açık."
+  },
+  "edit": {
+    "title": "Profili Düzenle",
+    "fullNameLabel": "Ad Soyad",
+    "fullNamePlaceholder": "Ahmet Yılmaz",
+    "phoneLabel": "Telefon (opsiyonel)",
+    "emailInfo": "E-posta: {{email}} — girişte belirlendi, burada değiştirilemez.",
+    "nameRequired": "Ad zorunlu.",
+    "invalidPhone": "Lütfen geçerli bir telefon numarası gir (örn. 0170 1234567).",
+    "saveFailed": "Profil kaydedilemedi."
+  },
+  "changePassword": {
+    "title": "Şifre Değiştir",
+    "newPasswordLabel": "Yeni Şifre",
+    "newPasswordPlaceholder": "En az 10 karakter",
+    "confirmLabel": "Şifreyi Onayla",
+    "confirmPlaceholder": "Şifreyi tekrar gir",
+    "saveButton": "Şifreyi Kaydet",
+    "saveFailed": "Şifre değiştirilemedi.",
+    "successTitle": "Kaydedildi",
+    "successMessage": "Şifren başarıyla değiştirildi."
+  },
+  "deleteAccount": {
+    "headerTitle": "Hesabı Sil",
+    "heroTitle": "Hesabı Kalıcı Olarak Sil",
+    "heroSubtitle": "Bu işlem geri alınamaz ve kalıcıdır.",
+    "whatHappensTitle": "Hesap silinince ne olur?",
+    "whatHappensBullet1": "Giriş hesabın (e-posta ve şifre) kalıcı olarak kaldırılır.",
+    "whatHappensBullet2": "Profilin (ad, telefon numarası, push token) silinir.",
+    "whatHappensBullet3": "Hemen çıkış yapılır ve uygulamaya erişimini kaybedersin.",
+    "remainingDataTitle": "Hangi veriler saklanır?",
+    "remainingDataBullet1": "Oluşturduğun veya düzenlediğin işler, yorumlar ve fotoğraflar, operasyonel ve yasal nedenlerle firmanda saklanmaya devam eder.",
+    "remainingDataBullet2": "Ancak bu kayıtlar anonimleştirilir — artık adınla veya hesabınla ilişkilendirilmez.",
+    "adminNote": "Yönetici olarak hesabını yalnızca başka bir aktif yönetici varsa silebilirsin. Firmanın tek yöneticisiysen önce firmayı kapat ya da başka bir yönetici ata.",
+    "checkboxLabel": "Bu işlemin geri alınamaz olduğunu ve hesabımın kalıcı olarak silineceğini anlıyorum.",
+    "deleteButton": "Hesabı Kalıcı Olarak Sil",
+    "confirmDialogTitle": "Hesap kalıcı olarak silinsin mi?",
+    "confirmDialogMessage": "Bu işlem geri alınamaz. Hesabın ve profilin kalıcı olarak silinecek.",
+    "confirmDialogConfirm": "Kalıcı Olarak Sil",
+    "notPossibleTitle": "Silme Mümkün Değil",
+    "genericError": "Hesabın silinemedi. Lütfen daha sonra tekrar dene."
+  }
+}

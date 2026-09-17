@@ -40,6 +40,7 @@ import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
 import { alertDialog, confirmDialog } from "@/utils/dialogs";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
+import { useTranslation } from "react-i18next";
 
 // Vergleicht zwei Mitarbeiter-ID-Mengen ordnungsunabhängig (normalisiert:
 // dedupliziert + sortiert). Reine Umsortierung darf hasChanges NICHT
@@ -55,6 +56,7 @@ function sameIdSet(a: string[], b: string[]): boolean {
 export default function EditJobScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { id } = useLocalSearchParams<{ id: string }>();
   const {
@@ -294,7 +296,7 @@ export default function EditJobScreen() {
   // ── Speichern (Business-Logik unverändert)
   const handleSave = async () => {
     if (!job) {
-      await alertDialog("Fehler", "Job wurde nicht gefunden.");
+      await alertDialog(t("common:errors.title"), t("admin:jobForm.jobNotFoundDialogMessage"));
       return;
     }
 
@@ -310,12 +312,10 @@ export default function EditJobScreen() {
     // einen anderen Pfad als disabled=false erreichbar wäre.
     if (hasInactiveAssignedEmployees) {
       await alertDialog(
-        "Bearbeiten nicht möglich",
-        "Dieser Auftrag ist mindestens einem inaktiven Mitarbeiter zugewiesen " +
-          `(${inactiveAssignedEmployees.map((e) => e.fullName).join(", ")}). ` +
-          "Aus Datensicherheitsgründen kann der Auftrag aktuell nicht " +
-          "bearbeitet werden, da jedes Speichern diese Zuweisung " +
-          "unbeabsichtigt entfernen könnte.",
+        t("admin:jobForm.editBlockedDialogTitle"),
+        t("admin:jobForm.editBlockedDialogMessage", {
+          names: inactiveAssignedEmployees.map((e) => e.fullName).join(", "),
+        }),
       );
       return;
     }
@@ -397,12 +397,12 @@ export default function EditJobScreen() {
           // fire-and-forget und router.back() feuerte sofort — der Hinweis stand
           // dann über dem VORHERIGEN Screen bzw. verschwand mit dem Wechsel. Im
           // Web zeigte Alert.alert ohnehin nichts an.
-          await alertDialog("Gespeichert", "Der Job wurde aktualisiert.");
+          await alertDialog(t("admin:jobForm.savedDialogTitle"), t("admin:jobForm.savedDialogMessage"));
           leaveWithoutWarning(() => router.back());
         },
       );
     } catch (err: unknown) {
-      const msg = toUserMessage(err, "Job konnte nicht gespeichert werden.");
+      const msg = toUserMessage(err, t("admin:jobForm.saveFailedFallback"));
 
       // Teilerfolg: die Mitarbeiterzuweisung wurde bereits gespeichert, auch
       // wenn der Rest fehlgeschlagen ist (siehe PartialUpdateError in
@@ -411,9 +411,9 @@ export default function EditJobScreen() {
       // Fehlschlag/Rollback darstellen, im Formular bleiben (kein
       // router.back()) und NICHT automatisch erneut speichern.
       if (err instanceof PartialUpdateError) {
-        await alertDialog("Teilweise gespeichert", msg);
+        await alertDialog(t("admin:jobForm.partiallySavedDialogTitle"), msg);
       } else {
-        await alertDialog("Fehler", msg);
+        await alertDialog(t("common:errors.title"), msg);
       }
     } finally {
       setSubmitting(false);
@@ -426,14 +426,14 @@ export default function EditJobScreen() {
   // navigieren) und im Web überhaupt sichtbar.
   const handleDelete = async () => {
     if (!job) {
-      await alertDialog("Fehler", "Job wurde nicht gefunden.");
+      await alertDialog(t("common:errors.title"), t("admin:jobForm.jobNotFoundDialogMessage"));
       return;
     }
 
     const confirmed = await confirmDialog({
-      title: "Job löschen",
-      message: "Möchtest du diesen Job wirklich löschen?",
-      confirmLabel: "Löschen",
+      title: t("admin:jobForm.deleteConfirmTitle"),
+      message: t("admin:jobForm.deleteConfirmMessage"),
+      confirmLabel: t("common:actions.delete"),
       destructive: true,
     });
 
@@ -442,11 +442,11 @@ export default function EditJobScreen() {
     try {
       setSubmitting(true);
       await deleteJob(job.id);
-      await alertDialog("Gelöscht", "Der Job wurde gelöscht.");
+      await alertDialog(t("admin:jobForm.deletedDialogTitle"), t("admin:jobForm.deletedDialogMessage"));
       leaveWithoutWarning(() => router.back());
     } catch (err: unknown) {
-      const msg = toUserMessage(err, "Job konnte nicht gelöscht werden.");
-      await alertDialog("Fehler", msg);
+      const msg = toUserMessage(err, t("admin:jobForm.deleteFailedFallback"));
+      await alertDialog(t("common:errors.title"), msg);
     } finally {
       setSubmitting(false);
     }
@@ -465,11 +465,11 @@ export default function EditJobScreen() {
           backgroundColor={theme.colors.background}
         />
         <View style={styles.emptyWrap}>
-          <Text style={styles.emptyTitle}>Kein Zugriff</Text>
+          <Text style={styles.emptyTitle}>{t("admin:jobForm.noAccessTitle")}</Text>
           <Text style={styles.emptyText}>
-            Nur Admins dürfen Jobs bearbeiten.
+            {t("admin:jobForm.noAccessMessage")}
           </Text>
-          <Button label="Zurück" onPress={() => router.back()} />
+          <Button label={t("common:actions.back")} onPress={() => router.back()} />
         </View>
       </SafeAreaView>
     );
@@ -484,11 +484,11 @@ export default function EditJobScreen() {
           backgroundColor={theme.colors.background}
         />
         <View style={styles.emptyWrap}>
-          <Text style={styles.emptyTitle}>Job nicht gefunden</Text>
+          <Text style={styles.emptyTitle}>{t("admin:jobForm.notFoundTitle")}</Text>
           <Text style={styles.emptyText}>
-            Der gewünschte Job konnte nicht geladen werden.
+            {t("admin:jobForm.notFoundMessage")}
           </Text>
-          <Button label="Zurück" onPress={() => router.back()} />
+          <Button label={t("common:actions.back")} onPress={() => router.back()} />
         </View>
       </SafeAreaView>
     );
@@ -506,7 +506,7 @@ export default function EditJobScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <AppHeader title="Job bearbeiten" showBack />
+        <AppHeader title={t("admin:jobForm.editTitle")} showBack />
 
         {/* ── Scroll-Inhalt ── */}
         <ScrollView
@@ -515,9 +515,9 @@ export default function EditJobScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Job-Details bearbeiten</Text>
+            <Text style={styles.sectionTitle}>{t("admin:jobForm.editSectionTitle")}</Text>
             <Text style={styles.sectionSubtitle}>
-              Pflichtfelder sind mit * markiert
+              {t("admin:jobForm.editRequiredFieldsHint")}
             </Text>
 
             <Divider style={styles.sectionDivider} />
@@ -536,11 +536,11 @@ export default function EditJobScreen() {
           </Card>
 
           <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Mitarbeiter</Text>
+            <Text style={styles.sectionTitle}>{t("admin:jobForm.employeesSectionTitle")}</Text>
             <Text style={styles.sectionSubtitle}>
               {isCompletedJob
-                ? "Abgeschlossener Auftrag – Zuweisung ist gesperrt"
-                : "Zuweisung kann geändert werden, solange niemand gestartet hat"}
+                ? t("admin:jobForm.employeesSectionSubtitleLocked")
+                : t("admin:jobForm.employeesSectionSubtitle")}
             </Text>
 
             <Divider style={styles.sectionDivider} />
@@ -549,15 +549,9 @@ export default function EditJobScreen() {
               <View style={{ marginBottom: theme.spacing.sm }}>
                 <ErrorBanner
                   type="warning"
-                  message={
-                    "Dieser Auftrag ist mindestens einem inaktiven Mitarbeiter " +
-                    `zugewiesen (${inactiveAssignedEmployees
-                      .map((e) => e.fullName)
-                      .join(", ")}). Der Auftrag kann aktuell nicht bearbeitet ` +
-                    "werden, da jedes Speichern diese Zuweisung unbeabsichtigt " +
-                    "entfernen könnte. Diese Einschränkung entfällt mit einer " +
-                    "künftigen Backend-Anpassung."
-                  }
+                  message={t("admin:jobForm.editBlockedBannerMessage", {
+                    names: inactiveAssignedEmployees.map((e) => e.fullName).join(", "),
+                  })}
                 />
               </View>
             ) : null}
@@ -566,11 +560,7 @@ export default function EditJobScreen() {
               <View style={{ marginBottom: theme.spacing.sm }}>
                 <ErrorBanner
                   type="warning"
-                  message={
-                    "Dieser Auftrag ist abgeschlossen. Die Zuweisung kann nicht " +
-                    "mehr geändert werden. Eine nachträgliche Arbeitszeit-" +
-                    "Korrektur ist weiterhin über die Auftrags-Details möglich."
-                  }
+                  message={t("admin:jobForm.employeesLockedBannerMessage")}
                 />
               </View>
             ) : null}
@@ -579,7 +569,7 @@ export default function EditJobScreen() {
               employees={pickerEmployees}
               selectedEmployeeIds={values.employeeIds}
               onChange={(ids) => setField("employeeIds", ids)}
-              emptyLabel="Keine Mitarbeiter verfügbar."
+              emptyLabel={t("admin:jobForm.noEmployeesAvailable")}
               lockedEmployeeIds={
                 isCompletedJob
                   ? pickerEmployees.map((e) => e.id)
@@ -591,10 +581,10 @@ export default function EditJobScreen() {
           <Button
             label={
               hasInactiveAssignedEmployees
-                ? "Bearbeiten derzeit nicht möglich"
+                ? t("admin:jobForm.editBlockedButton")
                 : hasChanges
-                  ? "Änderungen speichern"
-                  : "Keine Änderungen"
+                  ? t("admin:jobForm.saveButton")
+                  : t("admin:jobForm.noChangesButton")
             }
             loading={submitting}
             disabled={
@@ -616,9 +606,9 @@ export default function EditJobScreen() {
               name="trash-outline"
               size={16}
               color={theme.colors.error}
-              style={{ marginRight: 6 }}
+              style={{ marginEnd: 6 }}
             />
-            <Text style={styles.deleteButtonText}>Job löschen</Text>
+            <Text style={styles.deleteButtonText}>{t("admin:jobForm.deleteButton")}</Text>
           </TouchableOpacity>
 
           <View style={styles.bottomSpacer} />

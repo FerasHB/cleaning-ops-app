@@ -10,29 +10,33 @@
 import { InfoRow } from "@/components/ui/InfoRow";
 import { emailContact } from "@/utils/dialogs";
 import React from "react";
+import { useTranslation } from "react-i18next";
 
 interface EmailRowProps {
-  /** Label der Zeile. Standard: "E-Mail". */
+  /** Label der Zeile. Standard: übersetztes "E-Mail" (profile:rows.email). */
   label?: string;
   email: string | null | undefined;
-  /** Text, wenn keine E-Mail-Adresse vorhanden ist. */
+  /** Text, wenn keine E-Mail-Adresse vorhanden ist. Standard: übersetztes "Nicht hinterlegt" (common:states.notProvided) — dieselbe Quelle wie PhoneRow. */
   emptyText?: string;
 }
 
 export function EmailRow({
-  label = "E-Mail",
+  label,
   email,
-  emptyText = "Nicht hinterlegt",
+  emptyText,
 }: EmailRowProps) {
+  const { t } = useTranslation();
   const trimmed = email?.trim();
+  const resolvedLabel = label ?? t("profile:rows.email");
+  const resolvedEmptyText = emptyText ?? t("common:states.notProvided");
 
   if (!trimmed) {
-    return <InfoRow label={label} value={emptyText} icon="mail-outline" />;
+    return <InfoRow label={resolvedLabel} value={resolvedEmptyText} icon="mail-outline" />;
   }
 
   return (
     <InfoRow
-      label={label}
+      label={resolvedLabel}
       value={trimmed}
       icon="mail-outline"
       onPress={() => {

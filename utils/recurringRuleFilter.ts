@@ -18,7 +18,36 @@
 import type { Job } from "@/types/job";
 import { isAssignedTo, isUnassigned } from "@/utils/jobAssignees";
 import type { WeekdayKey } from "@/utils/recurrence";
-import { WEEKDAYS } from "@/utils/recurrence";
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
+
+// Wochentag-Kurzcodes in DB-/Wochenreihenfolge (Montag zuerst). Eigenständig
+// statt WEEKDAYS aus utils/recurrence.ts (deutsche Labels, breit in
+// Admin-Formularen verankert) — dieselbe Lösung wie in components/JobCard.tsx.
+const WEEKDAY_ORDER: WeekdayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const REFERENCE_MONDAY = new Date(2024, 0, 1); // 1. Januar 2024 ist ein Montag
+
+export function localizedWeekdayShort(key: WeekdayKey): string {
+  const localeTag = INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+  const dayIndex = WEEKDAY_ORDER.indexOf(key);
+  const d = new Date(REFERENCE_MONDAY);
+  d.setDate(d.getDate() + dayIndex);
+  return new Intl.DateTimeFormat(localeTag, { weekday: "short" }).format(d);
+}
+
+/**
+ * Wie `formatRecurringDays` (utils/recurrence.ts), aber sprachabhängig statt
+ * fest Deutsch — für Admin-Oberflächen, die die Regel-Wochentage als
+ * Kurztext zeigen (z. B. AdminRecurringRulesScreen-Listenkarte).
+ */
+export function formatRecurringDaysLocalized(
+  days: string[] | null | undefined,
+): string {
+  if (!days || days.length === 0) return "—";
+  const set = new Set(days);
+  return WEEKDAY_ORDER.filter((key) => set.has(key))
+    .map(localizedWeekdayShort)
+    .join(", ");
+}
 
 export type RuleStatusFilter = "all" | "active" | "inactive";
 
@@ -123,14 +152,14 @@ export function ruleFilterSummaryParts(
 ): string[] {
   const parts: string[] = [];
 
-  if (filters.status === "active") parts.push("Aktiv");
-  if (filters.status === "inactive") parts.push("Inaktiv");
+  if (filters.status === "active") parts.push(i18next.t("admin:recurringRules.badgeActive"));
+  if (filters.status === "inactive") parts.push(i18next.t("admin:recurringRules.badgeInactive"));
 
   if (filters.employee !== "all") parts.push(employeeLabel);
 
   if (filters.weekdays.length > 0) {
-    const short = WEEKDAYS.filter((w) => filters.weekdays.includes(w.key)).map(
-      (w) => w.short,
+    const short = WEEKDAY_ORDER.filter((key) => filters.weekdays.includes(key)).map(
+      localizedWeekdayShort,
     );
     parts.push(short.join(" "));
   }

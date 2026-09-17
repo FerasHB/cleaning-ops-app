@@ -18,28 +18,40 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import type { RuleHealth } from "@/utils/recurringRule";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type PillTone = "ok" | "neutral" | "warning";
 
 /**
  * Kurzlabel + Tonalität je Zustand. Warnungen haben Vorrang vor dem gesunden
  * Zustand — die Priorisierung selbst passiert bereits in deriveRuleHealth,
- * hier wird sie nur übersetzt.
+ * hier wird sie nur übersetzt. Labels sind bewusst dieselben Keys wie die
+ * Badges in AdminRecurringRulesScreen (identischer Wortlaut auf beiden
+ * Oberflächen).
  */
-function pillFor(health: RuleHealth): { label: string; tone: PillTone } {
+function pillFor(
+  health: RuleHealth,
+  t: (key: string) => string,
+): { label: string; tone: PillTone } {
   switch (health.state) {
     case "completed_rule":
-      return { label: "Prüfen", tone: "warning" };
+      return { label: t("admin:recurringRules.badgeReview"), tone: "warning" };
     case "no_occurrences":
-      return { label: "Keine Termine", tone: "warning" };
+      return {
+        label: t("admin:recurringRules.badgeNoAppointments"),
+        tone: "warning",
+      };
     case "inactive_employee":
-      return { label: "MA inaktiv", tone: "warning" };
+      return {
+        label: t("admin:recurringRules.badgeInactiveEmployee"),
+        tone: "warning",
+      };
     case "horizon_expired":
-      return { label: "Abgelaufen", tone: "warning" };
+      return { label: t("admin:recurringRules.badgeExpired"), tone: "warning" };
     case "inactive":
-      return { label: "Inaktiv", tone: "neutral" };
+      return { label: t("admin:recurringRules.badgeInactive"), tone: "neutral" };
     case "healthy":
-      return { label: "Aktiv", tone: "ok" };
+      return { label: t("admin:recurringRules.badgeActive"), tone: "ok" };
   }
 }
 
@@ -50,8 +62,9 @@ type Props = {
 export function RuleStatePill({ health }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
-  const pill = pillFor(health);
+  const pill = pillFor(health, t);
   const containerStyle = {
     ok: styles.pillOk,
     neutral: styles.pillNeutral,

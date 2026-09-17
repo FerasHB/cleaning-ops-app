@@ -12,6 +12,7 @@ import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Modal,
   Pressable,
@@ -47,6 +48,7 @@ export function ActionMenuSheet({
   onSelect,
 }: ActionMenuSheetProps) {
   const theme = useAppTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
@@ -91,9 +93,9 @@ export function ActionMenuSheet({
             onPress={onClose}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Menü schließen"
+            accessibilityLabel={t("common:a11y.closeMenu")}
           >
-            <Text style={styles.cancelText}>Abbrechen</Text>
+            <Text style={styles.cancelText}>{t("common:actions.cancel")}</Text>
           </TouchableOpacity>
         </Pressable>
       </Pressable>

@@ -43,6 +43,7 @@ import { DayAgendaSheet } from "@/features/jobs/components/DayAgendaSheet";
 import { MonthGrid } from "@/features/jobs/components/MonthGrid";
 import { MonthYearPickerSheet } from "@/features/jobs/components/MonthYearPickerSheet";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import type { Job } from "@/types/job";
 import { getOwnAbsencesInRange } from "@/services/absences/absences.service";
 import type { Absence } from "@/types/absence";
@@ -72,6 +73,7 @@ import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   RefreshControl,
   ScrollView,
@@ -88,7 +90,9 @@ const EMPTY_ABSENCES: never[] = [];
 
 export default function EmployeeJobsCalendarScreen() {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { role, profile } = useAuth();
   const { jobs, startJob, completeJob, loading, refreshJobs } = useJobs();
@@ -286,7 +290,7 @@ export default function EmployeeJobsCalendarScreen() {
       try {
         await startJob(jobId);
       } catch (err: unknown) {
-        setActionError(toUserMessage(err, "Job konnte nicht gestartet werden."));
+        setActionError(toUserMessage(err, t("jobs:errors.startFailed")));
       }
     },
     [startJob],
@@ -299,7 +303,7 @@ export default function EmployeeJobsCalendarScreen() {
         await completeJob(jobId);
       } catch (err: unknown) {
         setActionError(
-          toUserMessage(err, "Job konnte nicht abgeschlossen werden."),
+          toUserMessage(err, t("jobs:errors.completeFailed")),
         );
       }
     },
@@ -364,7 +368,7 @@ export default function EmployeeJobsCalendarScreen() {
             onPress={() => setPickerOpen(true)}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Monat und Jahr auswählen"
+            accessibilityLabel={t("jobs:calendar.selectMonthYear")}
             accessibilityValue={{ text: formatMonthLabel(monthKey) }}
           >
             <Text style={styles.monthLabel} numberOfLines={1} maxFontSizeMultiplier={1.4}>
@@ -378,10 +382,10 @@ export default function EmployeeJobsCalendarScreen() {
             onPress={goToday}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Zu heute springen"
+            accessibilityLabel={t("jobs:calendar.jumpToToday")}
           >
             <Text style={styles.todayBtnText} maxFontSizeMultiplier={1.3}>
-              Heute
+              {t("jobs:dateGroups.today")}
             </Text>
           </TouchableOpacity>
 
@@ -391,9 +395,9 @@ export default function EmployeeJobsCalendarScreen() {
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
             accessibilityRole="button"
-            accessibilityLabel="Vorheriger Monat"
+            accessibilityLabel={t("jobs:calendar.prevMonth")}
           >
-            <Ionicons name="chevron-back" size={20} color={theme.colors.primary} />
+            <Ionicons name={isRTL ? "chevron-forward" : "chevron-back"} size={20} color={theme.colors.primary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -402,9 +406,9 @@ export default function EmployeeJobsCalendarScreen() {
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel="Nächster Monat"
+            accessibilityLabel={t("jobs:calendar.nextMonth")}
           >
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.primary} />
+            <Ionicons name={isRTL ? "chevron-back" : "chevron-forward"} size={20} color={theme.colors.primary} />
           </TouchableOpacity>
         </View>
 
@@ -432,7 +436,7 @@ export default function EmployeeJobsCalendarScreen() {
             ruhige Zeile dazu — kein EmptyState, der das Raster ersetzt. */}
         {!monthHasJobs ? (
           <Text style={styles.emptyMonthHint} numberOfLines={2}>
-            In diesem Monat sind dir keine Aufträge zugewiesen.
+            {t("jobs:calendar.emptyMonthHint")}
           </Text>
         ) : null}
       </ScrollView>

@@ -1,3 +1,4 @@
+import { i18next } from "@/i18n";
 import { supabase } from "@/lib/supabase";
 import { setupCompanyForAdmin } from "@/services/company/setupCompanyForAdmin";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
@@ -31,11 +32,11 @@ export async function registerAdmin({
     const trimmedCompanyName = companyName.trim();
 
     if (!trimmedFullName) {
-        throw new Error("Name fehlt.");
+        throw new Error(i18next.t("auth:registerAdminService.missingName"));
     }
 
     if (!trimmedEmail) {
-        throw new Error("E-Mail fehlt.");
+        throw new Error(i18next.t("auth:registerAdminService.missingEmail"));
     }
 
     const passwordCheck = validatePassword(password);
@@ -44,15 +45,15 @@ export async function registerAdmin({
     }
 
     if (!trimmedCompanyName) {
-        throw new Error("Firmenname fehlt.");
+        throw new Error(i18next.t("auth:registerAdminService.missingCompanyName"));
     }
 
     if (!companyEmail?.trim()) {
-        throw new Error("Firmen-E-Mail fehlt.");
+        throw new Error(i18next.t("auth:registerAdminService.missingCompanyEmail"));
     }
 
     if (!companyPhone?.trim()) {
-        throw new Error("Firmen-Telefon fehlt.");
+        throw new Error(i18next.t("auth:registerAdminService.missingCompanyPhone"));
     }
 
     const { data, error } = await supabase.auth.signUp({
@@ -66,11 +67,11 @@ export async function registerAdmin({
     });
 
     if (error) {
-        throw new Error(toFriendlyAuthErrorMessage(error, "Registrierung fehlgeschlagen."));
+        throw new Error(toFriendlyAuthErrorMessage(error, i18next.t("auth:registerAdminService.registrationFailed")));
     }
 
     if (!data.user) {
-        throw new Error("User konnte nicht erstellt werden.");
+        throw new Error(i18next.t("auth:registerAdminService.userCreationFailed"));
     }
 
     const {
@@ -79,7 +80,7 @@ export async function registerAdmin({
 
     if (!session) {
         throw new Error(
-            "Registrierung erfolgreich, aber keine aktive Session. Prüfe Email Confirmation in Supabase.",
+            i18next.t("auth:registerAdminService.noActiveSession"),
         );
     }
 

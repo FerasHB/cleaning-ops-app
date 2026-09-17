@@ -91,8 +91,14 @@ create table if not exists public.profiles (
   phone_verified_at timestamptz,
   is_active boolean not null default true,
   expo_push_token text,
+  -- Bevorzugte Sprache (20260915000000). Steuert NUR server-seitig erzeugte
+  -- Inhalte (Push); Client-UI-Sprache bleibt separat in AsyncStorage und wird
+  -- bei explizitem Sprachwechsel hierher synchronisiert. Kein Backfill fuer
+  -- Bestandsnutzer.
+  locale text not null default 'de',
   constraint chk_profiles_phone check (
     phone is null or phone ~ '^\+[1-9][0-9]{6,14}$'),
+  constraint chk_profiles_locale check (locale in ('de', 'en', 'ar', 'tr')),
   -- Einladungs-Flow (siehe 20260718000000_employee_invitations.sql):
   -- invited_at = zuletzt eingeladen, invite_accepted_at = eigenes Passwort
   -- gesetzt (null = Einladung noch offen). Bestehende Zeilen sind per
@@ -1273,7 +1279,8 @@ returns table (
   delivery_id uuid, outbox_id uuid, recipient_id uuid, attempts int,
   event_type text, job_id uuid, company_id uuid, job_status text,
   employee_id uuid, employee_name text, customer_name text, service_name text,
-  expo_push_token text, recipient_active boolean, recipient_role text
+  expo_push_token text, recipient_active boolean, recipient_role text,
+  recipient_locale text
 )
 language plpgsql
 security definer
@@ -1305,7 +1312,7 @@ begin
     c.id, c.outbox_id, c.recipient_id, c.attempts,
     o.event_type, o.job_id, o.company_id, o.job_status,
     o.employee_id, o.employee_name, o.customer_name, o.service_name,
-    p.expo_push_token, p.is_active, p.role::text
+    p.expo_push_token, p.is_active, p.role::text, p.locale
   from claimed c
   join public.notification_outbox o on o.id = c.outbox_id
   left join public.profiles p on p.id = c.recipient_id;

@@ -1,0 +1,126 @@
+{
+  "language": {
+    "sectionTitle": "Uygulama",
+    "label": "Dil",
+    "restartTitle": "Yeniden başlatma gerekli",
+    "restartMessage": "Sağdan sola düzenin tam olarak uygulanması için lütfen uygulamayı tamamen kapatıp yeniden açın.",
+    "restartConfirm": "Anladım"
+  },
+  "actions": {
+    "cancel": "İptal",
+    "confirm": "Onayla",
+    "ok": "Tamam",
+    "back": "Geri",
+    "next": "İleri",
+    "retry": "Tekrar Dene",
+    "save": "Kaydet",
+    "delete": "Sil",
+    "edit": "Düzenle",
+    "close": "Kapat",
+    "selectDate": "Tarih seç",
+    "selectTime": "Saat seç"
+  },
+  "status": {
+    "open": "Açık",
+    "inProgress": "Devam Ediyor",
+    "completed": "Tamamlandı"
+  },
+  "filters": {
+    "all": "Tümü"
+  },
+  "states": {
+    "notProvided": "Belirtilmemiş",
+    "unknown": "Bilinmiyor",
+    "unassigned": "Atanmamış",
+    "deletedSuffix": " (eski)"
+  },
+  "phoneCall": {
+    "notPossibleTitle": "Arama Yapılamıyor",
+    "noNumberMessage": "Bu kişi için geçerli bir telefon numarası kayıtlı değil.",
+    "confirmTitle": "Ara",
+    "confirmWithName": "{{name}} aransın mı?\n\n{{number}}",
+    "confirmGeneric": "Bu numara aransın mı?\n\n{{number}}",
+    "confirmButton": "Ara",
+    "failedMessage": "Arama başlatılamadı. Numara: {{number}}"
+  },
+  "emailContact": {
+    "notPossibleTitle": "E-posta Gönderilemiyor",
+    "noAddressMessage": "Bu kişi için kayıtlı bir e-posta adresi yok.",
+    "failedMessage": "Hiçbir e-posta uygulaması açılamadı. Adres: {{email}}"
+  },
+  "a11y": {
+    "closeMenu": "Menüyü kapat",
+    "showPassword": "Şifreyi göster",
+    "hidePassword": "Şifreyi gizle",
+    "statusFilter": "Durum filtresi: {{label}}"
+  },
+  "errors": {
+    "title": "Hata",
+    "generic": "İşlem gerçekleştirilemedi.",
+    "offline": "İnternet bağlantısı yok. Lütfen tekrar deneyin.",
+    "permission": "Bu işlem için yetkin yok.",
+    "notFound": "Kayıt bulunamadı veya artık mevcut değil.",
+    "conflict": "Bu kayıt zaten mevcut.",
+    "inUse": "Bu kayıt hâlâ kullanılıyor ve silinemiyor.",
+    "invalidInput": "Girilen bilgiler eksik veya geçersiz.",
+    "sessionExpired": "Oturumun süresi doldu. Lütfen tekrar giriş yap.",
+    "serverUnavailable": "Sunucuya şu anda ulaşılamıyor. Lütfen daha sonra tekrar dene.",
+    "timeout": "İstek çok uzun sürdü. Lütfen tekrar deneyin.",
+    "loadFailed": "Veriler yüklenemedi.",
+    "saveFailed": "Değişiklikler kaydedilemedi.",
+    "unknown": "Bilinmeyen hata.",
+    "notAuthenticated": "Oturum açmış bir kullanıcı bulunamadı."
+  },
+  "authErrors": {
+    "generic": "Beklenmeyen bir hata oluştu.",
+    "offline": "İnternet bağlantısı yok. Lütfen bağlantını kontrol edip tekrar dene.",
+    "invalidCredentials": "E-posta veya şifre hatalı.",
+    "emailNotConfirmed": "Lütfen önce e-posta adresini onayla.",
+    "invalidEmail": "Lütfen geçerli bir e-posta adresi gir.",
+    "emailExists": "Bu e-posta adresi için zaten bir hesap var.",
+    "weakPassword": "Şifre minimum gereksinimleri karşılamıyor.",
+    "rateLimit": "Çok fazla deneme yapıldı. Lütfen kısa bir süre bekleyip tekrar dene."
+  },
+  "validation": {
+    "passwordRequired": "Lütfen bir şifre gir.",
+    "passwordMinLength": "Şifre en az {{min}} karakter olmalı.",
+    "passwordTooLong": "Şifre çok uzun.",
+    "passwordMismatch": "Şifreler eşleşmiyor."
+  },
+  "tabs": {
+    "overview": "Genel Bakış",
+    "jobs": "İşler",
+    "calendar": "Takvim",
+    "profile": "Profil"
+  },
+  "unsavedChanges": {
+    "title": "Değişiklikler atılsın mı?",
+    "message": "Kaydedilmemiş değişiklikler kaybolacak.",
+    "confirm": "At",
+    "cancel": "Düzenlemeye devam et"
+  },
+  "bootError": {
+    "profileFailedTitle": "Profil yüklenemedi",
+    "profileFailedMessage": "Hesabın yüklenirken bir sorun oluştu. Lütfen tekrar dene veya çıkış yapıp yeniden giriş yap.",
+    "offlineTitle": "Bağlantı yok",
+    "offlineMessage": "Bağlantı ve yerel veri yok. Tekrar internete bağlandığında yeniden deneyebilirsin."
+  },
+  "sync": {
+    "offlineTitle": "İnternet yok — değişiklikler kaybolmaz",
+    "savingTitle": "Değişiklikler kaydediliyor…",
+    "errorTitle": "Değişiklikler kaydedilemedi",
+    "pendingLabel_one": "{{count}} değişiklik bekliyor",
+    "pendingLabel_other": "{{count}} değişiklik bekliyor",
+    "detailsButton": "Ayrıntılar",
+    "noPendingChanges": "Bekleyen değişiklik yok",
+    "hintOnline": "Değişikliklerin otomatik olarak kaydedilir.",
+    "hintOffline": "Tekrar internete bağlandığında değişiklikler kaydedilecek.",
+    "closeButton": "Kapat",
+    "startJobWaiting": "İş başlatma bekliyor",
+    "completeJobWaiting": "İş tamamlama bekliyor",
+    "genericChangeWaiting": "Değişiklik bekliyor",
+    "a11yOffline": "İnternet yok. Değişiklikler kaybolmaz.",
+    "a11ySaving": "Değişiklikler kaydediliyor.",
+    "a11yError": "Değişiklikler kaydedilemedi."
+  }
+}

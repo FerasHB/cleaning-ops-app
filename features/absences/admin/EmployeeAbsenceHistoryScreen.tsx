@@ -23,6 +23,7 @@ import { RefreshControl, ScrollView, StatusBar, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AdminAbsenceRow } from "./components/AdminAbsenceRow";
 import { useEmployeeAbsences } from "./hooks/useEmployeeAbsences";
+import { useTranslation } from "react-i18next";
 
 const HISTORY_LIMIT = 100;
 
@@ -32,6 +33,7 @@ export default function EmployeeAbsenceHistoryScreen({
   employeeId: string;
 }) {
   const theme = useAppTheme();
+  const { t } = useTranslation();
   const { employees } = useJobs();
   const employee = employees.find((e) => e.id === employeeId);
 
@@ -74,7 +76,13 @@ export default function EmployeeAbsenceHistoryScreen({
         backgroundColor={theme.colors.background}
       />
       <AppHeader
-        title={employee ? `Abwesenheiten — ${employee.fullName}` : "Abwesenheiten"}
+        title={
+          employee
+            ? t("admin:absenceAdmin.history.headerTitleWithName", {
+                name: employee.fullName,
+              })
+            : t("admin:absenceAdmin.history.headerTitleFallback")
+        }
         showBack
       />
 
@@ -102,7 +110,7 @@ export default function EmployeeAbsenceHistoryScreen({
           <View style={{ marginBottom: theme.spacing.md }}>
             <ErrorBanner
               message={loadError}
-              actionLabel="Erneut versuchen"
+              actionLabel={t("common:actions.retry")}
               onAction={() => {
                 void refresh();
               }}
@@ -119,28 +127,28 @@ export default function EmployeeAbsenceHistoryScreen({
         {absences.length === 0 ? (
           <Card>
             <EmptyState
-              title="Keine Abwesenheiten erfasst."
+              title={t("admin:employeeDetail.emptyAbsencesTitle")}
               icon="calendar-outline"
             />
           </Card>
         ) : (
           <>
             <HistoryGroup
-              title="Aktuell"
+              title={t("absences:groups.current")}
               absences={current}
               busyId={busyId}
               onApprove={approve}
               onReject={reject}
             />
             <HistoryGroup
-              title="Bevorstehend"
+              title={t("absences:groups.upcoming")}
               absences={upcoming}
               busyId={busyId}
               onApprove={approve}
               onReject={reject}
             />
             <HistoryGroup
-              title="Vergangen"
+              title={t("absences:groups.past")}
               absences={past}
               busyId={busyId}
               onApprove={approve}

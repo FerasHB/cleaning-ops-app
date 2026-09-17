@@ -28,17 +28,20 @@
 //
 // STATUS-PUNKTE: ein Punkt je VORKOMMENDEM Zustand (nicht je Auftrag) —
 // also höchstens drei. Die Farben kommen aus `utils/jobStatus.ts`
-// (getJobStatusMeta); es gibt bewusst KEINE zweite Status-Farbtabelle.
+// (getJobStatusColors); es gibt bewusst KEINE zweite Status-Farbtabelle.
+// Nur Farben, keine Beschriftung nötig — deshalb hier kein i18n-Hook.
 //
 // Leere Tage bleiben absichtlich still: nur die Tageszahl, keine „0".
 // ─────────────────────────────────────────────────────────────────
 
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { i18next } from "@/i18n";
 import type { AbsenceType } from "@/types/absence";
 import type { DaySummary } from "@/utils/calendarMonth";
-import { getJobStatusMeta } from "@/utils/jobStatus";
+import { getJobStatusColors } from "@/utils/jobStatus";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Props = {
@@ -65,10 +68,10 @@ type Props = {
 /**
  * Beschriftung der Zähl-Pille: „1 Job" / „2 Jobs".
  * Bewusst kurz gehalten — siehe Breiten-Begründung im Dateikopf. Die
- * ausgeschriebene deutsche Form steht im Screenreader-Label.
+ * ausgeschriebene Form (aktive Sprache) steht im Screenreader-Label.
  */
 function formatJobCountLabel(total: number): string {
-  return total === 1 ? "1 Job" : `${total} Jobs`;
+  return i18next.t("jobs:calendar.jobCountPill", { count: total });
 }
 
 // Screenreader bekommt die Verteilung ausgeschrieben, die die Punkte nur
@@ -79,19 +82,31 @@ function buildA11yLabel(
   summary: DaySummary | undefined,
   absenceTypes: AbsenceType[] | undefined,
 ): string {
-  const head = `${dayNumber}.${isToday ? " Heute." : ""}`;
+  const head = `${dayNumber}.${isToday ? ` ${i18next.t("jobs:dateGroups.today")}.` : ""}`;
   const absenceSuffix = absenceTypes?.length
-    ? ` ${absenceTypes.map((t) => (t === "vacation" ? "Urlaub" : "Krank")).join(", ")}.`
+    ? ` ${absenceTypes
+        .map((t) =>
+          t === "vacation"
+            ? i18next.t("jobs:agenda.typeVacation")
+            : i18next.t("jobs:agenda.typeSickness"),
+        )
+        .join(", ")}.`
     : "";
 
-  if (!summary) return `${head} Keine Aufträge.${absenceSuffix}`;
+  if (!summary) return `${head} ${i18next.t("jobs:calendar.a11yNoJobs")}${absenceSuffix}`;
 
   const parts: string[] = [];
-  if (summary.open > 0) parts.push(`${summary.open} offen`);
-  if (summary.inProgress > 0) parts.push(`${summary.inProgress} in Arbeit`);
-  if (summary.completed > 0) parts.push(`${summary.completed} erledigt`);
+  if (summary.open > 0) {
+    parts.push(`${summary.open} ${i18next.t("common:status.open")}`);
+  }
+  if (summary.inProgress > 0) {
+    parts.push(`${summary.inProgress} ${i18next.t("common:status.inProgress")}`);
+  }
+  if (summary.completed > 0) {
+    parts.push(`${summary.completed} ${i18next.t("common:status.completed")}`);
+  }
 
-  const total = summary.total === 1 ? "1 Auftrag" : `${summary.total} Aufträge`;
+  const total = i18next.t("jobs:agenda.jobsCount", { count: summary.total });
   return `${head} ${total}: ${parts.join(", ")}.${absenceSuffix}`;
 }
 
@@ -107,6 +122,11 @@ function CalendarDayCellBase({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  // Nur für die Reaktivität nötig: formatJobCountLabel/buildA11yLabel lesen
+  // i18next.t() direkt (siehe oben), aber die Komponente ist memoisiert
+  // (React.memo unten) — ohne diesen Hook würde ein Sprachwechsel die Zelle
+  // nicht neu rendern, weil sich ihre Props dabei nicht ändern.
+  useTranslation();
   const hasAbsence = !!absenceTypes?.length;
 
   return (
@@ -154,7 +174,7 @@ function CalendarDayCellBase({
                 key={status}
                 style={[
                   styles.dot,
-                  { backgroundColor: getJobStatusMeta(status, theme.colors).text },
+                  { backgroundColor: getJobStatusColors(status, theme.colors).text },
                 ]}
               />
             ))}

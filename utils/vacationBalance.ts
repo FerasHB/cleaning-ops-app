@@ -18,6 +18,7 @@ import type {
   VacationBalance,
   VacationLedgerEntry,
 } from "@/types/vacationLedger";
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 function sumOf(
   entries: VacationLedgerEntry[],
@@ -57,18 +58,9 @@ export function buildVacationBalance(
   };
 }
 
-/** Anzeigeform eines Betrags: "+30,0" / "−3,0". */
-export function formatLedgerAmount(amountDays: number): string {
-  const sign = amountDays < 0 ? "−" : "+";
-  const value = Math.abs(amountDays).toLocaleString("de-DE", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 2,
-  });
-  return `${sign}${value}`;
-}
-
 /**
- * Anzeigeform einer Kennzahl (ohne erzwungenes Vorzeichen): "28,5".
+ * Anzeigeform einer Kennzahl (ohne erzwungenes Vorzeichen): "28,5" (de) /
+ * "28.5" (en) / arabische Ziffern (ar), sprachabhängig.
  *
  * `+ 0` normalisiert eine negative Null (-0) auf +0, BEVOR toLocaleString sie
  * sieht — sonst zeigt z. B. ein exakt ausgeglichenes "Verbraucht" (Abzug und
@@ -76,11 +68,23 @@ export function formatLedgerAmount(amountDays: number): string {
  * an. In JS gilt -0 + 0 === 0 (Object.is(-0 + 0, 0) → true), das ist reine
  * Zahlendarstellung und ändert keinen echten negativen Wert.
  */
-export function formatDays(amountDays: number): string {
-  return (amountDays + 0).toLocaleString("de-DE", {
+export function formatDaysLocalized(amountDays: number): string {
+  const localeTag = INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+  return (amountDays + 0).toLocaleString(localeTag, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   });
+}
+
+/** Anzeigeform eines Betrags: "+30,0" / "−3,0", sprachabhängig. */
+export function formatLedgerAmountLocalized(amountDays: number): string {
+  const sign = amountDays < 0 ? "−" : "+";
+  const localeTag = INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+  const value = Math.abs(amountDays).toLocaleString(localeTag, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  });
+  return `${sign}${value}`;
 }
 
 /**

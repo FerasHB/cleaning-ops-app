@@ -1,0 +1,126 @@
+{
+  "language": {
+    "sectionTitle": "App",
+    "label": "Sprache",
+    "restartTitle": "Neustart erforderlich",
+    "restartMessage": "Für die vollständige rechts-nach-links-Darstellung muss die App vollständig geschlossen und erneut geöffnet werden.",
+    "restartConfirm": "Verstanden"
+  },
+  "actions": {
+    "cancel": "Abbrechen",
+    "confirm": "Bestätigen",
+    "ok": "OK",
+    "back": "Zurück",
+    "next": "Weiter",
+    "retry": "Erneut versuchen",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "close": "Schließen",
+    "selectDate": "Datum wählen",
+    "selectTime": "Uhrzeit wählen"
+  },
+  "status": {
+    "open": "Offen",
+    "inProgress": "In Arbeit",
+    "completed": "Erledigt"
+  },
+  "filters": {
+    "all": "Alle"
+  },
+  "states": {
+    "notProvided": "Nicht hinterlegt",
+    "unknown": "Unbekannt",
+    "unassigned": "Nicht zugewiesen",
+    "deletedSuffix": " (ehemalig)"
+  },
+  "phoneCall": {
+    "notPossibleTitle": "Anruf nicht möglich",
+    "noNumberMessage": "Für diesen Kontakt ist keine gültige Telefonnummer hinterlegt.",
+    "confirmTitle": "Anrufen",
+    "confirmWithName": "{{name}} anrufen?\n\n{{number}}",
+    "confirmGeneric": "Diese Nummer anrufen?\n\n{{number}}",
+    "confirmButton": "Anrufen",
+    "failedMessage": "Es konnte kein Anruf gestartet werden. Nummer: {{number}}"
+  },
+  "emailContact": {
+    "notPossibleTitle": "E-Mail nicht möglich",
+    "noAddressMessage": "Für diesen Kontakt ist keine E-Mail-Adresse hinterlegt.",
+    "failedMessage": "Es konnte keine E-Mail-App geöffnet werden. Adresse: {{email}}"
+  },
+  "a11y": {
+    "closeMenu": "Menü schließen",
+    "showPassword": "Passwort anzeigen",
+    "hidePassword": "Passwort verbergen",
+    "statusFilter": "Status-Filter: {{label}}"
+  },
+  "errors": {
+    "title": "Fehler",
+    "generic": "Die Aktion konnte nicht ausgeführt werden.",
+    "offline": "Keine Internetverbindung. Bitte versuche es erneut.",
+    "permission": "Du hast keine Berechtigung für diese Aktion.",
+    "notFound": "Der Eintrag wurde nicht gefunden oder ist nicht mehr verfügbar.",
+    "conflict": "Dieser Eintrag existiert bereits.",
+    "inUse": "Der Eintrag wird noch verwendet und kann nicht gelöscht werden.",
+    "invalidInput": "Die Eingaben sind unvollständig oder ungültig.",
+    "sessionExpired": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
+    "serverUnavailable": "Der Server ist momentan nicht erreichbar. Bitte versuche es später erneut.",
+    "timeout": "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut.",
+    "loadFailed": "Die Daten konnten nicht geladen werden.",
+    "saveFailed": "Die Änderungen konnten nicht gespeichert werden.",
+    "unknown": "Unbekannter Fehler.",
+    "notAuthenticated": "Kein eingeloggter Benutzer gefunden."
+  },
+  "authErrors": {
+    "generic": "Es ist ein unerwarteter Fehler aufgetreten.",
+    "offline": "Keine Internetverbindung. Bitte überprüfe deine Verbindung und versuche es erneut.",
+    "invalidCredentials": "E-Mail oder Passwort ist falsch.",
+    "emailNotConfirmed": "Bitte bestätige zuerst deine E-Mail-Adresse.",
+    "invalidEmail": "Bitte gib eine gültige E-Mail-Adresse ein.",
+    "emailExists": "Für diese E-Mail-Adresse existiert bereits ein Konto.",
+    "weakPassword": "Das Passwort erfüllt nicht die Mindestanforderungen.",
+    "rateLimit": "Zu viele Versuche. Bitte warte kurz und versuche es erneut."
+  },
+  "validation": {
+    "passwordRequired": "Bitte ein Passwort eingeben.",
+    "passwordMinLength": "Das Passwort muss mindestens {{min}} Zeichen lang sein.",
+    "passwordTooLong": "Das Passwort ist zu lang.",
+    "passwordMismatch": "Die Passwörter stimmen nicht überein."
+  },
+  "tabs": {
+    "overview": "Übersicht",
+    "jobs": "Jobs",
+    "calendar": "Kalender",
+    "profile": "Profil"
+  },
+  "unsavedChanges": {
+    "title": "Änderungen verwerfen?",
+    "message": "Nicht gespeicherte Änderungen gehen verloren.",
+    "confirm": "Verwerfen",
+    "cancel": "Weiter bearbeiten"
+  },
+  "bootError": {
+    "profileFailedTitle": "Profil konnte nicht geladen werden",
+    "profileFailedMessage": "Es gab ein Problem beim Laden deines Kontos. Bitte versuche es erneut oder melde dich ab und wieder an.",
+    "offlineTitle": "Keine Verbindung",
+    "offlineMessage": "Keine Verbindung und keine lokalen Daten verfügbar. Sobald du wieder online bist, kannst du es erneut versuchen."
+  },
+  "sync": {
+    "offlineTitle": "Kein Internet — Änderungen gehen nicht verloren",
+    "savingTitle": "Änderungen werden gespeichert…",
+    "errorTitle": "Änderungen konnten nicht gespeichert werden",
+    "pendingLabel_one": "{{count}} Änderung wartet",
+    "pendingLabel_other": "{{count}} Änderungen warten",
+    "detailsButton": "Details",
+    "noPendingChanges": "Keine wartenden Änderungen",
+    "hintOnline": "Deine Änderungen werden automatisch gespeichert.",
+    "hintOffline": "Sobald du wieder Internet hast, werden die Änderungen gespeichert.",
+    "closeButton": "Schließen",
+    "startJobWaiting": "Job starten wartet",
+    "completeJobWaiting": "Job abschließen wartet",
+    "genericChangeWaiting": "Änderung wartet",
+    "a11yOffline": "Kein Internet. Änderungen gehen nicht verloren.",
+    "a11ySaving": "Änderungen werden gespeichert.",
+    "a11yError": "Änderungen konnten nicht gespeichert werden."
+  }
+}

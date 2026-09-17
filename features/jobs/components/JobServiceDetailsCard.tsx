@@ -6,6 +6,7 @@ import { Card, InfoRow } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native";
 
 type Props = {
@@ -15,10 +16,11 @@ type Props = {
 export function JobServiceDetailsCard({ service }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
-      <InfoRow label="Service" value={service} icon="construct-outline" />
+      <InfoRow label={t("jobs:detail.serviceLabel")} value={service} icon="construct-outline" />
     </Card>
   );
 }

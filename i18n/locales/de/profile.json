@@ -1,0 +1,78 @@
+{
+  "fallback": {
+    "noEmail": "Keine E-Mail",
+    "companyConnected": "Firma verbunden",
+    "myAccount": "dein Konto"
+  },
+  "roles": {
+    "admin": "Admin",
+    "employee": "Mitarbeiter"
+  },
+  "sections": {
+    "myWork": "Meine Arbeit",
+    "account": "Account",
+    "other": "Sonstiges"
+  },
+  "rows": {
+    "myWorkingHours": "Meine Arbeitszeit",
+    "absences": "Abwesenheiten",
+    "editProfile": "Profil bearbeiten",
+    "phone": "Telefon",
+    "email": "E-Mail",
+    "changePassword": "Passwort ändern",
+    "appearance": "Erscheinungsbild",
+    "appearanceValue": "Systemeinstellung",
+    "deleteAccount": "Konto löschen",
+    "appVersion": "App-Version",
+    "appVersionValue": "Version {{version}}"
+  },
+  "dialogs": {
+    "appearanceTitle": "Erscheinungsbild",
+    "appearanceMessage": "Die App folgt automatisch der Hell-/Dunkel-Einstellung deines Geräts.",
+    "logout": "Abmelden",
+    "logoutMessage": "Möchtest du dich wirklich abmelden?",
+    "logoutFailedTitle": "Abmelden fehlgeschlagen",
+    "logoutFailedSuffix": "Du bist weiterhin angemeldet."
+  },
+  "edit": {
+    "title": "Profil bearbeiten",
+    "fullNameLabel": "Vollständiger Name",
+    "fullNamePlaceholder": "Max Mustermann",
+    "phoneLabel": "Telefon (optional)",
+    "emailInfo": "E-Mail: {{email}} — über die Anmeldung, hier nicht änderbar.",
+    "nameRequired": "Name ist erforderlich.",
+    "invalidPhone": "Bitte gib eine gültige Telefonnummer ein (z. B. 0170 1234567).",
+    "saveFailed": "Profil konnte nicht gespeichert werden."
+  },
+  "changePassword": {
+    "title": "Passwort ändern",
+    "newPasswordLabel": "Neues Passwort",
+    "newPasswordPlaceholder": "Mindestens 10 Zeichen",
+    "confirmLabel": "Passwort bestätigen",
+    "confirmPlaceholder": "Passwort wiederholen",
+    "saveButton": "Passwort speichern",
+    "saveFailed": "Passwort konnte nicht geändert werden.",
+    "successTitle": "Gespeichert",
+    "successMessage": "Dein Passwort wurde erfolgreich geändert."
+  },
+  "deleteAccount": {
+    "headerTitle": "Konto löschen",
+    "heroTitle": "Konto dauerhaft löschen",
+    "heroSubtitle": "Diese Aktion ist unwiderruflich und kann nicht rückgängig gemacht werden.",
+    "whatHappensTitle": "Was passiert bei der Löschung?",
+    "whatHappensBullet1": "Dein Anmeldekonto (E-Mail und Passwort) wird dauerhaft entfernt.",
+    "whatHappensBullet2": "Dein Profil (Name, Telefonnummer, Push-Token) wird gelöscht.",
+    "whatHappensBullet3": "Du wirst sofort abgemeldet und verlierst den Zugriff auf die App.",
+    "remainingDataTitle": "Welche Daten bleiben erhalten?",
+    "remainingDataBullet1": "Aufträge, Kommentare und Fotos, die du erstellt oder bearbeitet hast, bleiben aus betrieblichen und rechtlichen Gründen bei deinem Unternehmen erhalten.",
+    "remainingDataBullet2": "Diese Einträge werden jedoch anonymisiert – sie sind danach nicht mehr mit deinem Namen oder Konto verknüpft.",
+    "adminNote": "Als Administrator kannst du dein Konto nur löschen, wenn ein weiterer aktiver Administrator existiert. Bist du der einzige Administrator deiner Firma, löse zuerst die Firma auf oder ernenne einen weiteren Administrator.",
+    "checkboxLabel": "Ich verstehe, dass diese Aktion unwiderruflich ist und mein Konto dauerhaft gelöscht wird.",
+    "deleteButton": "Konto endgültig löschen",
+    "confirmDialogTitle": "Konto endgültig löschen?",
+    "confirmDialogMessage": "Diese Aktion kann nicht rückgängig gemacht werden. Dein Konto und dein Profil werden dauerhaft gelöscht.",
+    "confirmDialogConfirm": "Endgültig löschen",
+    "notPossibleTitle": "Löschung nicht möglich",
+    "genericError": "Dein Konto konnte nicht gelöscht werden. Bitte versuche es später erneut."
+  }
+}

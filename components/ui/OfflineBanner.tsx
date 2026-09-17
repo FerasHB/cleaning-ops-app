@@ -29,6 +29,7 @@ import type { PendingJobAction } from "@/services/offline/jobs.queue";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AccessibilityInfo,
   Animated,
@@ -65,18 +66,20 @@ function deriveSaveState(args: {
   return "saved";
 }
 
-function pendingLabel(count: number): string {
-  return count === 1 ? "1 Änderung wartet" : `${count} Änderungen warten`;
+type T = (key: string, opts?: Record<string, unknown>) => string;
+
+function pendingLabel(t: T, count: number): string {
+  return t("common:sync.pendingLabel", { count });
 }
 
-function actionLabel(action: PendingJobAction): string {
+function actionLabel(t: T, action: PendingJobAction): string {
   switch (action.type) {
     case "start_job":
-      return "Job starten wartet";
+      return t("common:sync.startJobWaiting");
     case "complete_job":
-      return "Job abschließen wartet";
+      return t("common:sync.completeJobWaiting");
     default:
-      return "Änderung wartet";
+      return t("common:sync.genericChangeWaiting");
   }
 }
 
@@ -85,18 +88,19 @@ function actionLabel(action: PendingJobAction): string {
 // den Text kennt, ohne `config` (das von der aktuellen Theme-Farbe abhängt)
 // vorziehen zu müssen.
 function stateAnnouncement(
+  t: T,
   state: InformativeSaveState,
   pendingCount: number,
 ): string {
   switch (state) {
     case "offline":
-      return "Kein Internet. Änderungen gehen nicht verloren.";
+      return t("common:sync.a11yOffline");
     case "saving":
-      return "Änderungen werden gespeichert.";
+      return t("common:sync.a11ySaving");
     case "error":
-      return "Änderungen konnten nicht gespeichert werden.";
+      return t("common:sync.a11yError");
     case "pending":
-      return pendingLabel(pendingCount);
+      return pendingLabel(t, pendingCount);
   }
 }
 
@@ -107,6 +111,7 @@ const EXIT_DURATION_MS = 250;
 export function OfflineBanner() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const {
     jobs,
@@ -166,7 +171,7 @@ export function OfflineBanner() {
       // zu melden, und eine Ansage bei jedem gespeicherten Job wäre Lärm.
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(
-          stateAnnouncement(informativeState, pendingCount),
+          stateAnnouncement(t, informativeState, pendingCount),
         );
       }
 
@@ -222,14 +227,14 @@ export function OfflineBanner() {
       fg: theme.colors.statusOpen,
       bg: theme.colors.statusOpenBg,
       border: theme.colors.statusOpenBorder,
-      title: "Kein Internet — Änderungen gehen nicht verloren",
+      title: t("common:sync.offlineTitle"),
     },
     saving: {
       icon: "sync-outline" as const,
       fg: theme.colors.statusInProgress,
       bg: theme.colors.statusInProgressBg,
       border: theme.colors.statusInProgressBorder,
-      title: "Änderungen werden gespeichert…",
+      title: t("common:sync.savingTitle"),
     },
     error: {
       icon: "alert-circle-outline" as const,
@@ -238,24 +243,22 @@ export function OfflineBanner() {
       border: theme.colors.error,
       title:
         failedActions.length > 0 && pendingCount === 0
-          ? failedActions.length === 1
-            ? "1 Änderung konnte nicht ausgeführt werden"
-            : `${failedActions.length} Änderungen konnten nicht ausgeführt werden`
-          : "Änderungen konnten nicht gespeichert werden",
+          ? t("common:sync.errorTitleFailed", { count: failedActions.length })
+          : t("common:sync.errorTitle"),
     },
     pending: {
       icon: "time-outline" as const,
       fg: theme.colors.statusOpen,
       bg: theme.colors.statusOpenBg,
       border: theme.colors.statusOpenBorder,
-      title: pendingLabel(pendingCount),
+      title: pendingLabel(t, pendingCount),
     },
   }[displayState];
 
   // Zweite Zeile: offline + wartende Änderungen → Anzahl zeigen
   const subtitle =
     displayState === "offline" && pendingCount > 0
-      ? pendingLabel(pendingCount)
+      ? pendingLabel(t, pendingCount)
       : null;
 
   const showDetails = pendingCount > 0 || failedActions.length > 0;
@@ -301,7 +304,7 @@ export function OfflineBanner() {
           >
             <Ionicons name="refresh-outline" size={14} color={config.fg} />
             <Text style={[styles.actionLabel, { color: config.fg }]}>
-              Erneut versuchen
+              {t("common:actions.retry")}
             </Text>
           </TouchableOpacity>
         ) : showDetails ? (
@@ -311,7 +314,7 @@ export function OfflineBanner() {
             activeOpacity={0.75}
           >
             <Text style={[styles.actionLabel, { color: config.fg }]}>
-              Details
+              {t("common:sync.detailsButton")}
             </Text>
           </TouchableOpacity>
         ) : null}
@@ -334,12 +337,14 @@ export function OfflineBanner() {
                 erreichbar. Fallen beide Zähler auf 0, während es offen ist,
                 bleibt eine sachliche Angabe stehen — keine Erfolgsmeldung. */}
             <Text style={styles.sheetTitle}>
-              {pendingCount > 0 ? pendingLabel(pendingCount) : "Keine wartenden Änderungen"}
+              {pendingCount > 0
+                ? pendingLabel(t, pendingCount)
+                : t("common:sync.noPendingChanges")}
             </Text>
             <Text style={styles.sheetHint}>
               {online
-                ? "Deine Änderungen werden automatisch gespeichert."
-                : "Sobald du wieder Internet hast, werden die Änderungen gespeichert."}
+                ? t("common:sync.hintOnline")
+                : t("common:sync.hintOffline")}
             </Text>
 
             <ScrollView style={styles.sheetList}>
@@ -354,7 +359,7 @@ export function OfflineBanner() {
                     />
                     <View style={styles.sheetRowText}>
                       <Text style={styles.sheetRowLabel}>
-                        {actionLabel(action)}
+                        {actionLabel(t, action)}
                       </Text>
                       {job ? (
                         <Text style={styles.sheetRowSub} numberOfLines={1}>
@@ -381,7 +386,7 @@ export function OfflineBanner() {
                     />
                     <View style={styles.sheetRowText}>
                       <Text style={styles.sheetRowLabel}>
-                        {actionLabel(action)} — konnte nicht ausgeführt werden
+                        {actionLabel(t, action)} — {t("common:sync.failedSuffix")}
                       </Text>
                       {job ? (
                         <Text style={styles.sheetRowSub} numberOfLines={1}>
@@ -401,7 +406,7 @@ export function OfflineBanner() {
                       onPress={() => dismissFailedAction(action.id)}
                       style={styles.sheetRowDismiss}
                       hitSlop={8}
-                      accessibilityLabel="Bestätigen und entfernen"
+                      accessibilityLabel={t("common:sync.dismissFailedA11y")}
                     >
                       <Ionicons
                         name="close"
@@ -419,7 +424,7 @@ export function OfflineBanner() {
               style={styles.sheetClose}
               activeOpacity={0.8}
             >
-              <Text style={styles.sheetCloseLabel}>Schließen</Text>
+              <Text style={styles.sheetCloseLabel}>{t("common:sync.closeButton")}</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>

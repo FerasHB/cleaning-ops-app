@@ -23,6 +23,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useOwnCompany } from "@/features/company/hooks/useOwnCompany";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import type { AppTheme } from "@/constants/theme";
 import type { Job } from "@/types/job";
 import type { Absence } from "@/types/absence";
@@ -36,41 +37,46 @@ import {
 } from "@/services/absences/adminAbsences.service";
 import { formatDateISO } from "@/utils/date";
 import { isAssignedTo } from "@/utils/jobAssignees";
-import { getJobStatusLabel } from "@/utils/jobStatus";
+import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
-const COMPANY_NAME_FALLBACK = "Dashboard";
-
-// ── Tageszeit-abhängige Begrüßung
-function getGreeting(date: Date): string {
+// ── Tageszeit-abhängige Begrüßung (wiederverwendet jobs:greeting, dieselbe
+// Quelle wie EmployeeOverviewScreen — keine zweite Begrüßungslogik).
+function getGreeting(date: Date, t: (key: string) => string): string {
   const h = date.getHours();
-  if (h < 11) return "Guten Morgen";
-  if (h < 18) return "Guten Tag";
-  return "Guten Abend";
+  if (h < 11) return t("jobs:greeting.morning");
+  if (h < 18) return t("jobs:greeting.day");
+  return t("jobs:greeting.evening");
 }
 
 // ── Aktivitäts-Mapping pro Status
-function activityConfig(theme: AppTheme, status: Job["status"]) {
+function activityConfig(
+  theme: AppTheme,
+  status: Job["status"],
+  t: (key: string) => string,
+) {
   switch (status) {
     case "completed":
       return {
-        label: "Job abgeschlossen",
+        label: t("admin:dashboard.activityCompleted"),
         icon: "checkmark-circle-outline" as const,
         color: theme.colors.statusCompleted,
       };
     case "in_progress":
       return {
-        label: "Job gestartet",
+        label: t("admin:dashboard.activityStarted"),
         icon: "play-circle-outline" as const,
         color: theme.colors.statusInProgress,
       };
     case "open":
       return {
-        label: "Neuer Job offen",
+        label: t("admin:dashboard.activityOpened"),
         icon: "ellipse-outline" as const,
         color: theme.colors.statusOpen,
       };
@@ -86,11 +92,14 @@ function activityTimestamp(job: Job): number {
 
 export default function AdminDashboardScreen() {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const jobStatusLabels = useJobStatusLabels();
+  const { t, i18n } = useTranslation();
 
   const { profile } = useAuth();
   const { company } = useOwnCompany();
-  const companyTitle = company?.name?.trim() || COMPANY_NAME_FALLBACK;
+  const companyTitle = company?.name?.trim() || t("admin:tabs.dashboard");
   const {
     jobs,
     employees,
@@ -103,17 +112,17 @@ export default function AdminDashboardScreen() {
   // Zeitpunkt beim Render. Header zeigt nur das Datum (keine Live-Uhrzeit).
   const now = new Date();
 
-  const adminName = profile?.full_name?.trim() || "Admin";
+  const adminName = profile?.full_name?.trim() || t("profile:roles.admin");
 
   const dateLabel = useMemo(
     () =>
-      now.toLocaleDateString("de-DE", {
+      now.toLocaleDateString(INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE", {
         weekday: "long",
         day: "2-digit",
         month: "long",
         year: "numeric",
       }),
-    [now],
+    [now, i18n.language],
   );
 
   // ── KPI-Werte: serverseitig, gebündelt und ohne Parent-Regeln.
@@ -140,7 +149,7 @@ export default function AdminDashboardScreen() {
       // Zuvor geladene Werte NICHT verwerfen — veraltete Zahlen sind
       // brauchbarer als leere Kacheln, das Banner ordnet sie ein.
       setKpiError(
-        toUserMessage(err, "Die Kennzahlen konnten nicht geladen werden."),
+        toUserMessage(err, t("admin:dashboard.kpiLoadFailed")),
       );
     } finally {
       kpiLoadingRef.current = false;
@@ -326,7 +335,7 @@ export default function AdminDashboardScreen() {
         </View>
 
         <Text style={styles.greeting}>
-          {getGreeting(now)}, {adminName}
+          {getGreeting(now, t)}, {adminName}
         </Text>
         <Text style={styles.dateText}>{dateLabel}</Text>
       </View>
@@ -342,7 +351,7 @@ export default function AdminDashboardScreen() {
         <View style={styles.kpiErrorWrap}>
           <ErrorBanner
             message={dataError}
-            actionLabel="Erneut versuchen"
+            actionLabel={t("common:actions.retry")}
             onAction={() => {
               void handleRefresh();
             }}
@@ -356,7 +365,7 @@ export default function AdminDashboardScreen() {
           <ErrorBanner
             message={kpiError}
             type="warning"
-            actionLabel="Erneut versuchen"
+            actionLabel={t("common:actions.retry")}
             onAction={() => {
               void loadKpis();
             }}
@@ -369,7 +378,7 @@ export default function AdminDashboardScreen() {
       <View style={styles.kpiGrid}>
         <View style={styles.kpiItem}>
           <KPICard
-            label="Heute fällig"
+            label={t("admin:dashboard.kpiDueToday")}
             value={todayCount ?? "—"}
             icon="calendar-outline"
             accentColor={theme.colors.primary}
@@ -378,7 +387,7 @@ export default function AdminDashboardScreen() {
         </View>
         <View style={styles.kpiItem}>
           <KPICard
-            label={getJobStatusLabel("open")}
+            label={jobStatusLabels.open}
             value={openCount ?? "—"}
             icon="folder-open-outline"
             accentColor={theme.colors.statusOpen}
@@ -387,7 +396,7 @@ export default function AdminDashboardScreen() {
         </View>
         <View style={styles.kpiItem}>
           <KPICard
-            label={getJobStatusLabel("in_progress")}
+            label={jobStatusLabels.in_progress}
             value={inProgressCount ?? "—"}
             icon="time-outline"
             accentColor={theme.colors.statusInProgress}
@@ -396,7 +405,7 @@ export default function AdminDashboardScreen() {
         </View>
         <View style={styles.kpiItem}>
           <KPICard
-            label={getJobStatusLabel("completed")}
+            label={jobStatusLabels.completed}
             value={completedCount ?? "—"}
             icon="checkmark-done-outline"
             accentColor={theme.colors.statusCompleted}
@@ -418,14 +427,13 @@ export default function AdminDashboardScreen() {
             color={theme.colors.statusOpen}
           />
           <Text style={styles.overdueText}>
-            {overdueCount}{" "}
-            {overdueCount === 1 ? "überfälliger Termin" : "überfällige Termine"}
+            {t("admin:dashboard.overdueCount", { count: overdueCount })}
           </Text>
           <Ionicons
-            name="chevron-forward"
+            name={isRTL ? "chevron-back" : "chevron-forward"}
             size={16}
             color={theme.colors.statusOpen}
-            style={{ marginLeft: "auto" }}
+            style={{ marginStart: "auto" }}
           />
         </TouchableOpacity>
       ) : null}
@@ -441,12 +449,12 @@ export default function AdminDashboardScreen() {
             <Ionicons name="sunny-outline" size={20} color={theme.colors.primary} />
           </View>
           <View style={styles.timesheetInfo}>
-            <Text style={styles.timesheetTitle}>Urlaubsanträge</Text>
+            <Text style={styles.timesheetTitle}>{t("admin:dashboard.pendingVacationTitle")}</Text>
             <Text style={styles.timesheetSub}>
-              {pendingVacationCount} offen
+              {t("admin:dashboard.pendingVacationSubtitle", { count: pendingVacationCount })}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={theme.colors.outline} />
+          <Ionicons name={isRTL ? "chevron-back" : "chevron-forward"} size={18} color={theme.colors.outline} />
         </TouchableOpacity>
       ) : null}
 
@@ -463,26 +471,26 @@ export default function AdminDashboardScreen() {
             <Ionicons name="walk-outline" size={20} color={theme.colors.statusOpen} />
           </View>
           <View style={styles.timesheetInfo}>
-            <Text style={styles.timesheetTitle}>Heute abwesend</Text>
+            <Text style={styles.timesheetTitle}>{t("admin:dashboard.absentTodayTitle")}</Text>
             <Text style={styles.timesheetSub}>
-              {currentAbsences.length} Mitarbeiter
+              {t("admin:dashboard.absentTodayCount", { count: currentAbsences.length })}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={theme.colors.outline} />
+          <Ionicons name={isRTL ? "chevron-back" : "chevron-forward"} size={18} color={theme.colors.outline} />
         </TouchableOpacity>
       ) : null}
 
       {/* ── Mitarbeiter-Aktivität ── */}
       <View style={styles.section}>
         <SectionHeader
-          title="Mitarbeiter-Aktivität"
-          subtitle="Wer arbeitet gerade an einem Job?"
+          title={t("admin:dashboard.employeeActivityTitle")}
+          subtitle={t("admin:dashboard.employeeActivitySubtitle")}
         />
         {employeeActivity.length === 0 ? (
           <Card>
             <EmptyState
-              title="Keine Mitarbeiter"
-              message="Sobald du Mitarbeiter anlegst, erscheinen sie hier."
+              title={t("admin:dashboard.noEmployeesTitle")}
+              message={t("admin:dashboard.noEmployeesMessage")}
               icon="people-outline"
             />
           </Card>
@@ -496,12 +504,12 @@ export default function AdminDashboardScreen() {
               // angefragte Abwesenheit macht niemanden "abwesend".
               const isAbsent = !isActive && !!emp.activeAbsence;
               const activityLabel = isActive
-                ? emp.activeJob?.customerName ?? emp.activeJob?.service ?? "Aktiver Job"
+                ? emp.activeJob?.customerName ?? emp.activeJob?.service ?? t("admin:dashboard.activeJobFallback")
                 : isAbsent
                   ? emp.activeAbsence!.type === "sickness"
-                    ? "Krank gemeldet"
-                    : "Im Urlaub"
-                  : "Kein aktiver Job";
+                    ? t("admin:dashboard.sickReported")
+                    : t("admin:dashboard.onVacation")
+                  : t("admin:dashboard.noActiveJob");
               const dotColor = isActive
                 ? theme.colors.statusInProgress
                 : isAbsent
@@ -539,21 +547,21 @@ export default function AdminDashboardScreen() {
       {/* ── Letzte Aktivitäten ── */}
       <View style={styles.section}>
         <SectionHeader
-          title="Letzte Aktivitäten"
-          subtitle="Aktuelle Job-Bewegungen"
+          title={t("admin:dashboard.recentActivityTitle")}
+          subtitle={t("admin:dashboard.recentActivitySubtitle")}
         />
         {recentActivity.length === 0 ? (
           <Card>
             <EmptyState
-              title="Noch keine Aktivitäten"
-              message="Sobald Jobs erstellt oder bearbeitet werden, erscheinen sie hier."
+              title={t("admin:dashboard.noActivityTitle")}
+              message={t("admin:dashboard.noActivityMessage")}
               icon="pulse-outline"
             />
           </Card>
         ) : (
           <Card padding={0}>
             {recentActivity.map((job, idx) => {
-              const cfg = activityConfig(theme, job.status);
+              const cfg = activityConfig(theme, job.status, t);
               return (
                 <TouchableOpacity
                   key={job.id}
@@ -602,13 +610,13 @@ export default function AdminDashboardScreen() {
           />
         </View>
         <View style={styles.timesheetInfo}>
-          <Text style={styles.timesheetTitle}>Stundenzettel</Text>
+          <Text style={styles.timesheetTitle}>{t("timesheets:titleAdmin")}</Text>
           <Text style={styles.timesheetSub} numberOfLines={1}>
-            Arbeitszeitnachweis als PDF erstellen
+            {t("admin:dashboard.timesheetSubtitle")}
           </Text>
         </View>
         <Ionicons
-          name="chevron-forward"
+          name={isRTL ? "chevron-back" : "chevron-forward"}
           size={18}
           color={theme.colors.outline}
         />
@@ -623,7 +631,7 @@ export default function AdminDashboardScreen() {
         onPress={() => router.push("/jobs/create")}
       >
         <Ionicons name="add" size={24} color={theme.colors.onPrimaryContainer} />
-        <Text style={styles.fabText}>Job erstellen</Text>
+        <Text style={styles.fabText}>{t("admin:dashboard.createJobFab")}</Text>
       </TouchableOpacity>
     </ScreenContainer>
   );

@@ -18,14 +18,15 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job, JobAssignee } from "@/types/job";
 import { formatTimeHHmm } from "@/utils/date";
 import {
-  DELETED_SUFFIX,
-  UNASSIGNED_LABEL,
   getAssignees,
+  getDeletedSuffix,
+  getUnassignedLabel,
   isCorrectableAssignment,
 } from "@/utils/jobAssignees";
 import { isCorrectableJob } from "@/utils/jobCorrection";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Props = {
@@ -42,7 +43,10 @@ type Props = {
 };
 
 // "08:00 – 12:00" / "ab 08:00" / "bis 12:00" / null, wenn nichts erfasst ist.
-function ownTimeLabel(assignee: JobAssignee): string | null {
+function ownTimeLabel(
+  assignee: JobAssignee,
+  t: (key: string, opts?: Record<string, string>) => string,
+): string | null {
   const start = assignee.employeeStartedAt
     ? formatTimeHHmm(new Date(assignee.employeeStartedAt))
     : null;
@@ -51,8 +55,8 @@ function ownTimeLabel(assignee: JobAssignee): string | null {
     : null;
 
   if (start && end) return `${start} – ${end}`;
-  if (start) return `ab ${start}`;
-  if (end) return `bis ${end}`;
+  if (start) return t("admin:assignedEmployees.timeFrom", { time: start });
+  if (end) return t("admin:assignedEmployees.timeUntil", { time: end });
   return null;
 }
 
@@ -63,9 +67,10 @@ export function AssignedEmployeesCard({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const assignees = getAssignees(job);
-  const label = assignees.length > 1 ? "Mitarbeitende" : "Mitarbeiter";
+  const label = t("jobs:card.assigneesHeading", { count: assignees.length || 1 });
 
   // ENTSCHEIDET ÜBER DEN GESAMTEN ADMIN-ZUSATZ (Status-Zeile UND Aktion).
   //
@@ -96,15 +101,15 @@ export function AssignedEmployeesCard({
       </View>
 
       {assignees.length === 0 ? (
-        <Text style={styles.emptyText}>{UNASSIGNED_LABEL}</Text>
+        <Text style={styles.emptyText}>{getUnassignedLabel()}</Text>
       ) : (
         <View style={styles.list}>
           {assignees.map((assignee) => {
             const displayName = assignee.isDeleted
-              ? `${assignee.fullName}${DELETED_SUFFIX}`
+              ? `${assignee.fullName}${getDeletedSuffix()}`
               : assignee.fullName;
 
-            const timeLabel = ownTimeLabel(assignee);
+            const timeLabel = ownTimeLabel(assignee, t);
             const isComplete =
               !!assignee.employeeStartedAt && !!assignee.employeeCompletedAt;
             // Zwei Ebenen: der AUFTRAG muss korrigierbar sein
@@ -135,8 +140,10 @@ export function AssignedEmployeesCard({
                     ) : (
                       <Text style={styles.timeMissing}>
                         {timeLabel
-                          ? `${timeLabel} · unvollständig`
-                          : "Keine eigene Zeit erfasst"}
+                          ? t("admin:assignedEmployees.incompleteSuffix", {
+                              time: timeLabel,
+                            })
+                          : t("admin:timesheet.correction.noOwnTime")}
                       </Text>
                     )
                   ) : null}
@@ -147,7 +154,9 @@ export function AssignedEmployeesCard({
                     onPress={() => onCorrectTime?.(assignee)}
                     style={styles.actionBtn}
                     activeOpacity={0.75}
-                    accessibilityLabel={`Zeit korrigieren für ${assignee.fullName}`}
+                    accessibilityLabel={t("admin:assignedEmployees.correctTimeA11y", {
+                      name: assignee.fullName,
+                    })}
                   >
                     <Ionicons
                       name="create-outline"

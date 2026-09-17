@@ -1,3 +1,5 @@
+import { i18next } from "@/i18n";
+import { isSupportedLocale } from "@/i18n/config";
 import { supabase } from "@/lib/supabase";
 import { registerForPushNotifications } from "@/services/notificationService";
 import { clearPendingJobActions } from "@/services/offline/jobs.queue";
@@ -38,6 +40,7 @@ import React, {
   useState,
 } from "react";
 import { Alert, AppState } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type AuthContextType = {
   session: Session | null;
@@ -118,6 +121,7 @@ const AUTHORITATIVE_PROFILE_CLEAR_SOURCES = new Set<string>([
 ]);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
@@ -216,6 +220,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  // ── Phase E.1: Bestandsnutzer-Sprachabgleich ────────────────────────────
+  // profiles.locale (Phase E, Default 'de') wird bisher NUR bei einem
+  // expliziten Sprachwechsel im Profil geschrieben (updateOwnLocale.ts). Ein
+  // Bestandsnutzer, der schon vor Phase E z.B. Arabisch als lokale App-Sprache
+  // gespeichert hatte, bekäme sonst dauerhaft deutsche Push-Benachrichtigungen
+  // — die lokale UI-Sprache (AsyncStorage, Phase A) bleibt dabei IMMER die
+  // Quelle der Wahrheit; hier wird nur der Server bei Abweichung NACHGEFÜHRT,
+  // nie umgekehrt.
+  //
+  // Läuft NACH jedem frisch geladenen Remote-Profil (loadAndApplyProfile,
+  // Zweig "remote") — also beim Bootstrap UND bei jedem späteren
+  // refreshProfile()-Trigger (Reconnect, Foreground). Kein Sync-Loop: bei
+  // Übereinstimmung wird nicht geschrieben (kein erneuter Trigger möglich),
+  // bei Erfolg stimmen lokale und Server-Sprache ab sofort überein.
+  // reconcilingRef verhindert nur überlappende In-Flight-Aufrufe (z.B. sehr
+  // schneller Foreground-Wechsel direkt nach dem Bootstrap).
+  const reconcilingLocaleRef = useRef(false);
+  const reconcileServerLocale = useCallback(async (targetProfile: AuthProfile) => {
+    if (reconcilingLocaleRef.current) return;
+
+    const localLocale = i18next.language;
+    if (!isSupportedLocale(localLocale)) return;
+    if (targetProfile.locale === localLocale) return; // bereits gleich → kein Write.
+
+    reconcilingLocaleRef.current = true;
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ locale: localLocale })
+        .eq("id", targetProfile.id);
+
+      if (error) {
+        // Best effort: NIE die UI-Sprache zurücksetzen, NIE den Start
+        // blockieren — nur intern loggen (kein roher Backend-Fehler sichtbar).
+        if (__DEV__) {
+          console.warn("[Auth] Server-Sprachabgleich fehlgeschlagen:", error.message);
+        }
+        return;
+      }
+
+      authDebug("[Auth] Server-Sprache abgeglichen:", targetProfile.locale, "->", localLocale);
+    } catch (err) {
+      if (__DEV__) {
+        console.warn("[Auth] Server-Sprachabgleich fehlgeschlagen:", err);
+      }
+    } finally {
+      reconcilingLocaleRef.current = false;
+    }
+  }, []);
+
   // Löscht den eigenen Push-Token best effort — darf Logout/Deaktivierung
   // nie blockieren, egal was schiefgeht.
   const clearOwnPushTokenBestEffort = useCallback(async () => {
@@ -240,8 +294,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     invalidatePendingAuthWork("deactivation");
 
     Alert.alert(
-      "Konto deaktiviert",
-      "Dein Zugang wurde von einem Administrator deaktiviert. Du wirst jetzt abgemeldet.",
+      t("auth:deactivated.title"),
+      t("auth:deactivated.message"),
     );
 
     await clearOwnPushTokenBestEffort();
@@ -289,7 +343,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Zurücksetzen, damit ein späterer, neuer Login wieder normal geprüft wird.
     deactivationHandledRef.current = false;
-  }, [clearOwnPushTokenBestEffort, invalidatePendingAuthWork]);
+  }, [clearOwnPushTokenBestEffort, invalidatePendingAuthWork, t]);
 
   // Lädt das Profil remote, fällt bei Netzwerkfehler auf den lokalen Cache
   // zurück und setzt den State. Zentralisiert die Offline-Logik UND die
@@ -332,6 +386,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfileError(null);
         lastHandledUserIdRef.current = userId;
         await saveCachedProfile(result.profile);
+        // Nicht awaited — darf den Bootstrap/Profil-Ladevorgang nie verzögern
+        // (siehe reconcileServerLocale oben: best effort, blockiert nie).
+        void reconcileServerLocale(result.profile);
         return "remote";
       }
 
@@ -378,7 +435,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfileError("server");
       return "server-error";
     },
-    [forceSignOutDueToDeactivation],
+    [forceSignOutDueToDeactivation, reconcileServerLocale],
   );
 
   const refreshProfile = useCallback(async () => {

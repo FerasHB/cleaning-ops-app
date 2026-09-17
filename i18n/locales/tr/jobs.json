@@ -1,0 +1,224 @@
+{
+  "greeting": {
+    "morning": "Günaydın",
+    "day": "İyi günler",
+    "evening": "İyi akşamlar"
+  },
+  "actions": {
+    "start": "Başlat",
+    "complete": "Tamamla"
+  },
+  "labels": {
+    "total": "Toplam"
+  },
+  "dateGroups": {
+    "today": "Bugün",
+    "tomorrow": "Yarın"
+  },
+  "today": {
+    "title": "Bugün",
+    "subtitle": "Günün özeti",
+    "jobsToday": "Bugünkü işler"
+  },
+  "activeJob": {
+    "title": "Aktif İş",
+    "runningSince": "{{time}} beri devam ediyor",
+    "completeButton": "İşi Tamamla"
+  },
+  "upcoming": {
+    "title": "Bugün Yaklaşan",
+    "subtitle_one": "Bugün {{count}} iş",
+    "subtitle_other": "Bugün {{count}} iş",
+    "emptyAllTitle": "Bugün İş Yok",
+    "emptyAllMessage": "Bugün için senin için planlanmış bir iş yok.",
+    "emptyFilteredTitle": "Eşleşen İş Yok",
+    "emptyFilteredMessage": "Bugün \"{{status}}\" durumunda bir işin yok. Tümünü ({{count}}) görmek için \"Tümü\"nü seç.",
+    "showMore_one": "Bugün {{count}} iş daha — tümünü göster",
+    "showMore_other": "Bugün {{count}} iş daha — tümünü göster"
+  },
+  "month": {
+    "title": "Bu Ay",
+    "subtitle": "Kişisel aktiviten"
+  },
+  "errors": {
+    "startFailed": "İş başlatılamadı.",
+    "completeFailed": "İş tamamlanamadı."
+  },
+  "card": {
+    "scheduleTime": "{{time}}",
+    "scheduleTimeRange": "{{start}} – {{end}}",
+    "rule": "Kural",
+    "detachedSchedule": "Farklı Tarih",
+    "dueToday": "Bugün Planlı",
+    "startsAt": "{{time}} başlıyor",
+    "notStartedYet": "Henüz Başlamadı",
+    "unreadComments": "Okunmamış yorumlar",
+    "assigneeLabel_one": "Çalışan: {{names}}",
+    "assigneeLabel_other": "Çalışanlar: {{names}}",
+    "assigneesHeading_one": "Çalışan",
+    "assigneesHeading_other": "Çalışanlar"
+  },
+  "dialogs": {
+    "completeTitle": "İş tamamlansın mı?",
+    "completeMessage": "İş tamamlandı olarak işaretlenecek."
+  },
+  "absenceConflict": {
+    "typeVacation": "İzin",
+    "typeSickness": "Hasta",
+    "titleSingular": "Devamsızlık bulundu",
+    "titlePlural": "Devamsızlıklar bulundu",
+    "confirmCreate": "Yine de oluştur",
+    "confirmAssign": "Yine de ata",
+    "recurringIntro_one": "{{count}} planlanan görevde devamsızlık var:",
+    "recurringIntro_other": "{{count}} planlanan görevde devamsızlık var:",
+    "singleConflictVacation": "{{name}}, {{date}} tarihinde izinli.",
+    "singleConflictSickness": "{{name}}, {{date}} tarihinde hastalık bildirmiş.",
+    "multiEmployeesIntro_one": "O gün {{count}} çalışan devamsız:",
+    "multiEmployeesIntro_other": "O gün {{count}} çalışan devamsız:",
+    "moreRows": "+ {{count}} tane daha"
+  },
+  "smart": {
+    "title": "İşlerim",
+    "noJobsToday": "Bugün için planlanmış iş yok.",
+    "todayChip": "Bugün {{count}}",
+    "overdue": "Gecikmiş",
+    "overdueSubtitle_one": "{{count}} gecikmiş iş",
+    "overdueSubtitle_other": "{{count}} gecikmiş iş",
+    "next": "Sırada",
+    "showMore": "{{count}} tane daha göster"
+  },
+  "detail": {
+    "notFoundTitle": "İş Bulunamadı",
+    "notFoundMessage": "Aranan iş artık mevcut değil.",
+    "noAddress": "Açılacak bir adres yok.",
+    "mapsFailed": "Harita uygulaması açılamadı.",
+    "addressLabel": "Adres",
+    "addressMissing": "Adres kayıtlı değil",
+    "openInMaps": "Haritada Aç",
+    "openInMapsA11y": "Adresi haritada aç",
+    "addressMissingHint": "Bu iş için bir adres girilmemiş.",
+    "jobTypeLabel": "İş Türü",
+    "jobTypeSingle": "Tek seferlik",
+    "plannedStart": "Planlanan Başlangıç",
+    "noScheduledDate": "Planlanan tarih yok",
+    "plannedDuration": "Planlanan Süre",
+    "plannedEnd": "Planlanan Bitiş",
+    "serviceLabel": "Hizmet",
+    "scheduledFor": "{{date}} için planlandı.",
+    "noScheduleHint": "Bu iş için henüz bir tarih planlanmadı.",
+    "headerTitle": "İş Ayrıntıları",
+    "ruleMenuA11y": "Bu tekrarlayan iş için işlemler",
+    "ruleMenuHint": "Düzenleme, etkinleştirme/devre dışı bırakma ve silmeyi açar"
+  },
+  "footer": {
+    "startButton": "İşi Başlat",
+    "doneMessage": "Bu iş tamamlandı.",
+    "editButton": "Düzenle",
+    "editButtonA11y": "İşi düzenle"
+  },
+  "comments": {
+    "title": "YORUMLAR",
+    "unknownAuthor": "Bilinmiyor",
+    "emptyTitle": "Henüz Yorum Yok",
+    "emptyMessage": "Bu iş için ilk mesajı yaz.",
+    "placeholder": "Yorum yaz…",
+    "send": "Gönder",
+    "readOnlyHint": "Burada okuyabilirsin. Şu anda yalnızca işin asıl sorumlu çalışanı yorum yazabilir.",
+    "offlineError": "Çevrimdışıyken yorum gönderilemez. Lütfen internetle tekrar dene.",
+    "sendFailed": "Yorum gönderilemedi.",
+    "todayAt": "Bugün saat {{time}}",
+    "dateAt": "{{date}} saat {{time}}",
+    "offlineLoadError": "Yorumlar çevrimdışıyken kullanılamıyor.",
+    "loadFailed": "Yorumlar yüklenemedi."
+  },
+  "pending": {
+    "startWaiting": "Başlatma internet bekliyor",
+    "completeWaiting": "Tamamlama senkronizasyonu bekliyor",
+    "changeWaiting": "Değişiklik senkronizasyonu bekliyor"
+  },
+  "agenda": {
+    "jobsCount_one": "{{count}} iş",
+    "jobsCount_other": "{{count}} iş",
+    "close": "Gün görünümünü kapat",
+    "jobsSectionTitle": "İşler",
+    "absencesSectionTitle": "İzinler",
+    "emptyDefault": "Bu gün için sana atanmış bir iş yok.",
+    "typeVacation": "İzin",
+    "typeSickness": "Hasta",
+    "a11yOpenDetails": "{{name}}, {{type}}, ayrıntıları aç"
+  },
+  "picker": {
+    "title": "Ay ve Yıl",
+    "close": "Seçimi kapat",
+    "prevYear": "Önceki yıl",
+    "nextYear": "Sonraki yıl",
+    "yearA11y": "{{year}} yılı",
+    "monthA11y": "{{month}} {{year}}"
+  },
+  "calendar": {
+    "selectMonthYear": "Ay ve yıl seç",
+    "jumpToToday": "Bugüne git",
+    "prevMonth": "Önceki ay",
+    "nextMonth": "Sonraki ay",
+    "emptyMonthHint": "Bu ay sana atanmış bir iş yok.",
+    "jobCountPill_one": "{{count}} iş",
+    "jobCountPill_other": "{{count}} iş",
+    "a11yNoJobs": "İş yok."
+  },
+  "smartEmpty": {
+    "allTitle": "İş Yok",
+    "allMessage": "Şu anda senin için planlanmış bir iş yok.",
+    "openTitle": "Açık İş Yok",
+    "openMessage": "Şu anda sana atanmış açık bir iş yok.",
+    "inProgressTitle": "Devam Eden İş Yok",
+    "inProgressMessage": "Şu anda devam eden bir iş yok.",
+    "completedTitle": "Henüz Tamamlanmış İş Yok",
+    "completedMessage": "Tamamlanan işler burada görünecek."
+  },
+  "photos": {
+    "label": "FOTOĞRAFLAR",
+    "addButton": "Fotoğraf Ekle",
+    "uploadingButton": "Yükleniyor…",
+    "offlineHint": "Fotoğraf yüklemek için internet bağlantısı gerekir.",
+    "successMessage": "Fotoğraf başarıyla yüklendi.",
+    "emptyOffline": "Fotoğraflar çevrimdışıyken kullanılamıyor.",
+    "emptyDefault": "Henüz fotoğraf yok.",
+    "previewA11y": "Fotoğrafı tam ekran görüntüle",
+    "previewCloseA11y": "Önizlemeyi kapat",
+    "sourceDialogTitle": "Fotoğraf Ekle",
+    "sourceDialogMessage": "Bir kaynak seç:",
+    "sourceCameraOption": "Fotoğraf Çek",
+    "sourceLibraryOption": "Galeriden Seç",
+    "cameraPermissionDeniedError": "Kamera erişimi reddedildi. Lütfen Ayarlar'dan izin ver.",
+    "cameraPermissionDeniedTitle": "Kamera Erişimi Reddedildi",
+    "cameraPermissionDeniedMessage": "Fotoğraf çekebilmek için uygulamanın kameranıza erişmesi gerekir. Lütfen Ayarlar'dan izin ver.",
+    "libraryPermissionDeniedError": "Fotoğraf kitaplığı erişimi reddedildi. Lütfen Ayarlar'dan izin ver.",
+    "libraryPermissionDeniedTitle": "Erişim Reddedildi",
+    "libraryPermissionDeniedMessage": "Fotoğraf yükleyebilmek için uygulamanın fotoğraf kitaplığınıza erişmesi gerekir. Lütfen Ayarlar'dan izin ver.",
+    "unsupportedFormatError": "Bu dosya biçimi desteklenmiyor. Lütfen JPEG, PNG veya WebP biçiminde bir fotoğraf seç.",
+    "fileTooLargeError": "Fotoğraf çok büyük ({{actualMb}} MB). İzin verilen en fazla {{maxMb}} MB.",
+    "uploadFailedFallback": "Yükleme başarısız oldu.",
+    "loadFailedFallback": "Fotoğraflar yüklenemedi.",
+    "noCompanyError": "Bağlı bir şirket yok. Lütfen tekrar giriş yap.",
+    "uploadFailedStorage": "Fotoğraf yüklenemedi.",
+    "uploadFailedMetadata": "Fotoğraf kaydedilemedi. Lütfen tekrar dene.",
+    "loadFailedService": "Fotoğraflar yüklenemedi."
+  },
+  "workedTime": {
+    "cardTitle": "Toplam İş Süresi",
+    "startedLabel": "BAŞLADI",
+    "completedLabel": "TAMAMLANDI",
+    "runningLabel": "Devam ediyor…",
+    "actorPrefix": "{{name}} tarafından",
+    "minutes_one": "{{count}} dakika",
+    "minutes_other": "{{count}} dakika",
+    "individualHeadingAdmin": "BİREYSEL ÇALIŞMA SÜRESİ",
+    "individualHeadingMine": "SENİN ÇALIŞMA SÜREN",
+    "rangeLabel": "{{start}} – {{end}}",
+    "fromIncomplete": "{{start}} itibarıyla · eksik",
+    "toIncomplete": "{{end}}'e kadar · eksik",
+    "notRecorded": "kaydedilmedi",
+    "infoText": "Bu, işin toplam süresidir — bireysel bir çalışanın çalışma süresinden farklı olabilir.",
+    "infoTextSharedSuffix": "Bu süre işin başlangıç ve tamamlanma zamanından hesaplanır; kimin başlattığından bağımsızdır."
+  }
+}

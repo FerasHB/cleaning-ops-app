@@ -28,6 +28,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   visible: boolean;
@@ -46,6 +47,7 @@ export function RejectVacationSheet({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const [note, setNote] = useState("");
 
   const handleClose = () => {
@@ -77,16 +79,20 @@ export function RejectVacationSheet({
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.grabber} />
-              <Text style={styles.title}>Urlaub ablehnen</Text>
+              <Text style={styles.title}>
+                {t("admin:absenceAdmin.rejectSheetTitle")}
+              </Text>
               <Text style={styles.subtitle}>
-                Antrag von {employeeName} ablehnen. Eine Notiz ist optional.
+                {t("admin:absenceAdmin.rejectSheetSubtitle", {
+                  name: employeeName,
+                })}
               </Text>
 
               <TextInput
                 style={styles.input}
                 value={note}
                 onChangeText={setNote}
-                placeholder="Notiz für den Mitarbeiter (optional)"
+                placeholder={t("admin:absenceAdmin.rejectSheetPlaceholder")}
                 placeholderTextColor={theme.colors.outline}
                 multiline
                 editable={!busy}
@@ -94,14 +100,14 @@ export function RejectVacationSheet({
 
               <View style={styles.actions}>
                 <Button
-                  label="Abbrechen"
+                  label={t("common:actions.cancel")}
                   variant="secondary"
                   onPress={handleClose}
                   disabled={busy}
                   style={styles.actionBtn}
                 />
                 <Button
-                  label="Ablehnen"
+                  label={t("admin:absenceAdmin.rejectButton")}
                   variant="danger"
                   onPress={handleConfirm}
                   loading={busy}

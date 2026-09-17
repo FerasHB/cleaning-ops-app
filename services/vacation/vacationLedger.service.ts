@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { supabase } from "@/lib/supabase";
+import { i18next } from "@/i18n";
 import type {
   VacationLedgerEntry,
   VacationLedgerEntryType,
@@ -100,10 +101,10 @@ export async function addVacationAdjustment(
 ): Promise<void> {
   const trimmed = note.trim();
   if (!trimmed) {
-    throw new Error("Bitte eine Begründung für die Korrektur angeben.");
+    throw new Error(i18next.t("admin:vacationAccount.adjustReasonRequiredError"));
   }
   if (!Number.isFinite(amountDays) || amountDays === 0) {
-    throw new Error("Bitte einen Korrekturwert ungleich 0 angeben.");
+    throw new Error(i18next.t("admin:vacationAccount.adjustValueError"));
   }
 
   const { error } = await supabase.rpc("admin_add_vacation_adjustment", {

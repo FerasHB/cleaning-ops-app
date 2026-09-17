@@ -23,6 +23,7 @@ import {
   RequestVacationInput,
 } from "@/types/absence";
 import { toUserMessage } from "@/utils/userMessages";
+import { i18next } from "@/i18n";
 
 // Exportiert für services/absences/adminAbsences.service.ts — Zeilenform und
 // Mapping sind für Mitarbeiter- und Admin-Lesezugriff identisch (dieselbe
@@ -62,61 +63,60 @@ export function mapAbsence(row: AbsenceRow): Absence {
   };
 }
 
-// Bekannte englische RPC-Ablehnungen → deutsche Nutzer-Meldung. Reihenfolge
-// spezifisch → grob, gleiche Bauform wie
-// services/timesheets/timeCorrection.service.ts (translateRpcError).
-const RPC_MESSAGE_MAP: { match: string; message: string }[] = [
+// Bekannte englische RPC-Ablehnungen → i18next-Key (übersetzte Nutzer-
+// Meldung). Reihenfolge spezifisch → grob, gleiche Bauform wie
+// services/timesheets/timeCorrection.service.ts (translateRpcError). Die
+// RPCs selbst werfen stabile ENGLISCHE Texte (siehe supabase/migrations/
+// 20260816000000_absences_foundation.sql) — die Übersetzung passiert
+// vollständig hier client-seitig, keine Server-Änderung nötig.
+const RPC_MESSAGE_MAP: { match: string; key: string }[] = [
   {
     match: "Only employees can request their own vacation",
-    message: "Nur Mitarbeiter können Urlaub beantragen.",
+    key: "absences:errors.onlyEmployeesVacation",
   },
   {
     match: "Only employees can report their own sickness",
-    message: "Nur Mitarbeiter können eine Krankheit melden.",
+    key: "absences:errors.onlyEmployeesSickness",
   },
   {
     match: "Only employees can cancel their own vacation",
-    message: "Nur Mitarbeiter können ihren eigenen Urlaub stornieren.",
+    key: "absences:errors.onlyEmployeesCancelVacation",
   },
   {
     match: "Only employees can cancel their own sickness report",
-    message: "Nur Mitarbeiter können ihre eigene Krankmeldung stornieren.",
+    key: "absences:errors.onlyEmployeesCancelSickness",
   },
   {
     match: "Only employees can update their own sickness report",
-    message: "Nur Mitarbeiter können ihre eigene Krankmeldung aktualisieren.",
+    key: "absences:errors.onlyEmployeesUpdateSickness",
   },
   {
     match: "start_date and end_date are required",
-    message: "Bitte Von- und Bis-Datum angeben.",
+    key: "absences:errors.datesRequired",
   },
   {
     match: "start_date is required",
-    message: "Bitte ein Startdatum angeben.",
+    key: "absences:errors.startDateRequired",
   },
   {
     match: "end_date must not be before start_date",
-    message: "Das Enddatum darf nicht vor dem Startdatum liegen.",
+    key: "absences:errors.endBeforeStart",
   },
   {
     match: "Overlaps an existing vacation request",
-    message:
-      "Dieser Zeitraum überschneidet sich mit einem bereits bestehenden Urlaubsantrag.",
+    key: "absences:errors.overlapsVacation",
   },
   {
     match: "Overlaps an existing active sickness report",
-    message:
-      "Dieser Zeitraum überschneidet sich mit einer bereits aktiven Krankmeldung.",
+    key: "absences:errors.overlapsSickness",
   },
   {
     match: "Vacation not found, not yours, or no longer cancellable",
-    message:
-      "Dieser Urlaub kann nicht mehr storniert werden — er ist entweder bereits vergangen oder wurde schon entschieden.",
+    key: "absences:errors.vacationNotCancellable",
   },
   {
     match: "Sickness report not found, not yours, or already closed",
-    message:
-      "Diese Krankmeldung wurde nicht gefunden oder ist bereits abgeschlossen.",
+    key: "absences:errors.sicknessNotFound",
   },
 ];
 
@@ -127,7 +127,7 @@ function translateRpcError(err: unknown, fallback: string): string {
       : "";
 
   const hit = RPC_MESSAGE_MAP.find((entry) => raw.includes(entry.match));
-  if (hit) return hit.message;
+  if (hit) return i18next.t(hit.key);
 
   return toUserMessage(err, fallback);
 }
@@ -153,7 +153,7 @@ export async function getMyAbsences(): Promise<Absence[]> {
 
   if (error) {
     throw new Error(
-      translateRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+      translateRpcError(error, i18next.t("absences:errors.loadFailed")),
     );
   }
 
@@ -189,7 +189,7 @@ export async function getOwnAbsencesInRange(params: {
   const { data, error } = await query;
   if (error) {
     throw new Error(
-      translateRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+      translateRpcError(error, i18next.t("absences:errors.loadFailed")),
     );
   }
 
@@ -230,7 +230,7 @@ export async function getEmployeeAbsencesInRange(params: {
 
   if (error) {
     throw new Error(
-      translateRpcError(error, "Die Abwesenheiten konnten nicht geladen werden."),
+      translateRpcError(error, i18next.t("absences:errors.loadFailed")),
     );
   }
 
@@ -240,7 +240,7 @@ export async function getEmployeeAbsencesInRange(params: {
 function firstRow(data: AbsenceRow[] | null): Absence {
   const row = data?.[0];
   if (!row) {
-    throw new Error("Die Abwesenheit konnte nicht geladen werden.");
+    throw new Error(i18next.t("absences:errors.loadSingleFailed"));
   }
   return mapAbsence(row);
 }
@@ -257,7 +257,7 @@ export async function requestOwnVacation(
 
   if (error) {
     throw new Error(
-      translateRpcError(error, "Der Urlaubsantrag konnte nicht gestellt werden."),
+      translateRpcError(error, i18next.t("absences:errors.requestFailed")),
     );
   }
 
@@ -276,7 +276,7 @@ export async function reportOwnSickness(
 
   if (error) {
     throw new Error(
-      translateRpcError(error, "Die Krankmeldung konnte nicht gespeichert werden."),
+      translateRpcError(error, i18next.t("absences:errors.reportFailed")),
     );
   }
 
@@ -291,7 +291,7 @@ export async function cancelOwnVacation(absenceId: string): Promise<Absence> {
 
   if (error) {
     throw new Error(
-      translateRpcError(error, "Der Urlaub konnte nicht storniert werden."),
+      translateRpcError(error, i18next.t("absences:errors.cancelVacationFailed")),
     );
   }
 
@@ -306,7 +306,7 @@ export async function cancelOwnSickness(absenceId: string): Promise<Absence> {
 
   if (error) {
     throw new Error(
-      translateRpcError(error, "Die Krankmeldung konnte nicht storniert werden."),
+      translateRpcError(error, i18next.t("absences:errors.cancelSicknessFailed")),
     );
   }
 
@@ -328,7 +328,7 @@ export async function updateOwnSicknessEnd(
 
   if (error) {
     throw new Error(
-      translateRpcError(error, "Das Enddatum konnte nicht aktualisiert werden."),
+      translateRpcError(error, i18next.t("absences:errors.updateEndFailed")),
     );
   }
 

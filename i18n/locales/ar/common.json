@@ -1,0 +1,130 @@
+{
+  "language": {
+    "sectionTitle": "التطبيق",
+    "label": "اللغة",
+    "restartTitle": "إعادة التشغيل مطلوبة",
+    "restartMessage": "لتطبيق التخطيط من اليمين إلى اليسار بالكامل، يرجى إغلاق التطبيق تمامًا وإعادة فتحه.",
+    "restartConfirm": "حسنًا"
+  },
+  "actions": {
+    "cancel": "إلغاء",
+    "confirm": "تأكيد",
+    "ok": "حسنًا",
+    "back": "رجوع",
+    "next": "التالي",
+    "retry": "إعادة المحاولة",
+    "save": "حفظ",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "close": "إغلاق",
+    "selectDate": "اختيار التاريخ",
+    "selectTime": "اختيار الوقت"
+  },
+  "status": {
+    "open": "مفتوح",
+    "inProgress": "قيد التنفيذ",
+    "completed": "مكتمل"
+  },
+  "filters": {
+    "all": "الكل"
+  },
+  "states": {
+    "notProvided": "غير متوفر",
+    "unknown": "غير معروف",
+    "unassigned": "غير مُسنَد",
+    "deletedSuffix": " (سابق)"
+  },
+  "phoneCall": {
+    "notPossibleTitle": "تعذر الاتصال",
+    "noNumberMessage": "لا يوجد رقم هاتف صالح مسجَّل لهذا الشخص.",
+    "confirmTitle": "اتصال",
+    "confirmWithName": "الاتصال بـ {{name}}؟\n\n{{number}}",
+    "confirmGeneric": "الاتصال بهذا الرقم؟\n\n{{number}}",
+    "confirmButton": "اتصال",
+    "failedMessage": "تعذر بدء الاتصال. الرقم: {{number}}"
+  },
+  "emailContact": {
+    "notPossibleTitle": "تعذر إرسال البريد الإلكتروني",
+    "noAddressMessage": "لا يوجد عنوان بريد إلكتروني مسجَّل لهذا الشخص.",
+    "failedMessage": "تعذر فتح أي تطبيق بريد إلكتروني. العنوان: {{email}}"
+  },
+  "a11y": {
+    "closeMenu": "إغلاق القائمة",
+    "showPassword": "إظهار كلمة المرور",
+    "hidePassword": "إخفاء كلمة المرور",
+    "statusFilter": "تصفية الحالة: {{label}}"
+  },
+  "errors": {
+    "title": "خطأ",
+    "generic": "تعذر تنفيذ هذا الإجراء.",
+    "offline": "لا يوجد اتصال بالإنترنت. يرجى المحاولة مرة أخرى.",
+    "permission": "ليس لديك صلاحية لتنفيذ هذا الإجراء.",
+    "notFound": "لم يتم العثور على هذا العنصر أو لم يعد متاحًا.",
+    "conflict": "هذا العنصر موجود بالفعل.",
+    "inUse": "هذا العنصر ما زال قيد الاستخدام ولا يمكن حذفه.",
+    "invalidInput": "البيانات المُدخلة غير مكتملة أو غير صحيحة.",
+    "sessionExpired": "انتهت صلاحية جلستك. يرجى تسجيل الدخول مرة أخرى.",
+    "serverUnavailable": "الخادم غير متاح حاليًا. يرجى المحاولة لاحقًا.",
+    "timeout": "استغرق الطلب وقتًا طويلاً. يرجى المحاولة مرة أخرى.",
+    "loadFailed": "تعذر تحميل البيانات.",
+    "saveFailed": "تعذر حفظ التغييرات.",
+    "unknown": "خطأ غير معروف.",
+    "notAuthenticated": "لم يتم العثور على مستخدم مسجّل الدخول."
+  },
+  "authErrors": {
+    "generic": "حدث خطأ غير متوقع.",
+    "offline": "لا يوجد اتصال بالإنترنت. يرجى التحقق من الاتصال والمحاولة مرة أخرى.",
+    "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+    "emailNotConfirmed": "يرجى تأكيد بريدك الإلكتروني أولاً.",
+    "invalidEmail": "يرجى إدخال بريد إلكتروني صالح.",
+    "emailExists": "يوجد حساب بالفعل لهذا البريد الإلكتروني.",
+    "weakPassword": "كلمة المرور لا تفي بالحد الأدنى من المتطلبات.",
+    "rateLimit": "محاولات كثيرة جدًا. يرجى الانتظار قليلاً ثم المحاولة مرة أخرى."
+  },
+  "validation": {
+    "passwordRequired": "يرجى إدخال كلمة مرور.",
+    "passwordMinLength": "يجب أن تتكوّن كلمة المرور من {{min}} أحرف على الأقل.",
+    "passwordTooLong": "كلمة المرور طويلة جدًا.",
+    "passwordMismatch": "كلمتا المرور غير متطابقتين."
+  },
+  "tabs": {
+    "overview": "نظرة عامة",
+    "jobs": "المهام",
+    "calendar": "التقويم",
+    "profile": "الملف الشخصي"
+  },
+  "unsavedChanges": {
+    "title": "تجاهل التغييرات؟",
+    "message": "ستفقد التغييرات غير المحفوظة.",
+    "confirm": "تجاهل",
+    "cancel": "متابعة التعديل"
+  },
+  "bootError": {
+    "profileFailedTitle": "تعذر تحميل الملف الشخصي",
+    "profileFailedMessage": "حدثت مشكلة أثناء تحميل حسابك. يرجى المحاولة مرة أخرى أو تسجيل الخروج ثم الدخول مجددًا.",
+    "offlineTitle": "لا يوجد اتصال",
+    "offlineMessage": "لا يوجد اتصال ولا بيانات محلية متاحة. بمجرد عودة الاتصال بالإنترنت، يمكنك المحاولة مرة أخرى."
+  },
+  "sync": {
+    "offlineTitle": "لا يوجد إنترنت — لن تُفقد التغييرات",
+    "savingTitle": "جارٍ حفظ التغييرات…",
+    "errorTitle": "تعذر حفظ التغييرات",
+    "pendingLabel_zero": "لا تغييرات بانتظار الحفظ",
+    "pendingLabel_one": "تغيير واحد بانتظار الحفظ",
+    "pendingLabel_two": "تغييران بانتظار الحفظ",
+    "pendingLabel_few": "{{count}} تغييرات بانتظار الحفظ",
+    "pendingLabel_many": "{{count}} تغييرًا بانتظار الحفظ",
+    "pendingLabel_other": "{{count}} تغيير بانتظار الحفظ",
+    "detailsButton": "التفاصيل",
+    "noPendingChanges": "لا تغييرات بانتظار الحفظ",
+    "hintOnline": "تُحفظ تغييراتك تلقائيًا.",
+    "hintOffline": "بمجرد عودة الاتصال بالإنترنت، سيتم حفظ التغييرات.",
+    "closeButton": "إغلاق",
+    "startJobWaiting": "بدء المهمة بانتظار الحفظ",
+    "completeJobWaiting": "إنهاء المهمة بانتظار الحفظ",
+    "genericChangeWaiting": "تغيير بانتظار الحفظ",
+    "a11yOffline": "لا يوجد إنترنت. لن تُفقد التغييرات.",
+    "a11ySaving": "جارٍ حفظ التغييرات.",
+    "a11yError": "تعذر حفظ التغييرات."
+  }
+}

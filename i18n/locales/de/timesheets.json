@@ -1,0 +1,55 @@
+{
+  "titleAdmin": "Stundenzettel",
+  "titleMine": "Meine Arbeitszeit",
+  "selfNameFallback": "Ich",
+  "employeeSection": {
+    "title": "Mitarbeiter",
+    "subtitle": "Für wen soll der Nachweis erstellt werden?",
+    "emptyTitle": "Keine Mitarbeiter",
+    "emptyMessage": "Lege zuerst Mitarbeiter an, um einen Nachweis zu erstellen.",
+    "inactive": "Inaktiv"
+  },
+  "monthSection": {
+    "title": "Monat",
+    "subtitle": "Abrechnungszeitraum"
+  },
+  "previewSection": {
+    "titleAdmin": "Vorschau",
+    "titleMine": "Deine Zeiten",
+    "subtitle": "Abgeschlossene Aufträge im Zeitraum",
+    "selectEmployeeTitle": "Mitarbeiter wählen",
+    "selectEmployeeMessage": "Bitte zuerst einen Mitarbeiter auswählen.",
+    "loading": "Lade Stundenzettel…",
+    "emptyTitle": "Keine Einträge",
+    "emptyMessageAdmin": "Keine abgeschlossenen Jobs in diesem Zeitraum",
+    "emptyMessageMine": "In diesem Monat hast du noch keinen Auftrag abgeschlossen."
+  },
+  "table": {
+    "day": "Tag",
+    "begin": "Beginn",
+    "end": "Ende",
+    "duration": "Dauer"
+  },
+  "summary_one": "Summe · {{count}} Job",
+  "summary_other": "Summe · {{count}} Jobs",
+  "exportButton": "PDF exportieren",
+  "exportFailed": "PDF-Export fehlgeschlagen.",
+  "loadFailed": "Stundenzettel konnte nicht geladen werden.",
+  "fallbackEmployeeName": "Mitarbeiter",
+  "shareTitle": "Stundenzettel teilen",
+  "shareNotSupported": "Teilen wird auf diesem Gerät nicht unterstützt.",
+  "absenceSection": {
+    "noticesTitle": "Hinweise",
+    "noticesSubtitle": "Erfordert keine Aktion, nur zur Information",
+    "noticeTextVacation": "Arbeit trotz Urlaub am {{date}} ({{type}})",
+    "noticeTextAbsence": "Arbeit trotz gemeldeter Abwesenheit am {{date}} ({{type}})",
+    "absencesTitle": "Abwesenheiten",
+    "absencesSubtitle": "Urlaub und Krankheit im gewählten Zeitraum",
+    "typeSickness": "Krank",
+    "noPlannedWork": "Keine geplanten Einsätze",
+    "plannedWorkDays_one": "{{count}} geplanter Einsatztag · Geplante Einsatzzeit {{duration}} h",
+    "plannedWorkDays_other": "{{count}} geplante Einsatztage · Geplante Einsatzzeit {{duration}} h",
+    "calendarDays_one": "{{count}} Kalendertag",
+    "calendarDays_other": "{{count}} Kalendertage"
+  }
+}

@@ -31,14 +31,6 @@ export const EMPLOYMENT_TYPES: EmploymentType[] = [
   "sonstiges",
 ];
 
-export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
-  vollzeit: "Vollzeit",
-  teilzeit: "Teilzeit",
-  minijob: "Minijob",
-  aushilfe: "Aushilfe",
-  sonstiges: "Sonstiges",
-};
-
 /** Konfiguration, wie sie am Mitarbeiter gespeichert ist (Overrides = null-fähig). */
 export type EmploymentConfig = {
   employmentType: EmploymentType | null;

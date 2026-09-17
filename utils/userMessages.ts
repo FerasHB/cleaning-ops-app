@@ -1,5 +1,5 @@
 // utils/userMessages.ts
-// Zentrale Übersetzung beliebiger Fehler in nutzerfreundliche, deutsche
+// Zentrale Übersetzung beliebiger Fehler in nutzerfreundliche, ÜBERSETZTE
 // Meldungen — für ALLE nicht-Auth-Fehlerpfade (Jobs, Kommentare, Fotos,
 // Mitarbeiter, Stundenzettel, Firma).
 //
@@ -14,67 +14,58 @@
 // also Tabellen-, Policy- und Constraint-Namen aus dem Backend.
 //
 // `toUserMessage(err, fallback)` ist die eine Anlaufstelle dafür:
-//   1. Netzwerk/Offline    → feste Offline-Meldung
-//   2. Bekannter Fehlercode/-text → passende deutsche Meldung
-//   3. Bereits vom Server/Service auf Deutsch formulierte Meldung
-//      (z. B. "Nur Admins dürfen Jobs erstellen.") → unverändert durchreichen
-//   4. Alles andere        → screen-spezifischer `fallback` des Aufrufers
+//   1. Netzwerk/Offline    → feste, übersetzte Offline-Meldung
+//   2. Bekannter Fehlercode/-text → passende übersetzte Meldung
+//   3. Bereits vom Server/Service auf DEUTSCH formulierte Meldung
+//      (z. B. "Nur Admins dürfen Jobs erstellen.") → unverändert durchreichen,
+//      ABER NUR wenn die aktive UI-Sprache Deutsch ist (siehe
+//      isUserSafeMessage) — RPCs formulieren ihre eigenen Meldungen bislang
+//      ausschließlich auf Deutsch (server-seitige Lokalisierung ist eine
+//      spätere Phase); in jeder anderen UI-Sprache wäre die deutsche
+//      RPC-Meldung für den Nutzer nicht verständlich, also fällt der Code in
+//      diesem Fall stattdessen auf den (übersetzten) `fallback` zurück.
+//   4. Alles andere        → screen-spezifischer, übersetzter `fallback` des
+//      Aufrufers
 //
 // Für Auth-/Edge-Function-Fehler bleibt utils/authErrorMessages.ts zuständig
 // (kennt GoTrue-Texte und liest Edge-Function-Bodys); toUserMessage ersetzt
 // sie NICHT, sondern deckt den Rest der App ab.
+//
+// Plain-function-Datei (keine Komponente) — kein useTranslation()-Hook
+// möglich. Nutzt wie utils/dialogs.ts die exportierte i18next-Instanz direkt:
+// i18next.t() liest die aktuell aktive Sprache bei JEDEM Aufruf frisch,
+// bleibt also über Sprachwechsel hinweg korrekt (siehe i18n/index.ts).
 
 import { isNetworkError } from "@/utils/networkError";
-
-// ── Standard-Meldungen ──────────────────────────────────────────────────────
-export const GENERIC_ERROR_MESSAGE =
-  "Die Aktion konnte nicht ausgeführt werden.";
-export const OFFLINE_MESSAGE =
-  "Keine Internetverbindung. Bitte versuche es erneut.";
-export const PERMISSION_MESSAGE =
-  "Du hast keine Berechtigung für diese Aktion.";
-export const NOT_FOUND_MESSAGE =
-  "Der Eintrag wurde nicht gefunden oder ist nicht mehr verfügbar.";
-export const CONFLICT_MESSAGE =
-  "Dieser Eintrag existiert bereits.";
-export const IN_USE_MESSAGE =
-  "Der Eintrag wird noch verwendet und kann nicht gelöscht werden.";
-export const INVALID_INPUT_MESSAGE =
-  "Die Eingaben sind unvollständig oder ungültig.";
-export const SESSION_EXPIRED_MESSAGE =
-  "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.";
-export const SERVER_UNAVAILABLE_MESSAGE =
-  "Der Server ist momentan nicht erreichbar. Bitte versuche es später erneut.";
-export const TIMEOUT_MESSAGE =
-  "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut.";
-export const LOAD_FAILED_MESSAGE = "Die Daten konnten nicht geladen werden.";
-export const SAVE_FAILED_MESSAGE =
-  "Die Änderungen konnten nicht gespeichert werden.";
+import { i18next } from "@/i18n";
 
 // ── Fehlercodes ─────────────────────────────────────────────────────────────
-// Postgres-SQLSTATE und PostgREST-Codes, die Supabase im `code`-Feld liefert.
+// Postgres-SQLSTATE und PostgREST-Codes, die Supabase im `code`-Feld liefert,
+// abgebildet auf i18next-Keys (common:errors.*) statt literaler Texte, damit
+// die Zuordnung sprachunabhängig bleibt und t() erst beim tatsächlichen
+// Treffer aufgelöst wird.
 // P0001 (raise_exception) fehlt bewusst: RPCs formulieren dort eigene, meist
 // schon deutsche Texte — die laufen unten durch die Durchreiche-Prüfung.
-const CODE_MESSAGES: Readonly<Record<string, string>> = {
+const CODE_MESSAGE_KEYS: Readonly<Record<string, string>> = {
   // Postgres
-  "42501": PERMISSION_MESSAGE, // insufficient_privilege / RLS
-  "23505": CONFLICT_MESSAGE, // unique_violation
-  "23503": IN_USE_MESSAGE, // foreign_key_violation
-  "23502": INVALID_INPUT_MESSAGE, // not_null_violation
-  "23514": INVALID_INPUT_MESSAGE, // check_violation
-  "22P02": INVALID_INPUT_MESSAGE, // invalid_text_representation
-  "57014": TIMEOUT_MESSAGE, // query_canceled
+  "42501": "common:errors.permission", // insufficient_privilege / RLS
+  "23505": "common:errors.conflict", // unique_violation
+  "23503": "common:errors.inUse", // foreign_key_violation
+  "23502": "common:errors.invalidInput", // not_null_violation
+  "23514": "common:errors.invalidInput", // check_violation
+  "22P02": "common:errors.invalidInput", // invalid_text_representation
+  "57014": "common:errors.timeout", // query_canceled
   // PostgREST
-  PGRST116: NOT_FOUND_MESSAGE, // 0 oder >1 Zeilen bei .single()
-  PGRST301: SESSION_EXPIRED_MESSAGE, // JWT ungültig/abgelaufen
-  PGRST204: INVALID_INPUT_MESSAGE, // Spalte im Payload unbekannt
-  PGRST202: GENERIC_ERROR_MESSAGE, // RPC nicht gefunden
+  PGRST116: "common:errors.notFound", // 0 oder >1 Zeilen bei .single()
+  PGRST301: "common:errors.sessionExpired", // JWT ungültig/abgelaufen
+  PGRST204: "common:errors.invalidInput", // Spalte im Payload unbekannt
+  PGRST202: "common:errors.generic", // RPC nicht gefunden
 };
 
 // ── Textmuster ──────────────────────────────────────────────────────────────
 // Greifen, wenn kein `code` mitgeliefert wird (z. B. weil der Service den
 // Fehler in ein `new Error(...)` umverpackt hat). Reihenfolge: spezifisch → grob.
-const MESSAGE_PATTERNS: readonly { pattern: RegExp; message: string }[] = [
+const MESSAGE_PATTERNS: readonly { pattern: RegExp; key: string }[] = [
   // Vor der Berechtigungs-Regel: die Job-RPCs melden gelöschte UND gesperrte
   // Jobs mit demselben Text ("Job not found or not allowed"). Der mit Abstand
   // häufigere Fall ist ein zwischenzeitlich gelöschter/umverteilter Auftrag —
@@ -83,37 +74,37 @@ const MESSAGE_PATTERNS: readonly { pattern: RegExp; message: string }[] = [
   {
     pattern:
       /job not found|not found or not allowed|no rows returned|results contain 0 rows/i,
-    message: NOT_FOUND_MESSAGE,
+    key: "common:errors.notFound",
   },
   {
     pattern:
       /row-level security|violates row-level|permission denied|insufficient privilege|not allowed|nicht erlaubt|nur admins/i,
-    message: PERMISSION_MESSAGE,
+    key: "common:errors.permission",
   },
   {
     pattern: /duplicate key|already exists|unique constraint/i,
-    message: CONFLICT_MESSAGE,
+    key: "common:errors.conflict",
   },
   {
     pattern: /foreign key constraint|still referenced/i,
-    message: IN_USE_MESSAGE,
+    key: "common:errors.inUse",
   },
   {
     pattern: /violates (check|not-null)|invalid input syntax/i,
-    message: INVALID_INPUT_MESSAGE,
+    key: "common:errors.invalidInput",
   },
   {
     pattern: /invalid jwt|jwt expired|not authenticated|session.{0,15}(missing|not found)/i,
-    message: SESSION_EXPIRED_MESSAGE,
+    key: "common:errors.sessionExpired",
   },
   {
     pattern: /timed? ?out|timeout|deadline exceeded|aborted/i,
-    message: TIMEOUT_MESSAGE,
+    key: "common:errors.timeout",
   },
   {
     pattern:
       /^5\d{2}\b|internal server error|service unavailable|bad gateway|upstream/i,
-    message: SERVER_UNAVAILABLE_MESSAGE,
+    key: "common:errors.serverUnavailable",
   },
 ];
 
@@ -154,34 +145,40 @@ function extractParts(err: unknown): { message: string; code: string } {
 }
 
 // Darf diese Meldung dem Nutzer unverändert gezeigt werden? Nur wenn sie
-// deutsch formuliert ist UND keinerlei technische Marker enthält.
+// deutsch formuliert ist, keinerlei technische Marker enthält UND die aktive
+// UI-Sprache Deutsch ist — RPCs formulieren ihre Meldungen ausschließlich auf
+// Deutsch (siehe Dateikopf); in jeder anderen Sprache wäre der Text für den
+// Nutzer nicht verständlich, der Aufrufer fällt dann auf den übersetzten
+// `fallback` zurück statt eine deutsche RPC-Meldung in eine
+// englische/arabische/türkische Oberfläche durchzureichen.
 function isUserSafeMessage(message: string): boolean {
   if (!message || message.length > 200) return false;
   if (TECHNICAL_MARKER_PATTERN.test(message)) return false;
+  if (!i18next.language?.startsWith("de")) return false;
   return GERMAN_MARKER_PATTERN.test(message);
 }
 
 /**
- * Übersetzt einen beliebigen Fehler in eine anzeigbare deutsche Meldung.
+ * Übersetzt einen beliebigen Fehler in eine anzeigbare, übersetzte Meldung.
  *
- * `fallback` ist der screen-spezifische Kontext des Aufrufers (z. B. "Job
- * konnte nicht gestartet werden.") und wird immer dann verwendet, wenn der
- * Fehler nicht zugeordnet werden kann — bewusst statt einer einzigen vagen
- * Meldung überall.
+ * `fallback` ist der screen-spezifische, bereits übersetzte Kontext des
+ * Aufrufers (z. B. t("jobs:errors.startFailed")) und wird immer dann
+ * verwendet, wenn der Fehler nicht zugeordnet werden kann — bewusst statt
+ * einer einzigen vagen Meldung überall.
  */
 export function toUserMessage(
   err: unknown,
-  fallback: string = GENERIC_ERROR_MESSAGE,
+  fallback: string = i18next.t("common:errors.generic"),
 ): string {
-  if (isNetworkError(err)) return OFFLINE_MESSAGE;
+  if (isNetworkError(err)) return i18next.t("common:errors.offline");
 
   const { message, code } = extractParts(err);
 
-  const byCode = CODE_MESSAGES[code];
-  if (byCode) return byCode;
+  const byCodeKey = CODE_MESSAGE_KEYS[code];
+  if (byCodeKey) return i18next.t(byCodeKey);
 
-  for (const { pattern, message: friendly } of MESSAGE_PATTERNS) {
-    if (pattern.test(message)) return friendly;
+  for (const { pattern, key } of MESSAGE_PATTERNS) {
+    if (pattern.test(message)) return i18next.t(key);
   }
 
   if (isUserSafeMessage(message)) return message;

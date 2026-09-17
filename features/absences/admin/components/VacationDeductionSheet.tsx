@@ -24,6 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   visible: boolean;
@@ -46,6 +47,7 @@ export function VacationDeductionSheet({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const years = useMemo(() => yearsInRange(startDate, endDate), [startDate, endDate]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
@@ -55,12 +57,12 @@ export function VacationDeductionSheet({
     for (const year of years) {
       const raw = (values[String(year)] ?? "").trim().replace(",", ".");
       if (!raw) {
-        setError(`Bitte die Tage für ${year} angeben (0 ist erlaubt).`);
+        setError(t("admin:absenceAdmin.deductionMissingError", { year }));
         return;
       }
       const parsed = Number(raw);
       if (!Number.isFinite(parsed) || parsed < 0) {
-        setError(`Ungültiger Wert für ${year}.`);
+        setError(t("admin:absenceAdmin.deductionInvalidError", { year }));
         return;
       }
       result[String(year)] = parsed;
@@ -74,19 +76,22 @@ export function VacationDeductionSheet({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
-          <Text style={styles.title}>Urlaub genehmigen</Text>
+          <Text style={styles.title}>
+            {t("admin:absenceAdmin.deductionSheetTitle")}
+          </Text>
           <Text style={styles.subtitle}>
             {employeeName} · {rangeLabel}
           </Text>
           <Text style={styles.hint}>
-            Bitte bestätige, wie viele Urlaubstage abgezogen werden. Der Wert
-            wird dauerhaft festgeschrieben und später nicht neu berechnet.
+            {t("admin:absenceAdmin.deductionSheetHint")}
           </Text>
 
           {years.map((year) => (
             <View key={year} style={styles.field}>
               <Text style={styles.label}>
-                {years.length > 1 ? `Tage für ${year}` : "Urlaubstage"}
+                {years.length > 1
+                  ? t("admin:absenceAdmin.deductionDaysForYear", { year })
+                  : t("admin:absenceAdmin.deductionDaysLabel")}
               </Text>
               <TextInput
                 style={styles.input}
@@ -95,7 +100,7 @@ export function VacationDeductionSheet({
                 onChangeText={(text) =>
                   setValues((prev) => ({ ...prev, [String(year)]: text }))
                 }
-                placeholder="z. B. 3"
+                placeholder={t("admin:absenceAdmin.deductionPlaceholder")}
                 placeholderTextColor={theme.colors.onSurfaceVariant}
               />
             </View>
@@ -105,10 +110,12 @@ export function VacationDeductionSheet({
 
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-              <Text style={styles.cancelText}>Abbrechen</Text>
+              <Text style={styles.cancelText}>{t("common:actions.cancel")}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-              <Text style={styles.confirmText}>Genehmigen</Text>
+              <Text style={styles.confirmText}>
+                {t("admin:absenceAdmin.approveButton")}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

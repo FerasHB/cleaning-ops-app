@@ -15,15 +15,6 @@ export type VacationLedgerEntryType =
   /** RESERVIERT — keine Logik in diesem Stand (keine Rückgabe bei Krankheit). */
   | "au_restoration";
 
-export const LEDGER_ENTRY_LABELS: Record<VacationLedgerEntryType, string> = {
-  annual_entitlement: "Jahresanspruch",
-  approved_vacation: "Genehmigter Urlaub",
-  vacation_cancellation: "Storno",
-  manual_adjustment: "Manuelle Korrektur",
-  carry_over: "Übertrag",
-  au_restoration: "AU-Wiederherstellung",
-};
-
 export type VacationLedgerEntry = {
   id: string;
   entryType: VacationLedgerEntryType;

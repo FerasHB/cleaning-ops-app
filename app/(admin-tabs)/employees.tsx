@@ -5,11 +5,13 @@
 
 import { EmptyState, ErrorBanner, LoadingScreen } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { useJobs } from "@/context/JobContext";
 import { createEmployee } from "@/services/employees/createEmployee";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -29,19 +31,21 @@ import { getEmployeeStatus } from "@/utils/employeeStatus";
 import { isValidEmail, normalizeEmail } from "@/utils/email";
 import { isValidPhone } from "@/utils/phone";
 import { toUserMessage } from "@/utils/userMessages";
+import { i18next } from "@/i18n";
 
 // Erfolgs-Banner blendet sich nach dieser Zeit selbst wieder aus — identisch
 // zum Muster in features/jobs/components/JobPhotos.tsx.
 const SUCCESS_DISPLAY_MS = 3000;
 
 function roleLabel(role?: string | null): string {
-  if (role === "admin") return "Admin";
-  return "Mitarbeiter";
+  return i18next.t(role === "admin" ? "profile:roles.admin" : "profile:roles.employee");
 }
 
 export default function EmployeesScreen() {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { employees, loading, error, refreshEmployees } = useJobs();
 
@@ -101,17 +105,17 @@ export default function EmployeesScreen() {
     }
 
     if (!trimmedName) {
-      setModalError("Bitte gib einen Namen ein.");
+      setModalError(t("admin:employeesList.nameRequired"));
       return;
     }
 
     if (!isValidEmail(trimmedEmail)) {
-      setModalError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      setModalError(t("common:authErrors.invalidEmail"));
       return;
     }
 
     if (phone.trim() && !isValidPhone(phone)) {
-      setModalError("Bitte gib eine gültige Telefonnummer ein oder lass das Feld leer.");
+      setModalError(t("admin:employeesList.invalidPhone"));
       return;
     }
 
@@ -131,7 +135,7 @@ export default function EmployeesScreen() {
 
       if (successTimerRef.current) clearTimeout(successTimerRef.current);
       setSuccessMessage(
-        `${trimmedName} erhält in Kürze eine E-Mail, um das eigene Passwort festzulegen.`,
+        t("admin:employeesList.inviteSuccessMessage", { name: trimmedName }),
       );
       successTimerRef.current = setTimeout(
         () => setSuccessMessage(""),
@@ -140,7 +144,7 @@ export default function EmployeesScreen() {
     } catch (error) {
       const message = toUserMessage(
         error,
-        "Einladung konnte nicht verschickt werden.",
+        t("admin:employeesList.inviteFailedFallback"),
       );
 
       setModalError(message);
@@ -177,9 +181,9 @@ export default function EmployeesScreen() {
           <View style={styles.header}>
             <View style={styles.headerTop}>
               <View style={styles.headerText}>
-                <Text style={styles.title}>Mitarbeiter</Text>
+                <Text style={styles.title}>{t("admin:employeesList.title")}</Text>
                 <Text style={styles.subtitle}>
-                  Übersicht aller Mitarbeiter deiner Firma
+                  {t("admin:employeesList.subtitle")}
                 </Text>
               </View>
 
@@ -198,7 +202,7 @@ export default function EmployeesScreen() {
 
             <View style={styles.countCard}>
               <Text style={styles.countNumber}>{activeCount}</Text>
-              <Text style={styles.countLabel}>aktive Mitarbeiter</Text>
+              <Text style={styles.countLabel}>{t("admin:employeesList.activeCountLabel")}</Text>
             </View>
 
             {/* Ladefehler der Mitarbeiterliste: einheitlich als ErrorBanner
@@ -220,10 +224,10 @@ export default function EmployeesScreen() {
         }
         ListEmptyComponent={
           <EmptyState
-            title="Keine Mitarbeiter vorhanden"
-            message="Sobald du Mitarbeiter hinzufügst, erscheinen sie hier."
+            title={t("admin:employeesList.emptyTitle")}
+            message={t("admin:employeesList.emptyMessage")}
             icon="people-outline"
-            ctaLabel="Mitarbeiter hinzufügen"
+            ctaLabel={t("admin:employeesList.addCta")}
             onCta={handleOpenModal}
           />
         }
@@ -246,7 +250,7 @@ export default function EmployeesScreen() {
                   {item.fullName}
                 </Text>
                 <Text style={styles.employeeEmail} numberOfLines={1}>
-                  {item.email?.trim() ? item.email : "Nicht hinterlegt"}
+                  {item.email?.trim() ? item.email : t("common:states.notProvided")}
                 </Text>
                 <Text style={styles.employeeRole}>{roleLabel(item.role)}</Text>
               </View>
@@ -270,7 +274,7 @@ export default function EmployeesScreen() {
               </View>
 
               <Ionicons
-                name="chevron-forward"
+                name={isRTL ? "chevron-back" : "chevron-forward"}
                 size={18}
                 color={theme.colors.outline}
                 style={styles.chevron}
@@ -296,9 +300,9 @@ export default function EmployeesScreen() {
             {/* Drag-Handle (visuelles Detail) */}
             <View style={styles.modalHandle} />
 
-            <Text style={styles.modalTitle}>Mitarbeiter einladen</Text>
+            <Text style={styles.modalTitle}>{t("admin:employeesList.modalTitle")}</Text>
             <Text style={styles.modalSubtitle}>
-              Der Mitarbeiter erhält eine E-Mail und legt sein Passwort selbst fest.
+              {t("admin:employeesList.modalSubtitle")}
             </Text>
 
             {modalError ? (
@@ -311,11 +315,11 @@ export default function EmployeesScreen() {
             ) : null}
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Name</Text>
+              <Text style={styles.label}>{t("admin:employeesList.nameLabel")}</Text>
               <TextInput
                 value={fullName}
                 onChangeText={setFullName}
-                placeholder="z.B. Max Müller"
+                placeholder={t("admin:employeesList.namePlaceholder")}
                 placeholderTextColor={theme.colors.outline}
                 style={styles.input}
                 editable={!creating}
@@ -323,7 +327,7 @@ export default function EmployeesScreen() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>E-Mail</Text>
+              <Text style={styles.label}>{t("admin:employeesList.emailLabel")}</Text>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
@@ -337,7 +341,7 @@ export default function EmployeesScreen() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Telefon (optional)</Text>
+              <Text style={styles.label}>{t("admin:employeesList.phoneLabel")}</Text>
               <TextInput
                 value={phone}
                 onChangeText={setPhone}
@@ -356,7 +360,7 @@ export default function EmployeesScreen() {
                 onPress={handleCloseModal}
                 disabled={creating}
               >
-                <Text style={styles.cancelButtonText}>Abbrechen</Text>
+                <Text style={styles.cancelButtonText}>{t("common:actions.cancel")}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -369,7 +373,7 @@ export default function EmployeesScreen() {
                 disabled={creating}
               >
                 <Text style={styles.createButtonText}>
-                  {creating ? "Wird eingeladen…" : "Einladen"}
+                  {creating ? t("admin:employeesList.inviting") : t("admin:employeesList.inviteButton")}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -495,7 +499,7 @@ function createStyles(theme: AppTheme) {
       backgroundColor: theme.colors.statusInProgressBg,
       alignItems: "center",
       justifyContent: "center",
-      marginRight: theme.spacing.md,
+      marginEnd: theme.spacing.md,
     },
     avatarText: {
       fontSize: theme.typography.size.md,
@@ -556,7 +560,7 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.statusOpen,
     },
     chevron: {
-      marginLeft: theme.spacing.sm,
+      marginStart: theme.spacing.sm,
     },
     separator: {
       height: theme.spacing.sm,

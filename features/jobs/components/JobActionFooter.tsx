@@ -23,6 +23,7 @@ import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -71,6 +72,7 @@ export function JobActionFooter({
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   // Nichts anzuzeigen (z. B. Mitarbeiter ohne Zuweisung auf einem offenen
   // Auftrag) → keine leere Leiste am Bildschirmrand stehen lassen.
@@ -97,25 +99,25 @@ export function JobActionFooter({
     >
       {canStart ? (
         <Button
-          label="Job starten"
+          label={t("jobs:footer.startButton")}
           icon="play"
           loading={submitting}
           disabled={submitting}
           onPress={onStart}
           accessibilityRole="button"
-          accessibilityLabel="Job starten"
+          accessibilityLabel={t("jobs:footer.startButton")}
         />
       ) : null}
 
       {canComplete ? (
         <Button
-          label="Job abschließen"
+          label={t("jobs:activeJob.completeButton")}
           icon="checkmark"
           loading={submitting}
           disabled={submitting}
           onPress={onComplete}
           accessibilityRole="button"
-          accessibilityLabel="Job abschließen"
+          accessibilityLabel={t("jobs:activeJob.completeButton")}
         />
       ) : null}
 
@@ -163,19 +165,19 @@ export function JobActionFooter({
             size={20}
             color={theme.colors.statusCompleted}
           />
-          <Text style={styles.doneInfoText}>Dieser Job ist abgeschlossen.</Text>
+          <Text style={styles.doneInfoText}>{t("jobs:footer.doneMessage")}</Text>
         </View>
       ) : null}
 
       {showEdit ? (
         <Button
-          label="Bearbeiten"
+          label={t("jobs:footer.editButton")}
           variant="secondary"
           icon="create-outline"
           disabled={submitting}
           onPress={onEdit}
           accessibilityRole="button"
-          accessibilityLabel="Job bearbeiten"
+          accessibilityLabel={t("jobs:footer.editButtonA11y")}
         />
       ) : null}
     </View>

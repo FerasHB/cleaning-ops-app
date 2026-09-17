@@ -3,18 +3,22 @@
 // Mitarbeiter-/Monatsauswahl, Laden der Einträge und PDF-Export.
 
 import { useJobs } from "@/context/JobContext";
+import { useOwnCompany } from "@/features/company/hooks/useOwnCompany";
 import {
   exportTimesheetPdf,
   getTimesheet,
 } from "@/services/timesheets/timesheet.service";
+import {
+  getTimesheetExportBlockReason,
+  resolveTimesheetCompanyName,
+} from "@/services/timesheets/timesheetCompany";
 import type { TimesheetData } from "@/types/timesheet";
 import type { EmployeeOption } from "@/types/job";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toUserMessage } from "@/utils/userMessages";
-
-// In Version 1 neutraler, fest hinterlegter Firmenname (kein company.name-Fetch).
-const COMPANY_NAME = "Cleaning Ops";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 export type UseTimesheetResult = {
   employees: EmployeeOption[];
@@ -33,6 +37,8 @@ export type UseTimesheetResult = {
   error: string | null;
   exporting: boolean;
   exportError: string | null;
+  /** Nur true, wenn ein echter Firmenname für den PDF-Kopf vorliegt. */
+  canExportPdf: boolean;
   exportPdf: () => Promise<void>;
   /** Lädt den aktuellen Monat neu — z. B. nach einer Zeitkorrektur (Phase B1). */
   reload: () => void;
@@ -60,6 +66,13 @@ export function useTimesheet(
   selfEmployee?: { id: string; fullName: string } | null,
 ): UseTimesheetResult {
   const { employees } = useJobs();
+  const { t, i18n } = useTranslation();
+  const {
+    company,
+    loading: companyLoading,
+    error: companyLoadError,
+  } = useOwnCompany();
+  const companyName = resolveTimesheetCompanyName(company);
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
     selfEmployee?.id ?? null,
@@ -113,11 +126,11 @@ export function useTimesheet(
 
   const monthLabel = useMemo(
     () =>
-      monthDate.toLocaleDateString("de-DE", {
+      monthDate.toLocaleDateString(INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE", {
         month: "long",
         year: "numeric",
       }),
-    [monthDate],
+    [monthDate, i18n.language],
   );
 
   const isCurrentMonth = useMemo(() => {
@@ -149,18 +162,24 @@ export function useTimesheet(
       return;
     }
 
+    // Die Firmenabfrage läuft parallel zum Screen-Aufbau. Erst wenn sie
+    // abgeschlossen ist, wird der Stundenzettel genau einmal geladen. Ein
+    // Fehler der Firmenabfrage blockiert nur den rechtssicheren PDF-Export;
+    // die normale Zeitansicht wird weiterhin mit leerem Metafeld geladen.
+    if (companyLoading) return;
+
     const employee = employees.find((e) => e.id === selectedEmployeeId);
     const employeeName =
       employee?.fullName ??
       (selfId === selectedEmployeeId ? selfName : null) ??
-      "Mitarbeiter";
+      t("timesheets:fallbackEmployeeName");
 
     let cancelled = false;
     setLoading(true);
     setError(null);
 
     getTimesheet({
-      companyName: COMPANY_NAME,
+      companyName: companyName ?? "",
       employeeId: selectedEmployeeId,
       employeeName,
       year: monthDate.getFullYear(),
@@ -174,7 +193,7 @@ export function useTimesheet(
           setError(
             toUserMessage(
               err,
-              "Stundenzettel konnte nicht geladen werden.",
+              t("timesheets:loadFailed"),
             ),
           );
           setData(null);
@@ -187,9 +206,30 @@ export function useTimesheet(
     return () => {
       cancelled = true;
     };
-  }, [selectedEmployeeId, monthDate, employees, selfId, selfName, reloadToken]);
+  }, [
+    selectedEmployeeId,
+    monthDate,
+    employees,
+    selfId,
+    selfName,
+    reloadToken,
+    i18n.language,
+    companyLoading,
+    companyName,
+  ]);
+
+  const exportBlockReason = getTimesheetExportBlockReason({
+    companyLoading,
+    companyLoadError,
+    companyName,
+  });
+  const canExportPdf = exportBlockReason === null;
 
   const exportPdf = useCallback(async () => {
+    if (exportBlockReason) {
+      setExportError(exportBlockReason);
+      return;
+    }
     if (!data || data.entries.length === 0) return;
     setExporting(true);
     setExportError(null);
@@ -197,12 +237,12 @@ export function useTimesheet(
       await exportTimesheetPdf(data);
     } catch (err) {
       setExportError(
-        toUserMessage(err, "PDF-Export fehlgeschlagen."),
+        toUserMessage(err, t("timesheets:exportFailed")),
       );
     } finally {
       setExporting(false);
     }
-  }, [data]);
+  }, [data, exportBlockReason]);
 
   return {
     employees,
@@ -217,7 +257,8 @@ export function useTimesheet(
     loading,
     error,
     exporting,
-    exportError,
+    exportError: exportError ?? (!companyLoading ? exportBlockReason : null),
+    canExportPdf,
     exportPdf,
     reload,
   };
