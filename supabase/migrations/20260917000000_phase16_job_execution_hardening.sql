@@ -2,6 +2,17 @@
 -- MIGRATION: Phase 16 — Job Execution Hardening
 -- Datum: 2026-09-17
 -- =========================================================
+-- NACHTRAG (Kompatibilitäts-Fundament, 20260916120000)
+--   start_own_job/complete_own_job/set_job_assignments rufen jetzt als
+--   ERSTE Anweisung public.enforce_min_client_version() auf — dieselbe
+--   Wächter-Klausel, die 20260916120000 bereits in die davor live
+--   stehenden Fassungen eingefügt hat. Ohne diesen Nachtrag würde das
+--   CREATE OR REPLACE FUNCTION dieser Migration die Durchsetzung beim
+--   Aktivieren von Phase 16 wieder entfernen — genau in dem Moment, in dem
+--   sie am wichtigsten ist. admin_force_complete_job (neu, kein Alt-Client
+--   kann sie aufrufen) bleibt bewusst ungegattert; sie wird separat über
+--   app_config.force_complete_enabled gesteuert.
+-- =========================================================
 -- ZWECK
 --   Zwei im Feld belegte Probleme schliessen (siehe Vorfall 2026-09-16,
 --   Aufträge 5ca1b43b… / 8452d630…):
@@ -360,6 +371,12 @@ declare
   v_allowed  boolean;
   v_emp_name text;
 begin
+  -- Kompatibilitäts-Fundament (20260916120000): dieselbe Wächter-Klausel,
+  -- unverändert fortgeführt, damit diese Migration die serverseitige
+  -- Mindestversions-Durchsetzung nicht versehentlich entfernt, sobald sie
+  -- start_own_job neu erstellt.
+  perform public.enforce_min_client_version();
+
   if auth.uid() is null then
     raise exception 'Not authenticated';
   end if;
@@ -535,6 +552,9 @@ declare
   v_assignment   public.job_assignments%rowtype;
   v_own_complete timestamptz;
 begin
+  -- Kompatibilitäts-Fundament (20260916120000): siehe start_own_job oben.
+  perform public.enforce_min_client_version();
+
   if auth.uid() is null then
     raise exception 'Not authenticated';
   end if;
@@ -690,6 +710,9 @@ declare
   new_row         public.job_assignments%rowtype;
   v_outbox_id     uuid;
 begin
+  -- Kompatibilitäts-Fundament (20260916120000): siehe start_own_job oben.
+  perform public.enforce_min_client_version();
+
   if auth.uid() is null then
     raise exception 'Not authenticated' using errcode = '28000';
   end if;
