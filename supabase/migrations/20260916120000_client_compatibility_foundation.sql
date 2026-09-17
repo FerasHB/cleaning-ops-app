@@ -138,11 +138,22 @@ comment on column public.profiles.last_seen_app_build is
 -- 3. update_my_push_token — abwaertskompatibel erweitert
 -- ---------------------------------------------------------
 -- Zwei neue OPTIONALE Parameter mit Default null: ein alter Client, der
--- weiterhin nur new_token uebergibt, ruft exakt dieselbe Funktion
--- unveraendert auf. Bestehende Logik 1:1 uebernommen (verifiziert gegen die
--- aktuell auf Production live stehende Fassung vor dieser Migration) — nur
--- die zweite UPDATE-Klausel schreibt jetzt zusaetzlich die Telemetrie-Spalten,
--- per COALESCE niemals mit null ueberschreibend.
+-- weiterhin nur new_token uebergibt, ruft dieselbe Funktion unveraendert
+-- auf. Bestehende Logik 1:1 uebernommen (verifiziert gegen die aktuell auf
+-- Production live stehende Fassung vor dieser Migration) — nur die zweite
+-- UPDATE-Klausel schreibt jetzt zusaetzlich die Telemetrie-Spalten, per
+-- COALESCE niemals mit null ueberschreibend.
+--
+-- WICHTIG — beim lokalen Rehearsal gefunden, nicht nur vermutet: Postgres
+-- identifiziert Funktionen ueber Name+Parameter-TYPEN, nicht ueber Defaults.
+-- Zusaetzliche (auch defaultete) Parameter machen CREATE OR REPLACE zu einer
+-- ZWEITEN, PARALLELEN Overload statt eines echten Ersatzes — ein 1-Parameter-
+-- Aufruf eines Alt-Clients wurde dadurch zwischen der alten 1-Parameter- und
+-- der neuen 3-Parameter-Fassung zweideutig ("is not unique") und schlug fehl,
+-- nicht "abwaertskompatibel" wie beabsichtigt. Der alte 1-Parameter-Overload
+-- muss deshalb explizit entfernt werden, bevor die neue Fassung entsteht.
+drop function if exists public.update_my_push_token(text);
+
 create or replace function public.update_my_push_token(
   new_token text,
   app_build_number int default null,

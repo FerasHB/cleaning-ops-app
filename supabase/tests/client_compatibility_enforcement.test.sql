@@ -71,13 +71,24 @@ begin
   perform set_config('request.headers', '{}', true);
 end $f$;
 
--- Ruft enforce_min_client_version() auf und meldet OK/die Ablehnungsmeldung.
+-- Ruft enforce_min_client_version() auf und meldet OK/"sqlstate:meldung".
 create or replace function pg_temp.try_gate() returns text language plpgsql as $f$
 begin
   perform public.enforce_min_client_version();
   return 'OK';
 exception when others then
   return sqlstate || ':' || sqlerrm;
+end $f$;
+
+-- Wie try_gate(), aber nur der SQLSTATE — fuer Faelle, die ausschliesslich
+-- den Fehlercode pruefen (der Meldungstext selbst hat seinen eigenen Fall,
+-- CASE 15).
+create or replace function pg_temp.try_gate_code() returns text language plpgsql as $f$
+begin
+  perform public.enforce_min_client_version();
+  return 'OK';
+exception when others then
+  return sqlstate;
 end $f$;
 
 
@@ -124,28 +135,28 @@ update public.app_config set value = 'true'::jsonb where key = 'enforcement_enab
 
 select pg_temp.clear_headers();
 select pg_temp.note(3, 'Gate', 'Enforcement an + keine Header (Alt-Client)',
-  '22023', pg_temp.try_gate());
+  '22023', pg_temp.try_gate_code());
 
 select pg_temp.set_headers('web', '999');
-select pg_temp.note(4, 'Gate', 'Enforcement an + unbekannte Plattform', '22023', pg_temp.try_gate());
+select pg_temp.note(4, 'Gate', 'Enforcement an + unbekannte Plattform', '22023', pg_temp.try_gate_code());
 
 select pg_temp.set_headers(null, '15');
-select pg_temp.note(5, 'Gate', 'Enforcement an + Plattform fehlt', '22023', pg_temp.try_gate());
+select pg_temp.note(5, 'Gate', 'Enforcement an + Plattform fehlt', '22023', pg_temp.try_gate_code());
 
 select pg_temp.set_headers('ios', null);
-select pg_temp.note(6, 'Gate', 'Enforcement an + Build fehlt', '22023', pg_temp.try_gate());
+select pg_temp.note(6, 'Gate', 'Enforcement an + Build fehlt', '22023', pg_temp.try_gate_code());
 
 select pg_temp.set_headers('ios', 'abc');
-select pg_temp.note(7, 'Gate', 'Enforcement an + Build nicht numerisch', '22023', pg_temp.try_gate());
+select pg_temp.note(7, 'Gate', 'Enforcement an + Build nicht numerisch', '22023', pg_temp.try_gate_code());
 
 select pg_temp.set_headers('ios', '-5');
-select pg_temp.note(8, 'Gate', 'Enforcement an + Build negativ (regex lehnt Vorzeichen ab)', '22023', pg_temp.try_gate());
+select pg_temp.note(8, 'Gate', 'Enforcement an + Build negativ (regex lehnt Vorzeichen ab)', '22023', pg_temp.try_gate_code());
 
 select pg_temp.set_headers('ios', '9');
-select pg_temp.note(9, 'Gate', 'Enforcement an + iOS-Build unter Minimum (9 < 10)', '22023', pg_temp.try_gate());
+select pg_temp.note(9, 'Gate', 'Enforcement an + iOS-Build unter Minimum (9 < 10)', '22023', pg_temp.try_gate_code());
 
 select pg_temp.set_headers('android', '19');
-select pg_temp.note(10, 'Gate', 'Enforcement an + Android-Build unter Minimum (19 < 20)', '22023', pg_temp.try_gate());
+select pg_temp.note(10, 'Gate', 'Enforcement an + Android-Build unter Minimum (19 < 20)', '22023', pg_temp.try_gate_code());
 
 select pg_temp.set_headers('ios', '10');
 select pg_temp.note(11, 'Gate', 'Enforcement an + iOS-Build exakt am Minimum (10 = 10)', 'OK', pg_temp.try_gate());
