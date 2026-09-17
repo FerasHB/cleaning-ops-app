@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
 import { Platform } from "react-native";
 import { classifyClientKey } from "./supabaseKeyGuard";
+import { getClientBuildNumber, getClientPlatform } from "@/utils/clientBuild";
 
 // Supabase URL und Key aus den Env Variablen holen
 // (!) bedeutet: wir gehen davon aus, dass sie sicher vorhanden sind
@@ -37,8 +38,28 @@ if (keyVerdict === "secret" || keyVerdict === "unknown") {
 // "missing" wird bewusst nicht hier abgefangen: createClient wirft dafür
 // bereits einen eindeutigen "supabaseKey is required"-Fehler.
 
+// ─────────────────────────────────────────────────────────────────
+// KOMPATIBILITÄTS-HEADER (Client-Compatibility-Fundament, Migration
+// 20260916120000): bei JEDEM REST/RPC-Aufruf mitgeschickt, serverseitig
+// über current_setting('request.headers', true) gelesen — empirisch gegen
+// Staging verifiziert (echter PostgREST-Roundtrip mit einer temporären,
+// sofort wieder entfernten Sonden-Funktion). Web/unbekannte Plattform
+// liefert getClientPlatform() = null → keine Header, server behandelt das
+// wie einen Alt-Client ohne Metadaten (korrekt: die Durchsetzung gilt nur
+// für die mobile App). Einmalig beim Modul-Laden berechnet — der native
+// Build ändert sich nicht während der Laufzeit eines Prozesses.
+const clientPlatform = getClientPlatform();
+const clientBuild = getClientBuildNumber();
+const compatibilityHeaders: Record<string, string> =
+  clientPlatform && clientBuild
+    ? { "x-taskops-platform": clientPlatform, "x-taskops-build": String(clientBuild) }
+    : {};
+
 // Supabase Client erstellen (wird in der ganzen App verwendet)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    headers: compatibilityHeaders,
+  },
   auth: {
     // Storage für Session:
     // - Web → Supabase nutzt eigenen Mechanismus

@@ -113,6 +113,8 @@ export function OfflineBanner() {
     online,
     pendingCount,
     pendingActions,
+    failedActions,
+    dismissFailedAction,
     isSyncing,
     syncFailed,
     retrySync,
@@ -120,7 +122,19 @@ export function OfflineBanner() {
 
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const state = deriveSaveState({ online, isSyncing, syncFailed, pendingCount });
+  // Ein dauerhaft fehlgeschlagener Eintrag (Client-Compatibility-Fundament,
+  // 20260916120000) braucht Aufmerksamkeit, bis der Nutzer ihn bestätigt —
+  // nicht nur für den einen Sync-Lauf, der ihn markiert hat. syncFailed
+  // allein (transient, pro Lauf) würde nach dem nächsten, dann wieder
+  // "sauberen" Durchgang verschwinden, obwohl der Eintrag selbst liegen
+  // bleibt (er wird absichtlich nicht mehr automatisch erneut versucht).
+  const hasAttentionNeeded = syncFailed || failedActions.length > 0;
+  const state = deriveSaveState({
+    online,
+    isSyncing,
+    syncFailed: hasAttentionNeeded,
+    pendingCount,
+  });
   const informativeState: InformativeSaveState | null =
     state === "saved" ? null : state;
 
@@ -222,7 +236,12 @@ export function OfflineBanner() {
       fg: theme.colors.error,
       bg: theme.colors.errorContainer,
       border: theme.colors.error,
-      title: "Änderungen konnten nicht gespeichert werden",
+      title:
+        failedActions.length > 0 && pendingCount === 0
+          ? failedActions.length === 1
+            ? "1 Änderung konnte nicht ausgeführt werden"
+            : `${failedActions.length} Änderungen konnten nicht ausgeführt werden`
+          : "Änderungen konnten nicht gespeichert werden",
     },
     pending: {
       icon: "time-outline" as const,
@@ -239,7 +258,7 @@ export function OfflineBanner() {
       ? pendingLabel(pendingCount)
       : null;
 
-  const showDetails = pendingCount > 0;
+  const showDetails = pendingCount > 0 || failedActions.length > 0;
   const showRetry = displayState === "error";
 
   return (
@@ -305,13 +324,11 @@ export function OfflineBanner() {
           <Pressable style={styles.sheet} onPress={() => {}}>
             <View style={styles.sheetHandle} />
 
-            {/* Das Sheet ist nur bei wartenden Änderungen erreichbar. Fällt der
-                Zähler auf 0, während es offen ist, bleibt eine sachliche
-                Angabe stehen — keine Erfolgsmeldung. */}
+            {/* Das Sheet ist bei wartenden ODER fehlgeschlagenen Änderungen
+                erreichbar. Fallen beide Zähler auf 0, während es offen ist,
+                bleibt eine sachliche Angabe stehen — keine Erfolgsmeldung. */}
             <Text style={styles.sheetTitle}>
-              {pendingCount > 0
-                ? pendingLabel(pendingCount)
-                : "Keine wartenden Änderungen"}
+              {pendingCount > 0 ? pendingLabel(pendingCount) : "Keine wartenden Änderungen"}
             </Text>
             <Text style={styles.sheetHint}>
               {online
@@ -339,6 +356,53 @@ export function OfflineBanner() {
                         </Text>
                       ) : null}
                     </View>
+                  </View>
+                );
+              })}
+
+              {/* Dauerhaft fehlgeschlagen (Client-Compatibility-Fundament,
+                  20260916120000) — sichtbar getrennt von "wartet noch",
+                  mit der tatsächlichen Serverantwort und einer expliziten
+                  Bestätigung statt automatischem erneuten Versuch. */}
+              {failedActions.map((action) => {
+                const job = jobs.find((j) => j.id === action.jobId);
+                return (
+                  <View key={action.id} style={styles.sheetRow}>
+                    <Ionicons
+                      name="close-circle-outline"
+                      size={16}
+                      color={theme.colors.error}
+                    />
+                    <View style={styles.sheetRowText}>
+                      <Text style={styles.sheetRowLabel}>
+                        {actionLabel(action)} — konnte nicht ausgeführt werden
+                      </Text>
+                      {job ? (
+                        <Text style={styles.sheetRowSub} numberOfLines={1}>
+                          {job.customerName}
+                        </Text>
+                      ) : null}
+                      {action.failureMessage ? (
+                        <Text
+                          style={[styles.sheetRowSub, { color: theme.colors.error }]}
+                          numberOfLines={2}
+                        >
+                          {action.failureMessage}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => dismissFailedAction(action.id)}
+                      style={styles.sheetRowDismiss}
+                      hitSlop={8}
+                      accessibilityLabel="Bestätigen und entfernen"
+                    >
+                      <Ionicons
+                        name="close"
+                        size={16}
+                        color={theme.colors.onSurfaceVariant}
+                      />
+                    </TouchableOpacity>
                   </View>
                 );
               })}
@@ -468,6 +532,9 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontSize: theme.typography.size.xs,
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurfaceVariant,
+    },
+    sheetRowDismiss: {
+      padding: 6,
     },
     sheetClose: {
       marginTop: theme.spacing.md,

@@ -98,7 +98,7 @@ export default function JobDetailScreen() {
   }, []);
 
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { role, profile } = useAuth();
+  const { role, profile, forceCompleteEnabled } = useAuth();
   const {
     jobs,
     startJob,
@@ -386,8 +386,14 @@ export default function JobDetailScreen() {
   // nur wenn tatsächlich jemand gestartet, aber nicht abgeschlossen hat (genau
   // der Fall, den die RPC annimmt). Nie gestartete Zuweisungen lehnt der Server
   // ab — die gehören regulär aus der Zuweisung entfernt.
+  // force_complete_enabled (app_config, Migration 20260916120000): bleibt
+  // false, bis der Phase-16-Backend-Support bestätigt live ist — der neue
+  // Client könnte sonst vor dem Backend ausgeliefert werden und einen
+  // Button zeigen, dessen RPC (admin_force_complete_job) noch gar nicht
+  // existiert. Fail CLOSED, siehe AuthContext.tsx.
   const showForceComplete =
     isAdmin &&
+    forceCompleteEnabled &&
     job.status === "in_progress" &&
     (job.assignees ?? []).some(
       (a) => !!a.employeeStartedAt && !a.employeeCompletedAt,

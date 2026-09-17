@@ -21,6 +21,7 @@ import { dispatchAdminNotifications } from "@/services/notifications/adminNotifi
 import { applyPendingActionsToJobs } from "@/services/offline/jobs.merge";
 import {
   addPendingJobAction,
+  dismissFailedJobAction,
   getPendingJobActions,
   PendingJobAction,
 } from "@/services/offline/jobs.queue";
@@ -92,8 +93,20 @@ type JobContextType = {
   // ── Nur lesbare UI-State-Werte für die Save-Status-Anzeige ──
   // (keine neue Offline-Logik — nur sichtbar gemachte Queue-/Netz-Infos)
   online: boolean;
+  /** Nur status="pending" — wartet noch auf den nächsten Sync-Versuch. */
   pendingCount: number;
   pendingActions: PendingJobAction[];
+  /**
+   * Dauerhaft fehlgeschlagene Aktionen (Client-Compatibility-Fundament,
+   * 20260916120000) — server-autoritativ abgelehnt, wird NICHT mehr
+   * automatisch erneut versucht. Getrennt von pendingActions, damit die UI
+   * "wartet noch" klar von "konnte nicht ausgeführt werden" unterscheiden
+   * kann.
+   */
+  failedActions: PendingJobAction[];
+  /** Bestätigt/entfernt einen Eintrag aus failedActions — rein lokal, ändert
+   *  nie den Server-Zustand (die Aktion wurde ja nie ausgeführt). */
+  dismissFailedAction: (actionId: string) => Promise<void>;
   isSyncing: boolean;
   syncFailed: boolean;
   retrySync: () => Promise<void>;
@@ -187,6 +200,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const [online, setOnline] = useState(true);
   const [pendingActions, setPendingActions] = useState<PendingJobAction[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  const [failedActions, setFailedActions] = useState<PendingJobAction[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFailed, setSyncFailed] = useState(false);
 
@@ -200,12 +214,23 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     if (!userId) {
       setPendingActions([]);
       setPendingCount(0);
+      setFailedActions([]);
       return;
     }
     const actions = await getPendingJobActions(userId);
-    setPendingActions(actions);
-    setPendingCount(actions.length);
+    const stillPending = actions.filter((a) => a.status === "pending");
+    setPendingActions(stillPending);
+    setPendingCount(stillPending.length);
+    setFailedActions(actions.filter((a) => a.status === "failed_permanent"));
   }, [userId]);
+
+  const dismissFailedAction = useCallback(
+    async (actionId: string) => {
+      await dismissFailedJobAction(actionId);
+      await refreshPendingState();
+    },
+    [refreshPendingState],
+  );
 
   const runPendingSyncSafely = useCallback(async () => {
     if (syncInProgressRef.current || !userId) {
@@ -250,7 +275,12 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         const serverJobs = await loadJobsForRole(isAdmin);
         await saveCachedJobs(userId, serverJobs);
 
-        const pendingActions = await getPendingJobActions(userId);
+        // Nur "pending" spiegeln — ein dauerhaft abgelehnter Eintrag ist am
+        // Server definitiv NICHT passiert und darf die Anzeige nicht mehr
+        // optimistisch so tun, als wäre er es.
+        const pendingActions = (await getPendingJobActions(userId)).filter(
+          (a) => a.status === "pending",
+        );
         const mergedJobs = applyPendingActionsToJobs(
           serverJobs,
           pendingActions,
@@ -277,7 +307,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         console.log("[Jobs] Quelle: cache (offline)");
       }
       const cachedJobs = await getCachedJobs(userId);
-      const pendingActions = await getPendingJobActions(userId);
+      const pendingActions = (await getPendingJobActions(userId)).filter(
+        (a) => a.status === "pending",
+      );
       const mergedJobs = applyPendingActionsToJobs(cachedJobs, pendingActions);
 
       setJobs(mergedJobs);
@@ -294,7 +326,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const cachedJobs = await getCachedJobs(userId);
-        const pendingActions = await getPendingJobActions(userId);
+        const pendingActions = (await getPendingJobActions(userId)).filter(
+          (a) => a.status === "pending",
+        );
         const mergedJobs = applyPendingActionsToJobs(
           cachedJobs,
           pendingActions,
@@ -397,13 +431,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       //    schlechtem/erstem NetInfo-Status hängen blieb, bevor loading=false lief.
       setError(null);
       try {
-        const [cachedJobs, pending] = await Promise.all([
+        const [cachedJobs, allPending] = await Promise.all([
           getCachedJobs(userId),
           getPendingJobActions(userId),
         ]);
+        const pending = allPending.filter((a) => a.status === "pending");
         setJobs(applyPendingActionsToJobs(cachedJobs, pending));
         setPendingActions(pending);
         setPendingCount(pending.length);
+        setFailedActions(
+          allPending.filter((a) => a.status === "failed_permanent"),
+        );
       } catch (err) {
         console.error("Failed to load cached jobs on init:", err);
       } finally {
@@ -856,6 +894,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       online,
       pendingCount,
       pendingActions,
+      failedActions,
+      dismissFailedAction,
       isSyncing,
       syncFailed,
       retrySync,
@@ -879,6 +919,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       online,
       pendingCount,
       pendingActions,
+      failedActions,
+      dismissFailedAction,
       isSyncing,
       syncFailed,
       retrySync,
