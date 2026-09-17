@@ -215,6 +215,19 @@ begin
 end;
 $$;
 
+-- WICHTIG — beim erneuten Rehearsal-Durchlauf gefunden, nicht nur vermutet:
+-- DROP FUNCTION entfernt ALLE Grants des alten Objekts; eine neue Signatur
+-- beginnt ohne jeden expliziten Grant. Ein frisch zurückgesetztes lokales
+-- Dev-Postgres vergibt PUBLIC/anon-EXECUTE per Vanilla-Default und hätte
+-- diesen Fehler verschleiert — Staging/Production haben diesen Default
+-- bereits über 20260723000002_harden_rpc_execute_grants.sql entfernt, hier
+-- also exakt dasselbe Muster: erst von public/anon entziehen (falls je
+-- geerbt), dann explizit an authenticated + service_role vergeben — sonst
+-- könnte JEDER echte Aufruf (alte UND neue Form) mit "permission denied"
+-- scheitern, sobald diese Migration auf einer gehärteten Datenbank läuft.
+revoke execute on function public.update_my_push_token(text, int, text) from public, anon;
+grant  execute on function public.update_my_push_token(text, int, text) to authenticated, service_role;
+
 
 -- ---------------------------------------------------------
 -- 4. Versions-Durchsetzung: Helfer
