@@ -47,7 +47,7 @@ import { OccurrenceOriginLink } from "@/features/jobs/components/OccurrenceOrigi
 import { getJobById } from "@/services/jobs/jobs.service";
 import {
   canCompleteOwnAssignment,
-  canRunJobActions,
+  canStartOwnAssignment,
   hasCompletedOwnAssignment,
   isAssignedTo,
   isPrimaryAssignee,
@@ -347,32 +347,35 @@ export default function JobDetailScreen() {
   };
 
   // BERECHTIGUNG Start/Abschluss (Phase 7, „Shared Job Time"): JEDER
-  // Zugewiesene darf, nicht nur der Legacy-Primär — canRunJobActions spiegelt
-  // exakt das Prädikat von start_own_job/complete_own_job (Rolle, job_type,
-  // Zuweisungsmenge ODER Legacy-Zeiger). Parent-Regeln sind hier nicht mehr
-  // möglich (eigener Screen weiter oben) und `canRunJobActions` prüft
-  // jobType='single' ohnehin selbst.
-  const canRunActions = canRunJobActions(job, role, profile?.id);
+  // Zugewiesene darf, nicht nur der Legacy-Primär (Rolle, job_type,
+  // Zuweisungsmenge ODER Legacy-Zeiger, Firma). canStartOwnAssignment/
+  // canCompleteOwnAssignment (Phase 16) rufen canRunJobActions selbst auf —
+  // kein eigenständiges canRunActions mehr nötig.
 
-  // PHASE 16 — START nur am Geschäftstermin (Nachtzuschlag für Spätdienste ab
-  // 20:00 bis 02:00 des Folgetags). Spiegelt start_own_job; maßgeblich bleibt
-  // der Server, die Prüfung hier verhindert nur einen Button, der garantiert
-  // abgelehnt würde, und erlaubt eine Meldung, die den Termin nennt.
-  const startBlockedReason =
-    canRunActions && job.status === "open" ? getStartBlockMessage(job) : null;
-
-  const canStart =
-    canRunActions && job.status === "open" && !startBlockedReason;
+  // PHASE 16 — START ist nicht mehr an job.status==='open' gebunden: ist der
+  // Auftrag bereits durch eine Kollegin gestartet, darf DIESER Nutzer seine
+  // EIGENE Teilnahme trotzdem noch beginnen (Nachzügler-Zweig von
+  // start_own_job) — ohne das gäbe es für einen später hinzugekommenen
+  // Mitarbeiter NIE einen Weg, den eigenen Start zu setzen, und er könnte
+  // seine Teilnahme folglich nie abschließen (canCompleteOwnAssignment
+  // verlangt genau diesen eigenen Start). canStartOwnAssignment kapselt
+  // beide Zweige — siehe dortigen Kommentar.
+  //
+  // Termin (Nachtzuschlag für Spätdienste ab 20:00 bis 02:00 des Folgetags)
+  // bleibt ein separater Schritt: maßgeblich ist der Server, die Prüfung hier
+  // verhindert nur einen Button, der garantiert abgelehnt würde, und liefert
+  // eine Meldung, die den Termin nennt.
+  const eligibleToStart = canStartOwnAssignment(job, role, profile?.id);
+  const startBlockedReason = eligibleToStart ? getStartBlockMessage(job) : null;
+  const canStart = eligibleToStart && !startBlockedReason;
 
   // PHASE 16 — ABSCHLUSS nur der EIGENEN Teilnahme und nur nach EIGENEM Start.
   // Der Start eines Kollegen berechtigt ausdrücklich nicht (Vorfall
-  // 2026-09-16); zusätzlich verschwindet der Button, sobald die eigene
-  // Teilnahme erfasst ist.
+  // 2026-09-16). canCompleteOwnAssignment prüft bereits vollständig (eigener
+  // Start gesetzt, Auftrag noch in_progress, eigener Teil noch nicht
+  // abgeschlossen) — kein zusätzlicher Check hier nötig.
   const ownCompleted = hasCompletedOwnAssignment(job, profile?.id);
-  const canComplete =
-    canCompleteOwnAssignment(job, role, profile?.id) &&
-    job.status === "in_progress" &&
-    !ownCompleted;
+  const canComplete = canCompleteOwnAssignment(job, role, profile?.id);
 
   // „Mein Teil ist fertig, der Auftrag läuft weiter" (Phase 16).
   const waitingOnOthers = ownCompleted && job.status === "in_progress";

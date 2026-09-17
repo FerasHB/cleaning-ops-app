@@ -41,16 +41,37 @@ type Props = {
   /** Tap auf die Karte (außerhalb der Quick-Action) — i.d.R. Detail-Navigation */
   onPress?: () => void;
   /**
-   * Inline-Quick-Action "Start" — wird nur gezeigt, wenn übergeben UND job.status === "open".
+   * Inline-Quick-Action "Start" — wird nur gezeigt, wenn übergeben UND
+   * (canStart, falls gesetzt, sonst der Default job.status === "open").
    * Wer keine Inline-Action will (z.B. Admin), lässt das Prop einfach weg.
    * Darf ein Promise zurückgeben; die Karte sperrt dann bis zum Abschluss.
    */
   onStart?: () => void | Promise<void>;
   /**
-   * Inline-Quick-Action "Abschließen" — wird nur gezeigt, wenn übergeben UND job.status === "in_progress".
+   * Inline-Quick-Action "Abschließen" — wird nur gezeigt, wenn übergeben UND
+   * (canComplete, falls gesetzt, sonst der Default job.status === "in_progress").
    * Darf ein Promise zurückgeben; die Karte sperrt dann bis zum Abschluss.
    */
   onComplete?: () => void | Promise<void>;
+  /**
+   * PHASE 16 — überschreibt den Default-Sichtbarkeits-Test für "Start"
+   * (job.status === "open"). Notwendig, weil der Server seit Phase 16 auch
+   * einen Start akzeptiert, wenn der Auftrag bereits durch eine Kollegin
+   * läuft, DIESER Mitarbeiter seine EIGENE Teilnahme aber noch nicht
+   * begonnen hat (Nachzügler) — ohne dieses Prop bliebe der Start-Button für
+   * genau diesen Fall dauerhaft verborgen, obwohl start_own_job ihn annähme.
+   * Weggelassen (undefined) → alter Default, bewusst rückwärtskompatibel für
+   * Aufrufer, die dieses Konzept nicht kennen (z. B. Admin-Listen).
+   */
+  canStart?: boolean;
+  /**
+   * PHASE 16 — überschreibt den Default-Sichtbarkeits-Test für "Abschließen"
+   * (job.status === "in_progress"). Notwendig, weil ein Zugewiesener seit
+   * Phase 16 nur abschließen darf, wenn ER SELBST bereits gestartet hat —
+   * der reine Auftragsstatus allein sagt darüber nichts mehr aus. Weggelassen
+   * (undefined) → alter Default, bewusst rückwärtskompatibel.
+   */
+  canComplete?: boolean;
   /** Soll der Name des zugewiesenen Mitarbeiters in der Card stehen? (Default: false) */
   showEmployeeName?: boolean;
   /**
@@ -96,6 +117,8 @@ export default function JobCard({
   onPress,
   onStart,
   onComplete,
+  canStart,
+  canComplete,
   showEmployeeName = false,
   dueToday = false,
   detached = false,
@@ -175,8 +198,14 @@ export default function JobCard({
 
   // Quick-Action — exakt EINE, abhängig von Status (oder gar keine).
   // Bei Parent-Recurring-Regeln grundsätzlich keine Quick-Actions.
-  const showStartAction = !isParentRule && job.status === "open" && !!onStart;
-  const showCompleteAction = !isParentRule && job.status === "in_progress" && !!onComplete;
+  // canStart/canComplete (Phase 16) überschreiben den reinen Status-Test,
+  // wenn der Aufrufer sie übergibt — siehe Props-Kommentar.
+  const showStartAction =
+    !isParentRule && !!onStart && (canStart ?? job.status === "open");
+  const showCompleteAction =
+    !isParentRule &&
+    !!onComplete &&
+    (canComplete ?? job.status === "in_progress");
   // Mitarbeiter-Zeile: gekürzt („Anna, Bert +2"), das vollständige Register
   // steckt im Screenreader-Label. Ohne Zuweisung bleibt die Zeile ganz weg —
   // wie bisher, als employeeName schlicht null war.

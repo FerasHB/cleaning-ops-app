@@ -53,8 +53,12 @@ import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { Job } from "@/types/job";
-import { canRunJobActions } from "@/utils/jobAssignees";
-import { isJobToday } from "@/utils/jobSchedule";
+import {
+  canCompleteOwnAssignment,
+  canRunJobActions,
+  canStartOwnAssignment,
+} from "@/utils/jobAssignees";
+import { isJobStartDateAllowed, isJobToday } from "@/utils/jobSchedule";
 import { getJobStatusLabel, JOB_STATUS_ORDER } from "@/utils/jobStatus";
 import {
   buildJobQueueSections,
@@ -194,6 +198,22 @@ export default function EmployeeSmartJobsScreen() {
     [role, profile?.id],
   );
 
+  // PHASE 16 — Sichtbarkeit der Quick-Actions folgt nicht mehr allein dem
+  // Auftragsstatus (siehe JobCard.tsx canStart/canComplete-Kommentar):
+  //   - Start auch im Nachzügler-Fall (Auftrag läuft, eigene Teilnahme noch
+  //     nicht begonnen) UND nur am gültigen Geschäftstermin.
+  //   - Abschließen nur nach eigenem Start.
+  const canStartJob = useCallback(
+    (job: Job) =>
+      canStartOwnAssignment(job, role, profile?.id) &&
+      isJobStartDateAllowed(job),
+    [role, profile?.id],
+  );
+  const canCompleteJob = useCallback(
+    (job: Job) => canCompleteOwnAssignment(job, role, profile?.id),
+    [role, profile?.id],
+  );
+
   // Zeitpunkt beim Render — wie EmployeeOverviewScreen, keine eigene Uhr.
   const now = new Date();
 
@@ -278,10 +298,12 @@ export default function EmployeeSmartJobsScreen() {
         onPress={() => router.push(`/jobs/${item.id}`)}
         onStart={canRunActions(item) ? () => handleStart(item.id) : undefined}
         onComplete={canRunActions(item) ? () => handleComplete(item.id) : undefined}
+        canStart={canStartJob(item)}
+        canComplete={canCompleteJob(item)}
       />
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [now, canRunActions, handleStart, handleComplete],
+    [now, canRunActions, canStartJob, canCompleteJob, handleStart, handleComplete],
   );
 
   const renderSectionHeader = useCallback(

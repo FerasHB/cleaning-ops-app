@@ -150,6 +150,38 @@ export function canRunJobActions(
   return isAssignedTo(job, employeeId) || isPrimaryAssignee(job, employeeId);
 }
 
+/**
+ * Darf dieser Nutzer JETZT "Start" antippen? Deckt BEIDE Zweige von
+ * start_own_job ab (Migration 20260917000000):
+ *   1. der echte Übergang — Auftrag ist noch 'open';
+ *   2. der NACHZÜGLER-Fall — Auftrag läuft bereits (Kollegin hat gestartet),
+ *      DIESER Nutzer hat seine EIGENE Teilnahme aber noch nicht begonnen.
+ *
+ * Der zweite Zweig ist seit Phase 16 nicht mehr folgenlos: ohne einen
+ * eigenen Start kann dieser Nutzer später NICHT abschließen
+ * (canCompleteOwnAssignment). Ohne dieses Praedikat bliebe der Start-Button
+ * für einen spaeter hinzugekommenen Mitarbeiter dauerhaft verborgen, sobald
+ * ein anderer zuerst gestartet hat — der Server würde seinen Start-Aufruf
+ * aber jederzeit annehmen.
+ *
+ * PRUEFT NICHT den Termin (siehe getStartBlockMessage/isJobStartDateAllowed
+ * in utils/jobSchedule.ts) — das bleibt ein separater Schritt, weil er eine
+ * anzeigbare Meldung braucht, kein reines Ja/Nein.
+ */
+export function canStartOwnAssignment(
+  job: Pick<
+    Job,
+    "employeeId" | "jobType" | "assignees" | "parentJobId" | "isActive" | "status"
+  >,
+  role: string | null | undefined,
+  employeeId: string | null | undefined,
+): boolean {
+  if (!canRunJobActions(job, role, employeeId)) return false;
+  if (job.status === "open") return true;
+  if (job.status !== "in_progress") return false;
+  return !getOwnAssignee(job, employeeId)?.employeeStartedAt;
+}
+
 /** Die EIGENE Zuweisungszeile dieses Nutzers — oder null. */
 export function getOwnAssignee(
   job: Pick<Job, "assignees">,
@@ -160,13 +192,26 @@ export function getOwnAssignee(
 }
 
 /**
- * Darf dieser Nutzer seine EIGENE Teilnahme abschliessen? (Phase 16)
+ * Darf dieser Nutzer JETZT auf "Abschliessen" tippen? (Phase 16)
  *
  * Spiegelt das Server-Praedikat von complete_own_job (Migration
- * 20260917000000): zusaetzlich zu den Bedingungen von `canRunJobActions` muss
- * die EIGENE Zuweisungszeile bereits einen eigenen Start tragen. Der Start
- * eines KOLLEGEN berechtigt ausdruecklich NICHT mehr zum Abschluss — genau
- * das war die Ursache des Vorfalls vom 2026-09-16.
+ * 20260917000000) VOLLSTAENDIG, nicht nur den namensgebenden Teil:
+ *   1. zusaetzlich zu den Bedingungen von `canRunJobActions` muss die EIGENE
+ *      Zuweisungszeile bereits einen eigenen Start tragen — der Start eines
+ *      KOLLEGEN berechtigt ausdruecklich NICHT zum Abschluss (Ursache des
+ *      Vorfalls vom 2026-09-16);
+ *   2. der Auftrag muss noch 'in_progress' sein — die RPC lehnt sonst mit
+ *      "Job not in progress" ab (status='open') bzw. der Aufruf waere ein
+ *      wirkungsloser No-Op (status='completed', z. B. nach Admin-
+ *      Zwangsabschluss oder weil die eigene Teilnahme schon abgeschlossen
+ *      ist — Punkt 3);
+ *   3. die EIGENE Teilnahme darf noch NICHT abgeschlossen sein — sonst wäre
+ *      der Button für ein bereits erledigtes Stueck Arbeit sichtbar.
+ *
+ * Frueher pruefte nur JobDetailScreen (2) und (3) zusaetzlich inline; jeder
+ * andere Aufrufer (Quick-Actions in Uebersicht/Jobs/Kalender) haette sonst
+ * "Abschliessen" auch auf einem bereits vollstaendig erledigten Auftrag
+ * gezeigt. Jetzt EINMAL hier, fuer alle Aufrufer gleich.
  *
  * KEIN Legacy-Zweig: ohne echte job_assignments-Zeile gibt es kein
  * employee_started_at, und die RPC lehnt dann zwingend ab. Ein Button waere
@@ -181,7 +226,9 @@ export function canCompleteOwnAssignment(
   employeeId: string | null | undefined,
 ): boolean {
   if (!canRunJobActions(job, role, employeeId)) return false;
-  return !!getOwnAssignee(job, employeeId)?.employeeStartedAt;
+  if (job.status !== "in_progress") return false;
+  const own = getOwnAssignee(job, employeeId);
+  return !!own?.employeeStartedAt && !own?.employeeCompletedAt;
 }
 
 /**

@@ -47,9 +47,19 @@ type Props = {
   /**
    * Darf dieser Nutzer für diesen Job Start/Abschließen auslösen?
    * Die Entscheidung bleibt beim Screen (`canRunJobActions`) — das Sheet
-   * baut bewusst KEIN eigenes Gating.
+   * baut bewusst KEIN eigenes Gating. Grundlage für BEIDE Buttons, wenn
+   * canStart/canComplete unten nicht übergeben werden.
    */
   canRunActions: (job: Job) => boolean;
+  /**
+   * PHASE 16 — feinere Sichtbarkeit je Button als canRunActions allein
+   * leisten kann (Start auch im Nachzügler-Fall, Abschluss nur nach
+   * eigenem Start; siehe JobCard.tsx). Weggelassen → Rückfall auf
+   * canRunActions(job), bewusst rückwärtskompatibel (Admin-Kalender kennt
+   * dieses Konzept nicht und übergibt es nicht).
+   */
+  canStart?: (job: Job) => boolean;
+  canComplete?: (job: Job) => boolean;
   onStart: (jobId: string) => void | Promise<void>;
   onComplete: (jobId: string) => void | Promise<void>;
   /** Fehler der letzten Aktion — im Sheet sichtbar, weil er hier entsteht. */
@@ -89,6 +99,8 @@ export function DayAgendaSheet({
   onClose,
   onOpenJob,
   canRunActions,
+  canStart: canStartProp,
+  canComplete: canCompleteProp,
   onStart,
   onComplete,
   errorMessage,
@@ -168,9 +180,12 @@ export function DayAgendaSheet({
                 onPress={() => onOpenJob(job.id)}
                 showEmployeeName={showEmployeeName}
                 // Start/Abschließen laufen unverändert über den JobContext;
-                // das Gating kommt vom Screen (canRunJobActions).
+                // das Gating kommt vom Screen (canRunJobActions/canStart/
+                // canComplete — Phase 16, siehe Props-Kommentar oben).
                 onStart={canRunActions(job) ? () => onStart(job.id) : undefined}
                 onComplete={canRunActions(job) ? () => onComplete(job.id) : undefined}
+                canStart={(canStartProp ?? canRunActions)(job)}
+                canComplete={(canCompleteProp ?? canRunActions)(job)}
               />
             ))}
 
