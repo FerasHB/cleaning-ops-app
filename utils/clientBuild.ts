@@ -21,7 +21,14 @@ import { Platform } from "react-native";
 
 export type ClientPlatform = "ios" | "android";
 
-/** null für Web/sonstige Plattformen — die Durchsetzung gilt nur mobil. */
+/**
+ * null für Web/sonstige Plattformen — Produktentscheidung, kein Lückenfall:
+ * Job-Schreibpfade sind offiziell nur auf nativem iOS/Android supported, Web
+ * ist Dev-/QA-Ziel. Absichtlich NICHT um "web" erweitern, auch nicht als
+ * Bypass für die Server-Durchsetzung — fehlende Header müssen einen nicht
+ * unterstützten Client identifizieren können, sobald enforcement_enabled
+ * aktiv ist (siehe lib/supabase.ts, CLAUDE.md).
+ */
 export function getClientPlatform(): ClientPlatform | null {
   if (Platform.OS === "ios") return "ios";
   if (Platform.OS === "android") return "android";

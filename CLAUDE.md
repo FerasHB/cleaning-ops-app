@@ -226,6 +226,17 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
 - **Keyboard-Handling Kommentare:** `JobDetailScreen` nutzt `KeyboardAvoidingView` + ScrollView-Ref; bei
   Fokus auf das Kommentarfeld (`onInputFocus`) wird ans Ende gescrollt, damit Eingabe + Senden über der
   Tastatur sichtbar bleiben.
+- **Client-Compatibility (Migration `20260916120000`) — Web ist bewusst kein unterstütztes
+  Ziel für Job-Schreibpfade.** `start_own_job`/`complete_own_job`/`set_job_assignments` prüfen serverseitig
+  `enforce_min_client_version()` anhand der Header `x-taskops-platform`/`x-taskops-build`
+  (`utils/clientBuild.ts` → `lib/supabase.ts`). Offiziell supported sind nur native iOS-/Android-Builds;
+  Web ist Dev-/QA-Ziel. `getClientPlatform()` liefert für Web absichtlich `null` → keine Header → sobald
+  `app_config.enforcement_enabled=true` ist, bekommt ein Web-Aufruf dieser RPCs dieselbe 22023-Ablehnung
+  wie ein zu alter mobiler Client. **Keinen Web-Bypass einbauen** — fehlende Header müssen weiterhin einen
+  nicht unterstützten Client identifizieren können, das ist der Zweck der Durchsetzung, nicht ihre Lücke.
+  Der client-seitige `isVersionBlocked`-Hinweis (`AuthContext.tsx`, reiner UX-Nudge, keine Sicherheitsgrenze)
+  blockiert Web ebenfalls nie, aus demselben Grund (kein Store-Update-Pfad) — das ist unabhängig von der
+  harten Server-Durchsetzung und ändert nichts an obigem.
 - Lokale Dateien gehören nicht ins Repo: `.claude/` und `supabase/.temp/` sind in `.gitignore`.
 
 ## Bekannte technische Schuld

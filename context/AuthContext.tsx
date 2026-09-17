@@ -962,8 +962,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // hier zusätzlich enforcement_enabled verlangt wurde). Web/unbekannte
   // Plattform: dieses Gate gilt nur für die mobile App, ein Web-Build hat
   // ohnehin keinen Store-Update-Pfad, den der Screen anbieten könnte —
-  // niemals blockieren. Mobil ohne ermittelbaren Build (Edgecase): blockiert,
-  // genau wie ein zu alter Build.
+  // niemals blockieren. Das ist NUR der weiche UX-Hinweis; es bedeutet
+  // NICHT, dass Web von der harten Server-Durchsetzung ausgenommen ist —
+  // Job-Schreibpfade sind offiziell nur nativ (iOS/Android) supported, Web
+  // ist Dev-/QA-Ziel (siehe getClientPlatform() in utils/clientBuild.ts,
+  // compatibilityHeaders in lib/supabase.ts). Mobil ohne ermittelbaren Build
+  // (Edgecase): blockiert, genau wie ein zu alter Build.
   const isVersionBlocked = useMemo(() => {
     if (!appConfig) return false;
     if (!clientPlatform) return false;

@@ -43,11 +43,21 @@ if (keyVerdict === "secret" || keyVerdict === "unknown") {
 // 20260916120000): bei JEDEM REST/RPC-Aufruf mitgeschickt, serverseitig
 // über current_setting('request.headers', true) gelesen — empirisch gegen
 // Staging verifiziert (echter PostgREST-Roundtrip mit einer temporären,
-// sofort wieder entfernten Sonden-Funktion). Web/unbekannte Plattform
-// liefert getClientPlatform() = null → keine Header, server behandelt das
-// wie einen Alt-Client ohne Metadaten (korrekt: die Durchsetzung gilt nur
-// für die mobile App). Einmalig beim Modul-Laden berechnet — der native
-// Build ändert sich nicht während der Laufzeit eines Prozesses.
+// sofort wieder entfernten Sonden-Funktion). Einmalig beim Modul-Laden
+// berechnet — der native Build ändert sich nicht während der Laufzeit
+// eines Prozesses.
+//
+// PRODUKTENTSCHEIDUNG (nicht nur technische Lücke): Web liefert
+// getClientPlatform() = null → bewusst KEINE Header. Job-Schreibpfade
+// (start_own_job/complete_own_job/set_job_assignments) sind offiziell nur
+// auf nativem iOS/Android supported; Web ist Dev-/QA-Ziel. Fehlende Header
+// MÜSSEN weiterhin als nicht unterstützter Client gelten, sobald
+// enforcement_enabled=true ist — kein Web-Bypass, auch nicht später. Ein
+// Web-Aufruf dieser RPCs bekommt dann also dieselbe 22023-Ablehnung wie ein
+// zu alter mobiler Client; das ist beabsichtigt, nicht der weiche
+// isVersionBlocked-Hinweis (siehe AuthContext.tsx), der auf Web ohnehin nie
+// greift. Vor einer Produktions-Aktivierung von enforcement_enabled prüfen,
+// ob echte Web-Nutzung dieser Aktionen existiert (siehe CLAUDE.md).
 const clientPlatform = getClientPlatform();
 const clientBuild = getClientBuildNumber();
 const compatibilityHeaders: Record<string, string> =
