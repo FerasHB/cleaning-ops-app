@@ -1,5 +1,6 @@
 -- =========================================================
 -- AKTUALISIERT FUER PHASE 16 (2026-09-17, Migration 20260917000000)
+-- KORRIGIERT: Zeitzonen-naive Fixture-Daten (2026-09-18, read-only Audit)
 -- =========================================================
 -- Diese Suite legte ihre Termine urspruenglich in die ZUKUNFT (current_date
 -- + 7 / +10 / +3 / +2), weil nur der Pausiert-Guard gepruegt werden sollte
@@ -9,26 +10,35 @@
 -- Pruefgegenstand (Pausiert-Guard) verdeckt.
 --
 -- Fix, mechanisch, OHNE den Pruefgegenstand zu verschieben:
---   * d_a/d_p/d_s/d_c laufen jetzt alle auf current_date — jede Occurrence
---     ist "heute" datiert, die Terminpruefung ist damit fuer jeden
---     try_start()-Aufruf in dieser Datei erfuellt, unabhaengig davon, WANN
---     die Suite tatsaechlich laeuft (keine Zeitzonen-/Mitternachts-Annahme
---     noetig, da alle try_start-Aufrufe now() als Aktionszeitpunkt nutzen —
---     derselbe Kalendertag wie current_date, da now() transaktionsweit
---     konstant ist).
+--   * d_a/d_p/d_s/d_c laufen jetzt alle auf dem GESCHAEFTSDATUM der Firma
+--     (now() at time zone 'Europe/Berlin')::date — jede Occurrence ist damit
+--     "heute" im selben Sinne datiert, in dem job_start_date_allowed()
+--     "heute" versteht. FRUEHERE FASSUNG benutzte dafuer das rohe SQL
+--     current_date: das haengt an der TimeZone-Einstellung der jeweiligen
+--     Postgres-SESSION (lokal per Default UTC), waehrend
+--     job_start_date_allowed() den Aktionszeitpunkt explizit nach
+--     Europe/Berlin konvertiert. Im taeglichen ~2h-Fenster, in dem UTC und
+--     Europe/Berlin (CEST, UTC+2) unterschiedliche Kalendertage sehen (UTC
+--     22:00-24:00 = Berlin 00:00-02:00), driftete current_date einen Tag
+--     hinter das Geschaeftsdatum der Firma zurueck — reproduzierbar
+--     nachgewiesen, nicht nur vermutet (siehe Audit vom 2026-09-18). Die
+--     Terminpruefung ist damit fuer jeden try_start()-Aufruf in dieser
+--     Datei jetzt unabhaengig davon erfuellt, WANN die Suite tatsaechlich
+--     laeuft — auch innerhalb jenes Fensters.
 --   * o_started/o_completed werden weiterhin DIREKT (ohne RPC) mit
 --     status/started_at/completed_at auf der jobs-Zeile angelegt — das
 --     bleibt unveraendert der Zweck dieser beiden Zeilen (Historie, die die
---     Pausierung ueberlebt). NEU: die zugehoerige job_assignments-Zeile von
---     A1 traegt jetzt ZUSAETZLICH employee_started_at (o_started) bzw.
---     employee_started_at + employee_completed_at (o_completed) — ohne das
---     wuerde CASE D2 (gestartete Occurrence bleibt abschliessbar) an Phase
---     16s neuer Eigenstart-Pflicht scheitern, obwohl der eigentliche
+--     Pausierung ueberlebt). NEU (Phase 16): die zugehoerige job_assignments-
+--     Zeile von A1 traegt jetzt ZUSAETZLICH employee_started_at (o_started)
+--     bzw. employee_started_at + employee_completed_at (o_completed) — ohne
+--     das wuerde CASE D2 (gestartete Occurrence bleibt abschliessbar) an
+--     Phase 16s neuer Eigenstart-Pflicht scheitern, obwohl der eigentliche
 --     Pruefgegenstand (Pausiert-Guard beeintraechtigt eine GESTARTETE
 --     Occurrence nicht) davon unabhaengig ist.
 --
 -- Alle 13 Faelle sind damit wieder gruen UND pruefen weiterhin exakt das
--- urspruengliche Verhalten (A–H unten unveraendert).
+-- urspruengliche Verhalten (A–H unten unveraendert) — verifiziert ausserhalb
+-- UND innerhalb des UTC/Berlin-Mismatch-Fensters.
 -- =========================================================
 
 -- =========================================================
@@ -154,11 +164,16 @@ create temporary table _r (
 -- =========================================================
 do $$
 declare
-  -- PHASE 16: alle vier auf current_date, statt in die Zukunft versetzt —
-  -- siehe Kopf-Kommentar. wd_a/wd_p faellen dadurch auf denselben Wochentag
-  -- zusammen; ein doppelter Eintrag im recurring_days-Array ist fuer die
-  -- @>-Pruefung unten harmlos (kein struktureller Unterschied zu einem
-  -- Array mit einem Element).
+  -- PHASE 16: alle vier auf dem GESCHAEFTSDATUM der Firma (Europe/Berlin),
+  -- statt in die Zukunft versetzt — siehe Kopf-Kommentar. wd_a/wd_p fallen
+  -- dadurch auf denselben Wochentag zusammen; ein doppelter Eintrag im
+  -- recurring_days-Array ist fuer die @>-Pruefung unten harmlos (kein
+  -- struktureller Unterschied zu einem Array mit einem Element).
+  --
+  -- d_today: NICHT current_date (Session-TimeZone-abhaengig, lokal UTC),
+  -- sondern dieselbe Geschaeftsdatum-Berechnung wie job_start_date_allowed()
+  -- selbst — siehe Kopf-Kommentar fuer die genaue Begruendung.
+  d_today  date := (now() at time zone 'Europe/Berlin')::date;
   --
   -- SLOT vs. TATSAECHLICHER TERMIN (wichtig seit 20260916000000): der neue
   -- UNIQUE INDEX idx_jobs_occurrence_slot_unique erlaubt hoechstens EINE
@@ -173,15 +188,15 @@ declare
   -- angepassten Termin. o_started/o_completed werden nie ueber die RPC
   -- gestartet (ihr Status wird direkt gesetzt) — ihr `date` ist deshalb
   -- terminlich irrelevant, sie brauchen nur einen eigenen, freien Slot.
-  d_a      date := current_date;       -- o_active: Slot = tatsaechlicher Termin
-  d_p      date := current_date;       -- o_paused: TATSAECHLICHER Termin (heute, fuer CASE B1)
-  d_p_slot date := current_date + 1;   -- o_paused: SLOT (bewusst ein anderer Tag als o_active)
-  d_s_slot date := current_date + 2;   -- o_started: eigener, sonst unbenutzter Slot
-  d_c_slot date := current_date + 3;   -- o_completed: eigener, sonst unbenutzter Slot
-  d_s  date := current_date;
-  d_c  date := current_date;
-  wd_a text := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from current_date)::int + 1];
-  wd_p text := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from current_date + 1)::int + 1];
+  d_a      date := d_today;       -- o_active: Slot = tatsaechlicher Termin
+  d_p      date := d_today;       -- o_paused: TATSAECHLICHER Termin (heute, fuer CASE B1)
+  d_p_slot date := d_today + 1;   -- o_paused: SLOT (bewusst ein anderer Tag als o_active)
+  d_s_slot date := d_today + 2;   -- o_started: eigener, sonst unbenutzter Slot
+  d_c_slot date := d_today + 3;   -- o_completed: eigener, sonst unbenutzter Slot
+  d_s  date := d_today;
+  d_c  date := d_today;
+  wd_a text := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from d_today)::int + 1];
+  wd_p text := (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from d_today + 1)::int + 1];
 begin
   -- Parent-Regel R (Firma A)
   insert into public.jobs
@@ -192,7 +207,7 @@ begin
     ('f3000000-0000-0000-0000-000000000001','f1000000-0000-0000-0000-000000000001',
      'f2000000-0000-0000-0000-000000000001','Regelkunde A','Unterhaltsreinigung','Regelweg 1',
      'open','recurring', array[wd_a, wd_p]::text[], '08:00', true,
-     current_date, current_date + 21);
+     d_today, d_today + 21);
 
   -- Parent-Regel R_B (Firma B) — nur als Aufhänger für o_other
   insert into public.jobs
@@ -203,7 +218,7 @@ begin
     ('f3000000-0000-0000-0000-000000000002','f1000000-0000-0000-0000-000000000002',
      'f2000000-0000-0000-0000-000000000004','Regelkunde B','Glas','Fremdweg 1',
      'open','recurring', array[wd_a]::text[], '08:00', true,
-     current_date, current_date + 21);
+     d_today, d_today + 21);
 
   -- Occurrences von R. occurrence_date/schedule_overridden jetzt EXPLIZIT
   -- gesetzt (siehe Kopf-Kommentar) — ohne das wuerde der Trigger
