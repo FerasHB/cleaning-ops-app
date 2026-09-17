@@ -953,13 +953,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clientPlatform = useMemo(() => getClientPlatform(), []);
   const clientBuild = useMemo(() => getClientBuildNumber(), []);
 
-  // UX-Gate, NICHT die Sicherheitsgrenze (siehe Typ-Kommentar oben).
-  // Web/unbekannte Plattform: dieses Gate gilt nur für die mobile App, ein
-  // Web-Build hat ohnehin keinen Store-Update-Pfad, den der Screen anbieten
-  // könnte — niemals blockieren. Mobil ohne ermittelbaren Build (Edgecase):
-  // blockiert, sobald Enforcement an ist, genau wie ein zu alter Build.
+  // UX-Gate, NICHT die Sicherheitsgrenze (siehe Typ-Kommentar oben). Bewusst
+  // UNABHÄNGIG von enforcement_enabled: min_build_* ist der weiche
+  // Update-Hinweis, den man schon VOR der serverseitigen Durchsetzung zeigen
+  // will (Adoptions-Phase) — die Kopplung an enforcement_enabled war ein
+  // Fehler des ersten Entwurfs, in der Staging-QA gefunden (min_build hoch
+  // gesetzt, enforcement bewusst noch aus, Screen blieb trotzdem aus, weil
+  // hier zusätzlich enforcement_enabled verlangt wurde). Web/unbekannte
+  // Plattform: dieses Gate gilt nur für die mobile App, ein Web-Build hat
+  // ohnehin keinen Store-Update-Pfad, den der Screen anbieten könnte —
+  // niemals blockieren. Mobil ohne ermittelbaren Build (Edgecase): blockiert,
+  // genau wie ein zu alter Build.
   const isVersionBlocked = useMemo(() => {
-    if (!appConfig || !appConfig.enforcementEnabled) return false;
+    if (!appConfig) return false;
     if (!clientPlatform) return false;
     if (!clientBuild) return true;
     const min =

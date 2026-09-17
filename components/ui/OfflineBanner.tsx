@@ -259,7 +259,13 @@ export function OfflineBanner() {
       : null;
 
   const showDetails = pendingCount > 0 || failedActions.length > 0;
-  const showRetry = displayState === "error";
+  // Bei dauerhaft fehlgeschlagenen Einträgen ist "Erneut versuchen" sinnlos
+  // (sie werden absichtlich nicht mehr automatisch wiederholt) UND würde den
+  // einzigen Weg zum Details-Sheet (mit Fehlermeldung + Bestätigen/×) blockieren,
+  // da genau eine Aktionsfläche im Banner Platz hat. In dem Fall hat Details
+  // Vorrang; reine, noch nicht dauerhaft gescheiterte Sync-Fehler zeigen
+  // weiterhin "Erneut versuchen".
+  const showRetry = displayState === "error" && failedActions.length === 0;
 
   return (
     <>
