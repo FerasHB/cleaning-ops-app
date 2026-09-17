@@ -30,14 +30,18 @@
 //   (oder npm run test:recurring-occurrence)
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const out = mkdtempSync(join(tmpdir(), "verify-recurring-occ-"));
+// BEWUSST innerhalb von root (nicht os.tmpdir()): recurringRule.ts/
+// jobAssignees.ts importieren seit der Mehrsprachigkeit `i18next` aus
+// "@/i18n" — ein System-Temp-Verzeichnis liegt außerhalb jeder
+// node_modules-Ahnenkette, der nackte Node-Import von "i18next" &Co. aus
+// dem kompilierten Output würde dort fehlschlagen. Siehe .gitignore.
+const out = mkdtempSync(join(root, ".verify-recurring-occ-tmp-"));
 
 // Die Vorbelegungs-Prüfung ist nur dann aussagekräftig, wenn die Zeitzone
 // einen UTC-Versatz hat — sonst fällt der Fehler gar nicht auf.
@@ -66,6 +70,13 @@ try {
         types: [],
         baseUrl: root,
         paths: { "@/*": ["./*"] },
+        // jobAssignees.ts/recurringRule.ts importieren seit der
+        // Mehrsprachigkeit `i18next` aus "@/i18n" (siehe dort), das
+        // wiederum alle locales/*.json bündelt — ohne diese beiden Flags
+        // bricht der Compile hier, obwohl das echte Projekt-tsconfig sie
+        // über expo/tsconfig.base bereits mitbringt.
+        resolveJsonModule: true,
+        esModuleInterop: true,
       },
       include: [
         join(root, "utils/recurringRule.ts"),
@@ -74,22 +85,48 @@ try {
         join(root, "utils/jobAssignees.ts"),
         join(root, "utils/jobSchedule.ts"),
         join(root, "utils/recurrence.ts"),
+        // seit der Mehrsprachigkeit importiert jobAssignees.ts/
+        // recurringRule.ts `i18next` aus "@/i18n" (Modul-Singleton, siehe
+        // dort) — ohne diesen Einstiegspunkt fehlt sein kompiliertes JS.
+        join(root, "i18n/index.ts"),
       ],
     }),
   );
 
   execFileSync("npx", ["tsc", "-p", cfg], { cwd: root, stdio: "pipe" });
 
-  // tsc schreibt den Pfad-Alias `@/` NICHT um (bewusst — das ist Aufgabe des
-  // Bundlers). Für den nackten node-Import hier deshalb nachträglich auf
-  // konkrete file:-URLs im Ausgabeordner zeigen lassen.
+  // tsc schreibt weder den Pfad-Alias `@/` noch relative Spezifizierer auf
+  // konkrete .js-Dateien um (bewusst — das ist Aufgabe des Bundlers/der
+  // moduleResolution). Für den nackten node-ESM-Import hier deshalb
+  // nachträglich auf file:-URLs auflösen. Rekursiv, seit der Compile-Umfang
+  // über utils/ hinaus auch i18n/ (config.ts/resolveLocale.ts/rtl.ts/
+  // storage.ts/locales/*.json, alle mit eigenen relativen Imports) erfasst.
   const jsDir = join(out, "js");
-  for (const rel of readdirSync(join(jsDir, "utils"))) {
-    if (!rel.endsWith(".js")) continue;
-    const file = join(jsDir, "utils", rel);
+  const jsFiles = [];
+  const walk = (dir) => {
+    for (const rel of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, rel.name);
+      if (rel.isDirectory()) walk(full);
+      else if (rel.name.endsWith(".js")) jsFiles.push(full);
+    }
+  };
+  walk(jsDir);
+  // "…/date" -> …/date.js (direkte Datei). "…/i18n" -> ein Verzeichnis-
+  // Import, den natives ESM (anders als CommonJS) nicht automatisch auf
+  // index.js abbildet — hier von Hand nachholen.
+  const resolveJs = (absNoExt) => {
+    const asFile = `${absNoExt}.js`;
+    return existsSync(asFile) ? asFile : join(absNoExt, "index.js");
+  };
+  for (const file of jsFiles) {
     const src = readFileSync(file, "utf8").replace(
-      /(["'])@\/([^"']+)\1/g,
-      (_m, q, spec) => `${q}${pathToFileURL(join(jsDir, `${spec}.js`)).href}${q}`,
+      /(["'])(@\/[^"']+|\.\.?\/[^"']+)\1/g,
+      (_m, q, spec) => {
+        const absNoExt = spec.startsWith("@/")
+          ? join(jsDir, spec.slice(2))
+          : join(dirname(file), spec);
+        return `${q}${pathToFileURL(resolveJs(absNoExt)).href}${q}`;
+      },
     );
     writeFileSync(file, src);
   }
