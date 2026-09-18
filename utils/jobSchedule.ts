@@ -12,7 +12,11 @@
 // nur "ist heute fällig?" ohne tagesgenauen Status.
 
 import type { Job } from "@/types/job";
-import { isSameLocalDate, normalizeTime } from "@/utils/date";
+import {
+  formatDateISO,
+  isSameLocalDate,
+  normalizeTime,
+} from "@/utils/date";
 import { formatRecurringDays, isWeekdayInList } from "@/utils/recurrence";
 
 // Vergleicht einen ISO-Zeitstempel mit dem Kalendertag von `ref` (lokal).
@@ -97,6 +101,89 @@ export function getJobDisplayTime(job: Job): string | null {
 export function getRecurringDaysLabel(job: Job): string {
   if (job.jobType !== "recurring") return "";
   return formatRecurringDays(job.recurringDays);
+}
+
+/**
+ * Darf dieser Auftrag JETZT gestartet werden (Terminregel, Phase 16)?
+ *
+ * SPIEGELT die Server-Regel public.job_start_date_allowed (Migration
+ * 20260917000000) zeichengenau:
+ *   - Start am Kalendertag des Termins, ODER
+ *   - Nachtzuschlag: Spaetdienst (startTime >= 20:00) darf bis 02:00 des
+ *     FOLGETAGS erstmals gestartet werden.
+ *   - Ohne `date` niemals (fail-closed, wie serverseitig).
+ *
+ * MASSGEBLICH BLEIBT DER SERVER. Diese Funktion existiert nur, damit die App
+ * keinen Button anbietet, den start_own_job garantiert ablehnt, und damit die
+ * Meldung den konkreten Termin nennen kann.
+ *
+ * BEKANNTE ANNAEHERUNG: der Server rechnet in der Zeitzone der FIRMA
+ * (companies.timezone). Der Client kennt sie nicht — `Job` traegt sie nicht,
+ * und ein zusaetzlicher Abruf nur fuer diese Anzeige waere unverhaeltnismaessig.
+ * Gerechnet wird deshalb in der GERAETE-Zeitzone, genau wie isJobToday() das
+ * seit je tut. Fuer den deutschen Betrieb sind beide identisch; weichen sie ab,
+ * entscheidet weiterhin der Server (die App zeigt dann im Extremfall einen
+ * Button, dessen Aufruf sauber abgelehnt wird — nie umgekehrt ein stiller
+ * Erfolg).
+ */
+export function isJobStartDateAllowed(
+  job: Pick<Job, "date" | "startTime">,
+  ref: Date = new Date(),
+): boolean {
+  const dateKey = job.date?.slice(0, 10);
+  if (!dateKey) return false;
+
+  const todayKey = formatDateISO(ref);
+  if (dateKey === todayKey) return true;
+
+  // Nachtzuschlag
+  const start = normalizeTime(job.startTime);
+  if (!start || start < "20:00") return false;
+  if (ref.getHours() >= 2) return false;
+
+  const yesterday = new Date(ref);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return dateKey === formatDateISO(yesterday);
+}
+
+/**
+ * Warum darf dieser Auftrag JETZT nicht gestartet werden? `null`, wenn er
+ * gestartet werden darf. Rein client-seitige UX-Vorschau — die tatsächliche
+ * Durchsetzung bleibt bei start_own_job; dessen eigene Ablehnung kommt
+ * bewusst weiterhin auf Deutsch zurück (server-seitiger Fallback-Text, siehe
+ * CLAUDE.md), unabhängig von der hier gewählten App-Sprache.
+ *
+ * `t`/`localeTag` kommen vom Aufrufer (useTranslation()/i18n.language),
+ * damit diese reine Utility-Funktion nicht selbst an die i18next-Instanz
+ * gebunden ist.
+ */
+export function getStartBlockMessage(
+  job: Pick<Job, "date" | "startTime">,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  localeTag: string,
+  ref: Date = new Date(),
+): string | null {
+  if (isJobStartDateAllowed(job, ref)) return null;
+
+  const dateKey = job.date?.slice(0, 10);
+  if (!dateKey) {
+    return t("jobs:startBlock.noDateConfigured");
+  }
+
+  const [y, m, d] = dateKey.split("-").map((n) => parseInt(n, 10));
+  const label =
+    y && m && d
+      ? new Date(y, m - 1, d).toLocaleDateString(localeTag, {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : dateKey;
+  const todayKey = formatDateISO(ref) ?? "";
+
+  return dateKey > todayKey
+    ? t("jobs:startBlock.scheduledFuture", { date: label })
+    : t("jobs:startBlock.scheduledPast", { date: label });
 }
 
 /**

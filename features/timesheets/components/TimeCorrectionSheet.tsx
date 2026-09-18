@@ -21,7 +21,7 @@ import {
   correctAssignmentTime,
   validateCorrection,
 } from "@/services/timesheets/timeCorrection.service";
-import { formatDateTimeDE } from "@/utils/date";
+import { formatDateTimeLocalized } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -34,6 +34,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 
 export type TimeCorrectionTarget = {
   assignmentId: string;
@@ -64,7 +65,7 @@ function parseIso(iso: string | null | undefined): Date | null {
 }
 
 function timeLabel(iso: string | null | undefined): string {
-  return formatDateTimeDE(iso) ?? "—";
+  return formatDateTimeLocalized(iso) ?? "—";
 }
 
 export function TimeCorrectionSheet({
@@ -75,6 +76,7 @@ export function TimeCorrectionSheet({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [start, setStart] = useState<Date | null>(null);
   const [end, setEnd] = useState<Date | null>(null);
@@ -128,10 +130,15 @@ export function TimeCorrectionSheet({
       onCorrected();
       onClose();
     } catch (err) {
+      // correctAssignmentTime wirft ausschließlich bereits übersetzte,
+      // nutzersichere Meldungen (siehe translateRpcError) — kein zweiter
+      // toUserMessage()-Durchlauf, der würde die übersetzte RPC-Meldung in
+      // jeder Nicht-Deutsch-Sprache wieder durch den generischen Fallback
+      // ersetzen (toUserMessage lässt Fremdsprachen-Text nicht durch).
       setError(
         err instanceof Error
           ? err.message
-          : "Die Zeitkorrektur konnte nicht gespeichert werden.",
+          : t("admin:timesheet.correction.saveFailedFallback"),
       );
       setConfirming(false);
     } finally {
@@ -154,11 +161,11 @@ export function TimeCorrectionSheet({
           <View style={styles.sheet}>
             {/* ── Kopf ── */}
             <View style={styles.header}>
-              <Text style={styles.title}>Zeit korrigieren</Text>
+              <Text style={styles.title}>{t("admin:timesheet.correction.title")}</Text>
               <TouchableOpacity
                 onPress={onClose}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel="Schließen"
+                accessibilityLabel={t("admin:timesheet.correction.closeA11y")}
               >
                 <Ionicons
                   name="close"
@@ -175,20 +182,26 @@ export function TimeCorrectionSheet({
             >
               {/* ── Kontext ── */}
               <Card padding={theme.spacing.md} style={styles.contextCard}>
-                <Text style={styles.contextLabel}>MITARBEITER</Text>
+                <Text style={styles.contextLabel}>
+                  {t("admin:timesheet.correction.employeeLabel")}
+                </Text>
                 <Text style={styles.contextValue}>{target.employeeName}</Text>
                 <View style={styles.contextDivider} />
-                <Text style={styles.contextLabel}>AUFTRAG</Text>
+                <Text style={styles.contextLabel}>
+                  {t("admin:timesheet.correction.jobLabel")}
+                </Text>
                 <Text style={styles.contextValue}>{target.customerName}</Text>
                 {target.remark ? (
                   <Text style={styles.contextMeta}>{target.remark}</Text>
                 ) : null}
                 <View style={styles.contextDivider} />
-                <Text style={styles.contextLabel}>AKTUELL ERFASST</Text>
+                <Text style={styles.contextLabel}>
+                  {t("admin:timesheet.correction.currentlyRecordedLabel")}
+                </Text>
                 <Text style={styles.contextValue}>
                   {target.employeeStartedAt || target.employeeCompletedAt
                     ? `${timeLabel(target.employeeStartedAt)} → ${timeLabel(target.employeeCompletedAt)}`
-                    : "Keine eigene Zeit erfasst"}
+                    : t("admin:timesheet.correction.noOwnTime")}
                 </Text>
               </Card>
 
@@ -196,35 +209,41 @@ export function TimeCorrectionSheet({
                 /* ── Schritt 2: Bestätigen ── */
                 <View style={styles.confirmBlock}>
                   <Text style={styles.confirmIntro}>
-                    Bitte prüfen und bestätigen:
+                    {t("admin:timesheet.correction.confirmIntro")}
                   </Text>
 
                   <Card padding={theme.spacing.md} style={styles.diffCard}>
-                    <Text style={styles.diffLabel}>ALT</Text>
+                    <Text style={styles.diffLabel}>
+                      {t("admin:timesheet.correction.oldLabel")}
+                    </Text>
                     <Text style={styles.diffOld}>
                       {target.employeeStartedAt || target.employeeCompletedAt
                         ? `${timeLabel(target.employeeStartedAt)} → ${timeLabel(target.employeeCompletedAt)}`
-                        : "Keine eigene Zeit erfasst"}
+                        : t("admin:timesheet.correction.noOwnTime")}
                     </Text>
 
                     <View style={styles.contextDivider} />
 
-                    <Text style={styles.diffLabel}>NEU</Text>
+                    <Text style={styles.diffLabel}>
+                      {t("admin:timesheet.correction.newLabel")}
+                    </Text>
                     <Text style={styles.diffNew}>
-                      {formatDateTimeDE(start?.toISOString())} →{" "}
-                      {formatDateTimeDE(end?.toISOString())}
+                      {formatDateTimeLocalized(start?.toISOString())} →{" "}
+                      {formatDateTimeLocalized(end?.toISOString())}
                     </Text>
 
                     <View style={styles.contextDivider} />
 
-                    <Text style={styles.diffLabel}>GRUND</Text>
+                    <Text style={styles.diffLabel}>
+                      {t("admin:timesheet.correction.reasonLabel")}
+                    </Text>
                     <Text style={styles.diffReason}>{reason.trim()}</Text>
                   </Card>
 
                   {error ? <ErrorBanner message={error} /> : null}
 
                   <Button
-                    label="Korrektur speichern"
+                    label={t("admin:timesheet.correction.saveButton")}
                     onPress={handleSave}
                     loading={submitting}
                     disabled={submitting}
@@ -235,7 +254,9 @@ export function TimeCorrectionSheet({
                     disabled={submitting}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.secondaryBtnText}>Zurück</Text>
+                    <Text style={styles.secondaryBtnText}>
+                      {t("admin:timesheet.correction.backButton")}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -254,37 +275,36 @@ export function TimeCorrectionSheet({
                       />
                       <View style={styles.suggestionTextWrap}>
                         <Text style={styles.suggestionTitle}>
-                          Vorgeschlagene Zeit aus Auftragszeit
+                          {t("admin:timesheet.correction.suggestionTitle")}
                         </Text>
                         <Text style={styles.suggestionValue}>
                           {timeLabel(target.sharedStartedAt)} →{" "}
                           {timeLabel(target.sharedCompletedAt)}
                         </Text>
                         <Text style={styles.suggestionHint}>
-                          Gesamtzeit des Auftrags — nicht zwingend die
-                          Arbeitszeit dieser Person. Zum Übernehmen tippen.
+                          {t("admin:timesheet.correction.suggestionHint")}
                         </Text>
                       </View>
                     </TouchableOpacity>
                   ) : null}
 
                   <DateTimeField
-                    label="Beginn *"
-                    placeholder="Datum und Uhrzeit auswählen..."
+                    label={t("admin:timesheet.correction.startLabel")}
+                    placeholder={t("admin:timesheet.correction.dateTimePlaceholder")}
                     value={start}
                     onChange={setStart}
                   />
 
                   <DateTimeField
-                    label="Ende *"
-                    placeholder="Datum und Uhrzeit auswählen..."
+                    label={t("admin:timesheet.correction.endLabel")}
+                    placeholder={t("admin:timesheet.correction.dateTimePlaceholder")}
                     value={end}
                     onChange={setEnd}
                   />
 
                   <Input
-                    label="Grund *"
-                    placeholder="z. B. Start vergessen, Zeiten vom Objektleiter bestätigt"
+                    label={t("admin:timesheet.correction.reasonFieldLabel")}
+                    placeholder={t("admin:timesheet.correction.reasonPlaceholder")}
                     value={reason}
                     onChangeText={setReason}
                     multiline
@@ -299,7 +319,7 @@ export function TimeCorrectionSheet({
                   ) : null}
 
                   <Button
-                    label="Weiter"
+                    label={t("admin:timesheet.correction.continueButton")}
                     onPress={() => setConfirming(true)}
                     disabled={!canSubmit}
                   />

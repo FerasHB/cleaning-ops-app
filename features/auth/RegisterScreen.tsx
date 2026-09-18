@@ -10,6 +10,7 @@ import { registerAdmin } from "@/services/auth/registerAdmin";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Animated,
   KeyboardAvoidingView,
@@ -29,7 +30,6 @@ import { isValidEmail } from "@/utils/email";
 import { isValidPhone } from "@/utils/phone";
 import {
   MIN_PASSWORD_LENGTH,
-  PASSWORD_MISMATCH_MESSAGE,
   validatePassword,
 } from "@/utils/passwordValidation";
 
@@ -37,6 +37,7 @@ export default function RegisterScreen() {
   const theme      = useAppTheme();
   const styles     = useMemo(() => createStyles(theme), [theme]);
   const { refreshProfile } = useAuth();
+  const { t } = useTranslation();
 
   // Felder
   const [fullName,     setFullName]     = useState("");
@@ -106,36 +107,36 @@ export default function RegisterScreen() {
     setPasswordError(""); setPasswordConfError(""); setFormError("");
 
     if (!fullName.trim()) {
-      setFullNameError("Name ist erforderlich.");
+      setFullNameError(t("auth:register.validation.nameRequired"));
       valid = false;
     }
     if (adminPhone.trim() && !isValidPhone(adminPhone)) {
-      setAdminPhoneError("Bitte gib eine gültige Telefonnummer ein.");
+      setAdminPhoneError(t("auth:register.validation.phoneInvalid"));
       valid = false;
     }
     if (!companyName.trim()) {
-      setCompanyNameError("Firmenname ist erforderlich.");
+      setCompanyNameError(t("auth:register.validation.companyNameRequired"));
       valid = false;
     }
     if (!companyEmail.trim()) {
-      setCompanyEmailError("Firmen-E-Mail ist erforderlich.");
+      setCompanyEmailError(t("auth:register.validation.companyEmailRequired"));
       valid = false;
     } else if (!isValidEmail(companyEmail)) {
-      setCompanyEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      setCompanyEmailError(t("auth:register.validation.emailInvalid"));
       valid = false;
     }
     if (!companyPhone.trim()) {
-      setCompanyPhoneError("Firmen-Telefon ist erforderlich.");
+      setCompanyPhoneError(t("auth:register.validation.companyPhoneRequired"));
       valid = false;
     } else if (!isValidPhone(companyPhone)) {
-      setCompanyPhoneError("Bitte gib eine gültige Telefonnummer ein.");
+      setCompanyPhoneError(t("auth:register.validation.phoneInvalid"));
       valid = false;
     }
     if (!email.trim()) {
-      setEmailError("E-Mail ist erforderlich.");
+      setEmailError(t("auth:register.validation.emailRequired"));
       valid = false;
     } else if (!isValidEmail(email)) {
-      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      setEmailError(t("auth:register.validation.emailInvalid"));
       valid = false;
     }
     const passwordCheck = validatePassword(password);
@@ -144,11 +145,11 @@ export default function RegisterScreen() {
       valid = false;
     }
     if (password && passwordConf && password !== passwordConf) {
-      setPasswordConfError(PASSWORD_MISMATCH_MESSAGE);
+      setPasswordConfError(t("common:validation.passwordMismatch"));
       valid = false;
     }
     if (password && !passwordConf) {
-      setPasswordConfError("Passwort bestätigen.");
+      setPasswordConfError(t("auth:register.validation.passwordConfirmRequired"));
       valid = false;
     }
     return valid;
@@ -173,7 +174,7 @@ export default function RegisterScreen() {
       router.replace("/");
     } catch (err) {
       setFormError(
-        toFriendlyAuthErrorMessage(err, "Registrierung fehlgeschlagen.")
+        toFriendlyAuthErrorMessage(err, t("auth:register.errors.registrationFailed"))
       );
     } finally {
       setLoading(false);
@@ -198,7 +199,7 @@ export default function RegisterScreen() {
         >
           {/* ── Branding ── */}
           <Animated.View style={{ opacity: fadeAnim }}>
-            <AuthBrand tagline="Firmenkonto erstellen" />
+            <AuthBrand tagline={t("auth:register.tagline")} />
           </Animated.View>
 
           {/* ── Formular-Karte ── */}
@@ -209,9 +210,9 @@ export default function RegisterScreen() {
             ]}
           >
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Firma registrieren</Text>
+              <Text style={styles.cardTitle}>{t("auth:register.cardTitle")}</Text>
               <Text style={styles.cardSubtitle}>
-                Erstelle dein Admin-Konto und richte deine Firma ein
+                {t("auth:register.cardSubtitle")}
               </Text>
             </View>
 
@@ -222,23 +223,23 @@ export default function RegisterScreen() {
 
             {/* ── Abschnitt: Persönliche Daten ── */}
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>PERSÖNLICHE DATEN</Text>
+              <Text style={styles.sectionLabel}>{t("auth:register.sectionPersonal")}</Text>
               <View style={styles.fields}>
                 <Input
-                  label="Vollständiger Name"
-                  placeholder="Max Mustermann"
+                  label={t("auth:register.fullNameLabel")}
+                  placeholder={t("auth:register.fullNamePlaceholder")}
                   value={fullName}
-                  onChangeText={(t) => { setFullName(t); setFullNameError(""); clearError(); }}
+                  onChangeText={(v) => { setFullName(v); setFullNameError(""); clearError(); }}
                   error={fullNameError}
                   autoCapitalize="words"
                   returnKeyType="next"
                   editable={!loading}
                 />
                 <Input
-                  label="E-Mail-Adresse"
-                  placeholder="name@firma.de"
+                  label={t("auth:register.emailLabel")}
+                  placeholder={t("auth:register.emailPlaceholder")}
                   value={email}
-                  onChangeText={(t) => { setEmail(t); setEmailError(""); clearError(); }}
+                  onChangeText={(v) => { setEmail(v); setEmailError(""); clearError(); }}
                   error={emailError}
                   autoCapitalize="none"
                   keyboardType="email-address"
@@ -247,8 +248,8 @@ export default function RegisterScreen() {
                   editable={!loading}
                 />
                 <Input
-                  label="Deine Telefonnummer (optional)"
-                  placeholder="0170 1234567"
+                  label={t("auth:register.adminPhoneLabel")}
+                  placeholder={t("auth:register.phonePlaceholder")}
                   value={adminPhone}
                   onChangeText={handleAdminPhoneChange}
                   error={adminPhoneError}
@@ -262,23 +263,23 @@ export default function RegisterScreen() {
 
             {/* ── Abschnitt: Firma ── */}
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>FIRMA</Text>
+              <Text style={styles.sectionLabel}>{t("auth:register.sectionCompany")}</Text>
               <View style={styles.fields}>
                 <Input
-                  label="Firmenname"
-                  placeholder="Muster Reinigung GmbH"
+                  label={t("auth:register.companyNameLabel")}
+                  placeholder={t("auth:register.companyNamePlaceholder")}
                   value={companyName}
-                  onChangeText={(t) => { setCompanyName(t); setCompanyNameError(""); clearError(); }}
+                  onChangeText={(v) => { setCompanyName(v); setCompanyNameError(""); clearError(); }}
                   error={companyNameError}
                   autoCapitalize="words"
                   returnKeyType="next"
                   editable={!loading}
                 />
                 <Input
-                  label="Firmen-E-Mail"
-                  placeholder="kontakt@firma.de"
+                  label={t("auth:register.companyEmailLabel")}
+                  placeholder={t("auth:register.companyEmailPlaceholder")}
                   value={companyEmail}
-                  onChangeText={(t) => { setCompanyEmail(t); setCompanyEmailError(""); clearError(); }}
+                  onChangeText={(v) => { setCompanyEmail(v); setCompanyEmailError(""); clearError(); }}
                   error={companyEmailError}
                   autoCapitalize="none"
                   keyboardType="email-address"
@@ -287,10 +288,10 @@ export default function RegisterScreen() {
                   editable={!loading}
                 />
                 <Input
-                  label="Firmen-Telefon"
-                  placeholder="0170 1234567"
+                  label={t("auth:register.companyPhoneLabel")}
+                  placeholder={t("auth:register.phonePlaceholder")}
                   value={companyPhone}
-                  onChangeText={(t) => { setCompanyPhone(t); setCompanyPhoneError(""); clearError(); }}
+                  onChangeText={(v) => { setCompanyPhone(v); setCompanyPhoneError(""); clearError(); }}
                   error={companyPhoneError}
                   keyboardType="phone-pad"
                   autoComplete="tel"
@@ -298,7 +299,7 @@ export default function RegisterScreen() {
                   editable={!loading && !sameAsMyPhone}
                 />
                 <View style={styles.toggleRow}>
-                  <Text style={styles.toggleLabel}>Gleiche Nummer wie meine</Text>
+                  <Text style={styles.toggleLabel}>{t("auth:register.samePhoneToggle")}</Text>
                   <Switch
                     value={sameAsMyPhone}
                     onValueChange={handleSameAsMyPhoneToggle}
@@ -311,14 +312,14 @@ export default function RegisterScreen() {
 
             {/* ── Abschnitt: Passwort ── */}
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>PASSWORT</Text>
+              <Text style={styles.sectionLabel}>{t("auth:register.sectionPassword")}</Text>
               <View style={styles.fields}>
                 <View style={styles.passwordField}>
                   <PasswordInput
-                    label="Passwort"
-                    placeholder="Mindestens 10 Zeichen"
+                    label={t("auth:register.passwordLabel")}
+                    placeholder={t("auth:register.passwordPlaceholder", { min: MIN_PASSWORD_LENGTH })}
                     value={password}
-                    onChangeText={(t) => { setPassword(t); setPasswordError(""); clearError(); }}
+                    onChangeText={(v) => { setPassword(v); setPasswordError(""); clearError(); }}
                     error={passwordError}
                     autoComplete="password-new"
                     returnKeyType="next"
@@ -336,15 +337,15 @@ export default function RegisterScreen() {
                         passwordMeetsLength && styles.passwordHintTextMet,
                       ]}
                     >
-                      Mindestens {MIN_PASSWORD_LENGTH} Zeichen
+                      {t("auth:register.passwordMinHint", { min: MIN_PASSWORD_LENGTH })}
                     </Text>
                   </View>
                 </View>
                 <PasswordInput
-                  label="Passwort bestätigen"
-                  placeholder="Passwort wiederholen"
+                  label={t("auth:register.passwordConfirmLabel")}
+                  placeholder={t("auth:register.passwordConfirmPlaceholder")}
                   value={passwordConf}
-                  onChangeText={(t) => { setPasswordConf(t); setPasswordConfError(""); clearError(); }}
+                  onChangeText={(v) => { setPasswordConf(v); setPasswordConfError(""); clearError(); }}
                   error={passwordConfError}
                   autoComplete="password-new"
                   returnKeyType="done"
@@ -357,7 +358,7 @@ export default function RegisterScreen() {
             {/* ── Hinweis-Box ── */}
             <View style={styles.infoBox}>
               <Text style={styles.infoText}>
-                💡 Mitarbeiter werden später vom Admin per Einladung hinzugefügt.
+                {t("auth:register.infoBox")}
               </Text>
             </View>
 
@@ -368,11 +369,11 @@ export default function RegisterScreen() {
               disabled={loading}
               activeOpacity={0.82}
               accessibilityRole="button"
-              accessibilityLabel="Firma erstellen"
+              accessibilityLabel={t("auth:register.registerButtonA11y")}
               accessibilityState={{ disabled: loading, busy: loading }}
             >
               <Text style={styles.registerBtnText}>
-                {loading ? "Konto wird erstellt..." : "Firma erstellen"}
+                {loading ? t("auth:register.registerButtonLoading") : t("auth:register.registerButton")}
               </Text>
             </TouchableOpacity>
 
@@ -383,8 +384,8 @@ export default function RegisterScreen() {
               style={styles.loginRow}
               disabled={loading}
             >
-              <Text style={styles.loginText}>Bereits ein Konto?{" "}</Text>
-              <Text style={styles.loginLink}>Anmelden</Text>
+              <Text style={styles.loginText}>{t("auth:register.haveAccountText")}{" "}</Text>
+              <Text style={styles.loginLink}>{t("auth:register.loginLink")}</Text>
             </TouchableOpacity>
           </Animated.View>
         </ScrollView>
@@ -461,7 +462,7 @@ function createStyles(theme: AppTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      paddingLeft: 2,
+      paddingStart: 2,
     },
     passwordHintText: {
       fontSize: theme.typography.size.xs,

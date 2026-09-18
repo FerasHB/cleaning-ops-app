@@ -23,7 +23,7 @@ import type {
   EmploymentConfig,
   EmploymentType,
 } from "@/types/employment";
-import { EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABELS } from "@/types/employment";
+import { EMPLOYMENT_TYPES } from "@/types/employment";
 import { describeSource, resolveEffectiveVacationConfig } from "@/utils/vacationConfig";
 import { formatDateISO, parseToDate } from "@/utils/date";
 import { alertDialog } from "@/utils/dialogs";
@@ -42,6 +42,15 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
+
+const EMPLOYMENT_TYPE_LABEL_KEYS: Record<EmploymentType, string> = {
+  vollzeit: "admin:employment.typeVollzeit",
+  teilzeit: "admin:employment.typeTeilzeit",
+  minijob: "admin:employment.typeMinijob",
+  aushilfe: "admin:employment.typeAushilfe",
+  sonstiges: "admin:employment.typeSonstiges",
+};
 
 // Leerer Text -> null (= Firmen-Default gilt). Wichtig, damit ein geleertes
 // Feld den Override wirklich ENTFERNT und nicht als 0 gespeichert wird.
@@ -59,6 +68,7 @@ function numberToText(value: number | null): string {
 export default function EmployeeEmploymentScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [loading, setLoading] = useState(true);
@@ -127,11 +137,11 @@ export default function EmployeeEmploymentScreen() {
     const reference = parseOptionalNumber(referenceText);
 
     if (Number.isNaN(entitlement)) {
-      setError("Jahresanspruch: bitte eine Zahl eingeben (oder leer lassen).");
+      setError(t("admin:employment.entitlementNumberError"));
       return;
     }
     if (Number.isNaN(reference)) {
-      setError("Referenz-Arbeitstage: bitte eine Zahl eingeben (oder leer lassen).");
+      setError(t("admin:employment.referenceNumberError"));
       return;
     }
 
@@ -147,7 +157,10 @@ export default function EmployeeEmploymentScreen() {
         vacationAnnualEntitlementDays: entitlement,
         vacationReferenceDaysPerWeek: reference,
       });
-      alertDialog("Gespeichert", "Die Konfiguration wurde übernommen.");
+      alertDialog(
+        t("admin:employment.savedDialogTitle"),
+        t("admin:employment.savedDialogMessage"),
+      );
       router.back();
     } catch (err) {
       setError(toUserMessage(err));
@@ -159,7 +172,7 @@ export default function EmployeeEmploymentScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <AppHeader title="Beschäftigung & Urlaub" onBack={() => router.back()} />
+        <AppHeader title={t("admin:employment.title")} onBack={() => router.back()} />
         <View style={styles.center}>
           <ActivityIndicator color={theme.colors.primary} />
         </View>
@@ -169,7 +182,7 @@ export default function EmployeeEmploymentScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <AppHeader title="Beschäftigung & Urlaub" onBack={() => router.back()} />
+      <AppHeader title={t("admin:employment.title")} onBack={() => router.back()} />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -178,13 +191,12 @@ export default function EmployeeEmploymentScreen() {
           {error ? <ErrorBanner message={error} /> : null}
 
           {/* ── Beschäftigung ── */}
-          <Text style={styles.sectionTitle}>Beschäftigung</Text>
-          <Text style={styles.hint}>
-            Die Beschäftigungsart ist rein beschreibend und beeinflusst den
-            Urlaubsanspruch nicht.
+          <Text style={styles.sectionTitle}>
+            {t("admin:employment.sectionEmployment")}
           </Text>
+          <Text style={styles.hint}>{t("admin:employment.employmentHint")}</Text>
 
-          <Text style={styles.label}>Beschäftigungsart</Text>
+          <Text style={styles.label}>{t("admin:employment.typeLabel")}</Text>
           <View style={styles.chipRow}>
             {EMPLOYMENT_TYPES.map((type) => {
               const active = employmentType === type;
@@ -197,7 +209,7 @@ export default function EmployeeEmploymentScreen() {
                   accessibilityState={{ selected: active }}
                 >
                   <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                    {EMPLOYMENT_TYPE_LABELS[type]}
+                    {t(EMPLOYMENT_TYPE_LABEL_KEYS[type])}
                   </Text>
                 </TouchableOpacity>
               );
@@ -205,30 +217,32 @@ export default function EmployeeEmploymentScreen() {
           </View>
 
           <DateTimeField
-            label="Eintrittsdatum"
+            label={t("admin:employment.startDateLabel")}
             mode="date"
             value={parseToDate(startDate)}
             onChange={(d) => setStartDate(formatDateISO(d))}
-            placeholder="Nicht gesetzt"
+            placeholder={t("admin:employment.notSetPlaceholder")}
           />
           <DateTimeField
-            label="Austrittsdatum (optional)"
+            label={t("admin:employment.endDateLabel")}
             mode="date"
             value={parseToDate(endDate)}
             onChange={(d) => setEndDate(formatDateISO(d))}
-            placeholder="Nicht gesetzt"
+            placeholder={t("admin:employment.notSetPlaceholder")}
           />
 
           {/* ── Urlaub ── */}
-          <Text style={styles.sectionTitle}>Urlaub</Text>
+          <Text style={styles.sectionTitle}>
+            {t("admin:employment.sectionVacation")}
+          </Text>
 
           <View style={styles.switchRow}>
             <View style={styles.flex}>
-              <Text style={styles.label}>Urlaubsverwaltung aktiv</Text>
+              <Text style={styles.label}>
+                {t("admin:employment.vacationEnabledLabel")}
+              </Text>
               <Text style={styles.hint}>
-                Steuert nur, ob TaskOps ein Urlaubskonto führt — nicht, ob ein
-                gesetzlicher Anspruch besteht. Urlaubsanträge funktionieren
-                unabhängig davon.
+                {t("admin:employment.vacationEnabledHint")}
               </Text>
             </View>
             <Switch value={enabled} onValueChange={setEnabled} />
@@ -237,45 +251,51 @@ export default function EmployeeEmploymentScreen() {
           {enabled ? (
             <>
               <Input
-                label="Jahresanspruch (Tage)"
+                label={t("admin:employment.entitlementLabel")}
                 value={entitlementText}
                 onChangeText={setEntitlementText}
                 keyboardType="decimal-pad"
                 placeholder={
                   defaults?.defaultAnnualEntitlementDays !== null &&
                   defaults?.defaultAnnualEntitlementDays !== undefined
-                    ? `Firmen-Standard: ${defaults.defaultAnnualEntitlementDays}`
-                    : "Kein Firmen-Standard hinterlegt"
+                    ? t("admin:employment.companyDefaultPlaceholder", {
+                        value: defaults.defaultAnnualEntitlementDays,
+                      })
+                    : t("admin:employment.noCompanyDefaultPlaceholder")
                 }
               />
               <Input
-                label="Referenz-Arbeitstage/Woche"
+                label={t("admin:employment.referenceLabel")}
                 value={referenceText}
                 onChangeText={setReferenceText}
                 keyboardType="decimal-pad"
                 placeholder={
                   defaults?.defaultReferenceDaysPerWeek !== null &&
                   defaults?.defaultReferenceDaysPerWeek !== undefined
-                    ? `Firmen-Standard: ${defaults.defaultReferenceDaysPerWeek}`
-                    : "Kein Firmen-Standard hinterlegt"
+                    ? t("admin:employment.companyDefaultPlaceholder", {
+                        value: defaults.defaultReferenceDaysPerWeek,
+                      })
+                    : t("admin:employment.noCompanyDefaultPlaceholder")
                 }
               />
-              <Text style={styles.hint}>
-                Leer lassen = Firmen-Standard verwenden.
-              </Text>
+              <Text style={styles.hint}>{t("admin:employment.leaveEmptyHint")}</Text>
 
               {preview?.status === "configured" ? (
                 <View style={styles.previewBox}>
                   <Text style={styles.previewLine}>
-                    Jahresanspruch: {preview.annualEntitlementDays.value} Tage (
-                    {describeSource(preview.annualEntitlementDays.source)})
+                    {t("admin:employment.previewEntitlement", {
+                      value: preview.annualEntitlementDays.value,
+                      source: describeSource(preview.annualEntitlementDays.source),
+                    })}
                   </Text>
                   <Text style={styles.previewLine}>
-                    Referenz-Arbeitstage: {preview.referenceDaysPerWeek.value}/Woche (
-                    {describeSource(preview.referenceDaysPerWeek.source)})
+                    {t("admin:employment.previewReference", {
+                      value: preview.referenceDaysPerWeek.value,
+                      source: describeSource(preview.referenceDaysPerWeek.source),
+                    })}
                   </Text>
                   <Text style={styles.previewNote}>
-                    Konfiguration — kein Resturlaub. Die Verbrauchsrechnung folgt später.
+                    {t("admin:employment.previewNote")}
                   </Text>
                 </View>
               ) : null}
@@ -283,25 +303,24 @@ export default function EmployeeEmploymentScreen() {
               {preview?.status === "incomplete" ? (
                 <View style={[styles.previewBox, styles.previewWarn]}>
                   <Text style={styles.previewLine}>
-                    Konfiguration unvollständig — es fehlt:{" "}
-                    {preview.missing
-                      .map((m) =>
-                        m === "entitlement" ? "Jahresanspruch" : "Referenz-Arbeitstage",
-                      )
-                      .join(", ")}
-                    .
+                    {t("admin:employment.incompletePrefix", {
+                      missing: preview.missing
+                        .map((m) =>
+                          m === "entitlement"
+                            ? t("admin:employment.missingEntitlement")
+                            : t("admin:employment.missingReference"),
+                        )
+                        .join(", "),
+                    })}
                   </Text>
                   <Text style={styles.previewNote}>
-                    Entweder hier eintragen oder einen Firmen-Standard hinterlegen.
+                    {t("admin:employment.incompleteNote")}
                   </Text>
                 </View>
               ) : null}
             </>
           ) : (
-            <Text style={styles.hint}>
-              Urlaubsverwaltung ist deaktiviert. Es wird kein Urlaubskonto
-              angezeigt oder berechnet.
-            </Text>
+            <Text style={styles.hint}>{t("admin:employment.disabledHint")}</Text>
           )}
 
           <TouchableOpacity
@@ -313,7 +332,7 @@ export default function EmployeeEmploymentScreen() {
             {saving ? (
               <ActivityIndicator color={theme.colors.onPrimary} />
             ) : (
-              <Text style={styles.saveText}>Speichern</Text>
+              <Text style={styles.saveText}>{t("admin:employment.saveButton")}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>

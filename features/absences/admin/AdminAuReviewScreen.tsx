@@ -20,12 +20,12 @@ import {
 import type { AppTheme } from "@/constants/theme";
 import type {
   AbsenceEvidence,
+  AuEvidenceStatus,
   AuRestorationCandidate,
   AuRestorationInput,
 } from "@/types/absenceEvidence";
-import { AU_NOT_REVIEWED_LABEL, AU_STATUS_LABELS } from "@/types/absenceEvidence";
-import { formatDays } from "@/utils/vacationBalance";
-import { formatDateOnlyDE, formatForDisplay } from "@/utils/date";
+import { formatDaysLocalized } from "@/utils/vacationBalance";
+import { formatDateOnlyLocalized, formatDateTimeLocalized } from "@/utils/date";
 import { alertDialog } from "@/utils/dialogs";
 import { toUserMessage } from "@/utils/userMessages";
 import { router, useLocalSearchParams } from "expo-router";
@@ -40,10 +40,18 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
+
+const AU_STATUS_LABEL_KEYS: Record<AuEvidenceStatus, string> = {
+  pending: "admin:auReview.statusPending",
+  confirmed: "admin:auReview.statusConfirmed",
+  rejected: "admin:auReview.statusRejected",
+};
 
 export default function AdminAuReviewScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [loading, setLoading] = useState(true);
@@ -111,12 +119,19 @@ export default function AdminAuReviewScreen() {
       if (!raw) continue;
       const days = Number(raw);
       if (!Number.isFinite(days) || days <= 0) {
-        setError(`Ungültiger Wert für ${formatDateOnlyDE(c.vacationStart)}.`);
+        setError(
+          t("admin:auReview.invalidValueError", {
+            date: formatDateOnlyLocalized(c.vacationStart),
+          }),
+        );
         return;
       }
       if (days > c.restorableDays) {
         setError(
-          `Für ${formatDateOnlyDE(c.vacationStart)} sind höchstens ${formatDays(c.restorableDays)} Tage möglich.`,
+          t("admin:auReview.maxDaysError", {
+            date: formatDateOnlyLocalized(c.vacationStart),
+            max: formatDaysLocalized(c.restorableDays),
+          }),
         );
         return;
       }
@@ -124,7 +139,7 @@ export default function AdminAuReviewScreen() {
     }
 
     if (items.length === 0) {
-      setError("Bitte mindestens einen Wert eintragen.");
+      setError(t("admin:auReview.minOneValueError"));
       return;
     }
 
@@ -133,10 +148,10 @@ export default function AdminAuReviewScreen() {
     try {
       const created = await restoreVacationFromAu(evidence.id, items);
       alertDialog(
-        "Gebucht",
+        t("admin:auReview.bookedDialogTitle"),
         created > 0
-          ? "Die Urlaubstage wurden im Urlaubskonto gutgeschrieben."
-          : "Diese Rückgabe war bereits gebucht.",
+          ? t("admin:auReview.bookedMessage")
+          : t("admin:auReview.alreadyBookedMessage"),
       );
       await load();
     } catch (err) {
@@ -147,12 +162,12 @@ export default function AdminAuReviewScreen() {
   };
 
   const statusLabel = evidence
-    ? AU_STATUS_LABELS[evidence.status]
-    : AU_NOT_REVIEWED_LABEL;
+    ? t(AU_STATUS_LABEL_KEYS[evidence.status])
+    : t("admin:auReview.statusNotReviewed");
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <AppHeader title="Arbeitsunfähigkeit" onBack={() => router.back()} />
+      <AppHeader title={t("admin:auReview.headerTitle")} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.content}>
         {error ? <ErrorBanner message={error} /> : null}
         {loading ? <ActivityIndicator color={theme.colors.primary} /> : null}
@@ -160,17 +175,16 @@ export default function AdminAuReviewScreen() {
         {!loading ? (
           <>
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Status</Text>
+              <Text style={styles.cardTitle}>{t("admin:auReview.statusLabel")}</Text>
               <Text style={styles.status}>{statusLabel}</Text>
               {evidence?.confirmedAt ? (
                 <Text style={styles.hint}>
-                  Entschieden am {formatForDisplay(evidence.confirmedAt)}
+                  {t("admin:auReview.decidedOn", {
+                    date: formatDateTimeLocalized(evidence.confirmedAt) ?? "",
+                  })}
                 </Text>
               ) : null}
-              <Text style={styles.hint}>
-                Eine Krankmeldung allein gibt keinen Urlaub zurück. Erst eine
-                bestätigte Arbeitsunfähigkeit berechtigt dazu.
-              </Text>
+              <Text style={styles.hint}>{t("admin:auReview.statusHint")}</Text>
 
               <View style={styles.actions}>
                 <TouchableOpacity
@@ -178,14 +192,18 @@ export default function AdminAuReviewScreen() {
                   onPress={() => handleReview("confirmed")}
                   disabled={busy}
                 >
-                  <Text style={styles.confirmText}>AU bestätigen</Text>
+                  <Text style={styles.confirmText}>
+                    {t("admin:auReview.confirmAuButton")}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.rejectBtn, busy && styles.disabled]}
                   onPress={() => handleReview("rejected")}
                   disabled={busy}
                 >
-                  <Text style={styles.rejectText}>AU ablehnen</Text>
+                  <Text style={styles.rejectText}>
+                    {t("admin:auReview.rejectAuButton")}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -193,33 +211,45 @@ export default function AdminAuReviewScreen() {
             {evidence?.status === "confirmed" ? (
               candidates.length > 0 ? (
                 <>
-                  <Text style={styles.sectionTitle}>Urlaubstage zurückgeben</Text>
+                  <Text style={styles.sectionTitle}>
+                    {t("admin:auReview.restoreSectionTitle")}
+                  </Text>
                   {candidates.map((c) => (
                     <View key={keyOf(c)} style={styles.card}>
                       <Text style={styles.cardTitle}>
-                        Urlaub {formatDateOnlyDE(c.vacationStart)}–
-                        {formatDateOnlyDE(c.vacationEnd)}
+                        {t("admin:auReview.vacationRangeTitle", {
+                          start: formatDateOnlyLocalized(c.vacationStart),
+                          end: formatDateOnlyLocalized(c.vacationEnd),
+                        })}
                         {candidates.some((o) => o.year !== c.year) ? ` · ${c.year}` : ""}
                       </Text>
                       <Text style={styles.hint}>
-                        Abgezogen: {formatDays(c.deductedDays)} Tage
+                        {t("admin:auReview.deductedLabel", {
+                          days: formatDaysLocalized(c.deductedDays),
+                        })}
                         {c.alreadyRestored > 0
-                          ? ` · bereits zurückgegeben: ${formatDays(c.alreadyRestored)}`
+                          ? t("admin:auReview.alreadyRestoredSuffix", {
+                              days: formatDaysLocalized(c.alreadyRestored),
+                            })
                           : ""}
                       </Text>
                       <Text style={styles.hint}>
-                        AU-Überschneidung: {formatDateOnlyDE(c.overlapStart)}–
-                        {formatDateOnlyDE(c.overlapEnd)}
+                        {t("admin:auReview.overlapLabel", {
+                          start: formatDateOnlyLocalized(c.overlapStart),
+                          end: formatDateOnlyLocalized(c.overlapEnd),
+                        })}
                       </Text>
 
                       {c.restorableDays <= 0 ? (
                         <Text style={styles.hint}>
-                          Bereits vollständig zurückgegeben.
+                          {t("admin:auReview.fullyRestoredHint")}
                         </Text>
                       ) : (
                         <>
                           <Text style={styles.label}>
-                            Zurückgeben (max. {formatDays(c.restorableDays)})
+                            {t("admin:auReview.restoreFieldLabel", {
+                              max: formatDaysLocalized(c.restorableDays),
+                            })}
                           </Text>
                           <TextInput
                             style={styles.input}
@@ -228,14 +258,16 @@ export default function AdminAuReviewScreen() {
                             onChangeText={(text) =>
                               setAmounts((prev) => ({ ...prev, [keyOf(c)]: text }))
                             }
-                            placeholder={c.fullCoverage ? "" : "Bitte eintragen"}
+                            placeholder={
+                              c.fullCoverage
+                                ? ""
+                                : t("admin:auReview.restorePlaceholder")
+                            }
                             placeholderTextColor={theme.colors.onSurfaceVariant}
                           />
                           {!c.fullCoverage ? (
                             <Text style={styles.hint}>
-                              Die AU deckt den Urlaub nur teilweise ab — wie viele
-                              der abgezogenen Tage betroffen sind, lässt sich nicht
-                              berechnen. Bitte selbst festlegen.
+                              {t("admin:auReview.partialCoverageHint")}
                             </Text>
                           ) : null}
                         </>
@@ -248,18 +280,18 @@ export default function AdminAuReviewScreen() {
                     onPress={handleRestore}
                     disabled={busy}
                   >
-                    <Text style={styles.confirmText}>Urlaubstage zurückgeben</Text>
+                    <Text style={styles.confirmText}>
+                      {t("admin:auReview.restoreButton")}
+                    </Text>
                   </TouchableOpacity>
                   <Text style={styles.hint}>
-                    Gutschriften werden nie gelöscht. Eine falsche Rückgabe wird
-                    über eine manuelle Korrektur im Urlaubskonto berichtigt.
+                    {t("admin:auReview.restoreFooterHint")}
                   </Text>
                 </>
               ) : (
                 <View style={styles.card}>
                   <Text style={styles.hint}>
-                    Keine abgezogenen Urlaubstage überschneiden sich mit dieser
-                    Krankmeldung — es gibt nichts zurückzugeben.
+                    {t("admin:auReview.noOverlapHint")}
                   </Text>
                 </View>
               )

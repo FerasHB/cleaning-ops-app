@@ -23,14 +23,11 @@
 import { confirmDialog } from "@/utils/dialogs";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { useCallback, useRef } from "react";
-
-export const DISCARD_TITLE = "Änderungen verwerfen?";
-export const DISCARD_MESSAGE = "Nicht gespeicherte Änderungen gehen verloren.";
-export const DISCARD_CONFIRM = "Verwerfen";
-export const DISCARD_CANCEL = "Weiter bearbeiten";
+import { useTranslation } from "react-i18next";
 
 export function useUnsavedChangesGuard(hasUnsavedChanges: boolean) {
   const navigation = useNavigation();
+  const { t } = useTranslation();
   // Synchron umlegbar — im Gegensatz zu State wirkt der Ref sofort. Genau das
   // braucht der Pfad „erfolgreich gespeichert → zurück": dort darf die Warnung
   // nicht mehr kommen, obwohl hasUnsavedChanges im selben Tick noch true ist.
@@ -44,10 +41,10 @@ export function useUnsavedChangesGuard(hasUnsavedChanges: boolean) {
 
     void (async () => {
       const discard = await confirmDialog({
-        title: DISCARD_TITLE,
-        message: DISCARD_MESSAGE,
-        confirmLabel: DISCARD_CONFIRM,
-        cancelLabel: DISCARD_CANCEL,
+        title: t("common:unsavedChanges.title"),
+        message: t("common:unsavedChanges.message"),
+        confirmLabel: t("common:unsavedChanges.confirm"),
+        cancelLabel: t("common:unsavedChanges.cancel"),
         destructive: true,
       });
 

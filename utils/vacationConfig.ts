@@ -18,6 +18,7 @@ import type {
   EmploymentConfig,
   ResolvedValue,
 } from "@/types/employment";
+import { i18next } from "@/i18n";
 
 // Override gewinnt, sonst Firmen-Default, sonst „fehlt". Bewusst KEIN
 // erfundener Ersatzwert: ein stiller Default würde einen echten
@@ -71,5 +72,9 @@ export function resolveEffectiveVacationConfig(
 
 /** Kurzlabel für die Herkunft eines Wertes (Admin-UI). */
 export function describeSource(source: ResolvedValue["source"]): string {
-  return source === "employee" ? "individuell" : "Firmen-Standard";
+  return i18next.t(
+    source === "employee"
+      ? "admin:employment.sourceEmployee"
+      : "admin:employment.sourceCompanyDefault",
+  );
 }

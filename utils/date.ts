@@ -1,3 +1,5 @@
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
+
 export function formatToISO(date: Date | string | null | undefined): string | null {
   if (!date) return null;
   const d = new Date(date);
@@ -5,19 +7,6 @@ export function formatToISO(date: Date | string | null | undefined): string | nu
   return d.toISOString();
 }
 
-export function formatForDisplay(date: Date | string | null | undefined): string {
-  if (!date) return "";
-  const d = new Date(date);
-  if (isNaN(d.getTime())) return "";
-
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-
-  return `${day}.${month}.${year} ${hours}:${minutes}`;
-}
 export function parseToDate(date: Date | string | null | undefined): Date | null {
   if (!date) return null;
   const d = new Date(date);
@@ -53,6 +42,40 @@ export function timeStringToDate(time: string | null | undefined): Date | null {
   const d = new Date();
   d.setHours(h, m, 0, 0);
   return d;
+}
+
+/**
+ * Baut aus den MASSGEBLICHEN Terminfeldern `date` ("YYYY-MM-DD") und
+ * `start_time` ("HH:mm[:ss]") ein LOKALES Date für die Datum-/Uhrzeit-Picker.
+ *
+ * Bewusst NICHT aus `scheduled_start` ableiten: diese Spalte wird
+ * serverseitig per einfacher Konkatenation (`date || ' ' || start_time`)
+ * in die Zeitzone der Datenbank (UTC) geschrieben. `new Date(scheduledStart)`
+ * rendert sie danach in der LOKALEN Zeitzone und verschiebt die Uhrzeit um den
+ * UTC-Versatz — aus 19:30 würde in Deutschland 21:30. Wird ein Formular so
+ * vorbelegt, schreibt schon das Speichern eines unbeteiligten Feldes eine
+ * verschobene Uhrzeit zurück; bei einem generierten Termin gilt er damit als
+ * einzeln angepasst ("Abweichender Termin", siehe Migration 20260916000000).
+ * `date` + `start_time` sind laut CLAUDE.md ohnehin die maßgebliche Quelle.
+ */
+export function localDateTimeFrom(
+  dateKey: string | null | undefined,
+  time: string | null | undefined,
+): Date | null {
+  if (!dateKey) return null;
+  const parts = dateKey.slice(0, 10).split("-");
+  if (parts.length !== 3) return null;
+  const [year, month, day] = parts.map((n) => parseInt(n, 10));
+  if (!year || !month || !day) return null;
+
+  const normalized = normalizeTime(time);
+  const [hours, minutes] = normalized
+    ? normalized.split(":").map((n) => parseInt(n, 10))
+    : [0, 0];
+  if (isNaN(hours) || isNaN(minutes)) return null;
+
+  const d = new Date(year, month - 1, day, hours, minutes, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 /** Formatiert ein Datum als lokales "YYYY-MM-DD" (für DB-Spalte date). */
@@ -117,35 +140,61 @@ export function formatDurationLong(totalMinutes: number): string {
 }
 
 // ─────────────────────────────────────────────
-// Anzeige-Formatierung (Job-Detail)
+// Sprachabhängige Anzeige-Formatierung (Mitarbeiter-UI, Phase C.2)
 // ─────────────────────────────────────────────
+//
+// formatDateOnlyDE/formatDateTimeDE wurden in Phase D entfernt (letzte
+// Aufrufer, AdminAuReviewScreen/TimeCorrectionSheet, nutzen jetzt
+// formatDateOnlyLocalized/formatDateTimeLocalized). Reagieren live auf
+// Sprachwechsel: i18next.language wird bei jedem Aufruf frisch gelesen (analog
+// utils/calendarMonth.ts, utils/jobAssignees.ts).
+
+function activeDateLocaleTag(): string {
+  return INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+}
 
 /**
- * Formatiert einen ISO-Zeitstempel als "dd.mm.yyyy um HH:mm" (de-DE).
- * Immer das volle Datum - fuer die "heute"-relative Kurzform siehe die
- * separate Logik in JobComments (dort bewusst eigenstaendig, andere Regel).
+ * Formatiert einen ISO-Zeitstempel als Datum + Uhrzeit in der aktiven
+ * App-Sprache, z. B. "14.09.2026 um 18:54" (de) / "09/14/2026 at 18:54" (en).
+ * Verbindungswort über den bestehenden Schlüssel jobs:comments.dateAt (schon
+ * in allen 4 Sprachen vorhanden, siehe JobComments.tsx) — kein Duplikat.
  */
-export function formatDateTimeDE(iso?: string | null): string | null {
+export function formatDateTimeLocalized(iso?: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
 
-  const datePart = date.toLocaleDateString("de-DE", {
+  const localeTag = activeDateLocaleTag();
+  const datePart = date.toLocaleDateString(localeTag, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   });
-  const timePart = date.toLocaleTimeString("de-DE", {
+  const timePart = date.toLocaleTimeString(localeTag, {
     hour: "2-digit",
     minute: "2-digit",
   });
-  return `${datePart} um ${timePart}`;
+  return i18next.t("jobs:comments.dateAt", { date: datePart, time: timePart });
 }
 
-/** Formatiert ein "YYYY-MM-DD"-Datum (ohne Uhrzeit) als "dd.mm.yyyy". */
-export function formatDateOnlyDE(dateKey?: string | null): string | null {
+/**
+ * Formatiert ein "YYYY-MM-DD"-Datum (ohne Uhrzeit) in der aktiven
+ * App-Sprache, z. B. "14.09.2026" (de/tr) / "09/14/2026" (en) / Arabische
+ * Ziffern (ar). Baut das Datum lokal (kein `new Date("YYYY-MM-DD")` — das
+ * parst als UTC-Mitternacht und kann je nach Zeitzone auf den Vortag rutschen).
+ */
+export function formatDateOnlyLocalized(dateKey?: string | null): string | null {
   if (!dateKey) return null;
-  const [y, m, d] = dateKey.slice(0, 10).split("-");
+  const [y, m, d] = dateKey
+    .slice(0, 10)
+    .split("-")
+    .map((n) => parseInt(n, 10));
   if (!y || !m || !d) return null;
-  return `${d}.${m}.${y}`;
+  const date = new Date(y, m - 1, d);
+  if (isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(activeDateLocaleTag(), {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }

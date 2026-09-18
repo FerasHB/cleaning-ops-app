@@ -47,10 +47,11 @@ import { MonthGrid } from "@/features/jobs/components/MonthGrid";
 import { MonthYearPickerSheet } from "@/features/jobs/components/MonthYearPickerSheet";
 import {
   StatusFilterRow,
-  statusSelectionLabel,
+  useStatusSelectionLabel,
   type StatusSelection,
 } from "@/features/jobs/components/StatusFilterRow";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { getCompanyAbsencesInRange } from "@/services/absences/adminAbsences.service";
 import { getScheduleOccurrences } from "@/services/jobs/jobs.service";
 import type { Absence } from "@/types/absence";
@@ -79,6 +80,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   RefreshControl,
   ScrollView,
@@ -100,7 +102,9 @@ const REALTIME_ECHO_DEBOUNCE_MS = 300;
 
 export default function AdminJobsCalendarScreen() {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { employees, jobs: contextJobs } = useJobs();
 
@@ -174,7 +178,7 @@ export default function AdminJobsCalendarScreen() {
         setPossiblyIncomplete(items.length >= OCCURRENCE_LIMIT);
         setRawAbsences(absenceItems);
       } catch (err: unknown) {
-        setError(toUserMessage(err, "Kalender konnte nicht geladen werden."));
+        setError(toUserMessage(err, t("admin:calendar.loadFailed")));
       } finally {
         loadInProgressRef.current = false;
         setLoading(false);
@@ -315,7 +319,7 @@ export default function AdminJobsCalendarScreen() {
     () => employeeSelectionLabel(employeeSel, employees),
     [employeeSel, employees],
   );
-  const statusLabel = useMemo(() => statusSelectionLabel(statusSel), [statusSel]);
+  const statusLabel = useStatusSelectionLabel(statusSel);
   const absenceLabel = useMemo(() => absenceSelectionLabel(absenceSel), [absenceSel]);
 
   // ── Navigation (identisch zum Mitarbeiter-Kalender: kein Swipe) ──
@@ -371,8 +375,8 @@ export default function AdminJobsCalendarScreen() {
   const noopAction = useCallback(() => {}, []);
 
   const dayAgendaEmptyMessage = hasJobFilter
-    ? "Keine Aufträge für diesen Tag mit der aktuellen Filterauswahl."
-    : "Keine Aufträge an diesem Tag.";
+    ? t("admin:calendar.dayAgendaEmptyFiltered")
+    : t("admin:calendar.dayAgendaEmptyDefault");
 
   const isOnTodayMonth = monthKey === todayMonthKey;
 
@@ -409,7 +413,7 @@ export default function AdminJobsCalendarScreen() {
             onPress={() => setPickerOpen(true)}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Monat und Jahr auswählen"
+            accessibilityLabel={t("jobs:calendar.selectMonthYear")}
             accessibilityValue={{ text: formatMonthLabel(monthKey) }}
           >
             <Text style={styles.monthLabel} numberOfLines={1} maxFontSizeMultiplier={1.4}>
@@ -423,10 +427,10 @@ export default function AdminJobsCalendarScreen() {
             onPress={goToday}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Zu heute springen"
+            accessibilityLabel={t("jobs:calendar.jumpToToday")}
           >
             <Text style={styles.todayBtnText} maxFontSizeMultiplier={1.3}>
-              Heute
+              {t("jobs:dateGroups.today")}
             </Text>
           </TouchableOpacity>
 
@@ -436,9 +440,9 @@ export default function AdminJobsCalendarScreen() {
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
             accessibilityRole="button"
-            accessibilityLabel="Vorheriger Monat"
+            accessibilityLabel={t("jobs:calendar.prevMonth")}
           >
-            <Ionicons name="chevron-back" size={20} color={theme.colors.primary} />
+            <Ionicons name={isRTL ? "chevron-forward" : "chevron-back"} size={20} color={theme.colors.primary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -447,9 +451,9 @@ export default function AdminJobsCalendarScreen() {
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel="Nächster Monat"
+            accessibilityLabel={t("jobs:calendar.nextMonth")}
           >
-            <Ionicons name="chevron-forward" size={20} color={theme.colors.primary} />
+            <Ionicons name={isRTL ? "chevron-back" : "chevron-forward"} size={20} color={theme.colors.primary} />
           </TouchableOpacity>
         </View>
 
@@ -480,13 +484,13 @@ export default function AdminJobsCalendarScreen() {
               <View style={styles.activeFilterChip}>
                 <Ionicons name="people" size={13} color={theme.colors.onPrimaryContainer} />
                 <Text style={styles.activeFilterText} numberOfLines={1}>
-                  Mitarbeiter: {employeeLabel}
+                  {t("admin:schedule.employeeFilterChip", { label: employeeLabel })}
                 </Text>
                 <TouchableOpacity
                   onPress={() => setEmployeeSel("all")}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Mitarbeiter-Filter ${employeeLabel} entfernen`}
+                  accessibilityLabel={t("admin:schedule.removeEmployeeFilterA11y", { label: employeeLabel })}
                 >
                   <Ionicons name="close" size={14} color={theme.colors.onPrimaryContainer} />
                 </TouchableOpacity>
@@ -501,13 +505,13 @@ export default function AdminJobsCalendarScreen() {
                   color={theme.colors.onPrimaryContainer}
                 />
                 <Text style={styles.activeFilterText} numberOfLines={1}>
-                  Status: {statusLabel}
+                  {t("admin:calendar.statusFilterChip", { label: statusLabel })}
                 </Text>
                 <TouchableOpacity
                   onPress={() => setStatusSel("all")}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Status-Filter ${statusLabel} entfernen`}
+                  accessibilityLabel={t("admin:calendar.removeStatusFilterA11y", { label: statusLabel })}
                 >
                   <Ionicons name="close" size={14} color={theme.colors.onPrimaryContainer} />
                 </TouchableOpacity>
@@ -522,13 +526,13 @@ export default function AdminJobsCalendarScreen() {
                   color={theme.colors.onPrimaryContainer}
                 />
                 <Text style={styles.activeFilterText} numberOfLines={1}>
-                  Abwesenheit: {absenceLabel}
+                  {t("admin:calendar.absenceFilterChip", { label: absenceLabel })}
                 </Text>
                 <TouchableOpacity
                   onPress={() => setAbsenceSel("all")}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Abwesenheits-Filter ${absenceLabel} entfernen`}
+                  accessibilityLabel={t("admin:calendar.removeAbsenceFilterA11y", { label: absenceLabel })}
                 >
                   <Ionicons name="close" size={14} color={theme.colors.onPrimaryContainer} />
                 </TouchableOpacity>
@@ -550,15 +554,14 @@ export default function AdminJobsCalendarScreen() {
         {!monthHasJobs ? (
           <Text style={styles.emptyMonthHint} numberOfLines={2}>
             {hasJobFilter
-              ? "Keine Aufträge für die aktuelle Filterauswahl in diesem Monat."
-              : "In diesem Monat sind keine Aufträge geplant."}
+              ? t("admin:calendar.emptyMonthFiltered")
+              : t("admin:calendar.emptyMonthDefault")}
           </Text>
         ) : null}
 
         {possiblyIncomplete ? (
           <Text style={styles.capHint} numberOfLines={2}>
-            Sehr viele Aufträge in diesem Monat — Anzeige möglicherweise nicht
-            vollständig.
+            {t("admin:calendar.capHint")}
           </Text>
         ) : null}
       </ScrollView>

@@ -23,7 +23,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import JobCard from "../../components/JobCard";
 import { useJobs } from "../../context/JobContext";
-import { useTranslation } from "../../i18n/useTranslation";
 
 // ── Fade-in Hook ──
 function useFadeIn(delay = 0) {
@@ -56,7 +55,6 @@ export default function HomeScreen() {
 
   const { role, user, profile } = useAuth();
   const { jobs, startJob, completeJob, loading } = useJobs();
-  const { t } = useTranslation();
 
   const [selectedFilter, setSelectedFilter] = useState<
     "all" | "open" | "in_progress" | "completed"

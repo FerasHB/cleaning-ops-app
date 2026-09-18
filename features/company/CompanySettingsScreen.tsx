@@ -33,10 +33,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
 
 export default function CompanySettingsScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { company, loading, error: loadError, setCompany } = useOwnCompany();
 
@@ -67,15 +69,15 @@ export default function CompanySettingsScreen() {
 
     let ok = true;
     if (!name.trim()) {
-      setNameError("Firmenname ist erforderlich.");
+      setNameError(t("admin:companySettings.nameRequiredError"));
       ok = false;
     }
     if (contactEmail.trim() && !isValidEmail(contactEmail)) {
-      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      setEmailError(t("admin:companySettings.emailInvalidError"));
       ok = false;
     }
     if (contactPhone.trim() && !isValidPhone(contactPhone)) {
-      setPhoneError("Bitte gib eine gültige Telefonnummer ein (z. B. 0170 1234567).");
+      setPhoneError(t("admin:companySettings.phoneInvalidError"));
       ok = false;
     }
     if (!ok) return;
@@ -92,7 +94,9 @@ export default function CompanySettingsScreen() {
       setContactEmail(updated.contactEmail ?? "");
       setSaved(true);
     } catch (err) {
-      setFormError(toUserMessage(err, "Firmendaten konnten nicht gespeichert werden."));
+      setFormError(
+        toUserMessage(err, t("admin:companySettings.saveFailedFallback")),
+      );
     } finally {
       setSaving(false);
     }
@@ -106,7 +110,7 @@ export default function CompanySettingsScreen() {
         barStyle={theme.isDark ? "light-content" : "dark-content"}
         backgroundColor={theme.colors.background}
       />
-      <AppHeader title="Firmendaten" showBack />
+      <AppHeader title={t("admin:companySettings.headerTitle")} showBack />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -119,11 +123,7 @@ export default function CompanySettingsScreen() {
         >
           {loadError ? <ErrorBanner message={loadError} /> : null}
 
-          <Text style={styles.intro}>
-            Diese Angaben erscheinen künftig auf Belegen und in der
-            Kundenkommunikation. Die E-Mail-Adresse ist von deiner
-            Anmelde-Adresse unabhängig.
-          </Text>
+          <Text style={styles.intro}>{t("admin:companySettings.intro")}</Text>
 
           <Card style={styles.card}>
             {formError ? (
@@ -131,11 +131,11 @@ export default function CompanySettingsScreen() {
             ) : null}
 
             <Input
-              label="Firmenname"
-              placeholder="Muster Reinigung GmbH"
+              label={t("admin:companySettings.nameLabel")}
+              placeholder={t("admin:companySettings.namePlaceholder")}
               value={name}
-              onChangeText={(t) => {
-                setName(t);
+              onChangeText={(val) => {
+                setName(val);
                 setNameError("");
                 setSaved(false);
               }}
@@ -145,11 +145,11 @@ export default function CompanySettingsScreen() {
             />
 
             <Input
-              label="Firmen-E-Mail"
-              placeholder="kontakt@firma.de"
+              label={t("admin:companySettings.emailLabel")}
+              placeholder={t("admin:companySettings.emailPlaceholder")}
               value={contactEmail}
-              onChangeText={(t) => {
-                setContactEmail(t);
+              onChangeText={(val) => {
+                setContactEmail(val);
                 setEmailError("");
                 setSaved(false);
               }}
@@ -161,11 +161,11 @@ export default function CompanySettingsScreen() {
             />
 
             <Input
-              label="Firmen-Telefon"
-              placeholder="0170 1234567"
+              label={t("admin:companySettings.phoneLabel")}
+              placeholder={t("admin:companySettings.phonePlaceholder")}
               value={contactPhone}
-              onChangeText={(t) => {
-                setContactPhone(t);
+              onChangeText={(val) => {
+                setContactPhone(val);
                 setPhoneError("");
                 setSaved(false);
               }}
@@ -182,18 +182,20 @@ export default function CompanySettingsScreen() {
                   size={16}
                   color={theme.colors.statusCompleted}
                 />
-                <Text style={styles.savedText}>Gespeichert.</Text>
+                <Text style={styles.savedText}>
+                  {t("admin:companySettings.savedText")}
+                </Text>
               </View>
             ) : null}
 
             <Button
-              label="Speichern"
+              label={t("common:actions.save")}
               loading={saving}
               onPress={handleSave}
               style={{ marginTop: theme.spacing.sm }}
             />
             <Button
-              label="Abbrechen"
+              label={t("common:actions.cancel")}
               variant="ghost"
               onPress={() => router.back()}
             />

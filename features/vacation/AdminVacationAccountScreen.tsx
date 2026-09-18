@@ -23,17 +23,16 @@ import {
   initializeVacationYear,
 } from "@/services/vacation/vacationLedger.service";
 import type { AppTheme } from "@/constants/theme";
-import type { VacationBalance } from "@/types/vacationLedger";
-import { LEDGER_ENTRY_LABELS } from "@/types/vacationLedger";
+import type { VacationBalance, VacationLedgerEntryType } from "@/types/vacationLedger";
 import {
   buildVacationBalance,
-  formatDays,
-  formatLedgerAmount,
+  formatDaysLocalized,
+  formatLedgerAmountLocalized,
 } from "@/utils/vacationBalance";
 import { resolveEffectiveVacationConfig } from "@/utils/vacationConfig";
 import { alertDialog } from "@/utils/dialogs";
 import { toUserMessage } from "@/utils/userMessages";
-import { formatForDisplay } from "@/utils/date";
+import { formatDateTimeLocalized } from "@/utils/date";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -47,6 +46,16 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
+
+const LEDGER_ENTRY_LABEL_KEYS: Record<VacationLedgerEntryType, string> = {
+  annual_entitlement: "admin:vacationAccount.entryAnnualEntitlement",
+  approved_vacation: "admin:vacationAccount.entryApprovedVacation",
+  vacation_cancellation: "admin:vacationAccount.entryVacationCancellation",
+  manual_adjustment: "admin:vacationAccount.entryManualAdjustment",
+  carry_over: "admin:vacationAccount.entryCarryOver",
+  au_restoration: "admin:vacationAccount.entryAuRestoration",
+};
 
 type State =
   | { kind: "loading" }
@@ -57,6 +66,7 @@ type State =
 export default function AdminVacationAccountScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const year = new Date().getFullYear();
 
@@ -92,7 +102,7 @@ export default function AdminVacationAccountScreen() {
           canInitialize: effective.status === "configured",
           reason:
             effective.status === "incomplete"
-              ? "Die Urlaubs-Konfiguration ist unvollständig (Jahresanspruch fehlt)."
+              ? t("admin:vacationAccount.notInitReasonIncomplete")
               : undefined,
         });
         return;
@@ -128,7 +138,7 @@ export default function AdminVacationAccountScreen() {
     if (!id) return;
     const parsed = Number(adjustAmount.trim().replace(",", "."));
     if (!Number.isFinite(parsed) || parsed === 0) {
-      setError("Bitte einen Korrekturwert ungleich 0 angeben.");
+      setError(t("admin:vacationAccount.adjustValueError"));
       return;
     }
     setBusy(true);
@@ -139,7 +149,10 @@ export default function AdminVacationAccountScreen() {
       setAdjustAmount("");
       setAdjustNote("");
       await load();
-      alertDialog("Gebucht", "Die Korrektur wurde im Verlauf festgehalten.");
+      alertDialog(
+        t("admin:vacationAccount.adjustBookedTitle"),
+        t("admin:vacationAccount.adjustBookedMessage"),
+      );
     } catch (err) {
       setError(toUserMessage(err));
     } finally {
@@ -149,7 +162,10 @@ export default function AdminVacationAccountScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <AppHeader title={`Urlaubskonto ${year}`} onBack={() => router.back()} />
+      <AppHeader
+        title={t("admin:vacationAccount.headerTitle", { year })}
+        onBack={() => router.back()}
+      />
       <ScrollView contentContainerStyle={styles.content}>
         {error ? <ErrorBanner message={error} /> : null}
 
@@ -159,20 +175,23 @@ export default function AdminVacationAccountScreen() {
 
         {state.kind === "disabled" ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Urlaubskonto nicht aktiv</Text>
+            <Text style={styles.cardTitle}>
+              {t("admin:vacationAccount.disabledTitle")}
+            </Text>
             <Text style={styles.hint}>
-              Für diesen Mitarbeiter wird kein Urlaubskonto geführt. Urlaubsanträge
-              funktionieren unabhängig davon weiterhin.
+              {t("admin:vacationAccount.disabledHint")}
             </Text>
           </View>
         ) : null}
 
         {state.kind === "not_initialized" ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Noch nicht eingerichtet</Text>
+            <Text style={styles.cardTitle}>
+              {t("admin:vacationAccount.notInitTitle")}
+            </Text>
             <Text style={styles.hint}>
               {state.reason ??
-                `Für ${year} wurde noch kein Jahresanspruch gebucht. Erst danach entsteht ein Saldo.`}
+                t("admin:vacationAccount.notInitReasonDefault", { year })}
             </Text>
             {state.canInitialize ? (
               <TouchableOpacity
@@ -181,7 +200,9 @@ export default function AdminVacationAccountScreen() {
                 disabled={busy}
               >
                 <Text style={styles.primaryBtnText}>
-                  {busy ? "..." : `Jahresanspruch für ${year} anlegen`}
+                  {busy
+                    ? "..."
+                    : t("admin:vacationAccount.initializeButton", { year })}
                 </Text>
               </TouchableOpacity>
             ) : null}
@@ -191,17 +212,35 @@ export default function AdminVacationAccountScreen() {
         {state.kind === "ready" ? (
           <>
             <View style={styles.card}>
-              <Row label="Jahresanspruch" value={formatDays(state.balance.annualEntitlement)} />
+              <Row
+                label={t("admin:vacationAccount.rowEntitlement")}
+                value={formatDaysLocalized(state.balance.annualEntitlement)}
+              />
               {state.balance.carryOver !== 0 ? (
-                <Row label="Übertrag" value={formatDays(state.balance.carryOver)} />
+                <Row
+                  label={t("admin:vacationAccount.rowCarryOver")}
+                  value={formatDaysLocalized(state.balance.carryOver)}
+                />
               ) : null}
-              <Row label="Verbraucht" value={formatDays(state.balance.usedDays)} />
-              <Row label="Korrekturen" value={formatLedgerAmount(state.balance.adjustments)} />
+              <Row
+                label={t("admin:vacationAccount.rowUsed")}
+                value={formatDaysLocalized(state.balance.usedDays)}
+              />
+              <Row
+                label={t("admin:vacationAccount.rowAdjustments")}
+                value={formatLedgerAmountLocalized(state.balance.adjustments)}
+              />
               <View style={styles.divider} />
-              <Row label="Resturlaub" value={formatDays(state.balance.remaining)} strong />
+              <Row
+                label={t("admin:vacationAccount.rowRemaining")}
+                value={formatDaysLocalized(state.balance.remaining)}
+                strong
+              />
             </View>
 
-            <Text style={styles.sectionTitle}>Verlauf</Text>
+            <Text style={styles.sectionTitle}>
+              {t("admin:vacationAccount.historyTitle")}
+            </Text>
             <View style={styles.card}>
               {state.balance.entries.map((entry) => (
                 <View key={entry.id} style={styles.entryRow}>
@@ -211,14 +250,14 @@ export default function AdminVacationAccountScreen() {
                       entry.amountDays < 0 ? styles.negative : styles.positive,
                     ]}
                   >
-                    {formatLedgerAmount(entry.amountDays)}
+                    {formatLedgerAmountLocalized(entry.amountDays)}
                   </Text>
                   <View style={styles.entryBody}>
                     <Text style={styles.entryLabel}>
-                      {LEDGER_ENTRY_LABELS[entry.entryType]}
+                      {t(LEDGER_ENTRY_LABEL_KEYS[entry.entryType])}
                     </Text>
                     {entry.note ? <Text style={styles.entryNote}>{entry.note}</Text> : null}
-                    <Text style={styles.entryDate}>{formatForDisplay(entry.createdAt)}</Text>
+                    <Text style={styles.entryDate}>{formatDateTimeLocalized(entry.createdAt)}</Text>
                   </View>
                 </View>
               ))}
@@ -229,11 +268,12 @@ export default function AdminVacationAccountScreen() {
               onPress={() => setAdjustOpen(true)}
               disabled={busy}
             >
-              <Text style={styles.secondaryBtnText}>Manuelle Korrektur</Text>
+              <Text style={styles.secondaryBtnText}>
+                {t("admin:vacationAccount.adjustButton")}
+              </Text>
             </TouchableOpacity>
             <Text style={styles.hint}>
-              Buchungen werden nie gelöscht oder geändert. Eine falsche Korrektur
-              wird durch eine weitere Gegenbuchung berichtigt.
+              {t("admin:vacationAccount.ledgerFooterHint")}
             </Text>
           </>
         ) : null}
@@ -242,36 +282,39 @@ export default function AdminVacationAccountScreen() {
       <Modal visible={adjustOpen} transparent animationType="fade">
         <View style={styles.backdrop}>
           <View style={styles.sheet}>
-            <Text style={styles.cardTitle}>Manuelle Korrektur</Text>
+            <Text style={styles.cardTitle}>
+              {t("admin:vacationAccount.adjustSheetTitle")}
+            </Text>
             <Text style={styles.hint}>
-              Positiver Wert schreibt gut, negativer zieht ab. Eine Begründung ist
-              Pflicht — sie erscheint dauerhaft im Verlauf.
+              {t("admin:vacationAccount.adjustSheetHint")}
             </Text>
             <TextInput
               style={styles.input}
               keyboardType="numbers-and-punctuation"
-              placeholder="z. B. 2 oder -0,5"
+              placeholder={t("admin:vacationAccount.amountPlaceholder")}
               placeholderTextColor={theme.colors.onSurfaceVariant}
               value={adjustAmount}
               onChangeText={setAdjustAmount}
             />
             <TextInput
               style={styles.input}
-              placeholder="Begründung"
+              placeholder={t("admin:vacationAccount.reasonPlaceholder")}
               placeholderTextColor={theme.colors.onSurfaceVariant}
               value={adjustNote}
               onChangeText={setAdjustNote}
             />
             <View style={styles.actions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setAdjustOpen(false)}>
-                <Text style={styles.secondaryBtnText}>Abbrechen</Text>
+                <Text style={styles.secondaryBtnText}>{t("common:actions.cancel")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.primaryBtn, styles.flex, busy && styles.btnDisabled]}
                 onPress={handleAdjust}
                 disabled={busy}
               >
-                <Text style={styles.primaryBtnText}>Buchen</Text>
+                <Text style={styles.primaryBtnText}>
+                  {t("admin:vacationAccount.bookButton")}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

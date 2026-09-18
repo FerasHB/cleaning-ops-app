@@ -56,13 +56,14 @@ import {
 } from "@/services/jobs/jobs.service";
 import type { Job } from "@/types/job";
 import { formatDateISO } from "@/utils/date";
-import { formatRecurringDays } from "@/utils/recurrence";
+import { toUserMessage } from "@/utils/userMessages";
 import {
   deriveRuleHealth,
   type RuleHealth,
 } from "@/utils/recurringRule";
 import {
   DEFAULT_RULE_FILTERS,
+  formatRecurringDaysLocalized,
   isRuleFiltersActive,
   matchesRuleSearchAndFilters,
   ruleFilterSummaryParts,
@@ -72,6 +73,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import {
   ActivityIndicator,
   Alert,
@@ -85,11 +88,17 @@ import {
   View,
 } from "react-native";
 
-function formatDateGerman(key: string | null): string {
+function formatDateLocalized(key: string | null, localeTag: string): string {
   if (!key) return "—";
-  const [y, m, d] = key.split("-");
+  const [y, m, d] = key.split("-").map((n) => parseInt(n, 10));
   if (!y || !m || !d) return "—";
-  return `${d}.${m}.${y}`;
+  const date = new Date(y, m - 1, d);
+  if (isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString(localeTag, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 /**
@@ -100,16 +109,22 @@ function formatDateGerman(key: string | null): string {
 function formatRangeLabel(
   start: string | null | undefined,
   end: string | null | undefined,
+  localeTag: string,
+  t: (key: string, opts?: Record<string, string>) => string,
 ): string | null {
   if (!start && !end) return null;
-  if (start && end) return `${formatDateGerman(start)} – ${formatDateGerman(end)}`;
-  if (start) return `ab ${formatDateGerman(start)}`;
-  return `bis ${formatDateGerman(end!)}`;
+  if (start && end) {
+    return `${formatDateLocalized(start, localeTag)} – ${formatDateLocalized(end, localeTag)}`;
+  }
+  if (start) return t("admin:recurringRules.rangeFrom", { date: formatDateLocalized(start, localeTag) });
+  return t("admin:recurringRules.rangeUntil", { date: formatDateLocalized(end!, localeTag) });
 }
 
 export default function AdminRecurringRulesScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const localeTag = INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE";
   const { employees, deleteJob } = useJobs();
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
@@ -163,8 +178,8 @@ export default function AdminRecurringRulesScreen() {
         todayKey,
       );
       setSummaries(sums);
-    } catch (err: any) {
-      setError(err?.message ?? "Daueraufträge konnten nicht geladen werden.");
+    } catch (err: unknown) {
+      setError(toUserMessage(err, t("admin:recurringRules.loadFailedFallback")));
     } finally {
       loadInProgressRef.current = false;
       setLoading(false);
@@ -200,8 +215,8 @@ export default function AdminRecurringRulesScreen() {
       try {
         await setRecurringRuleActive(rule.id, !(rule.isActive ?? true));
         await load(true);
-      } catch (err: any) {
-        setError(err?.message ?? "Aktion fehlgeschlagen.");
+      } catch (err: unknown) {
+        setError(toUserMessage(err, t("admin:recurringRules.actionFailedFallback")));
       } finally {
         setBusyId(null);
       }
@@ -212,24 +227,23 @@ export default function AdminRecurringRulesScreen() {
   const handleDelete = useCallback(
     (rule: Job) => {
       Alert.alert(
-        "Dauerauftrag löschen",
-        "Regeln mit bereits gestarteten oder abgeschlossenen Terminen können aus Sicherheitsgründen nicht gelöscht werden. Fortfahren?",
+        t("admin:recurringRules.deleteConfirmTitle"),
+        t("admin:recurringRules.deleteConfirmMessage"),
         [
-          { text: "Abbrechen", style: "cancel" },
+          { text: t("common:actions.cancel"), style: "cancel" },
           {
-            text: "Löschen",
+            text: t("common:actions.delete"),
             style: "destructive",
             onPress: async () => {
               setBusyId(rule.id);
               try {
                 await deleteJob(rule.id);
                 await load(true);
-              } catch (err: any) {
+              } catch (err: unknown) {
                 // Der DB-Guard (PR #42) lehnt unsichere Löschungen ab —
                 // Meldung sichtbar machen statt still zu scheitern.
                 setError(
-                  err?.message ??
-                    "Löschen nicht möglich (geschützte Historie).",
+                  toUserMessage(err, t("admin:recurringRules.deleteFailedFallback")),
                 );
               } finally {
                 setBusyId(null);
@@ -269,20 +283,20 @@ export default function AdminRecurringRulesScreen() {
   const menuItems: ActionMenuItem[] = useMemo(() => {
     const active = menuRule?.isActive ?? true;
     return [
-      { key: "edit", label: "Bearbeiten", icon: "create-outline" },
+      { key: "edit", label: t("admin:recurringRules.menuEdit"), icon: "create-outline" },
       {
         key: "toggle",
-        label: active ? "Deaktivieren" : "Aktivieren",
+        label: active ? t("admin:recurringRules.menuDeactivate") : t("admin:recurringRules.menuActivate"),
         icon: active ? "pause-outline" : "play-outline",
       },
       {
         key: "delete",
-        label: "Löschen",
+        label: t("admin:recurringRules.menuDelete"),
         icon: "trash-outline",
         destructive: true,
       },
     ];
-  }, [menuRule]);
+  }, [menuRule, t]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -305,7 +319,7 @@ export default function AdminRecurringRulesScreen() {
     if (!filtersActive) return "";
     const employeeLabel = employeeSelectionLabel(filters.employee, employees);
     return ruleFilterSummaryParts(filters, employeeLabel).join(" • ");
-  }, [filters, filtersActive, employees]);
+  }, [filters, filtersActive, employees, i18n.language]);
 
   const clearFilters = useCallback(() => {
     setFilters(DEFAULT_RULE_FILTERS);
@@ -324,7 +338,7 @@ export default function AdminRecurringRulesScreen() {
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Objekt, Kunde, Service, Adresse …"
+            placeholder={t("admin:recurringRules.searchPlaceholder")}
             placeholderTextColor={theme.colors.outline}
             style={styles.searchInput}
             autoCapitalize="none"
@@ -335,7 +349,7 @@ export default function AdminRecurringRulesScreen() {
             <TouchableOpacity
               onPress={() => setSearch("")}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel="Suche löschen"
+              accessibilityLabel={t("admin:schedule.clearSearchA11y")}
             >
               <Ionicons
                 name="close-circle"
@@ -351,11 +365,11 @@ export default function AdminRecurringRulesScreen() {
           onPress={() => setFilterSheetOpen(true)}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel="Daueraufträge filtern"
+          accessibilityLabel={t("admin:recurringRules.filterButtonA11y")}
           accessibilityValue={
             filtersActive ? { text: filterSummary } : undefined
           }
-          accessibilityHint="Öffnet Status-, Mitarbeiter- und Wochentag-Filter"
+          accessibilityHint={t("admin:recurringRules.filterButtonHint")}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
@@ -387,7 +401,7 @@ export default function AdminRecurringRulesScreen() {
               onPress={clearFilters}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityRole="button"
-              accessibilityLabel="Alle Filter entfernen"
+              accessibilityLabel={t("admin:recurringRules.clearAllFiltersA11y")}
             >
               <Ionicons
                 name="close"
@@ -420,19 +434,19 @@ export default function AdminRecurringRulesScreen() {
         {loading ? (
           <View style={styles.centerBox}>
             <ActivityIndicator color={theme.colors.primary} />
-            <Text style={styles.centerText}>Daueraufträge werden geladen …</Text>
+            <Text style={styles.centerText}>{t("admin:recurringRules.loading")}</Text>
           </View>
         ) : visibleRules.length === 0 ? (
           hasActiveQuery ? (
             <EmptyState
-              title="Keine passenden Daueraufträge"
-              message="Passe Suche oder Filter an."
+              title={t("admin:recurringRules.noMatchingTitle")}
+              message={t("admin:recurringRules.noMatchingMessage")}
               icon="search-outline"
             />
           ) : (
             <EmptyState
-              title="Keine Daueraufträge"
-              message="Sobald du einen wiederkehrenden Auftrag anlegst, erscheint er hier."
+              title={t("admin:recurringRules.noneTitle")}
+              message={t("admin:recurringRules.noneMessage")}
               icon="repeat-outline"
             />
           )
@@ -473,6 +487,8 @@ export default function AdminRecurringRulesScreen() {
                 onOpenMenu={() => setMenuRule(rule)}
                 styles={styles}
                 theme={theme}
+                t={t}
+                localeTag={localeTag}
               />
             );
           })
@@ -509,20 +525,23 @@ type BadgeTone = "ok" | "neutral" | "warning";
  * ausführliche Erklärung steht in `health.hint` unter den Detailzeilen.
  * Die Zustandslogik selbst bleibt unverändert in deriveRuleHealth.
  */
-function ruleBadge(health: RuleHealth): { label: string; tone: BadgeTone } {
+function ruleBadge(
+  health: RuleHealth,
+  t: (key: string) => string,
+): { label: string; tone: BadgeTone } {
   switch (health.state) {
     case "completed_rule":
-      return { label: "Prüfen", tone: "warning" };
+      return { label: t("admin:recurringRules.badgeReview"), tone: "warning" };
     case "no_occurrences":
-      return { label: "Keine Termine", tone: "warning" };
+      return { label: t("admin:recurringRules.badgeNoAppointments"), tone: "warning" };
     case "inactive_employee":
-      return { label: "MA inaktiv", tone: "warning" };
+      return { label: t("admin:recurringRules.badgeInactiveEmployee"), tone: "warning" };
     case "horizon_expired":
-      return { label: "Abgelaufen", tone: "warning" };
+      return { label: t("admin:recurringRules.badgeExpired"), tone: "warning" };
     case "inactive":
-      return { label: "Inaktiv", tone: "neutral" };
+      return { label: t("admin:recurringRules.badgeInactive"), tone: "neutral" };
     case "healthy":
-      return { label: "Aktiv", tone: "ok" };
+      return { label: t("admin:recurringRules.badgeActive"), tone: "ok" };
   }
 }
 
@@ -535,6 +554,8 @@ function RuleCard({
   onOpenMenu,
   styles,
   theme,
+  t,
+  localeTag,
 }: {
   rule: Job;
   health: RuleHealth;
@@ -544,16 +565,20 @@ function RuleCard({
   onOpenMenu: () => void;
   styles: ReturnType<typeof createStyles>;
   theme: AppTheme;
+  t: (key: string, opts?: Record<string, string>) => string;
+  localeTag: string;
 }) {
-  const days = formatRecurringDays(rule.recurringDays);
+  const days = formatRecurringDaysLocalized(rule.recurringDays);
   const scheduleText = `${days || "—"}${
-    rule.startTime ? ` · ${rule.startTime} Uhr` : ""
+    rule.startTime ? ` · ${t("jobs:card.scheduleTime", { time: rule.startTime })}` : ""
   }`;
   const rangeText = formatRangeLabel(
     rule.recurrenceStartDate,
     rule.recurrenceEndDate,
+    localeTag,
+    t,
   );
-  const badge = ruleBadge(health);
+  const badge = ruleBadge(health, t);
   const badgeStyle = {
     ok: styles.badgeOk,
     neutral: styles.badgeNeutral,
@@ -570,7 +595,7 @@ function RuleCard({
       onPress={onOpen}
       disabled={busy}
       accessibilityRole="button"
-      accessibilityLabel={`Dauerauftrag ${rule.customerName} öffnen`}
+      accessibilityLabel={t("admin:recurringRules.openRuleA11y", { name: rule.customerName })}
       style={({ pressed }) => (pressed ? styles.cardPressed : undefined)}
     >
       <Card style={styles.ruleCard}>
@@ -643,8 +668,8 @@ function RuleCard({
         <View style={styles.footRow}>
           <Text style={styles.nextText} numberOfLines={1}>
             {nextDate
-              ? `Nächster Termin: ${formatDateGerman(nextDate)}`
-              : "Kein nächster Termin"}
+              ? t("admin:recurringRules.nextAppointment", { date: formatDateLocalized(nextDate, localeTag) })
+              : t("admin:recurringRules.noNextAppointment")}
           </Text>
           <TouchableOpacity
             style={styles.menuBtn}
@@ -653,8 +678,8 @@ function RuleCard({
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"
-            accessibilityLabel={`Aktionen für ${rule.customerName}`}
-            accessibilityHint="Öffnet Bearbeiten, Aktivieren/Deaktivieren und Löschen"
+            accessibilityLabel={t("admin:recurringRules.actionsForRuleA11y", { name: rule.customerName })}
+            accessibilityHint={t("admin:recurringRules.actionsForRuleHint")}
           >
             <Ionicons
               name="ellipsis-vertical"
@@ -743,7 +768,7 @@ function createStyles(theme: AppTheme) {
     filterActiveDot: {
       position: "absolute",
       top: 6,
-      right: 6,
+      end: 6,
       width: 8,
       height: 8,
       borderRadius: 4,
@@ -890,7 +915,7 @@ function createStyles(theme: AppTheme) {
       width: 32,
       height: 32,
       marginVertical: -6,
-      marginRight: -6,
+      marginEnd: -6,
       alignItems: "center",
       justifyContent: "center",
       borderRadius: theme.radius.full,

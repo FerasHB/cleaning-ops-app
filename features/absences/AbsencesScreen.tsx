@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   RefreshControl,
   ScrollView,
@@ -36,6 +37,7 @@ import { groupAbsences } from "@/utils/absenceGrouping";
 export default function AbsencesScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const {
     absences,
@@ -88,7 +90,7 @@ export default function AbsencesScreen() {
         barStyle={theme.isDark ? "light-content" : "dark-content"}
         backgroundColor={theme.colors.background}
       />
-      <AppHeader title="Abwesenheiten" showBack />
+      <AppHeader title={t("absences:title")} showBack />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -111,7 +113,7 @@ export default function AbsencesScreen() {
           <View style={styles.bannerWrap}>
             <ErrorBanner
               message={loadError}
-              actionLabel="Erneut versuchen"
+              actionLabel={t("common:actions.retry")}
               onAction={() => {
                 void refresh();
               }}
@@ -133,7 +135,7 @@ export default function AbsencesScreen() {
             onPress={() => router.push("/absences/request-vacation")}
           >
             <Ionicons name="sunny-outline" size={20} color={theme.colors.primary} />
-            <Text style={styles.actionCardText}>Urlaub beantragen</Text>
+            <Text style={styles.actionCardText}>{t("absences:actions.requestVacation")}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -146,21 +148,21 @@ export default function AbsencesScreen() {
               size={20}
               color={theme.colors.statusOpen}
             />
-            <Text style={styles.actionCardText}>Krank melden</Text>
+            <Text style={styles.actionCardText}>{t("absences:actions.reportSickness")}</Text>
           </TouchableOpacity>
         </View>
 
         {absences.length === 0 ? (
           <Card>
             <EmptyState
-              title="Noch keine Abwesenheiten erfasst."
+              title={t("absences:empty.noAbsences")}
               icon="calendar-outline"
             />
           </Card>
         ) : (
           <>
             <AbsenceGroupSection
-              title="Aktuell"
+              title={t("absences:groups.current")}
               absences={current}
               actionBusyId={actionBusyId}
               onCancelVacation={cancelVacation}
@@ -168,7 +170,7 @@ export default function AbsencesScreen() {
               onUpdateSicknessEnd={updateSicknessEnd}
             />
             <AbsenceGroupSection
-              title="Bevorstehend"
+              title={t("absences:groups.upcoming")}
               absences={upcoming}
               actionBusyId={actionBusyId}
               onCancelVacation={cancelVacation}
@@ -176,7 +178,7 @@ export default function AbsencesScreen() {
               onUpdateSicknessEnd={updateSicknessEnd}
             />
             <AbsenceGroupSection
-              title="Vergangen"
+              title={t("absences:groups.past")}
               absences={past}
               actionBusyId={actionBusyId}
               onCancelVacation={cancelVacation}

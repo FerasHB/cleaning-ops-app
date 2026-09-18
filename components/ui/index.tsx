@@ -9,6 +9,7 @@
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -242,6 +243,7 @@ interface PasswordInputProps extends Omit<InputProps, "secureTextEntry"> {
 
 export function PasswordInput({ label, error, style, ...props }: PasswordInputProps) {
   const theme = useAppTheme();
+  const { t } = useTranslation();
   const [focused, setFocused] = useState(false);
   const [visible, setVisible] = useState(false);
   const styles = useMemo(() => createInputStyles(theme), [theme]);
@@ -269,7 +271,9 @@ export function PasswordInput({ label, error, style, ...props }: PasswordInputPr
           style={styles.eyeBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
-          accessibilityLabel={visible ? "Passwort verbergen" : "Passwort anzeigen"}
+          accessibilityLabel={
+            visible ? t("common:a11y.hidePassword") : t("common:a11y.showPassword")
+          }
         >
           <Ionicons
             name={visible ? "eye-off-outline" : "eye-outline"}
@@ -329,15 +333,16 @@ function createInputStyles(theme: AppTheme) {
       position: "relative",
     },
     passwordInput: {
-      paddingRight: 48,
+      paddingEnd: 48,
     },
     eyeBtn: {
       // Breite an theme.spacing.tapTarget angelehnt (44pt WCAG-Mindestmaß) —
       // Icon bleibt optisch unverändert (18px, zentriert), nur die tatsächliche
       // Tippfläche wächst. top:0/bottom:0 übernehmen bereits die volle
       // Zeilenhöhe (= Eingabefeldhöhe), hier fehlte bisher nur die Breite.
+      // end statt right: kippt in RTL automatisch auf die linke Feldseite.
       position: "absolute",
-      right: 0,
+      end: 0,
       top: 0,
       bottom: 0,
       width: 44,

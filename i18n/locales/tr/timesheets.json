@@ -1,0 +1,57 @@
+{
+  "titleAdmin": "Puantaj",
+  "titleMine": "Çalışma Saatlerim",
+  "selfNameFallback": "Ben",
+  "employeeSection": {
+    "title": "Çalışan",
+    "subtitle": "Bu puantaj kimin için oluşturulacak?",
+    "emptyTitle": "Çalışan Yok",
+    "emptyMessage": "Puantaj oluşturmak için önce çalışan ekle.",
+    "inactive": "Pasif"
+  },
+  "monthSection": {
+    "title": "Ay",
+    "subtitle": "Fatura dönemi"
+  },
+  "previewSection": {
+    "titleAdmin": "Önizleme",
+    "titleMine": "Saatlerin",
+    "subtitle": "Bu dönemde tamamlanan işler",
+    "selectEmployeeTitle": "Çalışan Seç",
+    "selectEmployeeMessage": "Lütfen önce bir çalışan seç.",
+    "loading": "Puantaj yükleniyor…",
+    "emptyTitle": "Kayıt Yok",
+    "emptyMessageAdmin": "Bu dönemde tamamlanmış iş yok",
+    "emptyMessageMine": "Bu ay henüz tamamladığın bir iş yok."
+  },
+  "table": {
+    "day": "Gün",
+    "begin": "Başlangıç",
+    "end": "Bitiş",
+    "duration": "Süre"
+  },
+  "summary_one": "Toplam · {{count}} iş",
+  "summary_other": "Toplam · {{count}} iş",
+  "exportButton": "PDF Dışa Aktar",
+  "exportFailed": "PDF dışa aktarma başarısız oldu.",
+  "exportBlockedLoading": "Şirket verileri hâlâ yükleniyor. Lütfen PDF dışa aktarmayı biraz sonra tekrar dene.",
+  "exportBlockedUnavailable": "Şirket adı yüklenemedi. Bu nedenle PDF dışa aktarma mümkün değil.",
+  "loadFailed": "Puantaj yüklenemedi.",
+  "fallbackEmployeeName": "Çalışan",
+  "shareTitle": "Puantajı Paylaş",
+  "shareNotSupported": "Bu cihazda paylaşım desteklenmiyor.",
+  "absenceSection": {
+    "noticesTitle": "Bildirimler",
+    "noticesSubtitle": "İşlem gerektirmez, yalnızca bilgi amaçlıdır",
+    "noticeTextVacation": "{{date}} tarihinde izinli olmasına rağmen çalışma ({{type}})",
+    "noticeTextAbsence": "{{date}} tarihinde bildirilen izne rağmen çalışma ({{type}})",
+    "absencesTitle": "İzinler",
+    "absencesSubtitle": "Seçili dönemdeki izin ve hastalık",
+    "typeSickness": "Hasta",
+    "noPlannedWork": "Planlanmış görev yok",
+    "plannedWorkDays_one": "{{count}} planlanmış çalışma günü · Planlanan görev süresi {{duration}} sa",
+    "plannedWorkDays_other": "{{count}} planlanmış çalışma günü · Planlanan görev süresi {{duration}} sa",
+    "calendarDays_one": "{{count}} takvim günü",
+    "calendarDays_other": "{{count}} takvim günü"
+  }
+}

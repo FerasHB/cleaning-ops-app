@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
 import { Platform } from "react-native";
 import { classifyClientKey } from "./supabaseKeyGuard";
+import { getClientBuildNumber, getClientPlatform } from "@/utils/clientBuild";
 
 // Supabase URL und Key aus den Env Variablen holen
 // (!) bedeutet: wir gehen davon aus, dass sie sicher vorhanden sind
@@ -37,8 +38,38 @@ if (keyVerdict === "secret" || keyVerdict === "unknown") {
 // "missing" wird bewusst nicht hier abgefangen: createClient wirft dafür
 // bereits einen eindeutigen "supabaseKey is required"-Fehler.
 
+// ─────────────────────────────────────────────────────────────────
+// KOMPATIBILITÄTS-HEADER (Client-Compatibility-Fundament, Migration
+// 20260916120000): bei JEDEM REST/RPC-Aufruf mitgeschickt, serverseitig
+// über current_setting('request.headers', true) gelesen — empirisch gegen
+// Staging verifiziert (echter PostgREST-Roundtrip mit einer temporären,
+// sofort wieder entfernten Sonden-Funktion). Einmalig beim Modul-Laden
+// berechnet — der native Build ändert sich nicht während der Laufzeit
+// eines Prozesses.
+//
+// PRODUKTENTSCHEIDUNG (nicht nur technische Lücke): Web liefert
+// getClientPlatform() = null → bewusst KEINE Header. Job-Schreibpfade
+// (start_own_job/complete_own_job/set_job_assignments) sind offiziell nur
+// auf nativem iOS/Android supported; Web ist Dev-/QA-Ziel. Fehlende Header
+// MÜSSEN weiterhin als nicht unterstützter Client gelten, sobald
+// enforcement_enabled=true ist — kein Web-Bypass, auch nicht später. Ein
+// Web-Aufruf dieser RPCs bekommt dann also dieselbe 22023-Ablehnung wie ein
+// zu alter mobiler Client; das ist beabsichtigt, nicht der weiche
+// isVersionBlocked-Hinweis (siehe AuthContext.tsx), der auf Web ohnehin nie
+// greift. Vor einer Produktions-Aktivierung von enforcement_enabled prüfen,
+// ob echte Web-Nutzung dieser Aktionen existiert (siehe CLAUDE.md).
+const clientPlatform = getClientPlatform();
+const clientBuild = getClientBuildNumber();
+const compatibilityHeaders: Record<string, string> =
+  clientPlatform && clientBuild
+    ? { "x-taskops-platform": clientPlatform, "x-taskops-build": String(clientBuild) }
+    : {};
+
 // Supabase Client erstellen (wird in der ganzen App verwendet)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    headers: compatibilityHeaders,
+  },
   auth: {
     // Storage für Session:
     // - Web → Supabase nutzt eigenen Mechanismus

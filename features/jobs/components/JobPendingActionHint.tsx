@@ -11,6 +11,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import type { PendingJobAction } from "@/services/offline/jobs.queue";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -18,20 +19,21 @@ type Props = {
   pendingActions: PendingJobAction[];
 };
 
-function labelFor(type: PendingJobAction["type"]): string {
-  switch (type) {
-    case "start_job":
-      return "Start wartet auf Internet";
-    case "complete_job":
-      return "Abschluss wartet auf Synchronisierung";
-    default:
-      return "Änderung wartet auf Synchronisierung";
-  }
-}
-
 export function JobPendingActionHint({ jobId, pendingActions }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
+
+  const labelFor = (type: PendingJobAction["type"]): string => {
+    switch (type) {
+      case "start_job":
+        return t("jobs:pending.startWaiting");
+      case "complete_job":
+        return t("jobs:pending.completeWaiting");
+      default:
+        return t("jobs:pending.changeWaiting");
+    }
+  };
 
   const jobPending = pendingActions.filter((a) => a.jobId === jobId);
   if (jobPending.length === 0) return null;

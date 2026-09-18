@@ -19,29 +19,31 @@ import {
 } from "@/components/ui";
 import JobCard from "@/components/JobCard";
 import { useAuth } from "@/context/AuthContext";
-import { canRunJobActions } from "@/utils/jobAssignees";
+import {
+  canCompleteOwnAssignment,
+  canRunJobActions,
+  canStartOwnAssignment,
+} from "@/utils/jobAssignees";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
+import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
-import { isJobToday } from "@/utils/jobSchedule";
-import { getJobStatusLabel, JOB_STATUS_ORDER } from "@/utils/jobStatus";
+import { isJobStartDateAllowed, isJobToday } from "@/utils/jobSchedule";
+import { formatTimeHHmm } from "@/utils/date";
+import { JOB_STATUS_ORDER } from "@/utils/jobStatus";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Filter = "all" | JobStatus;
-
-// Beschriftungen aus der kanonischen Status-Quelle — identisch zu den Badges
-// auf den Karten darunter und zu den Chips im Jobs-Tab (utils/jobStatus.ts).
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "Alle" },
-  ...JOB_STATUS_ORDER.map((key) => ({ key, label: getJobStatusLabel(key) })),
-];
 
 // Wie viele Aufträge die Übersicht als Vorschau zeigt. Alles darüber bleibt
 // erreichbar — siehe "Alle … Aufträge anzeigen" unter der Liste.
@@ -54,14 +56,6 @@ const NO_ACTIVE_JOB_TIME = {
   completedAt: null,
 } satisfies Pick<Job, "status" | "startedAt" | "completedAt">;
 
-// Filter-Key → Label, für den Leer-Zustand ("keine Aufträge mit Status X").
-const FILTER_LABEL_BY_KEY: Record<Filter, string> = {
-  all: "Alle",
-  open: getJobStatusLabel("open"),
-  in_progress: getJobStatusLabel("in_progress"),
-  completed: getJobStatusLabel("completed"),
-};
-
 // Sortier-Priorität für "Heute anstehend": offen zuerst, dann in Arbeit, dann erledigt
 const STATUS_ORDER: Record<JobStatus, number> = {
   open: 0,
@@ -69,11 +63,11 @@ const STATUS_ORDER: Record<JobStatus, number> = {
   completed: 2,
 };
 
-function getGreeting(date: Date): string {
+function getGreeting(date: Date, t: (key: string) => string): string {
   const h = date.getHours();
-  if (h < 11) return "Guten Morgen";
-  if (h < 18) return "Guten Tag";
-  return "Guten Abend";
+  if (h < 11) return t("jobs:greeting.morning");
+  if (h < 18) return t("jobs:greeting.day");
+  return t("jobs:greeting.evening");
 }
 
 function parse(iso: string | null | undefined): Date | null {
@@ -90,15 +84,38 @@ function isSameMonth(iso: string | null | undefined, ref: Date): boolean {
   );
 }
 
+// Nutzt den kanonischen, locale-unabhängigen HH:mm-Formatter (utils/date.ts)
+// statt eines eigenen toLocaleTimeString("de-DE", …) — Job-Zeiten zeigen
+// app-weit immer 24-Stunden-Format, unabhängig von der UI-Sprache (gleiche
+// Konvention wie getJobDisplayTime/JobCard).
 function formatTime(iso: string | null | undefined): string | null {
-  const d = parse(iso);
-  if (!d) return null;
-  return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  return formatTimeHHmm(parse(iso));
 }
 
 export default function EmployeeOverviewScreen() {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const jobStatusLabels = useJobStatusLabels();
+
+  // Beschriftungen aus der kanonischen Status-Quelle — identisch zu den Badges
+  // auf den Karten darunter und zu den Chips im Jobs-Tab (utils/jobStatus.ts +
+  // hooks/useJobStatusLabels.ts). Als useMemo statt Modul-Konstante, damit ein
+  // Sprachwechsel sofort greift (vorher fixe deutsche Werte beim Modul-Laden).
+  const FILTERS = useMemo<{ key: Filter; label: string }[]>(
+    () => [
+      { key: "all", label: t("common:filters.all") },
+      ...JOB_STATUS_ORDER.map((key) => ({ key, label: jobStatusLabels[key] })),
+    ],
+    [t, jobStatusLabels],
+  );
+
+  // Filter-Key → Label, für den Leer-Zustand ("keine Aufträge mit Status X").
+  const FILTER_LABEL_BY_KEY = useMemo<Record<Filter, string>>(
+    () => ({ all: t("common:filters.all"), ...jobStatusLabels }),
+    [t, jobStatusLabels],
+  );
 
   const { profile, role } = useAuth();
   const {
@@ -165,18 +182,18 @@ export default function EmployeeOverviewScreen() {
     (jobId: string) =>
       runJobAction(
         () => startJob(jobId),
-        "Job konnte nicht gestartet werden.",
+        t("jobs:errors.startFailed"),
       ),
-    [runJobAction, startJob],
+    [runJobAction, startJob, t],
   );
 
   const handleComplete = useCallback(
     (jobId: string) =>
       runJobAction(
         () => completeJob(jobId),
-        "Job konnte nicht abgeschlossen werden.",
+        t("jobs:errors.completeFailed"),
       ),
-    [runJobAction, completeJob],
+    [runJobAction, completeJob, t],
   );
 
   // Aktiver-Job-Karte: eigener Button ohne JobCard → Bestätigung hier.
@@ -195,12 +212,12 @@ export default function EmployeeOverviewScreen() {
 
   const dateLabel = useMemo(
     () =>
-      now.toLocaleDateString("de-DE", {
+      now.toLocaleDateString(INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE", {
         weekday: "long",
         day: "2-digit",
         month: "long",
       }),
-    [now],
+    [now, i18n.language],
   );
 
   // ── Heutige Jobs: single mit heutigem Datum + recurring mit heutigem
@@ -232,10 +249,11 @@ export default function EmployeeOverviewScreen() {
   ).length;
 
   // ── Aktiver Job (erster in_progress über alle eigenen Jobs)
-  // Seit Phase 7 („Shared Job Time") gehört die Abschluss-Karte JEDEM
-  // Zugewiesenen: hat eine Kollegin den Auftrag gestartet, darf ihn auch der
-  // Mitarbeiter abschließen, der Start nie gedrückt hat — beide erhalten
-  // dieselbe geteilte Arbeitszeit. canRunJobActions kapselt genau das.
+  // Die Karte bleibt fuer JEDEN Zugewiesenen eines laufenden Auftrags
+  // sichtbar (informativ: Kunde/Ort/Laufzeit), auch wenn er seine EIGENE
+  // Teilnahme noch nicht begonnen hat — WELCHE Aktion sie anbietet, klärt
+  // activeJobOwnState weiter unten (Phase 16: das ist seit dem eigenen Start
+  // nicht mehr dasselbe wie "der Auftrag läuft").
   const activeJob = useMemo(
     () =>
       jobs.find(
@@ -244,6 +262,21 @@ export default function EmployeeOverviewScreen() {
       ),
     [jobs, role, profile?.id],
   );
+
+  // PHASE 16: welche Quick-Action passt zur EIGENEN Teilnahme an activeJob?
+  //   - noch nicht selbst gestartet (Nachzügler) + Termin gültig -> "Start"
+  //   - selbst gestartet, noch nicht selbst abgeschlossen           -> "Abschließen"
+  //   - selbst bereits abgeschlossen (wartet auf andere)            -> keine Aktion
+  const activeJobOwnAction = useMemo(() => {
+    if (!activeJob) return null;
+    if (canCompleteOwnAssignment(activeJob, role, profile?.id)) return "complete";
+    if (
+      canStartOwnAssignment(activeJob, role, profile?.id) &&
+      isJobStartDateAllowed(activeJob)
+    )
+      return "start";
+    return null;
+  }, [activeJob, role, profile?.id]);
 
   // Laufzeit des aktiven Jobs. Der Hook muss unbedingt bei JEDEM Render
   // aufgerufen werden (Hook-Regeln) — ohne aktiven Job wird ein neutraler
@@ -317,7 +350,7 @@ export default function EmployeeOverviewScreen() {
         <View style={styles.loadErrorWrap}>
           <ErrorBanner
             message={dataError}
-            actionLabel="Erneut versuchen"
+            actionLabel={t("common:actions.retry")}
             onAction={() => {
               void handleRefresh();
             }}
@@ -343,7 +376,7 @@ export default function EmployeeOverviewScreen() {
         <View style={styles.headerTopRow}>
           <View style={styles.headerTextCol}>
             <Text style={styles.greeting} numberOfLines={1}>
-              {getGreeting(now)}, {firstName}
+              {getGreeting(now, t)}, {firstName}
             </Text>
             <Text style={styles.dateText}>{dateLabel}</Text>
           </View>
@@ -361,18 +394,18 @@ export default function EmployeeOverviewScreen() {
               size={14}
               color={theme.colors.statusOpen}
             />
-            <Text style={styles.sickShortcutText}>Krank melden</Text>
+            <Text style={styles.sickShortcutText}>{t("absences:actions.reportSickness")}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* ── Heute-Übersicht (2×2) ── */}
       <View style={styles.section}>
-        <SectionHeader title="Heute" subtitle="Dein Tag auf einen Blick" />
+        <SectionHeader title={t("jobs:today.title")} subtitle={t("jobs:today.subtitle")} />
         <View style={styles.kpiGrid}>
           <View style={styles.kpiItem}>
             <KPICard
-              label="Jobs heute"
+              label={t("jobs:today.jobsToday")}
               value={todayTotal}
               icon="briefcase-outline"
               accentColor={theme.colors.primary}
@@ -381,7 +414,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label={getJobStatusLabel("open")}
+              label={jobStatusLabels.open}
               value={todayOpen}
               icon="folder-open-outline"
               accentColor={theme.colors.statusOpen}
@@ -390,7 +423,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label={getJobStatusLabel("in_progress")}
+              label={jobStatusLabels.in_progress}
               value={todayInProgress}
               icon="time-outline"
               accentColor={theme.colors.statusInProgress}
@@ -399,7 +432,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label={getJobStatusLabel("completed")}
+              label={jobStatusLabels.completed}
               value={todayCompleted}
               icon="checkmark-done-outline"
               accentColor={theme.colors.statusCompleted}
@@ -417,7 +450,7 @@ export default function EmployeeOverviewScreen() {
           Geschwister: oben der Navigations-Bereich, unten die Aktion. */}
       {activeJob && (
         <View style={styles.section}>
-          <SectionHeader title="Aktiver Job" />
+          <SectionHeader title={t("jobs:activeJob.title")} />
           <View style={styles.activeCard}>
             <TouchableOpacity
               activeOpacity={0.85}
@@ -432,11 +465,11 @@ export default function EmployeeOverviewScreen() {
                 <View style={styles.activeBadge}>
                   <View style={styles.activePulse} />
                   <Text style={styles.activeBadgeText}>
-                    {getJobStatusLabel("in_progress")}
+                    {jobStatusLabels.in_progress}
                   </Text>
                 </View>
                 <Ionicons
-                  name="chevron-forward"
+                  name={isRTL ? "chevron-back" : "chevron-forward"}
                   size={18}
                   color={theme.colors.onPrimaryContainer}
                 />
@@ -477,7 +510,7 @@ export default function EmployeeOverviewScreen() {
                       color={theme.colors.onPrimaryContainer}
                     />
                     <Text style={styles.activeMetaText}>
-                      Läuft seit {activeWorkedLabel}
+                      {t("jobs:activeJob.runningSince", { time: activeWorkedLabel })}
                     </Text>
                   </View>
                 ) : activeScheduledTime ? (
@@ -495,21 +528,51 @@ export default function EmployeeOverviewScreen() {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
-              activeOpacity={0.85}
-              disabled={actionBusy}
-              onPress={() => {
-                handleCompleteActiveJob(activeJob.id).catch(() => {});
-              }}
-            >
-              <Ionicons
-                name="checkmark"
-                size={16}
-                color={theme.colors.statusCompleted}
-              />
-              <Text style={styles.completeBtnText}>Job abschließen</Text>
-            </TouchableOpacity>
+            {/* PHASE 16: welche Aktion (falls überhaupt eine) passt zur
+                EIGENEN Teilnahme — siehe activeJobOwnAction. Hat der Nutzer
+                seinen eigenen Teil bereits abgeschlossen, bleibt die Karte
+                rein informativ (kein Button), bis der Auftrag insgesamt
+                schließt oder aus der Liste fällt. */}
+            {activeJobOwnAction === "complete" ? (
+              <TouchableOpacity
+                style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
+                activeOpacity={0.85}
+                disabled={actionBusy}
+                onPress={() => {
+                  handleCompleteActiveJob(activeJob.id).catch(() => {});
+                }}
+              >
+                <Ionicons
+                  name="checkmark"
+                  size={16}
+                  color={theme.colors.statusCompleted}
+                />
+                <Text style={styles.completeBtnText}>
+                  {t("jobs:activeJob.completeButton")}
+                </Text>
+              </TouchableOpacity>
+            ) : activeJobOwnAction === "start" ? (
+              // Nachzügler: der Auftrag läuft bereits durch eine Kollegin,
+              // die EIGENE Teilnahme hat aber noch nicht begonnen. Bewusst
+              // ohne Bestätigungsdialog — wie jeder andere Start auch.
+              <TouchableOpacity
+                style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
+                activeOpacity={0.85}
+                disabled={actionBusy}
+                onPress={() => {
+                  handleStart(activeJob.id).catch(() => {});
+                }}
+              >
+                <Ionicons
+                  name="play"
+                  size={16}
+                  color={theme.colors.statusCompleted}
+                />
+                <Text style={styles.completeBtnText}>
+                  {t("jobs:activeJob.startOwnButton")}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       )}
@@ -519,12 +582,8 @@ export default function EmployeeOverviewScreen() {
         {/* Untertitel nennt die tatsächliche Anzahl — die Liste darunter ist
             eine Vorschau, das darf nicht verschwiegen werden. */}
         <SectionHeader
-          title="Heute anstehend"
-          subtitle={
-            todayTotal === 1
-              ? "1 Auftrag heute"
-              : `${todayTotal} Aufträge heute`
-          }
+          title={t("jobs:upcoming.title")}
+          subtitle={t("jobs:upcoming.subtitle", { count: todayTotal })}
         />
 
         {/* Filter-Chips (wirken nur auf diese Liste) */}
@@ -556,14 +615,17 @@ export default function EmployeeOverviewScreen() {
           <Card>
             {filter === "all" ? (
               <EmptyState
-                title="Heute keine Aufträge"
-                message="Für heute sind keine Aufträge für dich geplant."
+                title={t("jobs:upcoming.emptyAllTitle")}
+                message={t("jobs:upcoming.emptyAllMessage")}
                 icon="calendar-outline"
               />
             ) : (
               <EmptyState
-                title="Keine passenden Aufträge"
-                message={`Heute hast du keine Aufträge mit dem Status „${FILTER_LABEL_BY_KEY[filter]}“. Wähle „Alle“, um alle ${todayTotal} zu sehen.`}
+                title={t("jobs:upcoming.emptyFilteredTitle")}
+                message={t("jobs:upcoming.emptyFilteredMessage", {
+                  status: FILTER_LABEL_BY_KEY[filter],
+                  count: todayTotal,
+                })}
                 icon="funnel-outline"
               />
             )}
@@ -586,6 +648,13 @@ export default function EmployeeOverviewScreen() {
                     ? () => handleComplete(job.id)
                     : undefined
                 }
+                // PHASE 16: canRunJobActions allein reicht als Sichtbarkeits-
+                // Test nicht mehr — siehe Props-Kommentar in JobCard.tsx.
+                canStart={
+                  canStartOwnAssignment(job, role, profile?.id) &&
+                  isJobStartDateAllowed(job)
+                }
+                canComplete={canCompleteOwnAssignment(job, role, profile?.id)}
               />
             ))}
 
@@ -600,12 +669,10 @@ export default function EmployeeOverviewScreen() {
                 accessibilityRole="button"
               >
                 <Text style={styles.showAllText}>
-                  {hiddenJobCount === 1
-                    ? "1 weiterer Auftrag heute — alle anzeigen"
-                    : `${hiddenJobCount} weitere Aufträge heute — alle anzeigen`}
+                  {t("jobs:upcoming.showMore", { count: hiddenJobCount })}
                 </Text>
                 <Ionicons
-                  name="chevron-forward"
+                  name={isRTL ? "chevron-back" : "chevron-forward"}
                   size={16}
                   color={theme.colors.primary}
                 />
@@ -618,13 +685,13 @@ export default function EmployeeOverviewScreen() {
       {/* ── Monatsaktivität ── */}
       <View style={styles.section}>
         <SectionHeader
-          title="Diesen Monat"
-          subtitle="Deine persönliche Aktivität"
+          title={t("jobs:month.title")}
+          subtitle={t("jobs:month.subtitle")}
         />
         <View style={styles.kpiGrid}>
           <View style={styles.kpiItem}>
             <KPICard
-              label={getJobStatusLabel("completed")}
+              label={jobStatusLabels.completed}
               value={monthCompleted}
               icon="checkmark-done-outline"
               accentColor={theme.colors.statusCompleted}
@@ -633,7 +700,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label={getJobStatusLabel("in_progress")}
+              label={jobStatusLabels.in_progress}
               value={monthInProgress}
               icon="time-outline"
               accentColor={theme.colors.statusInProgress}
@@ -642,7 +709,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label={getJobStatusLabel("open")}
+              label={jobStatusLabels.open}
               value={monthOpen}
               icon="folder-open-outline"
               accentColor={theme.colors.statusOpen}
@@ -651,7 +718,7 @@ export default function EmployeeOverviewScreen() {
           </View>
           <View style={styles.kpiItem}>
             <KPICard
-              label="Gesamt"
+              label={t("jobs:labels.total")}
               value={monthTotal}
               icon="albums-outline"
               accentColor={theme.colors.primary}

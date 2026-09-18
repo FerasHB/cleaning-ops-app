@@ -8,6 +8,7 @@ import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -18,28 +19,29 @@ type Props = {
 export function JobLocationCard({ location, onOpenInMaps }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const hasLocation = !!location?.trim();
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
       <InfoRow
-        label="Adresse"
-        value={hasLocation ? location : "Keine Adresse hinterlegt"}
+        label={t("jobs:detail.addressLabel")}
+        value={hasLocation ? location : t("jobs:detail.addressMissing")}
         icon="location-outline"
       />
 
       {hasLocation ? (
         <View style={styles.actionRow}>
           <Button
-            label="In Maps öffnen"
+            label={t("jobs:detail.openInMaps")}
             variant="secondary"
             icon="map-outline"
             fullWidth={false}
             onPress={onOpenInMaps}
             style={{ paddingHorizontal: theme.spacing.lg }}
             accessibilityRole="button"
-            accessibilityLabel="Adresse in Maps öffnen"
+            accessibilityLabel={t("jobs:detail.openInMapsA11y")}
           />
         </View>
       ) : (
@@ -50,7 +52,7 @@ export function JobLocationCard({ location, onOpenInMaps }: Props) {
             color={theme.colors.outline}
           />
           <Text style={styles.emptyHintText}>
-            Für diesen Auftrag ist keine Adresse gepflegt.
+            {t("jobs:detail.addressMissingHint")}
           </Text>
         </View>
       )}

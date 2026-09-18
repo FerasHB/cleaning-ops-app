@@ -28,8 +28,10 @@ import type { Job } from "@/types/job";
 import { formatTimeHHmm } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
+import { i18next as i18nextInstance, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 type Props = {
   job: Pick<
@@ -79,7 +81,8 @@ function formatBlockDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("de-DE", {
+  const localeTag = INTL_LOCALE_TAGS[i18nextInstance.language as AppLocale] ?? "de-DE";
+  return date.toLocaleDateString(localeTag, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -90,6 +93,7 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { profile } = useAuth();
+  const { t } = useTranslation();
   const { minutes, label, isRunning } = useJobWorkedTime(job);
 
   // Sanfte Puls-Animation, wenn sich das Label ändert (jede Minute während
@@ -149,12 +153,12 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
         fullName: a.fullName,
         complete,
         timeLabel: complete
-          ? `${start} – ${end}`
+          ? t("jobs:workedTime.rangeLabel", { start, end })
           : start
-            ? `ab ${start} · unvollständig`
+            ? t("jobs:workedTime.fromIncomplete", { start })
             : end
-              ? `bis ${end} · unvollständig`
-              : "nicht erfasst",
+              ? t("jobs:workedTime.toIncomplete", { end })
+              : t("jobs:workedTime.notRecorded"),
       };
     });
 
@@ -183,7 +187,7 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
           <View style={styles.headerIconWrap}>
             <Ionicons name="time-outline" size={16} color={theme.colors.primary} />
           </View>
-          <Text style={styles.headerTitle}>Gesamtzeit Auftrag</Text>
+          <Text style={styles.headerTitle}>{t("jobs:workedTime.cardTitle")}</Text>
         </View>
         {/* Kanonischer Wortlaut (Offen/In Arbeit/Erledigt). Die frühere
             labels-Prop beschriftete `completed` hier als „Abgeschlossen" —
@@ -197,12 +201,12 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
       {/* ── Start & Ende ── */}
       <View style={styles.timeRow}>
         <View style={styles.timeBlock}>
-          <Text style={styles.timeBlockLabel}>GESTARTET</Text>
+          <Text style={styles.timeBlockLabel}>{t("jobs:workedTime.startedLabel")}</Text>
           <Text style={styles.timeBlockDate}>{startedDate ?? "—"}</Text>
           <Text style={styles.timeBlockValue}>{startedTime ?? "—:—"}</Text>
           {startedByName ? (
             <Text style={styles.timeBlockActor} numberOfLines={2}>
-              von {startedByName}
+              {t("jobs:workedTime.actorPrefix", { name: startedByName })}
             </Text>
           ) : null}
         </View>
@@ -210,10 +214,10 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
         <View style={styles.timeBlockDivider} />
 
         <View style={styles.timeBlock}>
-          <Text style={styles.timeBlockLabel}>ERLEDIGT</Text>
+          <Text style={styles.timeBlockLabel}>{t("jobs:workedTime.completedLabel")}</Text>
           {isRunning ? (
             <Text style={[styles.timeBlockRunning, { color: accentColor }]}>
-              Läuft…
+              {t("jobs:workedTime.runningLabel")}
             </Text>
           ) : (
             <>
@@ -221,7 +225,7 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
               <Text style={styles.timeBlockValue}>{completedTime ?? "—:—"}</Text>
               {completedByName ? (
                 <Text style={styles.timeBlockActor} numberOfLines={2}>
-                  von {completedByName}
+                  {t("jobs:workedTime.actorPrefix", { name: completedByName })}
                 </Text>
               ) : null}
             </>
@@ -244,7 +248,9 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
         >
           {label}
         </Animated.Text>
-        <Text style={styles.highlightSubtitle}>{minutes} Minuten</Text>
+        <Text style={styles.highlightSubtitle}>
+          {t("jobs:workedTime.minutes", { count: minutes })}
+        </Text>
       </View>
 
       {/* ── Individuelle Zeiten ──
@@ -253,7 +259,9 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
       {individualRows.length > 0 ? (
         <View style={styles.individualBox}>
           <Text style={styles.individualHeading}>
-            {isAdmin ? "INDIVIDUELLE ARBEITSZEIT" : "DEINE ARBEITSZEIT"}
+            {isAdmin
+              ? t("jobs:workedTime.individualHeadingAdmin")
+              : t("jobs:workedTime.individualHeadingMine")}
           </Text>
           {individualRows.map((row) => (
             <View key={row.assignmentId} style={styles.individualRow}>
@@ -278,11 +286,8 @@ export function WorkedTimeCard({ job, isAdmin = false }: Props) {
           color={theme.colors.outline}
         />
         <Text style={styles.infoText}>
-          Dies ist die Gesamtlaufzeit des Auftrags — sie kann von der
-          individuellen Arbeitszeit einzelner Mitarbeitender abweichen.
-          {isShared
-            ? " Sie wird aus Start und Abschluss des Auftrags berechnet, unabhängig davon, wer sie gedrückt hat."
-            : ""}
+          {t("jobs:workedTime.infoText")}
+          {isShared ? ` ${t("jobs:workedTime.infoTextSharedSuffix")}` : ""}
         </Text>
       </View>
     </Card>

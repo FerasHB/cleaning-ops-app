@@ -27,6 +27,7 @@ import { EmptyState } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { OccurrenceRow } from "@/features/jobs/components/OccurrenceRow";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import type { Job } from "@/types/job";
 import { getAssignees, isUnassigned } from "@/utils/jobAssignees";
 import {
@@ -44,6 +45,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 
 /** Anzahl der immer sichtbaren nächsten Termine. */
 const NEXT_UP_COUNT = 5;
@@ -86,12 +88,13 @@ export function RuleOccurrenceAgenda({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
 
   const todayKey = useMemo(() => formatDateISO(new Date()) ?? "", []);
 
   const agenda = useMemo(
     () => buildOccurrenceAgenda(occurrences, todayKey, NEXT_UP_COUNT),
-    [occurrences, todayKey],
+    [occurrences, todayKey, i18n.language],
   );
 
   // Terminierung der Regel für die „abweichender Termin"-Erkennung.
@@ -157,6 +160,7 @@ export function RuleOccurrenceAgenda({
               onPress={() => toggleGroup(group.key)}
               styles={styles}
               theme={theme}
+              t={t}
             />
             {isOpen
               ? group.occurrences.map((occurrence) => renderRow(occurrence, past))
@@ -164,7 +168,7 @@ export function RuleOccurrenceAgenda({
           </View>
         );
       }),
-    [expanded, toggleGroup, renderRow, styles, theme],
+    [expanded, toggleGroup, renderRow, styles, theme, t],
   );
 
   return (
@@ -175,7 +179,9 @@ export function RuleOccurrenceAgenda({
           size={14}
           color={theme.colors.primary}
         />
-        <Text style={styles.headerTitle}>TERMINE</Text>
+        <Text style={styles.headerTitle}>
+          {t("admin:recurringRules.occurrenceAgenda.title")}
+        </Text>
         {!loading && agenda.counts.total > 0 ? (
           <Text style={styles.headerCount}>{agenda.counts.total}</Text>
         ) : null}
@@ -196,7 +202,7 @@ export function RuleOccurrenceAgenda({
               color={theme.colors.onSurfaceVariant}
             />
             <Text style={styles.errorText}>
-              Termine konnten nicht geladen werden.
+              {t("admin:recurringRules.occurrenceAgenda.errorText")}
             </Text>
           </View>
           <TouchableOpacity
@@ -204,37 +210,47 @@ export function RuleOccurrenceAgenda({
             onPress={onRetry}
             activeOpacity={0.75}
             accessibilityRole="button"
-            accessibilityLabel="Termine erneut laden"
+            accessibilityLabel={t(
+              "admin:recurringRules.occurrenceAgenda.retryA11y",
+            )}
           >
             <Ionicons name="refresh" size={14} color={theme.colors.primary} />
-            <Text style={styles.retryText}>Erneut versuchen</Text>
+            <Text style={styles.retryText}>{t("common:actions.retry")}</Text>
           </TouchableOpacity>
         </View>
       ) : agenda.counts.total === 0 ? (
         <EmptyState
           compact
           icon="calendar-outline"
-          title="Keine Termine erzeugt"
-          message="Für diese Regel liegen noch keine konkreten Termine vor."
+          title={t("admin:recurringRules.occurrenceAgenda.emptyNoneTitle")}
+          message={t(
+            "admin:recurringRules.occurrenceAgenda.emptyNoneMessage",
+          )}
         />
       ) : (
         <>
           {/* Zähl-Leiste: beantwortet „wie steht die Regel da?" ohne Scrollen */}
           <View style={styles.stats}>
             <Stat
-              label="kommend"
+              label={t("admin:recurringRules.occurrenceAgenda.statUpcoming")}
               value={agenda.counts.upcoming}
               styles={styles}
             />
             <Stat
-              label="erledigt"
+              label={t("admin:recurringRules.occurrenceAgenda.statCompleted")}
               value={agenda.counts.completed}
               styles={styles}
             />
-            <Stat label="offen" value={agenda.counts.open} styles={styles} />
+            <Stat
+              label={t("admin:recurringRules.occurrenceAgenda.statOpen")}
+              value={agenda.counts.open}
+              styles={styles}
+            />
             {agenda.counts.inProgress > 0 ? (
               <Stat
-                label="in Arbeit"
+                label={t(
+                  "admin:recurringRules.occurrenceAgenda.statInProgress",
+                )}
                 value={agenda.counts.inProgress}
                 styles={styles}
               />
@@ -242,13 +258,19 @@ export function RuleOccurrenceAgenda({
           </View>
 
           {/* ── Als Nächstes (immer sichtbar) ── */}
-          <Text style={styles.sectionLabel}>ALS NÄCHSTES</Text>
+          <Text style={styles.sectionLabel}>
+            {t("admin:recurringRules.occurrenceAgenda.nextUpLabel")}
+          </Text>
           {agenda.nextUp.length === 0 ? (
             <EmptyState
               compact
               icon="time-outline"
-              title="Keine kommenden Termine"
-              message="Der erzeugte Zeitraum enthält keine zukünftigen Termine mehr."
+              title={t(
+                "admin:recurringRules.occurrenceAgenda.emptyNextUpTitle",
+              )}
+              message={t(
+                "admin:recurringRules.occurrenceAgenda.emptyNextUpMessage",
+              )}
             />
           ) : (
             agenda.nextUp.map((occurrence) => renderRow(occurrence, false))
@@ -257,7 +279,9 @@ export function RuleOccurrenceAgenda({
           {/* ── Weitere Zukunft, nach Monaten ── */}
           {agenda.upcomingGroups.length > 0 ? (
             <View style={styles.groupBlock}>
-              <Text style={styles.sectionLabel}>WEITERE TERMINE</Text>
+              <Text style={styles.sectionLabel}>
+                {t("admin:recurringRules.occurrenceAgenda.moreLabel")}
+              </Text>
               {renderGroups(agenda.upcomingGroups, false)}
             </View>
           ) : null}
@@ -266,12 +290,13 @@ export function RuleOccurrenceAgenda({
           {agenda.pastGroups.length > 0 ? (
             <View style={styles.groupBlock}>
               <GroupToggle
-                label="Vergangene Termine"
+                label={t("admin:recurringRules.occurrenceAgenda.pastLabel")}
                 count={agenda.counts.past}
                 open={pastOpen}
                 onPress={() => setPastOpen((open) => !open)}
                 styles={styles}
                 theme={theme}
+                t={t}
                 emphasized
               />
               {pastOpen ? renderGroups(agenda.pastGroups, true) : null}
@@ -293,6 +318,7 @@ function GroupToggle({
   onPress,
   styles,
   theme,
+  t,
   emphasized = false,
 }: {
   label: string;
@@ -301,8 +327,10 @@ function GroupToggle({
   onPress: () => void;
   styles: ReturnType<typeof createStyles>;
   theme: AppTheme;
+  t: (key: string, opts?: Record<string, string | number>) => string;
   emphasized?: boolean;
 }) {
+  const isRTL = useIsRTL();
   return (
     <TouchableOpacity
       style={styles.groupToggle}
@@ -310,11 +338,18 @@ function GroupToggle({
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
-      accessibilityLabel={`${label}, ${count} ${count === 1 ? "Termin" : "Termine"}`}
-      accessibilityHint={open ? "Zum Einklappen antippen" : "Zum Aufklappen antippen"}
+      accessibilityLabel={t(
+        "admin:recurringRules.occurrenceAgenda.groupA11yLabel",
+        { label, count },
+      )}
+      accessibilityHint={
+        open
+          ? t("admin:recurringRules.occurrenceAgenda.collapseHint")
+          : t("admin:recurringRules.occurrenceAgenda.expandHint")
+      }
     >
       <Ionicons
-        name={open ? "chevron-down" : "chevron-forward"}
+        name={open ? "chevron-down" : isRTL ? "chevron-back" : "chevron-forward"}
         size={16}
         color={theme.colors.onSurfaceVariant}
       />

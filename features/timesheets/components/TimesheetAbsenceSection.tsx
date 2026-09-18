@@ -18,6 +18,7 @@ import { formatDayMonth } from "@/utils/absenceFormat";
 import { formatDurationHm } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -25,13 +26,18 @@ type Props = {
   notices: TimesheetNotice[] | undefined;
 };
 
-function typeLabel(type: "vacation" | "sickness"): string {
-  return type === "vacation" ? "Urlaub" : "Krank";
-}
-
 export function TimesheetAbsenceSection({ summary, notices }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
+
+  // "Urlaub" teilt sich die Übersetzung mit absences:types.vacation (gleiches
+  // Konzept). "Krank" ist hier bewusst die KÜRZERE Form (Adjektiv) statt
+  // absences:types.sickness ("Krankheit") — abweichender deutscher Wortlaut
+  // im Original, unverändert übernommen statt stillschweigend vereinheitlicht
+  // (siehe i18n-Audit, Abschnitt "inkonsistente Terminologie").
+  const typeLabel = (type: "vacation" | "sickness"): string =>
+    type === "vacation" ? t("absences:types.vacation") : t("timesheets:absenceSection.typeSickness");
 
   const hasVacation = !!summary && summary.vacationCalendarDays > 0;
   const hasSickness = !!summary && summary.sicknessCalendarDays > 0;
@@ -44,8 +50,8 @@ export function TimesheetAbsenceSection({ summary, notices }: Props) {
       {hasNotices ? (
         <View style={styles.section}>
           <SectionHeader
-            title="Hinweise"
-            subtitle="Erfordert keine Aktion, nur zur Information"
+            title={t("timesheets:absenceSection.noticesTitle")}
+            subtitle={t("timesheets:absenceSection.noticesSubtitle")}
           />
           <Card padding={0}>
             {notices!.map((notice, idx) => (
@@ -60,8 +66,12 @@ export function TimesheetAbsenceSection({ summary, notices }: Props) {
                   style={styles.noticeIcon}
                 />
                 <Text style={styles.noticeText}>
-                  Arbeit trotz {notice.absenceType === "vacation" ? "Urlaub" : "gemeldeter Abwesenheit"} am{" "}
-                  {formatDayMonth(notice.date)} ({typeLabel(notice.absenceType)})
+                  {t(
+                    notice.absenceType === "vacation"
+                      ? "timesheets:absenceSection.noticeTextVacation"
+                      : "timesheets:absenceSection.noticeTextAbsence",
+                    { date: formatDayMonth(notice.date), type: typeLabel(notice.absenceType) },
+                  )}
                 </Text>
               </View>
             ))}
@@ -72,15 +82,15 @@ export function TimesheetAbsenceSection({ summary, notices }: Props) {
       {hasVacation || hasSickness ? (
         <View style={styles.section}>
           <SectionHeader
-            title="Abwesenheiten"
-            subtitle="Urlaub und Krankheit im gewählten Zeitraum"
+            title={t("timesheets:absenceSection.absencesTitle")}
+            subtitle={t("timesheets:absenceSection.absencesSubtitle")}
           />
           <Card padding={0}>
             {hasVacation ? (
               <AbsenceTypeRow
                 theme={theme}
                 styles={styles}
-                label="Urlaub"
+                label={t("absences:types.vacation")}
                 calendarDays={summary!.vacationCalendarDays}
                 plannedWorkDays={summary!.vacationPlannedWorkDays}
                 plannedMinutes={summary!.vacationPlannedMinutes}
@@ -90,7 +100,7 @@ export function TimesheetAbsenceSection({ summary, notices }: Props) {
               <AbsenceTypeRow
                 theme={theme}
                 styles={styles}
-                label="Krank"
+                label={t("timesheets:absenceSection.typeSickness")}
                 calendarDays={summary!.sicknessCalendarDays}
                 plannedWorkDays={summary!.sicknessPlannedWorkDays}
                 plannedMinutes={summary!.sicknessPlannedMinutes}
@@ -121,20 +131,22 @@ function AbsenceTypeRow({
   plannedMinutes: number;
   withDivider?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <View style={[styles.absenceRow, withDivider && styles.rowDivider]}>
       <Text style={styles.absenceLabel}>{label}</Text>
       {plannedWorkDays > 0 ? (
         <Text style={styles.absencePrimary}>
-          {plannedWorkDays} geplante{plannedWorkDays === 1 ? "r" : ""} Einsatztag
-          {plannedWorkDays === 1 ? "" : "e"} · Geplante Einsatzzeit{" "}
-          {formatDurationHm(plannedMinutes)} h
+          {t("timesheets:absenceSection.plannedWorkDays", {
+            count: plannedWorkDays,
+            duration: formatDurationHm(plannedMinutes),
+          })}
         </Text>
       ) : (
-        <Text style={styles.absencePrimary}>Keine geplanten Einsätze</Text>
+        <Text style={styles.absencePrimary}>{t("timesheets:absenceSection.noPlannedWork")}</Text>
       )}
       <Text style={styles.absenceSecondary}>
-        {calendarDays} Kalendertag{calendarDays === 1 ? "" : "e"}
+        {t("timesheets:absenceSection.calendarDays", { count: calendarDays })}
       </Text>
     </View>
   );

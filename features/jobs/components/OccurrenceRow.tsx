@@ -24,12 +24,14 @@
 import { StatusBadge } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import type { Job } from "@/types/job";
 import { formatAssigneesShort } from "@/utils/jobAssignees";
 import { formatSectionTitle } from "@/utils/scheduleView";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   occurrence: Job;
@@ -57,18 +59,27 @@ export function OccurrenceRow({
   onPress,
 }: Props) {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const dateKey = occurrence.date?.slice(0, 10) ?? "";
   const isToday = !!dateKey && dateKey === todayKey;
-  const dateLabel = dateKey ? formatSectionTitle(dateKey, todayKey) : "Ohne Datum";
-  const timeLabel = occurrence.startTime ? `${occurrence.startTime} Uhr` : "—";
+  const dateLabel = dateKey
+    ? formatSectionTitle(dateKey, todayKey)
+    : t("admin:schedule.noDate");
+  const timeLabel = occurrence.startTime
+    ? t("jobs:card.scheduleTime", { time: occurrence.startTime })
+    : "—";
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Termin ${dateLabel}, ${timeLabel} öffnen`}
+      accessibilityLabel={t("admin:recurringRules.occurrenceRow.openA11y", {
+        date: dateLabel,
+        time: timeLabel,
+      })}
       style={({ pressed }) => [
         styles.row,
         isToday && styles.rowToday,
@@ -79,7 +90,9 @@ export function OccurrenceRow({
         <View style={styles.dateLine}>
           {isToday ? (
             <View style={styles.todayChip}>
-              <Text style={styles.todayChipText}>Heute</Text>
+              <Text style={styles.todayChipText}>
+                {t("jobs:dateGroups.today")}
+              </Text>
             </View>
           ) : null}
           <Text
@@ -102,7 +115,9 @@ export function OccurrenceRow({
               size={11}
               color={theme.colors.onSurfaceVariant}
             />
-            <Text style={styles.detachedText}>Abweichender Termin</Text>
+            <Text style={styles.detachedText}>
+              {t("admin:recurringRules.occurrenceRow.detached")}
+            </Text>
           </View>
         ) : null}
       </View>
@@ -110,7 +125,7 @@ export function OccurrenceRow({
       <View style={styles.right}>
         <StatusBadge status={occurrence.status} />
         <Ionicons
-          name="chevron-forward"
+          name={isRTL ? "chevron-back" : "chevron-forward"}
           size={14}
           color={theme.colors.outline}
         />
@@ -136,8 +151,8 @@ function createStyles(theme: AppTheme) {
     // Tonal statt gefüllt — siehe Kopfkommentar (Kontrast).
     rowToday: {
       backgroundColor: theme.colors.surfaceContainerHigh,
-      borderLeftWidth: 3,
-      borderLeftColor: theme.colors.primary,
+      borderStartWidth: 3,
+      borderStartColor: theme.colors.primary,
     },
     rowPressed: { opacity: 0.6 },
 

@@ -5,11 +5,13 @@
 
 import { ErrorBanner, Input } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { useAuth } from "@/context/AuthContext";
 import { setupCompanyForAdmin } from "@/services/company/setupCompanyForAdmin";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -28,8 +30,10 @@ import { isValidPhone } from "@/utils/phone";
 
 export function SetupCompanyScreen() {
   const theme  = useAppTheme();
+  const isRTL  = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { refreshProfile } = useAuth();
+  const { t } = useTranslation();
 
   const [companyName,  setCompanyName]  = useState("");
   const [companyEmail, setCompanyEmail] = useState("");
@@ -52,25 +56,25 @@ export function SetupCompanyScreen() {
 
     let ok = true;
     if (!companyName.trim()) {
-      setNameError("Bitte gib einen Firmennamen ein.");
+      setNameError(t("auth:setupCompany.validation.nameRequired"));
       ok = false;
     }
     if (!companyEmail.trim()) {
-      setEmailError("Firmen-E-Mail ist erforderlich.");
+      setEmailError(t("auth:setupCompany.validation.companyEmailRequired"));
       ok = false;
     } else if (!isValidEmail(companyEmail)) {
-      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      setEmailError(t("auth:setupCompany.validation.emailInvalid"));
       ok = false;
     }
     if (!companyPhone.trim()) {
-      setPhoneError("Firmen-Telefon ist erforderlich.");
+      setPhoneError(t("auth:setupCompany.validation.companyPhoneRequired"));
       ok = false;
     } else if (!isValidPhone(companyPhone)) {
-      setPhoneError("Bitte gib eine gültige Telefonnummer ein.");
+      setPhoneError(t("auth:setupCompany.validation.phoneInvalid"));
       ok = false;
     }
     if (adminPhone.trim() && !isValidPhone(adminPhone)) {
-      setAdminPhoneError("Bitte gib eine gültige Telefonnummer ein.");
+      setAdminPhoneError(t("auth:setupCompany.validation.phoneInvalid"));
       ok = false;
     }
     if (!ok) return;
@@ -88,7 +92,7 @@ export function SetupCompanyScreen() {
       router.replace("/");
     } catch (err) {
       setFormError(
-        toFriendlyAuthErrorMessage(err, "Firma konnte nicht erstellt werden.")
+        toFriendlyAuthErrorMessage(err, t("auth:setupCompany.errors.createFailed"))
       );
     } finally {
       setLoading(false);
@@ -121,16 +125,16 @@ export function SetupCompanyScreen() {
               <Text style={styles.stepActiveText}>2</Text>
             </View>
           </View>
-          <Text style={styles.stepHint}>Schritt 2 von 2 — Firma einrichten</Text>
+          <Text style={styles.stepHint}>{t("auth:setupCompany.stepHint")}</Text>
 
           {/* ── Icon + Texte ── */}
           <View style={styles.heroArea}>
             <View style={styles.iconWrap}>
               <Ionicons name="business-outline" size={30} color={theme.colors.onPrimaryContainer} />
             </View>
-            <Text style={styles.title}>Firma einrichten</Text>
+            <Text style={styles.title}>{t("auth:setupCompany.title")}</Text>
             <Text style={styles.subtitle}>
-              Gib den Namen deiner Reinigungsfirma ein. Dein Account wird danach als Admin eingerichtet.
+              {t("auth:setupCompany.subtitle")}
             </Text>
           </View>
 
@@ -141,11 +145,11 @@ export function SetupCompanyScreen() {
             ) : null}
 
             <Input
-              label="Firmenname"
-              placeholder="z.B. Mustermann Reinigung GmbH"
+              label={t("auth:setupCompany.companyNameLabel")}
+              placeholder={t("auth:setupCompany.companyNamePlaceholder")}
               value={companyName}
-              onChangeText={(t) => {
-                setCompanyName(t);
+              onChangeText={(v) => {
+                setCompanyName(v);
                 setNameError("");
                 setFormError("");
               }}
@@ -157,11 +161,11 @@ export function SetupCompanyScreen() {
             />
 
             <Input
-              label="Firmen-E-Mail"
-              placeholder="kontakt@firma.de"
+              label={t("auth:setupCompany.companyEmailLabel")}
+              placeholder={t("auth:setupCompany.companyEmailPlaceholder")}
               value={companyEmail}
-              onChangeText={(t) => {
-                setCompanyEmail(t);
+              onChangeText={(v) => {
+                setCompanyEmail(v);
                 setEmailError("");
                 setFormError("");
               }}
@@ -174,11 +178,11 @@ export function SetupCompanyScreen() {
             />
 
             <Input
-              label="Firmen-Telefon"
-              placeholder="0170 1234567"
+              label={t("auth:setupCompany.companyPhoneLabel")}
+              placeholder={t("auth:setupCompany.phonePlaceholder")}
               value={companyPhone}
-              onChangeText={(t) => {
-                setCompanyPhone(t);
+              onChangeText={(v) => {
+                setCompanyPhone(v);
                 setPhoneError("");
                 setFormError("");
               }}
@@ -190,11 +194,11 @@ export function SetupCompanyScreen() {
             />
 
             <Input
-              label="Deine Telefonnummer (optional)"
-              placeholder="0170 1234567"
+              label={t("auth:setupCompany.adminPhoneLabel")}
+              placeholder={t("auth:setupCompany.phonePlaceholder")}
               value={adminPhone}
-              onChangeText={(t) => {
-                setAdminPhone(t);
+              onChangeText={(v) => {
+                setAdminPhone(v);
                 setAdminPhoneError("");
                 setFormError("");
               }}
@@ -210,8 +214,7 @@ export function SetupCompanyScreen() {
             <View style={styles.infoRow}>
               <Ionicons name="information-circle-outline" size={14} color={theme.colors.outline} />
               <Text style={styles.infoText}>
-                Firmenname und Kontaktdaten lassen sich später in den
-                Einstellungen ändern.
+                {t("auth:setupCompany.infoText")}
               </Text>
             </View>
 
@@ -223,11 +226,11 @@ export function SetupCompanyScreen() {
               activeOpacity={0.82}
             >
               <Text style={styles.continueBtnText}>
-                {loading ? "Wird eingerichtet..." : "Firma erstellen & weiter"}
+                {loading ? t("auth:setupCompany.continueButtonLoading") : t("auth:setupCompany.continueButton")}
               </Text>
               {!loading && (
                 <Ionicons
-                  name="arrow-forward"
+                  name={isRTL ? "arrow-back" : "arrow-forward"}
                   size={18}
                   color={theme.colors.onPrimaryContainer}
                 />

@@ -31,6 +31,7 @@ import {
   TimeCorrectionSheet,
   type TimeCorrectionTarget,
 } from "@/features/timesheets/components/TimeCorrectionSheet";
+import { ForceCompleteSheet } from "@/features/jobs/components/ForceCompleteSheet";
 import { JobActionFooter } from "@/features/jobs/components/JobActionFooter";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { JobDetailHeader } from "@/features/jobs/components/JobDetailHeader";
@@ -44,7 +45,14 @@ import { JobStatusOverview } from "@/features/jobs/components/JobStatusOverview"
 import { JobTimelineCard } from "@/features/jobs/components/JobTimelineCard";
 import { OccurrenceOriginLink } from "@/features/jobs/components/OccurrenceOriginLink";
 import { getJobById } from "@/services/jobs/jobs.service";
-import { canRunJobActions, isAssignedTo, isPrimaryAssignee } from "@/utils/jobAssignees";
+import {
+  canCompleteOwnAssignment,
+  canStartOwnAssignment,
+  hasCompletedOwnAssignment,
+  isAssignedTo,
+  isPrimaryAssignee,
+} from "@/utils/jobAssignees";
+import { getStartBlockMessage } from "@/utils/jobSchedule";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import type { Job } from "@/types/job";
 import { useFocusEffect } from "@react-navigation/native";
@@ -65,6 +73,8 @@ import {
 } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
+import { useTranslation } from "react-i18next";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 // ─────────────────────────────────────────────
 // JobDetailScreen
@@ -72,6 +82,8 @@ import { toUserMessage } from "@/utils/userMessages";
 export default function JobDetailScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const localeTag = INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE";
 
   // Offset für KeyboardAvoidingView: oberer Safe-Area-Inset + Header-Höhe,
   // damit das Input-Feld beim Öffnen der Tastatur sichtbar bleibt (kein Overlap).
@@ -90,11 +102,12 @@ export default function JobDetailScreen() {
   }, []);
 
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { role, profile } = useAuth();
+  const { role, profile, forceCompleteEnabled } = useAuth();
   const {
     jobs,
     startJob,
     completeJob,
+    forceCompleteJob,
     loading,
     online,
     pendingActions,
@@ -107,6 +120,9 @@ export default function JobDetailScreen() {
   // zusätzlich serverseitig.
   const [correctionTarget, setCorrectionTarget] =
     useState<TimeCorrectionTarget | null>(null);
+
+  // PHASE 16: Admin-Zwangsabschluss (hängender Auftrag, Abschluss vergessen).
+  const [forceCompleteOpen, setForceCompleteOpen] = useState(false);
 
   // Cache-first: zuerst aus dem (ggf. begrenzten) Context-Fenster.
   const cachedJob = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -243,10 +259,10 @@ export default function JobDetailScreen() {
         <JobDetailHeader showMenu={false} menuBusy={false} onMenuPress={() => {}} />
         <View style={styles.emptyWrap}>
           <EmptyState
-            title="Job nicht gefunden"
-            message="Der gesuchte Job ist nicht (mehr) verfügbar."
+            title={t("jobs:detail.notFoundTitle")}
+            message={t("jobs:detail.notFoundMessage")}
             icon="alert-circle-outline"
-            ctaLabel="Zurück"
+            ctaLabel={t("common:actions.back")}
             onCta={() => router.back()}
           />
         </View>
@@ -276,7 +292,7 @@ export default function JobDetailScreen() {
       await startJob(job.id);
     } catch (err: unknown) {
       setActionError(
-        toUserMessage(err, "Job konnte nicht gestartet werden.")
+        toUserMessage(err, t("jobs:errors.startFailed"))
       );
     } finally {
       setSubmitting(false);
@@ -298,7 +314,7 @@ export default function JobDetailScreen() {
       await completeJob(job.id);
     } catch (err: unknown) {
       setActionError(
-        toUserMessage(err, "Job konnte nicht abgeschlossen werden.")
+        toUserMessage(err, t("jobs:errors.completeFailed"))
       );
     } finally {
       setSubmitting(false);
@@ -309,11 +325,18 @@ export default function JobDetailScreen() {
     router.push(`/jobs/${job.id}/edit`);
   };
 
+  // Der Dialog zeigt Fehler selbst an — hier bewusst KEIN try/catch, damit eine
+  // serverseitige Ablehnung (z. B. „erst nicht teilnehmende Mitarbeiter
+  // entfernen") im Dialog sichtbar bleibt statt ihn zu schließen.
+  const handleForceComplete = async (reason: string) => {
+    await forceCompleteJob(job.id, reason);
+  };
+
   // ── Maps öffnen (plattform-spezifischer URL-Schema)
   const handleOpenInMaps = () => {
     setActionError("");
     if (!job.location?.trim()) {
-      setActionError("Keine Adresse zum Öffnen vorhanden.");
+      setActionError(t("jobs:detail.noAddress"));
       return;
     }
     const query = encodeURIComponent(job.location.trim());
@@ -323,20 +346,64 @@ export default function JobDetailScreen() {
       default: `https://www.google.com/maps/search/?api=1&query=${query}`,
     });
     Linking.openURL(url!).catch(() => {
-      setActionError("Maps-App konnte nicht geöffnet werden.");
+      setActionError(t("jobs:detail.mapsFailed"));
     });
   };
 
   // BERECHTIGUNG Start/Abschluss (Phase 7, „Shared Job Time"): JEDER
-  // Zugewiesene darf, nicht nur der Legacy-Primär — canRunJobActions spiegelt
-  // exakt das Prädikat von start_own_job/complete_own_job (Rolle, job_type,
-  // Zuweisungsmenge ODER Legacy-Zeiger). Parent-Regeln sind hier nicht mehr
-  // möglich (eigener Screen weiter oben) und `canRunJobActions` prüft
-  // jobType='single' ohnehin selbst.
-  const canRunActions = canRunJobActions(job, role, profile?.id);
-  const canStart = canRunActions && job.status === "open";
-  const canComplete = canRunActions && job.status === "in_progress";
+  // Zugewiesene darf, nicht nur der Legacy-Primär (Rolle, job_type,
+  // Zuweisungsmenge ODER Legacy-Zeiger, Firma). canStartOwnAssignment/
+  // canCompleteOwnAssignment (Phase 16) rufen canRunJobActions selbst auf —
+  // kein eigenständiges canRunActions mehr nötig.
+
+  // PHASE 16 — START ist nicht mehr an job.status==='open' gebunden: ist der
+  // Auftrag bereits durch eine Kollegin gestartet, darf DIESER Nutzer seine
+  // EIGENE Teilnahme trotzdem noch beginnen (Nachzügler-Zweig von
+  // start_own_job) — ohne das gäbe es für einen später hinzugekommenen
+  // Mitarbeiter NIE einen Weg, den eigenen Start zu setzen, und er könnte
+  // seine Teilnahme folglich nie abschließen (canCompleteOwnAssignment
+  // verlangt genau diesen eigenen Start). canStartOwnAssignment kapselt
+  // beide Zweige — siehe dortigen Kommentar.
+  //
+  // Termin (Nachtzuschlag für Spätdienste ab 20:00 bis 02:00 des Folgetags)
+  // bleibt ein separater Schritt: maßgeblich ist der Server, die Prüfung hier
+  // verhindert nur einen Button, der garantiert abgelehnt würde, und liefert
+  // eine Meldung, die den Termin nennt.
+  const eligibleToStart = canStartOwnAssignment(job, role, profile?.id);
+  const startBlockedReason = eligibleToStart
+    ? getStartBlockMessage(job, t, localeTag)
+    : null;
+  const canStart = eligibleToStart && !startBlockedReason;
+
+  // PHASE 16 — ABSCHLUSS nur der EIGENEN Teilnahme und nur nach EIGENEM Start.
+  // Der Start eines Kollegen berechtigt ausdrücklich nicht (Vorfall
+  // 2026-09-16). canCompleteOwnAssignment prüft bereits vollständig (eigener
+  // Start gesetzt, Auftrag noch in_progress, eigener Teil noch nicht
+  // abgeschlossen) — kein zusätzlicher Check hier nötig.
+  const ownCompleted = hasCompletedOwnAssignment(job, profile?.id);
+  const canComplete = canCompleteOwnAssignment(job, role, profile?.id);
+
+  // „Mein Teil ist fertig, der Auftrag läuft weiter" (Phase 16).
+  const waitingOnOthers = ownCompleted && job.status === "in_progress";
+
   const isDone = job.status === "completed";
+
+  // PHASE 16 — Admin-Wiederherstellung: nur bei laufendem Auftrag anbieten, und
+  // nur wenn tatsächlich jemand gestartet, aber nicht abgeschlossen hat (genau
+  // der Fall, den die RPC annimmt). Nie gestartete Zuweisungen lehnt der Server
+  // ab — die gehören regulär aus der Zuweisung entfernt.
+  // force_complete_enabled (app_config, Migration 20260916120000): bleibt
+  // false, bis der Phase-16-Backend-Support bestätigt live ist — der neue
+  // Client könnte sonst vor dem Backend ausgeliefert werden und einen
+  // Button zeigen, dessen RPC (admin_force_complete_job) noch gar nicht
+  // existiert. Fail CLOSED, siehe AuthContext.tsx.
+  const showForceComplete =
+    isAdmin &&
+    forceCompleteEnabled &&
+    job.status === "in_progress" &&
+    (job.assignees ?? []).some(
+      (a) => !!a.employeeStartedAt && !a.employeeCompletedAt,
+    );
 
   // Foto-Upload: Admin immer; Employee, wenn ihm der Auftrag zugewiesen ist
   // (volle Zuweisungsmenge, nicht nur der Legacy-Primär). Seit 20260826000001
@@ -468,8 +535,19 @@ export default function JobDetailScreen() {
         onComplete={handleComplete}
         showEdit={isAdmin}
         onEdit={handleEdit}
+        waitingOnOthers={waitingOnOthers}
+        startBlockedReason={startBlockedReason}
+        showForceComplete={showForceComplete}
+        onForceComplete={() => setForceCompleteOpen(true)}
       />
       </KeyboardAvoidingView>
+
+      <ForceCompleteSheet
+        visible={forceCompleteOpen}
+        customerName={job.customerName}
+        onClose={() => setForceCompleteOpen(false)}
+        onConfirm={handleForceComplete}
+      />
 
       <TimeCorrectionSheet
         visible={!!correctionTarget}

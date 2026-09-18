@@ -21,13 +21,13 @@
 
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { getJobById } from "@/services/jobs/jobs.service";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-
-const FALLBACK_LABEL = "Zum Dauerauftrag";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   parentJobId: string;
@@ -35,7 +35,9 @@ type Props = {
 
 export function OccurrenceOriginLink({ parentJobId }: Props) {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [parentName, setParentName] = useState<string | null>(null);
   // Merkt sich, für welche ID bereits ein Abruf gestartet wurde. Verhindert
@@ -70,7 +72,9 @@ export function OccurrenceOriginLink({ parentJobId }: Props) {
     };
   }, [parentJobId]);
 
-  const label = parentName ? `Teil von: ${parentName}` : FALLBACK_LABEL;
+  const label = parentName
+    ? t("admin:recurringRules.originLink.partOfLabel", { name: parentName })
+    : t("admin:recurringRules.originLink.fallbackLabel");
 
   return (
     <Pressable
@@ -78,8 +82,10 @@ export function OccurrenceOriginLink({ parentJobId }: Props) {
       accessibilityRole="button"
       accessibilityLabel={
         parentName
-          ? `Dauerauftrag ${parentName} öffnen`
-          : "Zugehörigen Dauerauftrag öffnen"
+          ? t("admin:recurringRules.originLink.openNamedA11y", {
+              name: parentName,
+            })
+          : t("admin:recurringRules.originLink.openGenericA11y")
       }
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
@@ -89,7 +95,7 @@ export function OccurrenceOriginLink({ parentJobId }: Props) {
       </Text>
       <View style={styles.spacer} />
       <Ionicons
-        name="chevron-forward"
+        name={isRTL ? "chevron-back" : "chevron-forward"}
         size={14}
         color={theme.colors.primary}
       />

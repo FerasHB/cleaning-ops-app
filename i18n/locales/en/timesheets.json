@@ -1,0 +1,57 @@
+{
+  "titleAdmin": "Timesheet",
+  "titleMine": "My Working Hours",
+  "selfNameFallback": "Me",
+  "employeeSection": {
+    "title": "Employee",
+    "subtitle": "Who is this timesheet for?",
+    "emptyTitle": "No Employees",
+    "emptyMessage": "Add employees first to create a timesheet.",
+    "inactive": "Inactive"
+  },
+  "monthSection": {
+    "title": "Month",
+    "subtitle": "Billing period"
+  },
+  "previewSection": {
+    "titleAdmin": "Preview",
+    "titleMine": "Your Hours",
+    "subtitle": "Completed jobs in this period",
+    "selectEmployeeTitle": "Select Employee",
+    "selectEmployeeMessage": "Please select an employee first.",
+    "loading": "Loading timesheet…",
+    "emptyTitle": "No Entries",
+    "emptyMessageAdmin": "No completed jobs in this period",
+    "emptyMessageMine": "You haven't completed any jobs this month yet."
+  },
+  "table": {
+    "day": "Day",
+    "begin": "Start",
+    "end": "End",
+    "duration": "Duration"
+  },
+  "summary_one": "Total · {{count}} job",
+  "summary_other": "Total · {{count}} jobs",
+  "exportButton": "Export PDF",
+  "exportFailed": "PDF export failed.",
+  "exportBlockedLoading": "Company data is still loading. Please try the PDF export again in a moment.",
+  "exportBlockedUnavailable": "The company name could not be loaded. PDF export is therefore not possible.",
+  "loadFailed": "Timesheet could not be loaded.",
+  "fallbackEmployeeName": "Employee",
+  "shareTitle": "Share Timesheet",
+  "shareNotSupported": "Sharing is not supported on this device.",
+  "absenceSection": {
+    "noticesTitle": "Notices",
+    "noticesSubtitle": "No action needed, for information only",
+    "noticeTextVacation": "Work despite vacation on {{date}} ({{type}})",
+    "noticeTextAbsence": "Work despite reported absence on {{date}} ({{type}})",
+    "absencesTitle": "Absences",
+    "absencesSubtitle": "Vacation and sickness in the selected period",
+    "typeSickness": "Sick",
+    "noPlannedWork": "No planned assignments",
+    "plannedWorkDays_one": "{{count}} planned work day · Planned assignment time {{duration}} h",
+    "plannedWorkDays_other": "{{count}} planned work days · Planned assignment time {{duration}} h",
+    "calendarDays_one": "{{count}} calendar day",
+    "calendarDays_other": "{{count}} calendar days"
+  }
+}

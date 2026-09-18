@@ -33,6 +33,15 @@
 
 import { Alert, Linking, Platform } from "react-native";
 import { formatPhoneForDisplay, normalizePhone } from "@/utils/phone";
+import { i18next } from "@/i18n";
+
+// confirmDialog/alertDialog sind keine React-Komponenten (plain functions,
+// aufgerufen aus Event-Handlern) — kein useTranslation()-Hook möglich. Die
+// importierte i18next-Instanz (siehe i18n/index.ts) erlaubt trotzdem
+// übersetzte Standard-Labels: i18next.t() liest den aktuell aktiven
+// Sprachstand imperativ, ausgewertet bei jedem Aufruf (Default-Parameter),
+// nicht einmalig beim Modul-Laden — bleibt also über Sprachwechsel hinweg
+// korrekt.
 
 type ConfirmOptions = {
   title: string;
@@ -53,7 +62,7 @@ export function confirmDialog({
   title,
   message,
   confirmLabel,
-  cancelLabel = "Abbrechen",
+  cancelLabel = i18next.t("common:actions.cancel"),
   destructive = false,
 }: ConfirmOptions): Promise<boolean> {
   if (Platform.OS === "web") {
@@ -93,7 +102,9 @@ export function alertDialog(title: string, message: string): Promise<void> {
   }
 
   return new Promise((resolve) => {
-    Alert.alert(title, message, [{ text: "OK", onPress: () => resolve() }]);
+    Alert.alert(title, message, [
+      { text: i18next.t("common:actions.ok"), onPress: () => resolve() },
+    ]);
   });
 }
 
@@ -117,8 +128,8 @@ export async function callPhone(
   const e164 = normalizePhone(phone);
   if (!e164) {
     await alertDialog(
-      "Anruf nicht möglich",
-      "Für diesen Kontakt ist keine gültige Telefonnummer hinterlegt.",
+      i18next.t("common:phoneCall.notPossibleTitle"),
+      i18next.t("common:phoneCall.noNumberMessage"),
     );
     return false;
   }
@@ -126,9 +137,11 @@ export async function callPhone(
   const pretty = formatPhoneForDisplay(e164);
   const who = opts.label?.trim();
   const confirmed = await confirmDialog({
-    title: "Anrufen",
-    message: who ? `${who} anrufen?\n\n${pretty}` : `Diese Nummer anrufen?\n\n${pretty}`,
-    confirmLabel: "Anrufen",
+    title: i18next.t("common:phoneCall.confirmTitle"),
+    message: who
+      ? i18next.t("common:phoneCall.confirmWithName", { name: who, number: pretty })
+      : i18next.t("common:phoneCall.confirmGeneric", { number: pretty }),
+    confirmLabel: i18next.t("common:phoneCall.confirmButton"),
   });
 
   if (!confirmed) return false;
@@ -138,8 +151,8 @@ export async function callPhone(
     return true;
   } catch {
     await alertDialog(
-      "Anruf nicht möglich",
-      `Es konnte kein Anruf gestartet werden. Nummer: ${pretty}`,
+      i18next.t("common:phoneCall.notPossibleTitle"),
+      i18next.t("common:phoneCall.failedMessage", { number: pretty }),
     );
     return false;
   }
@@ -159,8 +172,8 @@ export async function emailContact(
   const trimmed = email?.trim();
   if (!trimmed) {
     await alertDialog(
-      "E-Mail nicht möglich",
-      "Für diesen Kontakt ist keine E-Mail-Adresse hinterlegt.",
+      i18next.t("common:emailContact.notPossibleTitle"),
+      i18next.t("common:emailContact.noAddressMessage"),
     );
     return false;
   }
@@ -170,8 +183,8 @@ export async function emailContact(
     return true;
   } catch {
     await alertDialog(
-      "E-Mail nicht möglich",
-      `Es konnte keine E-Mail-App geöffnet werden. Adresse: ${trimmed}`,
+      i18next.t("common:emailContact.notPossibleTitle"),
+      i18next.t("common:emailContact.failedMessage", { email: trimmed }),
     );
     return false;
   }

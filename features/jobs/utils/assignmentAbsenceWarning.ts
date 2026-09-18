@@ -7,6 +7,7 @@
 // blockiert das Speichern NICHT — die Prüfung ist rein informativ, siehe
 // useAssignmentAbsenceGuard.
 
+import { i18next } from "@/i18n";
 import { getActiveAbsencesForEmployeesInRange } from "@/services/absences/absenceConflicts";
 import type { AbsenceType } from "@/types/absence";
 import type { EmployeeOption, JobType } from "@/types/job";
@@ -75,7 +76,7 @@ export async function checkAssignmentAbsenceConflicts(
   const assignments = input.employeeIds.flatMap((employeeId) =>
     candidateDates.map((date) => ({
       employeeId,
-      employeeName: nameById.get(employeeId) ?? "Unbekannt",
+      employeeName: nameById.get(employeeId) ?? i18next.t("common:states.unknown"),
       date,
     })),
   );
@@ -92,7 +93,9 @@ export type AssignmentAbsenceWarningText = {
 const MAX_PREVIEW_ROWS = 5;
 
 function typeLabel(type: AbsenceType): string {
-  return type === "vacation" ? "Urlaub" : "Krank";
+  return i18next.t(
+    type === "vacation" ? "jobs:absenceConflict.typeVacation" : "jobs:absenceConflict.typeSickness",
+  );
 }
 
 /**
@@ -114,18 +117,16 @@ export function formatAssignmentAbsenceWarning(
     const remaining = conflicts.length - rows.length;
 
     const lines = [
-      `Bei ${conflicts.length} geplanten ${
-        conflicts.length === 1 ? "Einsatz" : "Einsätzen"
-      } gibt es Abwesenheiten:`,
+      i18next.t("jobs:absenceConflict.recurringIntro", { count: conflicts.length }),
       "",
       ...rows,
-      ...(remaining > 0 ? [`+ ${remaining} weitere`] : []),
+      ...(remaining > 0 ? [i18next.t("jobs:absenceConflict.moreRows", { count: remaining })] : []),
     ];
 
     return {
-      title: "Abwesenheiten gefunden",
+      title: i18next.t("jobs:absenceConflict.titlePlural"),
       message: lines.join("\n"),
-      confirmLabel: "Trotzdem erstellen",
+      confirmLabel: i18next.t("jobs:absenceConflict.confirmCreate"),
     };
   }
 
@@ -133,11 +134,14 @@ export function formatAssignmentAbsenceWarning(
   if (conflicts.length === 1) {
     const c = conflicts[0];
     return {
-      title: "Abwesenheit gefunden",
-      message: `${c.employeeName} ist am ${formatDayMonth(c.date)} ${
-        c.type === "vacation" ? "im Urlaub" : "krank gemeldet"
-      }.`,
-      confirmLabel: "Trotzdem zuweisen",
+      title: i18next.t("jobs:absenceConflict.titleSingular"),
+      message: i18next.t(
+        c.type === "vacation"
+          ? "jobs:absenceConflict.singleConflictVacation"
+          : "jobs:absenceConflict.singleConflictSickness",
+        { name: c.employeeName, date: formatDayMonth(c.date) },
+      ),
+      confirmLabel: i18next.t("jobs:absenceConflict.confirmAssign"),
     };
   }
 
@@ -148,15 +152,15 @@ export function formatAssignmentAbsenceWarning(
   const remaining = conflicts.length - rows.length;
 
   const lines = [
-    `${uniqueEmployees} Mitarbeiter sind an diesem Tag abwesend:`,
+    i18next.t("jobs:absenceConflict.multiEmployeesIntro", { count: uniqueEmployees }),
     "",
     ...rows,
-    ...(remaining > 0 ? [`+ ${remaining} weitere`] : []),
+    ...(remaining > 0 ? [i18next.t("jobs:absenceConflict.moreRows", { count: remaining })] : []),
   ];
 
   return {
-    title: "Abwesenheiten gefunden",
+    title: i18next.t("jobs:absenceConflict.titlePlural"),
     message: lines.join("\n"),
-    confirmLabel: "Trotzdem zuweisen",
+    confirmLabel: i18next.t("jobs:absenceConflict.confirmAssign"),
   };
 }

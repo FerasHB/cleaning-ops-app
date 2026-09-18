@@ -21,20 +21,22 @@ import type { AppTheme } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type Segment = "zeitplan" | "daueraueftrage";
 
-const SEGMENTS: { key: Segment; label: string; icon: any }[] = [
-  { key: "zeitplan", label: "Zeitplan", icon: "calendar-outline" },
-  { key: "daueraueftrage", label: "Daueraufträge", icon: "repeat-outline" },
-];
-
 export default function AdminJobsScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const [segment, setSegment] = useState<Segment>("zeitplan");
+
+  const SEGMENTS: { key: Segment; label: string; icon: any }[] = [
+    { key: "zeitplan", label: t("admin:jobsScreen.scheduleSegment"), icon: "calendar-outline" },
+    { key: "daueraueftrage", label: t("admin:jobsScreen.recurringSegment"), icon: "repeat-outline" },
+  ];
 
   // Mitarbeiter-Filter liegt hier (nicht im Zeitplan), damit der kompakte
   // Button in der Kopfzeile neben „Jobs" sitzt. Er gilt ausschließlich für den
@@ -59,7 +61,7 @@ export default function AdminJobsScreen() {
 
         {/* Titel + kompakter Mitarbeiter-Filter (nur im Zeitplan) */}
         <View style={styles.titleRow}>
-          <Text style={styles.title}>Jobs</Text>
+          <Text style={styles.title}>{t("common:tabs.jobs")}</Text>
           {segment === "zeitplan" ? (
             <EmployeeFilterControl
               value={employeeSel}
@@ -180,7 +182,7 @@ function createStyles(theme: AppTheme) {
     body: { flex: 1, marginTop: theme.spacing.sm },
     fab: {
       position: "absolute",
-      right: theme.spacing.lg,
+      end: theme.spacing.lg,
       bottom: theme.spacing.xl,
       width: 56,
       height: 56,

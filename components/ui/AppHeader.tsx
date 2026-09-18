@@ -6,9 +6,11 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   StyleSheet,
   Text,
@@ -38,6 +40,8 @@ export function AppHeader({
   style,
 }: AppHeaderProps) {
   const theme = useAppTheme();
+  const { t } = useTranslation();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const handleBack = onBack ?? (() => router.back());
@@ -53,10 +57,10 @@ export function AppHeader({
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel="Zurück"
+            accessibilityLabel={t("common:actions.back")}
           >
             <Ionicons
-              name="arrow-back"
+              name={isRTL ? "arrow-forward" : "arrow-back"}
               size={22}
               color={theme.colors.primary}
             />

@@ -13,6 +13,7 @@ import { formatDateISO } from "@/utils/date";
 import { alertDialog } from "@/utils/dialogs";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -28,6 +29,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function ReportSicknessScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [startDate, setStartDate] = useState<Date | null>(new Date());
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -37,10 +39,10 @@ export default function ReportSicknessScreen() {
 
   const validate = (): string | null => {
     if (!startDate) {
-      return "Bitte ein Startdatum angeben.";
+      return t("absences:errors.startDateRequired");
     }
     if (endDate && formatDateISO(endDate)! < formatDateISO(startDate)!) {
-      return "Das Enddatum darf nicht vor dem Startdatum liegen.";
+      return t("absences:errors.endBeforeStart");
     }
     return null;
   };
@@ -61,10 +63,14 @@ export default function ReportSicknessScreen() {
         note: note.trim() || undefined,
       });
 
-      await alertDialog("Krankmeldung gespeichert", "Deine Krankmeldung wurde erfasst.");
+      await alertDialog(
+        t("absences:reportSickness.successTitle"),
+        t("absences:reportSickness.successMessage"),
+      );
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Die Krankmeldung konnte nicht gespeichert werden.");
+      // err.message ist bereits übersetzt — siehe RequestVacationScreen.
+      setError(err instanceof Error ? err.message : t("absences:errors.reportFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -76,7 +82,7 @@ export default function ReportSicknessScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <AppHeader title="Krank melden" showBack />
+        <AppHeader title={t("absences:reportSickness.title")} showBack />
 
         <ScrollView
           contentContainerStyle={styles.content}
@@ -89,21 +95,21 @@ export default function ReportSicknessScreen() {
 
           <View style={styles.form}>
             <DateTimeField
-              label="Krank ab"
+              label={t("absences:reportSickness.sinceLabel")}
               mode="date"
               value={startDate}
               onChange={setStartDate}
             />
             <DateTimeField
-              label="Voraussichtlich bis (optional)"
+              label={t("absences:reportSickness.untilLabel")}
               mode="date"
               value={endDate}
               onChange={setEndDate}
-              placeholder="Noch nicht bekannt"
+              placeholder={t("absences:reportSickness.untilPlaceholder")}
             />
             <Input
-              label="Notiz (optional)"
-              placeholder="z. B. Art der Erkrankung, Vertretung"
+              label={t("absences:reportSickness.noteLabel")}
+              placeholder={t("absences:reportSickness.notePlaceholder")}
               value={note}
               onChangeText={setNote}
               multiline
@@ -120,7 +126,9 @@ export default function ReportSicknessScreen() {
             {submitting ? (
               <ActivityIndicator size="small" color={theme.colors.onPrimary} />
             ) : (
-              <Text style={styles.submitButtonText}>Krank melden</Text>
+              <Text style={styles.submitButtonText}>
+                {t("absences:reportSickness.submitButton")}
+              </Text>
             )}
           </TouchableOpacity>
         </ScrollView>

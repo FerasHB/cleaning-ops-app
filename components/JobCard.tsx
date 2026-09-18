@@ -15,23 +15,27 @@
 // - Tap auf Quick-Action-Button → onStart/onComplete (Inner-Touch gewinnt in RN)
 
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
+import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
 import { Ionicons } from "@expo/vector-icons";
 import { Job } from "@/types/job";
-import { getJobDisplayTime, getRecurringDaysLabel } from "@/utils/jobSchedule";
+import { getJobDisplayTime } from "@/utils/jobSchedule";
 import {
   formatAssigneesFull,
   formatAssigneesShort,
   getAssignees,
 } from "@/utils/jobAssignees";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import { getJobStatusMeta } from "@/utils/jobStatus";
 import {
   formatDateISO,
-  formatDateOnlyDE,
+  formatDateOnlyLocalized,
   formatTimeHHmm,
   parseToDate,
 } from "@/utils/date";
@@ -41,16 +45,37 @@ type Props = {
   /** Tap auf die Karte (außerhalb der Quick-Action) — i.d.R. Detail-Navigation */
   onPress?: () => void;
   /**
-   * Inline-Quick-Action "Start" — wird nur gezeigt, wenn übergeben UND job.status === "open".
+   * Inline-Quick-Action "Start" — wird nur gezeigt, wenn übergeben UND
+   * (canStart, falls gesetzt, sonst der Default job.status === "open").
    * Wer keine Inline-Action will (z.B. Admin), lässt das Prop einfach weg.
    * Darf ein Promise zurückgeben; die Karte sperrt dann bis zum Abschluss.
    */
   onStart?: () => void | Promise<void>;
   /**
-   * Inline-Quick-Action "Abschließen" — wird nur gezeigt, wenn übergeben UND job.status === "in_progress".
+   * Inline-Quick-Action "Abschließen" — wird nur gezeigt, wenn übergeben UND
+   * (canComplete, falls gesetzt, sonst der Default job.status === "in_progress").
    * Darf ein Promise zurückgeben; die Karte sperrt dann bis zum Abschluss.
    */
   onComplete?: () => void | Promise<void>;
+  /**
+   * PHASE 16 — überschreibt den Default-Sichtbarkeits-Test für "Start"
+   * (job.status === "open"). Notwendig, weil der Server seit Phase 16 auch
+   * einen Start akzeptiert, wenn der Auftrag bereits durch eine Kollegin
+   * läuft, DIESER Mitarbeiter seine EIGENE Teilnahme aber noch nicht
+   * begonnen hat (Nachzügler) — ohne dieses Prop bliebe der Start-Button für
+   * genau diesen Fall dauerhaft verborgen, obwohl start_own_job ihn annähme.
+   * Weggelassen (undefined) → alter Default, bewusst rückwärtskompatibel für
+   * Aufrufer, die dieses Konzept nicht kennen (z. B. Admin-Listen).
+   */
+  canStart?: boolean;
+  /**
+   * PHASE 16 — überschreibt den Default-Sichtbarkeits-Test für "Abschließen"
+   * (job.status === "in_progress"). Notwendig, weil ein Zugewiesener seit
+   * Phase 16 nur abschließen darf, wenn ER SELBST bereits gestartet hat —
+   * der reine Auftragsstatus allein sagt darüber nichts mehr aus. Weggelassen
+   * (undefined) → alter Default, bewusst rückwärtskompatibel.
+   */
+  canComplete?: boolean;
   /** Soll der Name des zugewiesenen Mitarbeiters in der Card stehen? (Default: false) */
   showEmployeeName?: boolean;
   /**
@@ -74,11 +99,12 @@ type Props = {
 // Die Karte hatte hier drei eigene Formatter (formatTime/formatDate/
 // formatDateOnly), die dasselbe taten wie utils/date.ts. Jetzt werden die
 // zentralen Helfer genutzt — gleiche Ausgabe, gleiche lokale Datums-Semantik,
-// aber ein Ort für Änderungen. `formatDateOnlyDE` erwartet "YYYY-MM-DD"
+// aber ein Ort für Änderungen. `formatDateOnlyLocalized` erwartet "YYYY-MM-DD"
 // (zeitzonenfrei); ein ISO-Zeitstempel wird vorher lokal auf einen
-// Kalendertag reduziert.
-function formatIsoDateDE(iso?: string | null): string | null {
-  return formatDateOnlyDE(formatDateISO(parseToDate(iso)));
+// Kalendertag reduziert. Sprachabhängig statt fest Deutsch (Phase C.2) —
+// JobCard ist mitarbeiter-sichtbar.
+function formatIsoDateLocalized(iso?: string | null): string | null {
+  return formatDateOnlyLocalized(formatDateISO(parseToDate(iso)));
 }
 
 function formatIsoTimeDE(iso?: string | null): string | null {
@@ -91,19 +117,53 @@ function isParentRecurringJob(job: Job): boolean {
   return job.jobType === "recurring" && !job.parentJobId;
 }
 
+// Wochentag-Kurzcodes in DB-/Wochenreihenfolge (Montag zuerst). Eigenständig
+// statt aus utils/recurrence.ts — dessen WEEKDAYS-Liste trägt deutsche
+// Labels und wird zusätzlich von etlichen Admin-Formularen (Wiederkehrend-
+// Auswahl) importiert; dieser Bugfix bleibt bewusst auf JobCard beschränkt.
+const RECURRING_DAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+// 1. Januar 2024 ist ein Montag — nur die Wochentag-REIHENFOLGE zählt.
+const REFERENCE_MONDAY = new Date(2024, 0, 1);
+
+/**
+ * Wiederkehrende Wochentage in der aktiven Sprache, kurz und in
+ * Wochenreihenfolge, z. B. "Mo, Do" / "Mon, Thu" / "Pzt, Per" / "الاثنين، الخميس".
+ */
+function formatRecurringDaysLocalized(
+  recurringDays: string[] | null | undefined,
+  localeTag: string,
+): string {
+  if (!recurringDays || recurringDays.length === 0) return "—";
+  const set = new Set(recurringDays);
+  const formatter = new Intl.DateTimeFormat(localeTag, { weekday: "short" });
+  return RECURRING_DAY_ORDER.filter((key) => set.has(key))
+    .map((key) => {
+      const dayIndex = RECURRING_DAY_ORDER.indexOf(key);
+      const d = new Date(REFERENCE_MONDAY);
+      d.setDate(d.getDate() + dayIndex);
+      return formatter.format(d);
+    })
+    .join(", ");
+}
+
 export default function JobCard({
   job,
   onPress,
   onStart,
   onComplete,
+  canStart,
+  canComplete,
   showEmployeeName = false,
   dueToday = false,
   detached = false,
 }: Props) {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
   // Beschriftung + Farben zentral — dieselbe Quelle wie StatusBadge im Detail.
-  const status = getJobStatusMeta(job.status, theme.colors);
+  const jobStatusLabels = useJobStatusLabels();
+  const status = getJobStatusMeta(job.status, theme.colors, jobStatusLabels[job.status]);
 
   // Doppel-Tap-Schutz für die Quick-Actions. Der Ref sperrt SYNCHRON (setBusy
   // wirkt erst beim nächsten Render, zwei schnelle Taps kämen sonst beide
@@ -143,28 +203,33 @@ export default function JobCard({
   // Zeit-Zeile je nach Auftragstyp
   let scheduleText: string | null = null;
   if (job.jobType === "recurring") {
-    const days = getRecurringDaysLabel(job);
-    scheduleText = startTime ? `${days} · ${startTime} Uhr` : days;
+    const days = formatRecurringDaysLocalized(
+      job.recurringDays,
+      INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE",
+    );
+    scheduleText = startTime
+      ? `${days} · ${t("jobs:card.scheduleTime", { time: startTime })}`
+      : days;
   } else {
-    const date = formatDateOnlyDE(job.date) ?? formatIsoDateDE(job.scheduledStart);
+    const date = formatDateOnlyLocalized(job.date) ?? formatIsoDateLocalized(job.scheduledStart);
     const endTime = formatIsoTimeDE(job.scheduledEnd);
     if (date && startTime && endTime) {
-      scheduleText = `${date} · ${startTime} – ${endTime} Uhr`;
+      scheduleText = `${date} · ${t("jobs:card.scheduleTimeRange", { start: startTime, end: endTime })}`;
     } else if (date && startTime) {
-      scheduleText = `${date} · ${startTime} Uhr`;
+      scheduleText = `${date} · ${t("jobs:card.scheduleTime", { time: startTime })}`;
     } else if (date) {
       scheduleText = date;
     } else if (startTime) {
-      scheduleText = `${startTime} Uhr`;
+      scheduleText = t("jobs:card.scheduleTime", { time: startTime });
     }
   }
 
   // Einfache Hinweise (nur im Heute-Kontext der Employee-Übersicht)
   const hints: string[] = [];
   if (dueToday) {
-    hints.push("Heute fällig");
-    if (startTime) hints.push(`Startet um ${startTime}`);
-    if (job.status === "open") hints.push("Noch nicht gestartet");
+    hints.push(t("jobs:card.dueToday"));
+    if (startTime) hints.push(t("jobs:card.startsAt", { time: startTime }));
+    if (job.status === "open") hints.push(t("jobs:card.notStartedYet"));
   }
 
   // Ort · Service (kompakte Einzeiler-Subline).
@@ -175,8 +240,14 @@ export default function JobCard({
 
   // Quick-Action — exakt EINE, abhängig von Status (oder gar keine).
   // Bei Parent-Recurring-Regeln grundsätzlich keine Quick-Actions.
-  const showStartAction = !isParentRule && job.status === "open" && !!onStart;
-  const showCompleteAction = !isParentRule && job.status === "in_progress" && !!onComplete;
+  // canStart/canComplete (Phase 16) überschreiben den reinen Status-Test,
+  // wenn der Aufrufer sie übergibt — siehe Props-Kommentar.
+  const showStartAction =
+    !isParentRule && !!onStart && (canStart ?? job.status === "open");
+  const showCompleteAction =
+    !isParentRule &&
+    !!onComplete &&
+    (canComplete ?? job.status === "in_progress");
   // Mitarbeiter-Zeile: gekürzt („Anna, Bert +2"), das vollständige Register
   // steckt im Screenreader-Label. Ohne Zuweisung bleibt die Zeile ganz weg —
   // wie bisher, als employeeName schlicht null war.
@@ -185,19 +256,20 @@ export default function JobCard({
     showEmployeeName && assigneeCount > 0 ? formatAssigneesShort(job) : null;
   const employeeA11yLabel =
     showEmployeeName && assigneeCount > 0
-      ? `${assigneeCount === 1 ? "Mitarbeiter" : "Mitarbeitende"}: ${formatAssigneesFull(job)}`
+      ? t("jobs:card.assigneeLabel", { count: assigneeCount, names: formatAssigneesFull(job) })
       : undefined;
 
   // Footer wird nur gerendert, wenn Mitarbeiter ODER Action vorhanden
   const hasFooter = !!employeeText || showStartAction || showCompleteAction;
 
-  // ── Root-Style: farbige Statuskante links
+  // ── Root-Style: farbige Statuskante an der Leserichtungs-Startseite
+  // (borderStart* statt borderLeft* — kippt in RTL automatisch auf rechts).
   const cardStyle = [
     styles.card,
     {
       borderColor: status.border,
-      borderLeftColor: status.border,
-      borderLeftWidth: 4,
+      borderStartColor: status.border,
+      borderStartWidth: 4,
     },
   ];
 
@@ -223,7 +295,7 @@ export default function JobCard({
           {job.hasUnreadComments ? (
             <View
               style={styles.unreadDot}
-              accessibilityLabel="Ungelesene Kommentare"
+              accessibilityLabel={t("jobs:card.unreadComments")}
             />
           ) : null}
           {isParentRule ? (
@@ -236,7 +308,7 @@ export default function JobCard({
                 size={11}
                 color={theme.colors.primary}
               />
-              <Text style={styles.ruleBadgeText}>Regel</Text>
+              <Text style={styles.ruleBadgeText}>{t("jobs:card.rule")}</Text>
             </View>
           ) : (
             <View
@@ -255,7 +327,7 @@ export default function JobCard({
           )}
           {onPress ? (
             <Ionicons
-              name="chevron-forward"
+              name={isRTL ? "chevron-back" : "chevron-forward"}
               size={16}
               color={theme.colors.outline}
             />
@@ -271,7 +343,7 @@ export default function JobCard({
             size={11}
             color={theme.colors.onSurfaceVariant}
           />
-          <Text style={styles.detachedChipText}>Abweichender Termin</Text>
+          <Text style={styles.detachedChipText}>{t("jobs:card.detachedSchedule")}</Text>
         </View>
       ) : null}
 
@@ -360,7 +432,7 @@ export default function JobCard({
                 size={13}
                 color={theme.colors.onPrimaryContainer}
               />
-              <Text style={styles.quickActionPrimaryText}>Start</Text>
+              <Text style={styles.quickActionPrimaryText}>{t("jobs:actions.start")}</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -383,7 +455,7 @@ export default function JobCard({
                   Status-Badge „Erledigt" und las sich wie ein zweites,
                   abweichendes Statuswort. „Abschließen" ist derselbe Wortlaut
                   wie im Detail-Footer und im Bestätigungsdialog. */}
-              <Text style={styles.quickActionSuccessText}>Abschließen</Text>
+              <Text style={styles.quickActionSuccessText}>{t("jobs:actions.complete")}</Text>
             </TouchableOpacity>
           ) : null}
         </View>

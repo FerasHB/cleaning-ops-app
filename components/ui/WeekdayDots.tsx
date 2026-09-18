@@ -7,16 +7,33 @@
 // Komponente zeigt stattdessen ALLE sieben Tage in fester Position und hebt
 // nur die aktiven hervor: die Form der Woche wird auf einen Blick erkennbar.
 //
-// Reine Präsentation: keine eigene Wochentags-Logik, die Reihenfolge und die
-// Kürzel kommen unverändert aus utils/recurrence (WEEKDAYS, Montag zuerst).
-// Für Screenreader wird NICHT jeder Punkt einzeln vorgelesen, sondern die
-// bestehende Textform (formatRecurringDays) als ein Label.
+// Reine Präsentation: Reihenfolge kommt aus utils/recurrence (WEEKDAYS,
+// Montag zuerst), die Kürzel selbst sind sprachabhängig (siehe
+// localizedWeekdayShort unten, Phase D). Für Screenreader wird NICHT jeder
+// Punkt einzeln vorgelesen, sondern eine zusammengefasste Textform als ein
+// Label.
 
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { WEEKDAYS, formatRecurringDays } from "@/utils/recurrence";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
+import { WEEKDAYS, type WeekdayKey } from "@/utils/recurrence";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "react-i18next";
+
+// Lokaler, locale-abhängiger Wochentags-Kürzel-Helfer statt WEEKDAYS.short
+// (fest Deutsch) zu verändern — dieselbe Referenz-Montag-Technik wie in
+// utils/recurringRuleFilter.ts, da WEEKDAYS auch in der Wochentag-Auswahl der
+// Job-Formulare (JobFormFields.tsx) verankert ist.
+const WEEKDAY_ORDER: WeekdayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const REFERENCE_MONDAY = new Date(2024, 0, 1); // 1. Januar 2024 ist ein Montag
+
+function localizedWeekdayShort(key: WeekdayKey, localeTag: string): string {
+  const dayIndex = WEEKDAY_ORDER.indexOf(key);
+  const d = new Date(REFERENCE_MONDAY);
+  d.setDate(d.getDate() + dayIndex);
+  return new Intl.DateTimeFormat(localeTag, { weekday: "short" }).format(d);
+}
 
 type Props = {
   /** Aktive Wochentage als Kurzcodes ("mon" … "sun"). */
@@ -28,15 +45,27 @@ type Props = {
 export function WeekdayDots({ days, size = "md" }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const localeTag = INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE";
 
   const active = useMemo(() => new Set(days ?? []), [days]);
   const compact = size === "sm";
+
+  const activeShortLabel = useMemo(() => {
+    const set = new Set(days ?? []);
+    const short = WEEKDAYS.filter((w) => set.has(w.key)).map((w) =>
+      localizedWeekdayShort(w.key, localeTag),
+    );
+    return short.length > 0 ? short.join(", ") : "—";
+  }, [days, localeTag]);
 
   return (
     <View
       style={styles.row}
       accessible
-      accessibilityLabel={`Wochentage: ${formatRecurringDays(days)}`}
+      accessibilityLabel={t("admin:recurringRules.weekdaysA11yLabel", {
+        days: activeShortLabel,
+      })}
     >
       {WEEKDAYS.map((weekday) => {
         const isActive = active.has(weekday.key);
@@ -59,7 +88,7 @@ export function WeekdayDots({ days, size = "md" }: Props) {
                 isActive ? styles.labelActive : styles.labelInactive,
               ]}
             >
-              {weekday.short}
+              {localizedWeekdayShort(weekday.key, localeTag)}
             </Text>
           </View>
         );

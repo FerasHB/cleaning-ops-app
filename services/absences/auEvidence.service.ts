@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { supabase } from "@/lib/supabase";
+import { i18next } from "@/i18n";
 import type {
   AbsenceEvidence,
   AuEvidenceStatus,
@@ -122,7 +123,7 @@ export async function restoreVacationFromAu(
   restorations: AuRestorationInput[],
 ): Promise<number> {
   if (restorations.length === 0) {
-    throw new Error("Bitte mindestens einen Posten angeben.");
+    throw new Error(i18next.t("admin:auReview.minOneValueError"));
   }
 
   const { data, error } = await supabase.rpc("admin_restore_vacation_from_au", {

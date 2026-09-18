@@ -6,10 +6,12 @@ import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { useTranslation } from "react-i18next";
 
 export default function AdminTabsLayout() {
   const theme = useAppTheme();
   const { hasUnread } = useJobs();
+  const { t } = useTranslation();
 
   // Roter Punkt am Jobs-Tab, wenn irgendein Job ungelesene Kommentare hat.
   // Quelle ist die gebündelte Unread-Liste (RPC), unabhängig vom Ladefenster.
@@ -35,7 +37,7 @@ export default function AdminTabsLayout() {
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: "Dashboard",
+          title: t("admin:tabs.dashboard"),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="grid-outline" size={size} color={color} />
           ),
@@ -45,7 +47,7 @@ export default function AdminTabsLayout() {
       <Tabs.Screen
         name="jobs"
         options={{
-          title: "Jobs",
+          title: t("common:tabs.jobs"),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="briefcase-outline" size={size} color={color} />
           ),
@@ -65,7 +67,7 @@ export default function AdminTabsLayout() {
       <Tabs.Screen
         name="kalender"
         options={{
-          title: "Kalender",
+          title: t("common:tabs.calendar"),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar-outline" size={size} color={color} />
           ),
@@ -75,7 +77,7 @@ export default function AdminTabsLayout() {
       <Tabs.Screen
         name="employees"
         options={{
-          title: "Mitarbeiter",
+          title: t("admin:tabs.employees"),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
           ),
@@ -85,8 +87,7 @@ export default function AdminTabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          // Deutsch wie überall sonst in der App (siehe Employee-Layout).
-          title: "Profil",
+          title: t("common:tabs.profile"),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),

@@ -18,6 +18,7 @@ import type { Job, JobStatus } from "@/types/job";
 import { formatDateISO } from "@/utils/date";
 import { getJobDisplayTime } from "@/utils/jobSchedule";
 import { JOB_STATUS_ORDER } from "@/utils/jobStatus";
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 /** Eine Zelle des Monatsrasters. */
 export type MonthCell = {
@@ -28,30 +29,6 @@ export type MonthCell = {
   /** Gehört die Zelle zum angezeigten Monat (Nachbarmonats-Tage: false)? */
   inMonth: boolean;
 };
-
-/**
- * Deutsche Monatsnamen, Index 0 = Januar.
- *
- * Bewusst als feste Liste statt über `toLocaleDateString`: die Namen sind
- * damit unabhängig davon, welche ICU-/Intl-Daten die jeweilige Runtime
- * mitbringt (Hermes liefert das auf Android nicht überall gleich). Monats-
- * Titel und Monatsauswahl greifen auf dieselbe Quelle zu und können nicht
- * auseinanderlaufen.
- */
-export const MONTH_NAMES_DE = [
-  "Januar",
-  "Februar",
-  "März",
-  "April",
-  "Mai",
-  "Juni",
-  "Juli",
-  "August",
-  "September",
-  "Oktober",
-  "November",
-  "Dezember",
-] as const;
 
 /** Monats-Schlüssel "YYYY-MM" eines Datums. */
 export function monthKeyOf(date: Date): string {
@@ -85,15 +62,28 @@ export function addMonths(monthKey: string, delta: number): string {
   return monthKeyOf(new Date(base.getFullYear(), base.getMonth() + delta, 1));
 }
 
-/** Deutsches Monats-Label, z. B. „August 2026". */
-export function formatMonthLabel(monthKey: string): string {
-  const d = keyToDate(monthKey);
-  return `${MONTH_NAMES_DE[d.getMonth()]} ${d.getFullYear()}`;
+/**
+ * BCP-47-Tag der aktiven App-Sprache (Fallback "de-DE") — dieselbe Zuordnung
+ * wie überall sonst in der App (siehe i18n/config.ts INTL_LOCALE_TAGS).
+ * Reagiert live auf Sprachwechsel, da i18next.language bei jedem Aufruf
+ * frisch gelesen wird (analog utils/userMessages.ts, WorkedTimeCard.tsx).
+ */
+function activeLocaleTag(): string {
+  return INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
 }
 
-/** Ausgeschriebenes Tages-Label, z. B. „Mittwoch, 12. August 2026". */
+/** Monats-Label in der aktiven Sprache, z. B. „August 2026" / "August 2026". */
+export function formatMonthLabel(monthKey: string): string {
+  const d = keyToDate(monthKey);
+  return d.toLocaleDateString(activeLocaleTag(), {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/** Ausgeschriebenes Tages-Label in der aktiven Sprache, z. B. „Mittwoch, 12. August 2026". */
 export function formatDayLabel(dayKey: string): string {
-  return keyToDate(dayKey).toLocaleDateString("de-DE", {
+  return keyToDate(dayKey).toLocaleDateString(activeLocaleTag(), {
     weekday: "long",
     day: "numeric",
     month: "long",

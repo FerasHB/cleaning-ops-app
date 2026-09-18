@@ -1,0 +1,78 @@
+{
+  "fallback": {
+    "noEmail": "لا يوجد بريد إلكتروني",
+    "companyConnected": "الشركة مرتبطة",
+    "myAccount": "حسابك"
+  },
+  "roles": {
+    "admin": "مسؤول",
+    "employee": "موظف"
+  },
+  "sections": {
+    "myWork": "عملي",
+    "account": "الحساب",
+    "other": "أخرى"
+  },
+  "rows": {
+    "myWorkingHours": "ساعات عملي",
+    "absences": "الغيابات",
+    "editProfile": "تعديل الملف الشخصي",
+    "phone": "الهاتف",
+    "email": "البريد الإلكتروني",
+    "changePassword": "تغيير كلمة المرور",
+    "appearance": "المظهر",
+    "appearanceValue": "إعداد النظام",
+    "deleteAccount": "حذف الحساب",
+    "appVersion": "إصدار التطبيق",
+    "appVersionValue": "الإصدار {{version}}"
+  },
+  "dialogs": {
+    "appearanceTitle": "المظهر",
+    "appearanceMessage": "يتبع التطبيق تلقائيًا إعداد الوضع الفاتح/الداكن لجهازك.",
+    "logout": "تسجيل الخروج",
+    "logoutMessage": "هل تريد بالتأكيد تسجيل الخروج؟",
+    "logoutFailedTitle": "فشل تسجيل الخروج",
+    "logoutFailedSuffix": "ما زلت مسجّلاً الدخول."
+  },
+  "edit": {
+    "title": "تعديل الملف الشخصي",
+    "fullNameLabel": "الاسم الكامل",
+    "fullNamePlaceholder": "أحمد محمد",
+    "phoneLabel": "الهاتف (اختياري)",
+    "emailInfo": "البريد الإلكتروني: {{email}} — تم تحديده عند التسجيل، لا يمكن تغييره هنا.",
+    "nameRequired": "الاسم مطلوب.",
+    "invalidPhone": "يرجى إدخال رقم هاتف صالح (مثال: 0170 1234567).",
+    "saveFailed": "تعذر حفظ الملف الشخصي."
+  },
+  "changePassword": {
+    "title": "تغيير كلمة المرور",
+    "newPasswordLabel": "كلمة المرور الجديدة",
+    "newPasswordPlaceholder": "10 أحرف على الأقل",
+    "confirmLabel": "تأكيد كلمة المرور",
+    "confirmPlaceholder": "أعد إدخال كلمة المرور",
+    "saveButton": "حفظ كلمة المرور",
+    "saveFailed": "تعذر تغيير كلمة المرور.",
+    "successTitle": "تم الحفظ",
+    "successMessage": "تم تغيير كلمة المرور بنجاح."
+  },
+  "deleteAccount": {
+    "headerTitle": "حذف الحساب",
+    "heroTitle": "حذف الحساب نهائيًا",
+    "heroSubtitle": "هذا الإجراء نهائي ولا يمكن التراجع عنه.",
+    "whatHappensTitle": "ماذا يحدث عند حذف الحساب؟",
+    "whatHappensBullet1": "سيتم حذف حساب تسجيل الدخول الخاص بك (البريد الإلكتروني وكلمة المرور) نهائيًا.",
+    "whatHappensBullet2": "سيتم حذف ملفك الشخصي (الاسم، رقم الهاتف، رمز الإشعارات).",
+    "whatHappensBullet3": "سيتم تسجيل خروجك فورًا وستفقد الوصول إلى التطبيق.",
+    "remainingDataTitle": "ما البيانات التي تبقى محفوظة؟",
+    "remainingDataBullet1": "تبقى الأعمال والتعليقات والصور التي أنشأتها أو عدّلتها لدى شركتك لأسباب تشغيلية وقانونية.",
+    "remainingDataBullet2": "لكن يتم إخفاء هويتها في هذه السجلات — فلم تعد مرتبطة باسمك أو حسابك.",
+    "adminNote": "بصفتك مسؤولاً، لا يمكنك حذف حسابك إلا إذا وُجد مسؤول نشط آخر. إذا كنت المسؤول الوحيد في شركتك، قم أولاً بإغلاق الشركة أو عيّن مسؤولاً آخر.",
+    "checkboxLabel": "أفهم أن هذا الإجراء نهائي وأن حسابي سيُحذف بشكل دائم.",
+    "deleteButton": "حذف الحساب نهائيًا",
+    "confirmDialogTitle": "هل تريد حذف الحساب نهائيًا؟",
+    "confirmDialogMessage": "لا يمكن التراجع عن هذا الإجراء. سيتم حذف حسابك وملفك الشخصي نهائيًا.",
+    "confirmDialogConfirm": "حذف نهائي",
+    "notPossibleTitle": "الحذف غير ممكن",
+    "genericError": "تعذر حذف حسابك. يرجى المحاولة لاحقًا."
+  }
+}

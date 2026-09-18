@@ -1,0 +1,78 @@
+{
+  "fallback": {
+    "noEmail": "No email",
+    "companyConnected": "Company connected",
+    "myAccount": "your account"
+  },
+  "roles": {
+    "admin": "Admin",
+    "employee": "Employee"
+  },
+  "sections": {
+    "myWork": "My Work",
+    "account": "Account",
+    "other": "Other"
+  },
+  "rows": {
+    "myWorkingHours": "My Working Hours",
+    "absences": "Absences",
+    "editProfile": "Edit Profile",
+    "phone": "Phone",
+    "email": "Email",
+    "changePassword": "Change Password",
+    "appearance": "Appearance",
+    "appearanceValue": "System setting",
+    "deleteAccount": "Delete Account",
+    "appVersion": "App Version",
+    "appVersionValue": "Version {{version}}"
+  },
+  "dialogs": {
+    "appearanceTitle": "Appearance",
+    "appearanceMessage": "The app automatically follows your device's light/dark setting.",
+    "logout": "Log Out",
+    "logoutMessage": "Are you sure you want to log out?",
+    "logoutFailedTitle": "Log Out Failed",
+    "logoutFailedSuffix": "You're still signed in."
+  },
+  "edit": {
+    "title": "Edit Profile",
+    "fullNameLabel": "Full Name",
+    "fullNamePlaceholder": "Jane Doe",
+    "phoneLabel": "Phone (optional)",
+    "emailInfo": "Email: {{email}} — set at sign-up, can't be changed here.",
+    "nameRequired": "Name is required.",
+    "invalidPhone": "Please enter a valid phone number (e.g. 0170 1234567).",
+    "saveFailed": "Profile could not be saved."
+  },
+  "changePassword": {
+    "title": "Change Password",
+    "newPasswordLabel": "New Password",
+    "newPasswordPlaceholder": "At least 10 characters",
+    "confirmLabel": "Confirm Password",
+    "confirmPlaceholder": "Repeat password",
+    "saveButton": "Save Password",
+    "saveFailed": "Password could not be changed.",
+    "successTitle": "Saved",
+    "successMessage": "Your password has been changed successfully."
+  },
+  "deleteAccount": {
+    "headerTitle": "Delete Account",
+    "heroTitle": "Permanently Delete Account",
+    "heroSubtitle": "This action is irreversible and cannot be undone.",
+    "whatHappensTitle": "What happens when you delete your account?",
+    "whatHappensBullet1": "Your sign-in account (email and password) will be permanently removed.",
+    "whatHappensBullet2": "Your profile (name, phone number, push token) will be deleted.",
+    "whatHappensBullet3": "You'll be signed out immediately and lose access to the app.",
+    "remainingDataTitle": "What data is kept?",
+    "remainingDataBullet1": "Jobs, comments, and photos you created or edited remain with your company for operational and legal reasons.",
+    "remainingDataBullet2": "These entries are anonymized, though — they're no longer linked to your name or account.",
+    "adminNote": "As an administrator, you can only delete your account if another active administrator exists. If you're the only administrator of your company, dissolve the company first or appoint another administrator.",
+    "checkboxLabel": "I understand this action is irreversible and my account will be permanently deleted.",
+    "deleteButton": "Permanently Delete Account",
+    "confirmDialogTitle": "Permanently delete account?",
+    "confirmDialogMessage": "This action cannot be undone. Your account and profile will be permanently deleted.",
+    "confirmDialogConfirm": "Delete Permanently",
+    "notPossibleTitle": "Deletion Not Possible",
+    "genericError": "Your account could not be deleted. Please try again later."
+  }
+}

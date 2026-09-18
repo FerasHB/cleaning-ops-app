@@ -19,9 +19,10 @@ import { Card, InfoRow } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job } from "@/types/job";
-import { formatDateTimeDE, formatDurationLong } from "@/utils/date";
+import { formatDateTimeLocalized, formatDurationLong } from "@/utils/date";
 import { getPlannedEndTime } from "@/utils/jobSchedule";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 
 type Props = {
@@ -31,23 +32,28 @@ type Props = {
 export function JobScheduleCard({ job }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const plannedEnd = getPlannedEndTime(job);
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
-      <InfoRow label="Auftragstyp" value="Einmalig" icon="calendar-outline" />
+      <InfoRow
+        label={t("jobs:detail.jobTypeLabel")}
+        value={t("jobs:detail.jobTypeSingle")}
+        icon="calendar-outline"
+      />
       <View style={styles.rowDivider} />
       <InfoRow
-        label="Geplanter Start"
-        value={formatDateTimeDE(job.scheduledStart) ?? "Kein Termin geplant"}
+        label={t("jobs:detail.plannedStart")}
+        value={formatDateTimeLocalized(job.scheduledStart) ?? t("jobs:detail.noScheduledDate")}
         icon="calendar-outline"
       />
       {job.plannedDurationMinutes ? (
         <>
           <View style={styles.rowDivider} />
           <InfoRow
-            label="Geplante Dauer"
+            label={t("jobs:detail.plannedDuration")}
             value={formatDurationLong(job.plannedDurationMinutes)}
             icon="time-outline"
           />
@@ -57,7 +63,7 @@ export function JobScheduleCard({ job }: Props) {
         <>
           <View style={styles.rowDivider} />
           <InfoRow
-            label="Geplantes Ende"
+            label={t("jobs:detail.plannedEnd")}
             value={plannedEnd}
             icon="calendar-outline"
           />

@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 import { confirmDialog } from "@/utils/dialogs";
+import { i18next } from "@/i18n";
 
 /**
  * Fragt vor dem Abschließen eines Auftrags nach.
@@ -24,9 +25,9 @@ import { confirmDialog } from "@/utils/dialogs";
  */
 export function confirmCompleteJob(): Promise<boolean> {
   return confirmDialog({
-    title: "Auftrag abschließen?",
-    message: "Der Auftrag wird als erledigt markiert.",
-    confirmLabel: "Abschließen",
-    cancelLabel: "Abbrechen",
+    title: i18next.t("jobs:dialogs.completeTitle"),
+    message: i18next.t("jobs:dialogs.completeMessage"),
+    confirmLabel: i18next.t("jobs:actions.complete"),
+    cancelLabel: i18next.t("common:actions.cancel"),
   });
 }

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { i18next } from "@/i18n";
 import {
   CreateJobInput,
   EmployeeOption,
@@ -616,7 +617,7 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
 
   // Sicherheitshalber prüfen, ob wirklich jemand eingeloggt ist
   if (!userId) {
-    throw new Error("Kein eingeloggter Benutzer gefunden.");
+    throw new Error(i18next.t("common:errors.notAuthenticated"));
   }
 
   // Profil vom aktuellen User laden
@@ -811,7 +812,7 @@ export async function updateJob(input: UpdateJobInput): Promise<Job> {
   const userId = authData.user?.id;
 
   if (!userId) {
-    throw new Error("Kein eingeloggter Benutzer gefunden.");
+    throw new Error(i18next.t("common:errors.notAuthenticated"));
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -986,12 +987,38 @@ export async function startJob(
   return typeof data === "string" && data ? data : timestamp;
 }
 
-// Setzt einen Job auf "completed" und speichert Endzeit.
+// Ergebnis eines Mitarbeiter-Abschlusses (Phase 16).
+//
+// Seit Phase 16 sind ZWEI Dinge zu unterscheiden: die eigene Teilnahme ist
+// erfasst, und der AUFTRAG ist abgeschlossen. Letzteres passiert erst, wenn
+// keine ungeloeste Zuweisung mehr existiert — bei Mehrfachzuweisung also
+// haeufig NICHT im selben Aufruf.
+export type CompleteJobResult = {
+  /** Eigene Abschlusszeit, wie von der RPC bestaetigt. */
+  completedAt: string;
+  /** Auftragsstatus NACH dem Abschluss, frisch vom Server gelesen. */
+  jobStatus: "open" | "in_progress" | "completed";
+};
+
+// Setzt die EIGENE Teilnahme auf abgeschlossen.
 // WICHTIG: Läuft über die RPC complete_own_job (gleicher RLS-Grund wie oben).
+//
+// RUECKGABETYP DER RPC BLEIBT `timestamptz` (Phase 16, bewusst): PostgreSQL
+// kann den Rueckgabetyp einer bestehenden Funktion per CREATE OR REPLACE nicht
+// aendern (42P13), und ein DROP/CREATE wuerde alle GRANTs verlieren. Ob der
+// AUFTRAG dadurch abgeschlossen wurde, wird deshalb nicht aus dem
+// Rueckgabewert gelesen, sondern direkt danach frisch nachgelesen — der Server
+// bleibt die einzige Quelle der Wahrheit.
+//
+// Schlaegt das Nachlesen fehl (Netz), gilt der Abschluss trotzdem als
+// erfolgreich (er IST serverseitig committed); der Status wird dann
+// konservativ als "in_progress" gemeldet, damit die UI keinen Abschluss
+// behauptet, den sie nicht bestaetigen konnte. Der naechste Realtime-Event
+// bzw. Refresh korrigiert das.
 export async function completeJob(
   jobId: string,
   completedAt?: string,
-): Promise<string> {
+): Promise<CompleteJobResult> {
   const timestamp = completedAt ?? new Date().toISOString();
 
   const { data, error } = await supabase.rpc("complete_own_job", {
@@ -1003,8 +1030,51 @@ export async function completeJob(
     throw error;
   }
 
-  // Die RPC gibt den tatsächlich gesetzten Timestamp zurück.
-  return typeof data === "string" && data ? data : timestamp;
+  const ownCompletedAt = typeof data === "string" && data ? data : timestamp;
+
+  let jobStatus: CompleteJobResult["jobStatus"] = "in_progress";
+  try {
+    const fresh = await getJobById(jobId);
+    if (fresh) {
+      jobStatus = fresh.status;
+    }
+  } catch (err) {
+    if (!isNetworkError(err)) {
+      console.error(
+        `[jobs.service] Status-Nachlesen nach Abschluss fehlgeschlagen (Job ${jobId}).`,
+        err,
+      );
+    }
+  }
+
+  return { completedAt: ownCompletedAt, jobStatus };
+}
+
+// Admin-Zwangsabschluss eines haengenden Auftrags (Phase 16).
+//
+// Schliesst AUSSCHLIESSLICH den Auftrags-Lebenszyklus und erfindet KEINE
+// Mitarbeiter-Arbeitszeit: unvollstaendige eigene Zeitpaare bleiben eine
+// Stundenzettel-Luecke und gehoeren ueber die Zeitkorrektur nachgetragen.
+// Berechtigung, Begruendungspflicht und Pruefpfad erzwingt die RPC
+// (admin_force_complete_job, Migration 20260917000000).
+export async function adminForceCompleteJob(
+  jobId: string,
+  reason: string,
+): Promise<Job | null> {
+  const { data, error } = await supabase.rpc("admin_force_complete_job", {
+    job_id_input: jobId,
+    reason_input: reason,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  // Die RPC gibt die jobs-Zeile zurueck — aber OHNE die eingebetteten
+  // Zuweisungen/Profile, die mapJob braucht. Deshalb frisch nachlesen, genau
+  // wie readBackJob es nach Schreibvorgaengen tut.
+  if (!data) return null;
+  return getJobById(jobId);
 }
 
 // Lädt alle generierten Occurrences eines Recurring-Parent-Jobs.
@@ -1036,7 +1106,7 @@ export async function deleteJob(jobId: string): Promise<void> {
   const userId = authData.user?.id;
 
   if (!userId) {
-    throw new Error("Kein eingeloggter Benutzer gefunden.");
+    throw new Error(i18next.t("common:errors.notAuthenticated"));
   }
 
   const { data: profile, error: profileError } = await supabase

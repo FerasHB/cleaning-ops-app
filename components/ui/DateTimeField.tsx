@@ -12,13 +12,20 @@
 
 import { Input } from "@/components/ui/index";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import { formatDateISO, formatForDisplay, formatTimeHHmm } from "@/utils/date";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
+import {
+  formatDateISO,
+  formatDateOnlyLocalized,
+  formatDateTimeLocalized,
+  formatTimeHHmm,
+} from "@/utils/date";
 import DateTimePicker, {
   DateTimePickerAndroid,
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Modal,
   Platform,
@@ -51,15 +58,17 @@ export interface DateTimeFieldProps {
 
 export function DateTimeField({
   label,
-  placeholder = "Datum auswählen...",
+  placeholder,
   value,
   onChange,
   mode = "datetime",
   error,
 }: DateTimeFieldProps) {
   const theme = useAppTheme();
+  const { t, i18n } = useTranslation();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const modalStyles = useMemo(() => createModalStyles(theme), [theme]);
+  const resolvedPlaceholder = placeholder ?? t("common:actions.selectDate");
 
   const isTimeOnly = mode === "time";
   const isDateOnly = mode === "date";
@@ -143,14 +152,8 @@ export function DateTimeField({
     ? isTimeOnly
       ? (formatTimeHHmm(value) ?? "")
       : isDateOnly
-        // "YYYY-MM-DD" → "dd.mm.yyyy" ohne Zeitzonen-Verschiebung
-        ? (() => {
-            const iso = formatDateISO(value);
-            if (!iso) return "";
-            const [y, m, d] = iso.split("-");
-            return `${d}.${m}.${y}`;
-          })()
-        : formatForDisplay(value)
+        ? (formatDateOnlyLocalized(formatDateISO(value)) ?? "")
+        : (formatDateTimeLocalized(value.toISOString()) ?? "")
     : "";
 
   const handleTempDateChange = (
@@ -186,7 +189,7 @@ export function DateTimeField({
             <View pointerEvents="none">
               <Input
                 label={label}
-                placeholder={placeholder}
+                placeholder={resolvedPlaceholder}
                 value={displayValue}
                 editable={false}
               />
@@ -220,10 +223,10 @@ export function DateTimeField({
           <View style={modalStyles.container}>
             <Text style={modalStyles.title}>
               {isTimeOnly
-                ? "Uhrzeit wählen"
+                ? t("common:actions.selectTime")
                 : pickerStep === "date"
-                  ? "Datum wählen"
-                  : "Uhrzeit wählen"}
+                  ? t("common:actions.selectDate")
+                  : t("common:actions.selectTime")}
             </Text>
 
             <View style={modalStyles.pickerWrapper}>
@@ -234,7 +237,7 @@ export function DateTimeField({
                 onChange={handleTempDateChange}
                 themeVariant={theme.isDark ? "dark" : "light"}
                 textColor={theme.colors.onSurface}
-                locale="de-DE"
+                locale={INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE"}
                 style={modalStyles.picker}
               />
             </View>
@@ -244,39 +247,39 @@ export function DateTimeField({
               {isTimeOnly ? (
                 <>
                   <TouchableOpacity onPress={handlePickerCancel} style={modalStyles.btnCancel}>
-                    <Text style={modalStyles.btnCancelText}>Abbrechen</Text>
+                    <Text style={modalStyles.btnCancelText}>{t("common:actions.cancel")}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={handlePickerConfirm} style={modalStyles.btnPrimary}>
-                    <Text style={modalStyles.btnPrimaryText}>Bestätigen</Text>
+                    <Text style={modalStyles.btnPrimaryText}>{t("common:actions.confirm")}</Text>
                   </TouchableOpacity>
                 </>
               ) : /* mode="date": nur Datum, direkt bestätigen (kein Uhrzeit-Schritt) */
               isDateOnly ? (
                 <>
                   <TouchableOpacity onPress={handlePickerCancel} style={modalStyles.btnCancel}>
-                    <Text style={modalStyles.btnCancelText}>Abbrechen</Text>
+                    <Text style={modalStyles.btnCancelText}>{t("common:actions.cancel")}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={handlePickerConfirm} style={modalStyles.btnPrimary}>
-                    <Text style={modalStyles.btnPrimaryText}>Bestätigen</Text>
+                    <Text style={modalStyles.btnPrimaryText}>{t("common:actions.confirm")}</Text>
                   </TouchableOpacity>
                 </>
               ) : /* mode="datetime": Datum → Uhrzeit in zwei Schritten */
               pickerStep === "date" ? (
                 <>
                   <TouchableOpacity onPress={handlePickerCancel} style={modalStyles.btnCancel}>
-                    <Text style={modalStyles.btnCancelText}>Abbrechen</Text>
+                    <Text style={modalStyles.btnCancelText}>{t("common:actions.cancel")}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={handlePickerNext} style={modalStyles.btnPrimary}>
-                    <Text style={modalStyles.btnPrimaryText}>Weiter</Text>
+                    <Text style={modalStyles.btnPrimaryText}>{t("common:actions.next")}</Text>
                   </TouchableOpacity>
                 </>
               ) : (
                 <>
                   <TouchableOpacity onPress={handlePickerBack} style={modalStyles.btnCancel}>
-                    <Text style={modalStyles.btnCancelText}>Zurück</Text>
+                    <Text style={modalStyles.btnCancelText}>{t("common:actions.back")}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={handlePickerConfirm} style={modalStyles.btnPrimary}>
-                    <Text style={modalStyles.btnPrimaryText}>Bestätigen</Text>
+                    <Text style={modalStyles.btnPrimaryText}>{t("common:actions.confirm")}</Text>
                   </TouchableOpacity>
                 </>
               )}
@@ -306,7 +309,7 @@ function createStyles(theme: AppTheme) {
     },
     clearBtn: {
       position: "absolute",
-      right: theme.spacing.sm,
+      end: theme.spacing.sm,
       bottom: theme.spacing.sm + 4,
       width: 28,
       height: 28,

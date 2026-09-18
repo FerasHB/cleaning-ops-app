@@ -27,10 +27,10 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { resendInvite } from "@/services/employees/resendInvite";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
-import { formatForDisplay } from "@/utils/date";
+import { formatDateTimeLocalized } from "@/utils/date";
 import { getEmployeeStatus } from "@/utils/employeeStatus";
 import { isAssignedTo } from "@/utils/jobAssignees";
-import { getJobStatusLabel } from "@/utils/jobStatus";
+import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -49,6 +49,7 @@ import { toUserMessage } from "@/utils/userMessages";
 import { AdminAbsenceRow } from "@/features/absences/admin/components/AdminAbsenceRow";
 import { useEmployeeAbsences } from "@/features/absences/admin/hooks/useEmployeeAbsences";
 import { groupAbsences } from "@/utils/absenceGrouping";
+import { useTranslation } from "react-i18next";
 
 // Abwesenheiten-Abschnitt: kompakter Ausschnitt hier, volle Historie unter
 // "Alle anzeigen" (app/employees/[id]/absences.tsx). Aktuell wird immer
@@ -64,11 +65,6 @@ const STATUS_ORDER: Record<JobStatus, number> = {
   open: 1,
   completed: 2,
 };
-
-function roleLabel(role?: string | null): string {
-  if (role === "admin") return "Admin";
-  return "Mitarbeiter";
-}
 
 function jobDateValue(job: Job): number {
   const iso = job.completedAt ?? job.startedAt ?? job.scheduledStart;
@@ -91,6 +87,8 @@ function isSameDay(iso: string | null | undefined, ref: Date): boolean {
 export default function EmployeeDetailScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const jobStatusLabels = useJobStatusLabels();
+  const { t } = useTranslation();
 
   const { id } = useLocalSearchParams<{ id: string }>();
   const { employees, jobs, loading, setEmployeeActive } = useJobs();
@@ -198,13 +196,13 @@ export default function EmployeeDetailScreen() {
           barStyle={theme.isDark ? "light-content" : "dark-content"}
           backgroundColor={theme.colors.background}
         />
-        <AppHeader title="Mitarbeiter" showBack />
+        <AppHeader title={t("admin:employeeDetail.headerTitle")} showBack />
         <View style={styles.emptyWrap}>
           <EmptyState
-            title="Mitarbeiter nicht gefunden"
-            message="Dieser Mitarbeiter ist nicht (mehr) verfügbar."
+            title={t("admin:employeeDetail.notFoundTitle")}
+            message={t("admin:employeeDetail.notFoundMessage")}
             icon="person-outline"
-            ctaLabel="Zurück"
+            ctaLabel={t("common:actions.back")}
             onCta={() => router.back()}
           />
         </View>
@@ -220,7 +218,7 @@ export default function EmployeeDetailScreen() {
   // der Mitarbeiter-Liste, siehe utils/employeeStatus.ts.
   const status = getEmployeeStatus(employee);
   const invitePending = status.variant === "pending";
-  const invitedAtText = formatForDisplay(employee.invitedAt);
+  const invitedAtText = formatDateTimeLocalized(employee.invitedAt);
 
   const statusPillColors =
     status.variant === "pending"
@@ -259,8 +257,8 @@ export default function EmployeeDetailScreen() {
       // Einladung (siehe resend-invite/index.ts).
       setResendSuccess(
         mode === "recovery"
-          ? `${employee.fullName} hat einen Link zum Passwort-Setzen erhalten.`
-          : `${employee.fullName} hat eine neue Einladungs-E-Mail erhalten.`,
+          ? t("admin:employeeDetail.resendSuccessRecovery", { name: employee.fullName })
+          : t("admin:employeeDetail.resendSuccessInvite", { name: employee.fullName }),
       );
       resendSuccessTimerRef.current = setTimeout(
         () => setResendSuccess(""),
@@ -269,7 +267,7 @@ export default function EmployeeDetailScreen() {
     } catch (err) {
       const message = toUserMessage(
         err,
-        "Einladung konnte nicht erneut verschickt werden.",
+        t("admin:employeeDetail.resendFailedFallback"),
       );
       setResendError(message);
     } finally {
@@ -285,17 +283,17 @@ export default function EmployeeDetailScreen() {
       setUpdatingActive(true);
       await setEmployeeActive(employee.id, nextActive);
       Alert.alert(
-        "Erfolg",
+        t("admin:employeeDetail.successTitle"),
         nextActive
-          ? "Mitarbeiter wurde reaktiviert."
-          : "Mitarbeiter wurde deaktiviert.",
+          ? t("admin:employeeDetail.reactivatedMessage")
+          : t("admin:employeeDetail.deactivatedMessage"),
       );
     } catch (err) {
       const message = toUserMessage(
         err,
-        "Status konnte nicht geändert werden.",
+        t("admin:employeeDetail.toggleFailedFallback"),
       );
-      Alert.alert("Fehler", message);
+      Alert.alert(t("common:errors.title"), message);
     } finally {
       setUpdatingActive(false);
     }
@@ -306,12 +304,14 @@ export default function EmployeeDetailScreen() {
 
     if (accountActive) {
       Alert.alert(
-        "Mitarbeiter deaktivieren",
-        `${employee.fullName} wird deaktiviert und kann keinen neuen Jobs mehr zugewiesen werden. Bestehende Jobs bleiben unverändert.`,
+        t("admin:employeeDetail.deactivateConfirmTitle"),
+        t("admin:employeeDetail.deactivateConfirmMessage", {
+          name: employee.fullName,
+        }),
         [
-          { text: "Abbrechen", style: "cancel" },
+          { text: t("common:actions.cancel"), style: "cancel" },
           {
-            text: "Deaktivieren",
+            text: t("admin:employeeDetail.deactivateConfirmAction"),
             style: "destructive",
             onPress: () => applyActiveChange(false),
           },
@@ -319,12 +319,14 @@ export default function EmployeeDetailScreen() {
       );
     } else {
       Alert.alert(
-        "Mitarbeiter reaktivieren",
-        `${employee.fullName} wird wieder aktiv und kann erneut Jobs zugewiesen bekommen.`,
+        t("admin:employeeDetail.reactivateConfirmTitle"),
+        t("admin:employeeDetail.reactivateConfirmMessage", {
+          name: employee.fullName,
+        }),
         [
-          { text: "Abbrechen", style: "cancel" },
+          { text: t("common:actions.cancel"), style: "cancel" },
           {
-            text: "Reaktivieren",
+            text: t("admin:employeeDetail.reactivateConfirmAction"),
             onPress: () => applyActiveChange(true),
           },
         ],
@@ -338,7 +340,7 @@ export default function EmployeeDetailScreen() {
         barStyle={theme.isDark ? "light-content" : "dark-content"}
         backgroundColor={theme.colors.background}
       />
-      <AppHeader title="Mitarbeiter" showBack />
+      <AppHeader title={t("admin:employeeDetail.headerTitle")} showBack />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -368,8 +370,10 @@ export default function EmployeeDetailScreen() {
         {/* ── Stammdaten ── */}
         <Card padding={theme.spacing.lg} style={styles.card}>
           <InfoRow
-            label="Rolle"
-            value={roleLabel(employee.role)}
+            label={t("admin:employeeDetail.fieldRole")}
+            value={t(
+              employee.role === "admin" ? "profile:roles.admin" : "profile:roles.employee",
+            )}
             icon="briefcase-outline"
           />
           <View style={styles.rowDivider} />
@@ -377,12 +381,16 @@ export default function EmployeeDetailScreen() {
           <View style={styles.rowDivider} />
           <PhoneRow phone={employee.phone} contactName={employee.fullName} />
           <View style={styles.rowDivider} />
-          <InfoRow label="Konto-Status" value={status.label} icon="pulse-outline" />
+          <InfoRow
+            label={t("admin:employeeDetail.fieldAccountStatus")}
+            value={status.label}
+            icon="pulse-outline"
+          />
           {invitePending && invitedAtText ? (
             <>
               <View style={styles.rowDivider} />
               <InfoRow
-                label="Eingeladen am"
+                label={t("admin:employeeDetail.fieldInvitedAt")}
                 value={invitedAtText}
                 icon="mail-unread-outline"
               />
@@ -397,8 +405,8 @@ export default function EmployeeDetailScreen() {
             accessibilityRole="button"
           >
             <InfoRow
-              label="Beschäftigung & Urlaub"
-              value="Konfigurieren"
+              label={t("admin:employeeDetail.fieldEmployment")}
+              value={t("admin:employeeDetail.fieldEmploymentValue")}
               icon="calendar-outline"
             />
           </TouchableOpacity>
@@ -408,8 +416,8 @@ export default function EmployeeDetailScreen() {
             accessibilityRole="button"
           >
             <InfoRow
-              label="Urlaubskonto"
-              value="Saldo & Verlauf"
+              label={t("admin:employeeDetail.fieldVacationAccount")}
+              value={t("admin:employeeDetail.fieldVacationAccountValue")}
               icon="sunny-outline"
             />
           </TouchableOpacity>
@@ -418,7 +426,9 @@ export default function EmployeeDetailScreen() {
         {/* ── Aktueller Job ── */}
         {activeJob ? (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>AKTUELLER JOB</Text>
+            <Text style={styles.sectionLabel}>
+              {t("admin:employeeDetail.sectionCurrentJob")}
+            </Text>
             <JobCard
               job={activeJob}
               onPress={() => router.push(`/jobs/${activeJob.id}`)}
@@ -428,11 +438,13 @@ export default function EmployeeDetailScreen() {
 
         {/* ── Statistiken ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>STATISTIK</Text>
+          <Text style={styles.sectionLabel}>
+            {t("admin:employeeDetail.sectionStats")}
+          </Text>
           <View style={styles.kpiGrid}>
             <View style={styles.kpiItem}>
               <KPICard
-                label="Heute"
+                label={t("admin:employeeDetail.statToday")}
                 value={todayCount}
                 icon="today-outline"
                 accentColor={theme.colors.primary}
@@ -440,7 +452,7 @@ export default function EmployeeDetailScreen() {
             </View>
             <View style={styles.kpiItem}>
               <KPICard
-                label={getJobStatusLabel("open")}
+                label={jobStatusLabels.open}
                 value={openCount}
                 icon="folder-open-outline"
                 accentColor={theme.colors.statusOpen}
@@ -448,7 +460,7 @@ export default function EmployeeDetailScreen() {
             </View>
             <View style={styles.kpiItem}>
               <KPICard
-                label={getJobStatusLabel("in_progress")}
+                label={jobStatusLabels.in_progress}
                 value={inProgressCount}
                 icon="time-outline"
                 accentColor={theme.colors.statusInProgress}
@@ -456,7 +468,7 @@ export default function EmployeeDetailScreen() {
             </View>
             <View style={styles.kpiItem}>
               <KPICard
-                label={getJobStatusLabel("completed")}
+                label={jobStatusLabels.completed}
                 value={completedCount}
                 icon="checkmark-circle-outline"
                 accentColor={theme.colors.statusCompleted}
@@ -464,7 +476,7 @@ export default function EmployeeDetailScreen() {
             </View>
             <View style={styles.kpiItem}>
               <KPICard
-                label="Gesamt"
+                label={t("admin:employeeDetail.statTotal")}
                 value={totalCount}
                 icon="layers-outline"
               />
@@ -475,10 +487,15 @@ export default function EmployeeDetailScreen() {
         {/* ── Zugewiesene Jobs ── */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionLabel}>ZUGEWIESENE JOBS</Text>
+            <Text style={styles.sectionLabel}>
+              {t("admin:employeeDetail.sectionAssignedJobs")}
+            </Text>
             {totalCount > visibleJobs.length ? (
               <Text style={styles.sectionMeta}>
-                {visibleJobs.length} von {totalCount}
+                {t("admin:employeeDetail.metaShownOfTotal", {
+                  shown: visibleJobs.length,
+                  total: totalCount,
+                })}
               </Text>
             ) : null}
           </View>
@@ -486,8 +503,8 @@ export default function EmployeeDetailScreen() {
           {visibleJobs.length === 0 ? (
             <Card padding={theme.spacing.lg}>
               <EmptyState
-                title="Keine Jobs zugewiesen"
-                message="Diesem Mitarbeiter wurden noch keine Jobs zugewiesen."
+                title={t("admin:employeeDetail.emptyJobsTitle")}
+                message={t("admin:employeeDetail.emptyJobsMessage")}
                 icon="briefcase-outline"
               />
             </Card>
@@ -508,13 +525,15 @@ export default function EmployeeDetailScreen() {
         {/* ── Abwesenheiten ── */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionLabel}>ABWESENHEITEN</Text>
+            <Text style={styles.sectionLabel}>
+              {t("admin:employeeDetail.sectionAbsences")}
+            </Text>
             {absences.length >= ABSENCE_SECTION_LIMIT ? (
               <Text
                 style={styles.sectionMeta}
                 onPress={() => router.push(`/employees/${employee.id}/absences`)}
               >
-                Alle anzeigen
+                {t("admin:employeeDetail.viewAllAbsences")}
               </Text>
             ) : null}
           </View>
@@ -522,7 +541,7 @@ export default function EmployeeDetailScreen() {
           {absenceLoadError ? (
             <ErrorBanner
               message={absenceLoadError}
-              actionLabel="Erneut versuchen"
+              actionLabel={t("common:actions.retry")}
               onAction={() => loadAbsences()}
             />
           ) : null}
@@ -534,8 +553,8 @@ export default function EmployeeDetailScreen() {
           {absences.length === 0 && !absenceLoadError ? (
             <Card padding={theme.spacing.lg}>
               <EmptyState
-                title="Keine Abwesenheiten erfasst"
-                message="Urlaub oder Krankheit dieses Mitarbeiters erscheinen hier."
+                title={t("admin:employeeDetail.emptyAbsencesTitle")}
+                message={t("admin:employeeDetail.emptyAbsencesMessage")}
                 icon="calendar-outline"
               />
             </Card>
@@ -575,7 +594,7 @@ export default function EmployeeDetailScreen() {
           )}
 
           <Button
-            label="Abwesenheit erfassen"
+            label={t("admin:employeeDetail.recordAbsenceButton")}
             variant="secondary"
             icon="calendar-outline"
             onPress={() =>
@@ -601,13 +620,13 @@ export default function EmployeeDetailScreen() {
             </View>
           ) : null}
           <Button
-            label="Job zuweisen"
+            label={t("admin:employeeDetail.assignJobButton")}
             icon="add"
             onPress={handleAssignJob}
           />
           {invitePending ? (
             <Button
-              label="Einladung erneut senden"
+              label={t("admin:employeeDetail.resendInviteButton")}
               variant="secondary"
               icon="mail-outline"
               loading={resendingInvite}
@@ -617,8 +636,8 @@ export default function EmployeeDetailScreen() {
           <Button
             label={
               accountActive
-                ? "Mitarbeiter deaktivieren"
-                : "Mitarbeiter reaktivieren"
+                ? t("admin:employeeDetail.deactivateButton")
+                : t("admin:employeeDetail.reactivateButton")
             }
             variant={accountActive ? "danger" : "secondary"}
             icon={

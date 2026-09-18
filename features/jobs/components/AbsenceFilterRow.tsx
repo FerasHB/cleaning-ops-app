@@ -14,21 +14,19 @@
 
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { i18next } from "@/i18n";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { ScrollView, StyleSheet, Text, TouchableOpacity } from "react-native";
 
 export type AbsenceSelection = "all" | "vacation" | "sickness";
 
-export const ALL_ABSENCE_LABEL = "Alle";
-
-const ABSENCE_LABELS: Record<Exclude<AbsenceSelection, "all">, string> = {
-  vacation: "Urlaub",
-  sickness: "Krank",
-};
-
 /** Lesbares Label der aktuellen Auswahl (für Chip/Accessibility). */
 export function absenceSelectionLabel(selection: AbsenceSelection): string {
-  return selection === "all" ? ALL_ABSENCE_LABEL : ABSENCE_LABELS[selection];
+  if (selection === "all") return i18next.t("common:filters.all");
+  return i18next.t(
+    selection === "vacation" ? "absences:types.vacation" : "timesheets:absenceSection.typeSickness",
+  );
 }
 
 type Props = {
@@ -39,6 +37,7 @@ type Props = {
 export function AbsenceFilterRow({ value, onChange }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   return (
     <ScrollView
@@ -47,7 +46,7 @@ export function AbsenceFilterRow({ value, onChange }: Props) {
       contentContainerStyle={styles.row}
     >
       <Chip
-        label={ALL_ABSENCE_LABEL}
+        label={t("common:filters.all")}
         active={value === "all"}
         onPress={() => onChange("all")}
         activeBg={theme.colors.primaryContainer}
@@ -56,7 +55,7 @@ export function AbsenceFilterRow({ value, onChange }: Props) {
         styles={styles}
       />
       <Chip
-        label={ABSENCE_LABELS.vacation}
+        label={t("absences:types.vacation")}
         active={value === "vacation"}
         onPress={() => onChange("vacation")}
         activeBg={theme.colors.primaryContainer}
@@ -65,7 +64,7 @@ export function AbsenceFilterRow({ value, onChange }: Props) {
         styles={styles}
       />
       <Chip
-        label={ABSENCE_LABELS.sickness}
+        label={t("timesheets:absenceSection.typeSickness")}
         active={value === "sickness"}
         onPress={() => onChange("sickness")}
         activeBg={theme.colors.statusOpenBg}
@@ -94,6 +93,7 @@ function Chip({
   activeText: string;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const { t } = useTranslation();
   return (
     <TouchableOpacity
       style={[
@@ -104,7 +104,7 @@ function Chip({
       activeOpacity={0.8}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      accessibilityLabel={`Abwesenheits-Filter: ${label}`}
+      accessibilityLabel={t("admin:calendar.absenceFilterA11y", { label })}
     >
       <Text
         style={[

@@ -6,6 +6,7 @@ import { validateNewPassword } from "@/utils/passwordValidation";
 import type { AppTheme } from "@/constants/theme";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +23,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function ChangePasswordScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -47,14 +49,16 @@ export default function ChangePasswordScreen() {
 
       if (updateError) {
         setError(
-          toFriendlyAuthErrorMessage(updateError, "Passwort konnte nicht geändert werden."),
+          toFriendlyAuthErrorMessage(updateError, t("profile:changePassword.saveFailed")),
         );
         return;
       }
 
-      Alert.alert("Gespeichert", "Dein Passwort wurde erfolgreich geändert.", [
-        { text: "OK", onPress: () => router.back() },
-      ]);
+      Alert.alert(
+        t("profile:changePassword.successTitle"),
+        t("profile:changePassword.successMessage"),
+        [{ text: t("common:actions.ok"), onPress: () => router.back() }],
+      );
     } catch (err) {
       setError(toFriendlyAuthErrorMessage(err));
     } finally {
@@ -68,7 +72,7 @@ export default function ChangePasswordScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <AppHeader title="Passwort ändern" showBack />
+        <AppHeader title={t("profile:changePassword.title")} showBack />
 
         <ScrollView
           contentContainerStyle={styles.content}
@@ -85,8 +89,8 @@ export default function ChangePasswordScreen() {
 
           <View style={styles.form}>
             <PasswordInput
-              label="Neues Passwort"
-              placeholder="Mindestens 10 Zeichen"
+              label={t("profile:changePassword.newPasswordLabel")}
+              placeholder={t("profile:changePassword.newPasswordPlaceholder")}
               value={newPassword}
               onChangeText={(text) => {
                 setNewPassword(text);
@@ -99,8 +103,8 @@ export default function ChangePasswordScreen() {
             />
 
             <PasswordInput
-              label="Passwort bestätigen"
-              placeholder="Passwort wiederholen"
+              label={t("profile:changePassword.confirmLabel")}
+              placeholder={t("profile:changePassword.confirmPlaceholder")}
               value={confirmPassword}
               onChangeText={(text) => {
                 setConfirmPassword(text);
@@ -123,7 +127,7 @@ export default function ChangePasswordScreen() {
             {loading ? (
               <ActivityIndicator size="small" color={theme.colors.onPrimary} />
             ) : (
-              <Text style={styles.saveButtonText}>Passwort speichern</Text>
+              <Text style={styles.saveButtonText}>{t("profile:changePassword.saveButton")}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>

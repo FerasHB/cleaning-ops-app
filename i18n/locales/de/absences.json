@@ -1,0 +1,94 @@
+{
+  "title": "Abwesenheiten",
+  "actions": {
+    "requestVacation": "Urlaub beantragen",
+    "reportSickness": "Krank melden"
+  },
+  "empty": {
+    "noAbsences": "Noch keine Abwesenheiten erfasst."
+  },
+  "groups": {
+    "current": "Aktuell",
+    "upcoming": "Bevorstehend",
+    "past": "Vergangen"
+  },
+  "types": {
+    "vacation": "Urlaub",
+    "sickness": "Krankheit"
+  },
+  "status": {
+    "requested": "Angefragt",
+    "approved": "Genehmigt",
+    "rejected": "Abgelehnt",
+    "cancelled": "Storniert",
+    "reported": "Gemeldet"
+  },
+  "card": {
+    "adminNoteLabel": "Notiz vom Admin",
+    "cancelVacationConfirmTitle": "Anfrage stornieren",
+    "cancelVacationConfirmMessage": "Möchtest du diesen Urlaubsantrag wirklich stornieren?",
+    "cancelSicknessConfirmTitle": "Krankmeldung stornieren",
+    "cancelSicknessConfirmMessage": "Möchtest du diese Krankmeldung wirklich stornieren?",
+    "cancelConfirm": "Stornieren",
+    "cancelVacationAction": "Anfrage stornieren",
+    "cancelSicknessAction": "Krankmeldung stornieren",
+    "updateEndAction": "Ende aktualisieren",
+    "expectedUntilLabel": "Voraussichtlich bis",
+    "noEndDatePlaceholder": "Kein Enddatum bekannt",
+    "removeEndDate": "Enddatum entfernen",
+    "rangeSincePrefix": "Seit"
+  },
+  "balance": {
+    "title": "Urlaub {{year}}",
+    "annualEntitlement": "Jahresanspruch",
+    "used": "Verbraucht",
+    "adjustments": "Korrekturen",
+    "remaining": "Resturlaub",
+    "days": "{{count}} Tage",
+    "pendingRequests": "Offene Anträge",
+    "pendingFootnote": "Die angerechneten Tage stehen erst mit der Genehmigung fest."
+  },
+  "requestVacation": {
+    "title": "Urlaub beantragen",
+    "fromLabel": "Von",
+    "toLabel": "Bis",
+    "noteLabel": "Notiz (optional)",
+    "notePlaceholder": "z. B. Grund oder Hinweis für den Admin",
+    "submitButton": "Urlaub beantragen",
+    "successTitle": "Urlaub beantragt",
+    "successMessage": "Dein Urlaubsantrag wurde eingereicht und wartet auf Prüfung."
+  },
+  "reportSickness": {
+    "title": "Krank melden",
+    "sinceLabel": "Krank ab",
+    "untilLabel": "Voraussichtlich bis (optional)",
+    "untilPlaceholder": "Noch nicht bekannt",
+    "noteLabel": "Notiz (optional)",
+    "notePlaceholder": "z. B. Art der Erkrankung, Vertretung",
+    "submitButton": "Krank melden",
+    "successTitle": "Krankmeldung gespeichert",
+    "successMessage": "Deine Krankmeldung wurde erfasst."
+  },
+  "errors": {
+    "loadFailed": "Die Abwesenheiten konnten nicht geladen werden.",
+    "actionFailed": "Die Aktion konnte nicht ausgeführt werden.",
+    "loadSingleFailed": "Die Abwesenheit konnte nicht geladen werden.",
+    "onlyEmployeesVacation": "Nur Mitarbeiter können Urlaub beantragen.",
+    "onlyEmployeesSickness": "Nur Mitarbeiter können eine Krankheit melden.",
+    "onlyEmployeesCancelVacation": "Nur Mitarbeiter können ihren eigenen Urlaub stornieren.",
+    "onlyEmployeesCancelSickness": "Nur Mitarbeiter können ihre eigene Krankmeldung stornieren.",
+    "onlyEmployeesUpdateSickness": "Nur Mitarbeiter können ihre eigene Krankmeldung aktualisieren.",
+    "datesRequired": "Bitte Von- und Bis-Datum angeben.",
+    "startDateRequired": "Bitte ein Startdatum angeben.",
+    "endBeforeStart": "Das Enddatum darf nicht vor dem Startdatum liegen.",
+    "overlapsVacation": "Dieser Zeitraum überschneidet sich mit einem bereits bestehenden Urlaubsantrag.",
+    "overlapsSickness": "Dieser Zeitraum überschneidet sich mit einer bereits aktiven Krankmeldung.",
+    "vacationNotCancellable": "Dieser Urlaub kann nicht mehr storniert werden — er ist entweder bereits vergangen oder wurde schon entschieden.",
+    "sicknessNotFound": "Diese Krankmeldung wurde nicht gefunden oder ist bereits abgeschlossen.",
+    "requestFailed": "Der Urlaubsantrag konnte nicht gestellt werden.",
+    "reportFailed": "Die Krankmeldung konnte nicht gespeichert werden.",
+    "cancelVacationFailed": "Der Urlaub konnte nicht storniert werden.",
+    "cancelSicknessFailed": "Die Krankmeldung konnte nicht storniert werden.",
+    "updateEndFailed": "Das Enddatum konnte nicht aktualisiert werden."
+  }
+}
