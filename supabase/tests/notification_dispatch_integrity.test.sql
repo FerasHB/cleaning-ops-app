@@ -47,8 +47,18 @@ on conflict (id) do update set
   role=excluded.role, company_id=excluded.company_id, is_active=excluded.is_active,
   expo_push_token=excluded.expo_push_token, full_name=excluded.full_name, locale=excluded.locale;
 
-insert into public.jobs (id, company_id, customer_name, service_name, location_address, status, assigned_to, job_type, is_active) values
- ('99200000-0000-0000-0000-000000000001','99000000-0000-0000-0000-000000000001','Kunde NDI','Büroreinigung','Weg 1','open','99100000-0000-0000-0000-000000000002','single',true);
+-- date/start_time gesetzt: seit Phase 16 (20260917000000) verlangt
+-- start_own_job einen Termin am Kalendertag der Aktion
+-- (job_start_date_allowed) — ohne date wirft der echte RPC-Aufruf sonst
+-- "kein Termin hinterlegt", unabhängig vom Notification-Fix selbst.
+-- BEWUSST (now() at time zone 'Europe/Berlin')::date, NICHT current_date:
+-- job_start_date_allowed vergleicht gegen die ORTSZEIT der Firma (Default
+-- Europe/Berlin, siehe start_own_job), current_date liefert dagegen die
+-- Session-Zeitzone — nahe Mitternacht UTC koennen beide auseinanderfallen
+-- und den Test genau dann fälschlich als "Termin in der Vergangenheit"
+-- scheitern lassen.
+insert into public.jobs (id, company_id, customer_name, service_name, location_address, status, assigned_to, job_type, is_active, date, start_time) values
+ ('99200000-0000-0000-0000-000000000001','99000000-0000-0000-0000-000000000001','Kunde NDI','Büroreinigung','Weg 1','open','99100000-0000-0000-0000-000000000002','single',true, (now() at time zone 'Europe/Berlin')::date, '00:00');
 
 -- E1 (primärer Zeiger assigned_to) wird bereits per compat_sync_assignments_
 -- from_legacy_ins-Trigger (20260726000000) aus dem INSERT oben angelegt —
@@ -89,6 +99,22 @@ end $$;
 -- =========================================================
 -- F — job_completed bleibt korrekt (entity_type weiterhin 'job')
 -- =========================================================
+-- Job #1 hat ZWEI Zugewiesene (E1 primär + E2 sekundär, siehe job_assignments
+-- oben). Seit Phase 16 (Mehrfachzuweisung, 20260917000000) transitioniert
+-- der AUFTRAG selbst erst zu 'completed', wenn ALLE Zugewiesenen ihre eigene
+-- Teilnahme abgeschlossen haben (maybe_complete_job) — E1 allein reicht
+-- nicht mehr aus. Deshalb hier zusätzlich E2 starten+abschließen, bevor
+-- job_completed geprüft wird; das ist reines Phase-16-Verhalten, nicht Teil
+-- des Notification-Fixes selbst.
+do $$
+begin
+  perform set_config('request.jwt.claims','{"sub":"99100000-0000-0000-0000-000000000003","role":"authenticated"}', true);
+  execute 'set local role authenticated';
+  perform public.start_own_job('99200000-0000-0000-0000-000000000001');
+  perform public.complete_own_job('99200000-0000-0000-0000-000000000001');
+  execute 'reset role';
+end $$;
+
 do $$
 declare v_event_type text; v_entity_type text;
 begin
@@ -226,8 +252,8 @@ declare
   v_reclaimed_attempts int;
   v_immediate_reclaim_count int;
 begin
-  insert into public.jobs (id, company_id, customer_name, service_name, location_address, status, assigned_to, job_type, is_active)
-  values ('99200000-0000-0000-0000-000000000004','99000000-0000-0000-0000-000000000001','Kunde NDI Lock','Teppichreinigung','Weg 4','open','99100000-0000-0000-0000-000000000002','single',true);
+  insert into public.jobs (id, company_id, customer_name, service_name, location_address, status, assigned_to, job_type, is_active, date, start_time)
+  values ('99200000-0000-0000-0000-000000000004','99000000-0000-0000-0000-000000000001','Kunde NDI Lock','Teppichreinigung','Weg 4','open','99100000-0000-0000-0000-000000000002','single',true, (now() at time zone 'Europe/Berlin')::date, '00:00');
 
   perform set_config('request.jwt.claims','{"sub":"99100000-0000-0000-0000-000000000002","role":"authenticated"}', true);
   execute 'set local role authenticated';
@@ -287,8 +313,8 @@ begin
     perform vault.create_secret('test-only-fake-sweeper-secret', 'dispatch_sweeper_secret', 'TEST-ONLY, rollt mit dieser Transaktion zurueck');
   end if;
 
-  insert into public.jobs (id, company_id, customer_name, service_name, location_address, status, assigned_to, job_type, is_active)
-  values ('99200000-0000-0000-0000-000000000002','99000000-0000-0000-0000-000000000001','Kunde NDI 2','Fensterreinigung','Weg 2','open','99100000-0000-0000-0000-000000000002','single',true)
+  insert into public.jobs (id, company_id, customer_name, service_name, location_address, status, assigned_to, job_type, is_active, date, start_time)
+  values ('99200000-0000-0000-0000-000000000002','99000000-0000-0000-0000-000000000001','Kunde NDI 2','Fensterreinigung','Weg 2','open','99100000-0000-0000-0000-000000000002','single',true, (now() at time zone 'Europe/Berlin')::date, '00:00')
   returning id into v_job_id;
 
   perform set_config('request.jwt.claims','{"sub":"99100000-0000-0000-0000-000000000002","role":"authenticated"}', true);
