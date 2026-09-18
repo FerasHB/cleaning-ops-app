@@ -2,17 +2,39 @@
 -- TEST: Shared Job Time — Start/Abschluss fuer JEDEN Zugewiesenen
 -- (Migration 20260731000000_shared_job_time_multi_assignment)
 -- =========================================================
--- Prueft die drei Aussagen, auf denen die Phase steht:
+-- ÜBERARBEITET 2026-09-17 fuer Phase 16 (Migration 20260917000000).
 --
---   1. JEDER ueber job_assignments Zugewiesene darf starten und
---      abschliessen — auch der, der den jeweils anderen Uebergang nicht
---      ausgeloest hat (geteilte Job-Uhr).
---   2. Die Uhr gehoert dem AUFTRAG: startet Ahmed und schliesst Mohammed
---      ab, ist die offizielle Dauer 08:00–10:00 und BEIDE erscheinen mit
---      genau dieser Zeit im Stundenzettel-Praedikat.
---   3. Es geht dabei KEINE Grenze auf: nicht Zugewiesene, fremde Firmen,
---      deaktivierte Konten, Admins und Recurring-Parent-Regeln bleiben
---      abgewiesen; ein zweiter Start/Abschluss aendert nichts.
+-- Was sich aendert und warum — die urspruengliche Kernaussage dieser Suite
+-- war: "JEDER Zugewiesene darf abschliessen, auch ohne selbst gestartet zu
+-- haben" (geteilte Job-Uhr, ein einzelner Akteur schliesst den GANZEN
+-- Auftrag ab). GENAU DAS hat Phase 16 bewusst abgeschafft — es war die
+-- nachgewiesene Ursache des Vorfalls vom 2026-09-16 (Employee A startet,
+-- Employee B schliesst ab, ohne je selbst gestartet zu haben).
+--
+-- Diese Fassung testet deshalb die AKTUALISIERTE, aber gleichwertige
+-- Kernaussage:
+--   1. JEDER Zugewiesene darf starten UND abschliessen — aber Abschliessen
+--      verlangt seit Phase 16 den EIGENEN Start (Rolle 4). Ein Sekundaerer
+--      OHNE eigenen Start wird jetzt explizit abgewiesen (neuer Fall).
+--   2. Die geteilte Job-Uhr existiert weiterhin genau EINMAL pro Auftrag
+--      (jobs.started_at/completed_at) — aber sie wird jetzt erst gesetzt,
+--      wenn ALLE aktuellen Zuweisungen ihre EIGENE Teilnahme abgeschlossen
+--      haben (Phase-16-Aggregation). Start bleibt "der Erste gewinnt";
+--      Abschluss ist jetzt "der LETZTE schliesst den Auftrag".
+--   3. Es geht dabei KEINE der urspruenglichen Grenzen auf: nicht
+--      Zugewiesene, fremde Firmen, deaktivierte Konten, Admins und
+--      Recurring-Parent-Regeln bleiben abgewiesen; ein zweiter eigener
+--      Abschluss aendert nichts (Idempotenz bleibt erhalten, jetzt pro
+--      Mitarbeiter statt pro Auftrag).
+--
+-- Zeitstempel sind jetzt RELATIV zu now() (statt fixer 2026-07-31-Literale),
+-- damit sie innerhalb von Phase 16s 12-Stunden-Vertrauensfenster bleiben.
+-- Mehrere Start-Aufrufe auf DEMSELBEN Auftrag verwenden bewusst denselben
+-- Anker-Zeitstempel (nicht nur "nah beieinander") — das macht das Ergebnis
+-- unabhaengig davon, ob die Suite kurz vor oder nach Mitternacht (Europe/
+-- Berlin) laeuft: derselbe Ausdruck kann innerhalb einer Transaktion nicht
+-- auf zwei verschiedene Kalendertage fallen, da now() transaktionsweit
+-- konstant ist.
 --
 -- Alle Zugriffe laufen als echte Rollen (SET ROLE + request.jwt.claims),
 -- also ueber denselben Pfad wie die App ueber PostgREST.
@@ -20,18 +42,16 @@
 -- HINWEIS ZU „VERWEIGERT"-PFADEN: wie in job_assignments_rls.test.sql
 -- begruendet, stuerzt der lokale Supabase-Container bei einem
 -- permission-denied-Fehler ab. Dieser Test loest keine solchen Fehler aus —
--- alle Ablehnungen kommen aus dem FUNKTIONSKOERPER der beiden RPCs
--- (RAISE EXCEPTION) bzw. aus RLS, nicht aus fehlenden Privilegien.
+-- alle Ablehnungen kommen aus dem FUNKTIONSKOERPER der RPCs (RAISE
+-- EXCEPTION) bzw. aus RLS, nicht aus fehlenden Privilegien.
 --
 -- Laeuft transaktional (BEGIN … ROLLBACK): keine Rueckstaende, keine
--- Produktionsdaten. Ausfuehren lokal:
---   docker exec -i supabase_db_<projekt> psql -U postgres -d postgres \
---     -v ON_ERROR_STOP=1 -f - < supabase/tests/shared_job_time_multi_assignment.test.sql
+-- Produktionsdaten.
 -- =========================================================
 
 begin;
 
--- ── Fixdaten ──
+-- ── Fixdaten (unveraendert gegenueber der Vorfassung) ──
 -- Firma A = f1…1 | Firma B = f1…2
 -- Admin A   = f2…1
 -- AHMED     = f2…2  (Legacy-Primaer von J1)
@@ -63,6 +83,8 @@ insert into public.profiles (id, full_name) values
   ('f2000000-0000-0000-0000-000000000007','Ines Inaktiv')
 on conflict (id) do nothing;
 
+-- companies.timezone bekommt keinen expliziten Wert — der Spalten-Default
+-- 'Europe/Berlin' greift, exakt die Zeitzone, gegen die Phase 16 rechnet.
 insert into public.companies (id,name,slug) values
   ('f1000000-0000-0000-0000-000000000001','Shared Firma A','shared-firma-a-test'),
   ('f1000000-0000-0000-0000-000000000002','Shared Firma B','shared-firma-b-test');
@@ -73,8 +95,26 @@ update public.profiles set company_id='f1000000-0000-0000-0000-000000000001', ro
 update public.profiles set company_id='f1000000-0000-0000-0000-000000000002', role='admin',    is_active=true where id='f2000000-0000-0000-0000-000000000005';
 update public.profiles set company_id='f1000000-0000-0000-0000-000000000002', role='employee', is_active=true where id='f2000000-0000-0000-0000-000000000006';
 
+-- Geschaeftsdatum eines Zeitpunkts in Europe/Berlin — fuer jobs.date, damit
+-- Start-Aufrufe die Phase-16-Terminpruefung bestehen.
+create or replace function pg_temp.bdate(p timestamptz) returns date language sql as $f$
+  select (p at time zone 'Europe/Berlin')::date;
+$f$;
+
+-- Anker fuer J1 ("Szenario 1"): Ahmeds Start. J1.date wird DIREKT hieraus
+-- abgeleitet (siehe unten) — Mohammeds spaeterer eigener Start verwendet
+-- denselben Anker, nicht einen zeitlich versetzten, damit beide garantiert
+-- denselben Kalendertag treffen.
+-- Anker fuer J2 ("Szenario 2", Gegenrichtung): Ahmeds Start dort.
+do $$ begin
+  -- true = transaktionslokal (wie act_as() unten) — darf auf einer gepoolten
+  -- Verbindung niemals ueber das abschliessende ROLLBACK hinaus bestehen.
+  perform set_config('phase16_test.anchor_j1', (now() - interval '4 hours')::text, true);
+  perform set_config('phase16_test.anchor_j2', (now() - interval '5 hours')::text, true);
+end $$;
+
 -- Auftraege (alle Firma A, ausser J5):
---   J1 = single, {AHMED, MOHAMMED}      -> Hauptszenario (A startet, B schliesst ab)
+--   J1 = single, {AHMED, MOHAMMED}      -> Hauptszenario (A startet, beide schliessen eigenen Teil ab)
 --   J2 = single, {MOHAMMED, AHMED}      -> Gegenrichtung (Szenario 2)
 --   J3 = RECURRING-PARENT, {MOHAMMED}   -> darf NIE startbar sein
 --   J4 = single, NUR Legacy-Zeiger      -> Bestandsfall ohne Zuweisungszeile
@@ -83,8 +123,8 @@ update public.profiles set company_id='f1000000-0000-0000-0000-000000000002', ro
 insert into public.jobs (id, company_id, assigned_to, created_by, customer_name, service_name,
                          location_address, status, job_type, date, start_time, recurring_days,
                          is_active, created_at, updated_at, parent_job_id) values
-  ('f4000000-0000-0000-0000-000000000001','f1000000-0000-0000-0000-000000000001',null,'f2000000-0000-0000-0000-000000000001','K1','S1','O1','open','single',current_date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
-  ('f4000000-0000-0000-0000-000000000002','f1000000-0000-0000-0000-000000000001',null,'f2000000-0000-0000-0000-000000000001','K2','S2','O2','open','single',current_date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
+  ('f4000000-0000-0000-0000-000000000001','f1000000-0000-0000-0000-000000000001',null,'f2000000-0000-0000-0000-000000000001','K1','S1','O1','open','single',pg_temp.bdate(current_setting('phase16_test.anchor_j1')::timestamptz),'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
+  ('f4000000-0000-0000-0000-000000000002','f1000000-0000-0000-0000-000000000001',null,'f2000000-0000-0000-0000-000000000001','K2','S2','O2','open','single',pg_temp.bdate(current_setting('phase16_test.anchor_j2')::timestamptz),'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
   ('f4000000-0000-0000-0000-000000000003','f1000000-0000-0000-0000-000000000001',null,'f2000000-0000-0000-0000-000000000001','K3','S3','O3','open','recurring',null,'08:00',array['mon'],true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
   ('f4000000-0000-0000-0000-000000000004','f1000000-0000-0000-0000-000000000001',null,'f2000000-0000-0000-0000-000000000001','K4','S4','O4','open','single',current_date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
   ('f4000000-0000-0000-0000-000000000005','f1000000-0000-0000-0000-000000000002',null,'f2000000-0000-0000-0000-000000000005','K5','S5','O5','open','single',current_date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
@@ -179,8 +219,12 @@ end $$;
 
 
 -- =========================================================
--- A. SZENARIO 1 — Ahmed startet 08:00, Mohammed schliesst 10:00 ab
+-- A. SZENARIO 1 — Ahmed startet, BEIDE schliessen ihre eigene Teilnahme ab
 -- =========================================================
+-- Reihenfolge bewusst so gewaehlt, dass Ahmed startet aber Mohammed als
+-- LETZTER abschliesst (schliesst den Auftrag) — das erhaelt die
+-- urspruengliche Aussage "verschiedene Akteure fuer Start und Abschluss"
+-- unter der neuen Regel, die fuer JEDEN Akteur einen eigenen Start verlangt.
 
 -- CASE 1: AHMED (Legacy-Primaer) startet. Setzt started_at UND started_by.
 do $$
@@ -190,40 +234,41 @@ begin
   execute 'set local role authenticated';
   begin
     perform public.start_own_job('f4000000-0000-0000-0000-000000000001',
-                                 timestamptz '2026-07-31 08:00+00');
+                                 current_setting('phase16_test.anchor_j1')::timestamptz);
     v := 'OK';
   exception when others then v := 'FEHLER: '||sqlerrm;
   end;
   execute 'reset role';
 
   select v||'/status='||j.status
-       ||'/start='||coalesce(to_char(j.started_at at time zone 'UTC','HH24:MI'),'NULL')
        ||'/start_by='||coalesce(j.started_by::text,'NULL')
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-000000000001';
 
-  insert into _r values (1,'AHMED startet J1 -> in_progress, started_at + started_by gesetzt',
-    'OK/status=in_progress/start=08:00/start_by=f2000000-0000-0000-0000-000000000002', v);
+  insert into _r values (1,'AHMED startet J1 -> in_progress, started_by gesetzt',
+    'OK/status=in_progress/start_by=f2000000-0000-0000-0000-000000000002', v);
   raise notice 'CASE 1 -> %', v;
 end $$;
 
--- CASE 2: MOHAMMED sieht den laufenden Auftrag und dieselbe Startzeit.
--- (Die Anforderung "jeder Zugewiesene sieht sofort: Job in Arbeit".)
+-- CASE 2: MOHAMMED sieht den laufenden Auftrag mit Ahmeds Startzeit.
 do $$
 declare v text;
 begin
   perform pg_temp.act_as('f2000000-0000-0000-0000-000000000003');
   execute 'set local role authenticated';
-  select 'status='||status||'/start='||to_char(started_at at time zone 'UTC','HH24:MI') into v
+  select 'status='||status||'/start_gleich_anker='||(started_at = current_setting('phase16_test.anchor_j1')::timestamptz)::text
+    into v
   from public.jobs where id='f4000000-0000-0000-0000-000000000001';
   execute 'reset role';
   insert into _r values (2,'MOHAMMED sieht J1 als laufend mit AHMEDs Startzeit',
-    'status=in_progress/start=08:00', v);
+    'status=in_progress/start_gleich_anker=true', v);
   raise notice 'CASE 2 -> %', v;
 end $$;
 
--- CASE 3: KERN DER PHASE — MOHAMMED (sekundaer, hat NICHT gestartet)
--- schliesst ab. Vor der Migration: "Job not found or not allowed".
+-- CASE 3 — KERN VON PHASE 16: MOHAMMED (hat NICHT selbst gestartet) versucht
+-- abzuschliessen. Das MUSS jetzt abgelehnt werden — die alte Erwartung
+-- ("Sekundaerer darf ohne eigenen Start abschliessen") ist genau die Regel,
+-- die Phase 16 wegen des Vorfalls vom 2026-09-16 abgeschafft hat.
 do $$
 declare v text;
 begin
@@ -231,25 +276,98 @@ begin
   execute 'set local role authenticated';
   begin
     perform public.complete_own_job('f4000000-0000-0000-0000-000000000001',
-                                    timestamptz '2026-07-31 10:00+00');
+                                    current_setting('phase16_test.anchor_j1')::timestamptz + interval '2 hours');
+    v := 'AKZEPTIERT';
+  exception when others then
+    v := case when sqlerrm like '%zuerst selbst starten%' then 'ABGELEHNT_OHNE_START' else 'ABGELEHNT_ANDERS: '||sqlerrm end;
+  end;
+  execute 'reset role';
+  insert into _r values (3,'PHASE 16: MOHAMMED kann OHNE eigenen Start nicht mehr abschliessen',
+    'ABGELEHNT_OHNE_START', v);
+  raise notice 'CASE 3 -> %', v;
+end $$;
+
+-- CASE 4: MOHAMMED startet jetzt seine EIGENE Teilnahme (Auftrag laeuft
+-- bereits -> idempotenter Nachzuegler-Zweig, stempelt trotzdem seine eigene
+-- Startzeit). Derselbe Anker wie Ahmeds Start — siehe Kopf-Kommentar.
+do $$
+declare v text;
+begin
+  perform pg_temp.act_as('f2000000-0000-0000-0000-000000000003');
+  execute 'set local role authenticated';
+  begin
+    perform public.start_own_job('f4000000-0000-0000-0000-000000000001',
+                                 current_setting('phase16_test.anchor_j1')::timestamptz);
+    v := 'OK';
+  exception when others then v := 'FEHLER: '||sqlerrm;
+  end;
+  execute 'reset role';
+
+  select v||'/eigener_start_gesetzt='||(employee_started_at is not null)::text into v
+  from public.job_assignments
+  where job_id='f4000000-0000-0000-0000-000000000001' and employee_id='f2000000-0000-0000-0000-000000000003';
+
+  insert into _r values (4,'MOHAMMED startet danach seine EIGENE Teilnahme (Nachzuegler-Zweig)',
+    'OK/eigener_start_gesetzt=true', v);
+  raise notice 'CASE 4 -> %', v;
+end $$;
+
+-- CASE 5: AHMED schliesst seine EIGENE Teilnahme zuerst ab — der AUFTRAG
+-- bleibt trotzdem in_progress, weil MOHAMMEDs Teilnahme noch ungeloest ist
+-- (Phase-16-Aggregation: der Auftrag schliesst erst, wenn ALLE abgeschlossen
+-- haben).
+do $$
+declare v text;
+begin
+  perform pg_temp.act_as('f2000000-0000-0000-0000-000000000002');
+  execute 'set local role authenticated';
+  begin
+    perform public.complete_own_job('f4000000-0000-0000-0000-000000000001',
+                                    current_setting('phase16_test.anchor_j1')::timestamptz + interval '2 hours');
+    v := 'OK';
+  exception when others then v := 'FEHLER: '||sqlerrm;
+  end;
+  execute 'reset role';
+
+  select v||'/status='||j.status||'/eigener_ende_ahmed='||(ja.employee_completed_at is not null)::text
+    into v
+  from public.jobs j
+  join public.job_assignments ja on ja.job_id=j.id and ja.employee_id='f2000000-0000-0000-0000-000000000002'
+  where j.id='f4000000-0000-0000-0000-000000000001';
+
+  insert into _r values (5,'AHMED schliesst eigene Teilnahme ab -> AUFTRAG bleibt in_progress (MOHAMMED noch offen)',
+    'OK/status=in_progress/eigener_ende_ahmed=true', v);
+  raise notice 'CASE 5 -> %', v;
+end $$;
+
+-- CASE 6: MOHAMMED schliesst als LETZTER seine eigene Teilnahme ab -> JETZT
+-- schliesst der AUFTRAG, mit MOHAMMED als completed_by (anderer Akteur als
+-- started_by=AHMED — die urspruengliche Aussage bleibt damit erhalten).
+do $$
+declare v text;
+begin
+  perform pg_temp.act_as('f2000000-0000-0000-0000-000000000003');
+  execute 'set local role authenticated';
+  begin
+    perform public.complete_own_job('f4000000-0000-0000-0000-000000000001',
+                                    current_setting('phase16_test.anchor_j1')::timestamptz + interval '2 hours');
     v := 'OK';
   exception when others then v := 'FEHLER: '||sqlerrm;
   end;
   execute 'reset role';
 
   select v||'/status='||j.status
-       ||'/ende='||coalesce(to_char(j.completed_at at time zone 'UTC','HH24:MI'),'NULL')
        ||'/ende_by='||coalesce(j.completed_by::text,'NULL')
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-000000000001';
 
-  insert into _r values (3,'MOHAMMED (sekundaer) schliesst J1 ab -> completed_at + completed_by gesetzt',
-    'OK/status=completed/ende=10:00/ende_by=f2000000-0000-0000-0000-000000000003', v);
-  raise notice 'CASE 3 -> %', v;
+  insert into _r values (6,'MOHAMMED schliesst als LETZTER ab -> AUFTRAG completed, completed_by=MOHAMMED',
+    'OK/status=completed/ende_by=f2000000-0000-0000-0000-000000000003', v);
+  raise notice 'CASE 6 -> %', v;
 end $$;
 
--- CASE 4: DIE GETEILTE UHR — genau EINE Dauer, und beide Akteure stehen
--- unterschiedlich in der Zeile. Kein Pro-Mitarbeiter-Timer entstanden.
+-- CASE 7: DIE GETEILTE UHR — genau EINE Dauer (120 Min), zwei verschiedene
+-- Akteure fuer Start (AHMED) und Auftragsabschluss (MOHAMMED).
 do $$
 declare v text;
 begin
@@ -257,24 +375,23 @@ begin
        ||'/verschiedene_akteure='||(j.started_by is distinct from j.completed_by)::text
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-000000000001';
-  insert into _r values (4,'J1 hat GENAU EINE offizielle Dauer (120 Min) mit zwei verschiedenen Akteuren',
+  insert into _r values (7,'J1 hat GENAU EINE offizielle Dauer (120 Min) mit zwei verschiedenen Akteuren',
     'dauer_min=120/verschiedene_akteure=true', v);
-  raise notice 'CASE 4 -> %', v;
+  raise notice 'CASE 7 -> %', v;
 end $$;
 
--- CASE 5: STUNDENZETTEL-PRAEDIKAT — beide Mitarbeiter erhalten 08:00–10:00.
--- Exakt die Abfrage aus services/timesheets/timesheet.service.ts
--- (job_assignments-Inner-Join, status=completed, job_type=single).
--- Nachweis, dass PR #58 unveraendert weiterarbeitet: der Mitarbeiter, der
--- Start NIE gedrueckt hat, bekommt dieselbe Zeit wie der Starter.
+-- CASE 8: Stundenzettel-Praedikat (geteilte Uhr) — beide Zugewiesenen
+-- erhalten dieselbe geteilte Zeit, unabhaengig von ihrer EIGENEN Zeit.
+-- Exakt die Abfrage aus services/timesheets/timesheet.service.ts fuer den
+-- Legacy-Fallback-Pfad (job_assignments-Inner-Join, status=completed,
+-- job_type=single) — bewusst weiterhin als Nachweis, dass die geteilte Uhr
+-- selbst unveraendert genau EINE Dauer traegt.
 do $$
 declare v text;
 begin
-  select string_agg(x.eintrag, ' | ' order by x.eintrag) into v
+  select string_agg(distinct x.gleich_dauer::text, ',' order by x.gleich_dauer::text) into v
   from (
-    select p.full_name||'='
-           ||to_char(j.started_at   at time zone 'UTC','HH24:MI')||'-'
-           ||to_char(j.completed_at at time zone 'UTC','HH24:MI') as eintrag
+    select (j.completed_at - j.started_at) = interval '120 minutes' as gleich_dauer
     from public.jobs j
     join public.job_assignments ja on ja.job_id = j.id
     join public.profiles p         on p.id      = ja.employee_id
@@ -284,13 +401,15 @@ begin
       and j.started_at   is not null
       and j.completed_at is not null
   ) x;
-  insert into _r values (5,'Stundenzettel: BEIDE Zugewiesenen erhalten die geteilte Zeit 08:00-10:00',
-    'Ahmed Start=08:00-10:00 | Mohammed Ende=08:00-10:00', v);
-  raise notice 'CASE 5 -> %', v;
+  insert into _r values (8,'Stundenzettel-Praedikat: BEIDE Zugewiesenen erhalten dieselbe geteilte Dauer',
+    'true', v);
+  raise notice 'CASE 8 -> %', v;
 end $$;
 
--- CASE 6: NIEMAND KANN ZWEIMAL ABSCHLIESSEN. AHMED versucht es nach
--- MOHAMMED: idempotenter No-Op, MOHAMMEDs Endzeit und Akteur bleiben.
+-- CASE 9: NIEMAND KANN DIE EIGENE TEILNAHME ZWEIMAL ABSCHLIESSEN. AHMED
+-- wiederholt SEINE EIGENE Vervollstaendigung: idempotenter No-Op, seine
+-- eigene Endzeit bleibt unveraendert, der Auftrag bleibt completed (keine
+-- Wiedereroeffnung, kein zweites Event).
 do $$
 declare v text;
 begin
@@ -298,47 +417,47 @@ begin
   execute 'set local role authenticated';
   begin
     perform public.complete_own_job('f4000000-0000-0000-0000-000000000001',
-                                    timestamptz '2026-07-31 23:00+00');
+                                    current_setting('phase16_test.anchor_j1')::timestamptz + interval '2 hours');
     v := 'OK';
   exception when others then v := 'FEHLER: '||sqlerrm;
   end;
   execute 'reset role';
 
-  select v||'/ende='||to_char(j.completed_at at time zone 'UTC','HH24:MI')
-       ||'/ende_by='||coalesce(j.completed_by::text,'NULL')
+  select v||'/eigenes_ende_unveraendert='||
+       (employee_completed_at = current_setting('phase16_test.anchor_j1')::timestamptz + interval '2 hours')::text
     into v
-  from public.jobs j where j.id='f4000000-0000-0000-0000-000000000001';
+  from public.job_assignments
+  where job_id='f4000000-0000-0000-0000-000000000001' and employee_id='f2000000-0000-0000-0000-000000000002';
 
-  insert into _r values (6,'Zweiter Abschluss ist No-Op: Endzeit und Akteur bleiben bei MOHAMMED/10:00',
-    'OK/ende=10:00/ende_by=f2000000-0000-0000-0000-000000000003', v);
-  raise notice 'CASE 6 -> %', v;
+  insert into _r values (9,'AHMED wiederholt eigenen Abschluss: idempotenter No-Op, eigene Endzeit unveraendert',
+    'OK/eigenes_ende_unveraendert=true', v);
+  raise notice 'CASE 9 -> %', v;
 end $$;
 
--- CASE 7: Genau EIN job_completed-Outbox-Event (keine Doppel-
--- Benachrichtigung durch den zweiten Versuch).
+-- CASE 10: Genau EIN job_started + EIN job_completed Outbox-Event (keine
+-- Doppel-Benachrichtigung durch Mohammeds eigenen Start-Nachzuegler-Aufruf
+-- oder Ahmeds wiederholten Abschluss).
 do $$
 declare v text;
 begin
   select 'gestartet='||count(*) filter (where event_type='job_started')::text
        ||'/abgeschlossen='||count(*) filter (where event_type='job_completed')::text
-       -- ORDER BY explizit: DISTINCT sortiert in der Praxis, garantiert ist
-       -- das aber nicht — ein Test darf nicht von Implementierungsdetails
-       -- der Aggregation abhaengen.
-       ||'/akteure='||coalesce(string_agg(distinct employee_name, ',' order by employee_name),'-')
+       ||'/abschluss_akteur='||coalesce(string_agg(distinct employee_name, ',') filter (where event_type='job_completed'),'-')
     into v
   from public.notification_outbox
   where job_id='f4000000-0000-0000-0000-000000000001';
-  insert into _r values (7,'Je Uebergang genau EIN Outbox-Event, jeweils mit dem tatsaechlichen Akteur',
-    'gestartet=1/abgeschlossen=1/akteure=Ahmed Start,Mohammed Ende', v);
-  raise notice 'CASE 7 -> %', v;
+  insert into _r values (10,'Je Auftrag genau EIN job_started + EIN job_completed Event, Abschluss-Akteur=Mohammed',
+    'gestartet=1/abgeschlossen=1/abschluss_akteur=Mohammed Ende', v);
+  raise notice 'CASE 10 -> %', v;
 end $$;
 
 
 -- =========================================================
--- B. SZENARIO 2 — Gegenrichtung: der sekundaere startet
+-- B. SZENARIO 2 — Gegenrichtung: der sekundaere startet zuerst,
+--    der Primaere schliesst als LETZTER ab
 -- =========================================================
 
--- CASE 8: An J2 ist MOHAMMED der Legacy-Primaer. AHMED (sekundaer) startet.
+-- CASE 11: An J2 ist MOHAMMED der Legacy-Primaer. AHMED (sekundaer) startet.
 do $$
 declare v text;
 begin
@@ -346,7 +465,7 @@ begin
   execute 'set local role authenticated';
   begin
     perform public.start_own_job('f4000000-0000-0000-0000-000000000002',
-                                 timestamptz '2026-07-31 09:00+00');
+                                 current_setting('phase16_test.anchor_j2')::timestamptz);
     v := 'OK';
   exception when others then v := 'FEHLER: '||sqlerrm;
   end;
@@ -357,39 +476,63 @@ begin
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-000000000002';
 
-  insert into _r values (8,'Sekundaerer AHMED startet J2; der Legacy-Zeiger bleibt unveraendert bei MOHAMMED',
+  insert into _r values (11,'Sekundaerer AHMED startet J2; der Legacy-Zeiger bleibt unveraendert bei MOHAMMED',
     'OK/status=in_progress/start_by=f2000000-0000-0000-0000-000000000002/legacy=f2000000-0000-0000-0000-000000000003', v);
-  raise notice 'CASE 8 -> %', v;
+  raise notice 'CASE 11 -> %', v;
 end $$;
 
--- CASE 9: NIEMAND KANN ZWEIMAL STARTEN. MOHAMMED versucht es danach:
--- No-Op, er erhaelt AHMEDs geteilte Startzeit zurueck (nicht die eigene).
+-- CASE 12: MOHAMMED "startet" danach ebenfalls (No-Op auf Auftragsebene,
+-- aber PFLICHT fuer seine eigene spaetere Vervollstaendigung) — derselbe
+-- Anker wie Ahmeds Start, liefert deshalb denselben Wert zurueck.
 do $$
 declare v text;
 begin
   perform pg_temp.act_as('f2000000-0000-0000-0000-000000000003');
   execute 'set local role authenticated';
   begin
-    select 'rueckgabe='||to_char(
+    select 'rueckgabe_gleich_anker='||(
              public.start_own_job('f4000000-0000-0000-0000-000000000002',
-                                  timestamptz '2026-07-31 11:30+00') at time zone 'UTC','HH24:MI')
+                                  current_setting('phase16_test.anchor_j2')::timestamptz)
+             = current_setting('phase16_test.anchor_j2')::timestamptz
+           )::text
       into v;
   exception when others then v := 'FEHLER: '||sqlerrm;
   end;
   execute 'reset role';
 
-  select v||'/start='||to_char(j.started_at at time zone 'UTC','HH24:MI')
-       ||'/start_by='||coalesce(j.started_by::text,'NULL')
-    into v
-  from public.jobs j where j.id='f4000000-0000-0000-0000-000000000002';
+  select v||'/eigener_start_gesetzt='||(employee_started_at is not null)::text into v
+  from public.job_assignments
+  where job_id='f4000000-0000-0000-0000-000000000002' and employee_id='f2000000-0000-0000-0000-000000000003';
 
-  insert into _r values (9,'Zweiter Start ist No-Op und liefert die GETEILTE Startzeit des Ersten zurueck',
-    'rueckgabe=09:00/start=09:00/start_by=f2000000-0000-0000-0000-000000000002', v);
-  raise notice 'CASE 9 -> %', v;
+  insert into _r values (12,'MOHAMMED startet danach ebenfalls (Nachzuegler-Zweig, eigene Startzeit gesetzt)',
+    'rueckgabe_gleich_anker=true/eigener_start_gesetzt=true', v);
+  raise notice 'CASE 12 -> %', v;
 end $$;
 
--- CASE 10: Abschluss durch den Primaer MOHAMMED funktioniert weiterhin
--- (keine Regression fuer den bisher einzig Berechtigten).
+-- CASE 13: AHMED (sekundaer) schliesst seine eigene Teilnahme ZUERST ab —
+-- der Auftrag bleibt in_progress (MOHAMMED noch offen).
+do $$
+declare v text;
+begin
+  perform pg_temp.act_as('f2000000-0000-0000-0000-000000000002');
+  execute 'set local role authenticated';
+  begin
+    perform public.complete_own_job('f4000000-0000-0000-0000-000000000002',
+                                    current_setting('phase16_test.anchor_j2')::timestamptz + interval '3 hours');
+    v := 'OK';
+  exception when others then v := 'FEHLER: '||sqlerrm;
+  end;
+  execute 'reset role';
+
+  select v||'/status='||status into v from public.jobs where id='f4000000-0000-0000-0000-000000000002';
+  insert into _r values (13,'AHMED (sekundaer) schliesst eigene Teilnahme zuerst ab -> Auftrag bleibt in_progress',
+    'OK/status=in_progress', v);
+  raise notice 'CASE 13 -> %', v;
+end $$;
+
+-- CASE 14: Primaerer MOHAMMED schliesst als LETZTER ab -> Auftrag completed,
+-- geteilte Dauer 180 Min (keine Regression fuer den vormals einzig
+-- Berechtigten, jetzt zusaetzlich mit eigenem Start als Voraussetzung).
 do $$
 declare v text;
 begin
@@ -397,7 +540,7 @@ begin
   execute 'set local role authenticated';
   begin
     perform public.complete_own_job('f4000000-0000-0000-0000-000000000002',
-                                    timestamptz '2026-07-31 12:00+00');
+                                    current_setting('phase16_test.anchor_j2')::timestamptz + interval '3 hours');
     v := 'OK';
   exception when others then v := 'FEHLER: '||sqlerrm;
   end;
@@ -407,17 +550,19 @@ begin
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-000000000002';
 
-  insert into _r values (10,'Primaerer MOHAMMED schliesst J2 ab (geteilte Dauer 180 Min)',
+  insert into _r values (14,'Primaerer MOHAMMED schliesst als LETZTER ab (geteilte Dauer 180 Min)',
     'OK/status=completed/dauer_min=180', v);
-  raise notice 'CASE 10 -> %', v;
+  raise notice 'CASE 14 -> %', v;
 end $$;
 
 
 -- =========================================================
--- C. SZENARIO 3 — nicht Zugewiesene bleiben aussen
+-- C. SZENARIO 3 — nicht Zugewiesene bleiben aussen (Phase 16 unveraendert:
+--    diese Ablehnungen kommen aus der Berechtigungs-SELECT, VOR jeder
+--    Termin-/Eigenstart-Pruefung)
 -- =========================================================
 
--- CASE 11: FREMD A (Firma A, aber J6 nicht zugewiesen) kann nicht starten.
+-- CASE 15: FREMD A (Firma A, aber J6 nicht zugewiesen) kann nicht starten.
 do $$
 declare v text;
 begin
@@ -429,11 +574,11 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (11,'Nicht zugewiesener Mitarbeiter derselben Firma kann NICHT starten','ABGELEHNT',v);
-  raise notice 'CASE 11 -> %', v;
+  insert into _r values (15,'Nicht zugewiesener Mitarbeiter derselben Firma kann NICHT starten','ABGELEHNT',v);
+  raise notice 'CASE 15 -> %', v;
 end $$;
 
--- CASE 12: und auch nicht abschliessen (J2 laeuft/ist fertig, er ist nicht
+-- CASE 16: und auch nicht abschliessen (J2 laeuft/ist fertig, er ist nicht
 -- zugewiesen -> Ablehnung schon an der Berechtigung, nicht am Status).
 do $$
 declare v text;
@@ -446,11 +591,11 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (12,'Nicht zugewiesener Mitarbeiter kann NICHT abschliessen','ABGELEHNT',v);
-  raise notice 'CASE 12 -> %', v;
+  insert into _r values (16,'Nicht zugewiesener Mitarbeiter kann NICHT abschliessen','ABGELEHNT',v);
+  raise notice 'CASE 16 -> %', v;
 end $$;
 
--- CASE 13: Mitarbeiter der FREMDEN Firma kann den Firma-A-Auftrag nicht
+-- CASE 17: Mitarbeiter der FREMDEN Firma kann den Firma-A-Auftrag nicht
 -- starten (Firmengrenze, doppelt gesichert: RPC + is_assigned_to_job).
 do $$
 declare v text;
@@ -463,11 +608,11 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (13,'Mitarbeiter einer FREMDEN Firma kann nicht starten','ABGELEHNT',v);
-  raise notice 'CASE 13 -> %', v;
+  insert into _r values (17,'Mitarbeiter einer FREMDEN Firma kann nicht starten','ABGELEHNT',v);
+  raise notice 'CASE 17 -> %', v;
 end $$;
 
--- CASE 14: DEAKTIVIERTES Konto kann seinen zugewiesenen Auftrag nicht
+-- CASE 18: DEAKTIVIERTES Konto kann seinen zugewiesenen Auftrag nicht
 -- starten (current_user_role()/company_id sind NULL, is_assigned_to_job
 -- liefert false).
 do $$
@@ -481,11 +626,11 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (14,'Deaktivierter Mitarbeiter kann seinen zugewiesenen Auftrag NICHT starten','ABGELEHNT',v);
-  raise notice 'CASE 14 -> %', v;
+  insert into _r values (18,'Deaktivierter Mitarbeiter kann seinen zugewiesenen Auftrag NICHT starten','ABGELEHNT',v);
+  raise notice 'CASE 18 -> %', v;
 end $$;
 
--- CASE 15: der ADMIN der eigenen Firma kann ebenfalls nicht ueber die RPC
+-- CASE 19: der ADMIN der eigenen Firma kann ebenfalls nicht ueber die RPC
 -- starten (role='employee' bleibt Bedingung — Admins aendern den Status
 -- nie hierueber).
 do $$
@@ -499,11 +644,11 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (15,'Admin kann nicht ueber start_own_job starten','ABGELEHNT',v);
-  raise notice 'CASE 15 -> %', v;
+  insert into _r values (19,'Admin kann nicht ueber start_own_job starten','ABGELEHNT',v);
+  raise notice 'CASE 19 -> %', v;
 end $$;
 
--- CASE 16: J6 ist nach allen Fehlversuchen unveraendert offen.
+-- CASE 20: J6 ist nach allen Fehlversuchen unveraendert offen.
 do $$
 declare v text;
 begin
@@ -512,20 +657,19 @@ begin
        ||'/start_by='||coalesce(started_by::text,'NULL')
     into v
   from public.jobs where id='f4000000-0000-0000-0000-000000000006';
-  insert into _r values (16,'J6 bleibt nach allen abgelehnten Versuchen unberuehrt offen',
+  insert into _r values (20,'J6 bleibt nach allen abgelehnten Versuchen unberuehrt offen',
     'status=open/start=NULL/start_by=NULL', v);
-  raise notice 'CASE 16 -> %', v;
+  raise notice 'CASE 20 -> %', v;
 end $$;
 
 
 -- =========================================================
--- D. SZENARIO 4 — Recurring-Parent bleibt nicht ausfuehrbar
+-- D. SZENARIO 4 — Recurring-Parent bleibt nicht ausfuehrbar (unveraendert:
+--    job_type='single' steht ausserhalb der ODER-Klammer und wird VOR jeder
+--    Termin-/Eigenstart-Pruefung verlangt)
 -- =========================================================
 
--- CASE 17: MOHAMMED ist der Parent-REGEL J3 zugewiesen (Vorlage, Phase 4).
--- is_assigned_to_job() liefert dafuer true — job_type='single' steht
--- deshalb bewusst AUSSERHALB der ODER-Klammer. Ohne das waere eine
--- Regel ab jetzt startbar.
+-- CASE 21: MOHAMMED ist der Parent-REGEL J3 zugewiesen (Vorlage, Phase 4).
 do $$
 declare v text;
 begin
@@ -537,12 +681,11 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (17,'Zugewiesener kann eine RECURRING-PARENT-Regel NICHT starten','ABGELEHNT',v);
-  raise notice 'CASE 17 -> %', v;
+  insert into _r values (21,'Zugewiesener kann eine RECURRING-PARENT-Regel NICHT starten','ABGELEHNT',v);
+  raise notice 'CASE 21 -> %', v;
 end $$;
 
--- CASE 18: Gegenprobe, dass CASE 17 nicht an der Zuweisung scheiterte:
--- is_assigned_to_job() bestaetigt fuer MOHAMMED die Parent-Regel.
+-- CASE 22: Gegenprobe, dass CASE 21 nicht an der Zuweisung scheiterte.
 do $$
 declare v text;
 begin
@@ -550,19 +693,19 @@ begin
   execute 'set local role authenticated';
   select 'zugewiesen='||public.is_assigned_to_job('f4000000-0000-0000-0000-000000000003')::text into v;
   execute 'reset role';
-  insert into _r values (18,'Gegenprobe: MOHAMMED IST der Parent-Regel zugewiesen (Ablehnung kam von job_type)',
+  insert into _r values (22,'Gegenprobe: MOHAMMED IST der Parent-Regel zugewiesen (Ablehnung kam von job_type)',
     'zugewiesen=true', v);
-  raise notice 'CASE 18 -> %', v;
+  raise notice 'CASE 22 -> %', v;
 end $$;
 
--- CASE 19: die Parent-Regel ist unveraendert offen geblieben.
+-- CASE 23: die Parent-Regel ist unveraendert offen geblieben.
 do $$
 declare v text;
 begin
   select 'status='||status||'/start='||coalesce(started_at::text,'NULL') into v
   from public.jobs where id='f4000000-0000-0000-0000-000000000003';
-  insert into _r values (19,'Parent-Regel J3 bleibt unberuehrt offen','status=open/start=NULL',v);
-  raise notice 'CASE 19 -> %', v;
+  insert into _r values (23,'Parent-Regel J3 bleibt unberuehrt offen','status=open/start=NULL',v);
+  raise notice 'CASE 23 -> %', v;
 end $$;
 
 
@@ -570,18 +713,18 @@ end $$;
 -- E. Bestandsfall: nur Legacy-Zeiger, keine Zuweisungszeile
 -- =========================================================
 
--- CASE 20: AHMED darf J4 starten, obwohl KEINE job_assignments-Zeile
--- existiert. Genau dafuer bleibt der Legacy-Zweig in der ODER-Klammer —
--- ein Ersetzen statt Erweitern haette diesen Mitarbeitern den Start
--- entzogen.
+-- CASE 24: AHMED darf J4 starten, obwohl KEINE job_assignments-Zeile
+-- existiert (Bestandsschutz). Eigener Anker, damit J4.date passt.
 do $$
+declare v_anchor timestamptz := now() - interval '6 hours';
 declare v text;
 begin
+  update public.jobs set date = pg_temp.bdate(v_anchor) where id='f4000000-0000-0000-0000-000000000004';
+
   perform pg_temp.act_as('f2000000-0000-0000-0000-000000000002');
   execute 'set local role authenticated';
   begin
-    perform public.start_own_job('f4000000-0000-0000-0000-000000000004',
-                                 timestamptz '2026-07-31 07:00+00');
+    perform public.start_own_job('f4000000-0000-0000-0000-000000000004', v_anchor);
     v := 'OK';
   exception when others then v := 'FEHLER: '||sqlerrm;
   end;
@@ -592,12 +735,12 @@ begin
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-000000000004';
 
-  insert into _r values (20,'Legacy-Primaer ohne Zuweisungszeile kann weiterhin starten (Bestandsschutz)',
+  insert into _r values (24,'Legacy-Primaer ohne Zuweisungszeile kann weiterhin starten (Bestandsschutz)',
     'OK/status=in_progress/start_by=f2000000-0000-0000-0000-000000000002/anzahl_zuweisungen=0', v);
-  raise notice 'CASE 20 -> %', v;
+  raise notice 'CASE 24 -> %', v;
 end $$;
 
--- CASE 21: MOHAMMED darf J4 NICHT abschliessen — an diesem Auftrag ist er
+-- CASE 25: MOHAMMED darf J4 NICHT abschliessen — an diesem Auftrag ist er
 -- weder Primaer noch zugewiesen. Beide Zweige der Klammer sind falsch.
 do $$
 declare v text;
@@ -610,20 +753,20 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (21,'An einem Auftrag ohne eigene Zuweisung bleibt MOHAMMED abgewiesen','ABGELEHNT',v);
-  raise notice 'CASE 21 -> %', v;
+  insert into _r values (25,'An einem Auftrag ohne eigene Zuweisung bleibt MOHAMMED abgewiesen','ABGELEHNT',v);
+  raise notice 'CASE 25 -> %', v;
 end $$;
 
 
 -- =========================================================
--- F. Zustandsuebergaenge: kein Abschluss ohne Start
+-- F. Zustandsuebergaenge
 -- =========================================================
 
--- CASE 22: J6 ist offen. Ein zugewiesener Mitarbeiter darf NICHT
--- abschliessen, ohne dass gestartet wurde — ohne Startzeit gaebe es keine
--- Dauer, und ein stiller Erfolg wuerde einen Auftrag ohne Arbeitszeit als
--- abgeschlossen fuehren. (Bewusst unveraendertes Bestandsverhalten.)
--- Zuweisung dafuer auf den aktiven AHMED umstellen.
+-- CASE 26: J6 ist offen. Abschluss ohne Start bleibt abgelehnt — hier sogar
+-- doppelt begruendet (Status 'open' UND kein eigener Start), der Auftrag
+-- wird ueber die Statuspruefung abgewiesen, bevor die Eigenstart-Pruefung
+-- ueberhaupt erreicht wird. Zuweisung dafuer auf den aktiven AHMED
+-- umstellen.
 do $$
 declare v text;
 begin
@@ -645,15 +788,25 @@ begin
   select v||'/status='||status||'/ende_by='||coalesce(completed_by::text,'NULL') into v
   from public.jobs where id='f4000000-0000-0000-0000-000000000006';
 
-  insert into _r values (22,'Abschluss eines NICHT gestarteten Auftrags wird abgelehnt (kein completed_by)',
+  insert into _r values (26,'Abschluss eines NICHT gestarteten Auftrags wird abgelehnt (kein completed_by)',
     'ABGELEHNT/status=open/ende_by=NULL', v);
-  raise notice 'CASE 22 -> %', v;
+  raise notice 'CASE 26 -> %', v;
 end $$;
 
--- CASE 23: Neustart eines abgeschlossenen Auftrags aendert nichts (J1 ist
--- completed). Wichtig, weil der Start-Zweig completed_at/completed_by
--- nullen WUERDE, wenn er greifen koennte — die Statusbedingung 'open'
--- verhindert genau das.
+-- CASE 27: Neustart eines abgeschlossenen Auftrags (J1 ist completed,
+-- siehe CASE 6). Derselbe Anker wie Ahmeds urspruenglicher Start —
+-- schliesst jedes Risiko einer Terminablehnung durch Zeitversatz
+-- kategorisch aus, unabhaengig davon, welche Uhrzeit "jetzt" gerade ist.
+--
+-- HINWEIS (20260918, Post-Deploy Hardening): vor Astra-Audit Befund 2 war
+-- dies ein stiller No-Op (OK, keine Ablehnung) — start_own_job pruefte nur
+-- `status <> 'open'` und behandelte 'completed' wie 'in_progress'. Genau
+-- das war der Befund: ein verspaeteter/erneuter Start auf einen bereits
+-- abgeschlossenen Auftrag durfte keine Zuweisungszeile mutieren UND musste
+-- als Ablehnung erkennbar sein (dauerhafter Geschaeftszustands-Konflikt,
+-- kein Nachzuegler-Fall). Die neue erwartete Ausgabe ist deshalb eine harte
+-- Ablehnung statt eines No-Ops; status/completed_by bleiben unveraendert
+-- (keine Mutation), was hier weiterhin explizit mitgeprueft wird.
 do $$
 declare v text;
 begin
@@ -661,56 +814,39 @@ begin
   execute 'set local role authenticated';
   begin
     perform public.start_own_job('f4000000-0000-0000-0000-000000000001',
-                                 timestamptz '2026-08-01 06:00+00');
+                                 current_setting('phase16_test.anchor_j1')::timestamptz);
     v := 'OK(No-Op)';
-  exception when others then v := 'FEHLER: '||sqlerrm;
+  exception when others then
+    v := case when sqlerrm like '%bereits abgeschlossen%' then 'ABGELEHNT' else 'FEHLER:'||sqlerrm end;
   end;
   execute 'reset role';
 
   select v||'/status='||j.status
-       ||'/start='||to_char(j.started_at   at time zone 'UTC','HH24:MI')
-       ||'/ende='||to_char(j.completed_at at time zone 'UTC','HH24:MI')
        ||'/ende_by='||coalesce(j.completed_by::text,'NULL')
     into v
   from public.jobs j where j.id='f4000000-0000-0000-0000-000000000001';
 
-  insert into _r values (23,'Start auf einem abgeschlossenen Auftrag ist No-Op und nullt den Abschluss NICHT',
-    'OK(No-Op)/status=completed/start=08:00/ende=10:00/ende_by=f2000000-0000-0000-0000-000000000003', v);
-  raise notice 'CASE 23 -> %', v;
+  insert into _r values (27,'Neustart auf einem abgeschlossenen Auftrag wird abgelehnt und nullt den Abschluss NICHT',
+    'ABGELEHNT/status=completed/ende_by=f2000000-0000-0000-0000-000000000003', v);
+  raise notice 'CASE 27 -> %', v;
 end $$;
 
 
 -- =========================================================
--- G. Was diese Phase ausdruecklich NICHT anfasst
+-- G. Was diese Phase (7) ausdruecklich NICHT anfasst — jetzt im Licht von
+--    Phase 16 aktualisiert
 -- =========================================================
 
--- CASE 24: der Stundenzettel selbst filtert weiterhin NICHT auf
--- job_assignments/counts_for_timesheet (siehe PR #58 und CASE 5) — die
--- geteilte Job-Uhr bleibt die einzige Quelle der offiziellen Dauer.
---
--- ZUM STAND DIESER MIGRATION (Phase 7, 20260731000000) hielt dieser Fall
--- zusaetzlich fest, dass job_assignments dabei komplett unberuehrt bleibt
--- (attendance='assigned', beide Audit-Zeitstempel NULL, counts_for_timesheet
--- =false). Migration 20260812000000_employee_worked_time_foundation ("Worked
--- Time", Phase 1) hat das bewusst geaendert: start_own_job/complete_own_job
--- pflegen seither zusaetzlich die EIGENE job_assignments-Zeile des
--- Aufrufers (employee_started_at/employee_completed_at/attendance), auch im
--- No-Op-Zweig (CASE 6 und CASE 9 oben sind genau solche No-Ops). Dadurch
--- tragen alle vier hier betrachteten Zeilen (AHMED/MOHAMMED je J1/J2)
--- inzwischen attendance in (started, completed) und damit
--- counts_for_timesheet=true. Das aendert NICHT die geteilte Job-Uhr auf
--- jobs (weiterhin GENAU EINE offizielle Dauer, siehe CASE 4/5) — es ist ein
--- rein additiver, paralleler Nachweis pro Mitarbeiter.
---
--- emp_start_gesetzt=4 (nicht 3): complete_own_job() selbst setzt
--- employee_started_at nirgends — MOHAMMED schliesst J1 in CASE 3 ab, ohne
--- je selbst gestartet zu haben. Aber CASE 23 (oben, "Start auf einem
--- abgeschlossenen Auftrag ist No-Op") laesst MOHAMMED start_own_job auf dem
--- inzwischen abgeschlossenen J1 aufrufen — start_own_job()s eigener,
--- bewusster idempotenter Rueckfall greift dabei und setzt
--- employee_started_at = coalesce(employee_started_at, started_at_input)
--- auch in diesem No-Op-Zweig. Dadurch traegt bis CASE 24 tatsaechlich JEDE
--- der vier Zeilen einen eigenen Start-Zeitstempel — nicht nur drei.
+-- CASE 28: Worked-Time-Zeitstempel (Migration 20260812000000) UND
+-- Phase-16-Eigenstart-Pflicht zusammen betrachtet: weil seit Phase 16
+-- NIEMAND mehr abschliessen kann, ohne selbst gestartet zu haben, und BEIDE
+-- Auftraege (J1, J2) vollstaendig auf 'completed' stehen, tragen jetzt ALLE
+-- VIER betrachteten Zuweisungszeilen (AHMED/MOHAMMED je J1/J2) sowohl eine
+-- eigene Start- als auch eine eigene Abschlusszeit — anders als vor Phase 16
+-- (dort 4 Startzeiten, aber nur 3 Abschlusszeiten, weil ein Sekundaerer ohne
+-- eigenen Start abschliessen durfte). Das ist keine Kuerzung, sondern die
+-- direkte Konsequenz der neuen Regel. Die geteilte Job-Uhr auf jobs bleibt
+-- davon unberuehrt (weiterhin GENAU EINE offizielle Dauer, siehe CASE 7/14).
 do $$
 declare v text;
 begin
@@ -721,21 +857,13 @@ begin
     into v
   from public.job_assignments ja
   where ja.job_id in ('f4000000-0000-0000-0000-000000000001','f4000000-0000-0000-0000-000000000002');
-  insert into _r values (24,'Seit 20260812000000: eigene Worked-Time-Zeitstempel pro Mitarbeiter gesetzt (Stundenzettel bleibt auf jobs.*)',
-    'attendance=completed,started/emp_start_gesetzt=4/emp_ende_gesetzt=3/counts=true', v);
-  raise notice 'CASE 24 -> %', v;
+  insert into _r values (28,'Phase 16: ALLE vier Zuweisungszeilen tragen jetzt eigenen Start UND eigenen Abschluss',
+    'attendance=completed/emp_start_gesetzt=4/emp_ende_gesetzt=4/counts=true', v);
+  raise notice 'CASE 28 -> %', v;
 end $$;
 
--- CASE 25: der Kommentar-Schreibpfad. Zum Stand DIESER Migration (Phase 7,
--- 20260731000000) blieb er bewusst am Legacy-Primaer: MOHAMMED durfte J1
--- abschliessen (CASE 3), aber keinen Kommentar anlegen. Migration
--- 20260826000001_secondary_assignee_write_access hat diese Asymmetrie
--- spaeter aufgeloest (dort als "eigener PR" angekuendigt) — die
--- INSERT-Policy erlaubt seither die volle Zuweisungsmenge, und der Client
--- gated das Eingabefeld entsprechend mit isAssignedTo statt isPrimaryAssignee
--- (features/jobs/JobDetailScreen.tsx). Siehe supabase/tests/secondary_
--- assignee_write_access.test.sql CASE 2 fuer die aktuelle, dedizierte
--- Fassung dieser Zusicherung.
+-- CASE 29: der Kommentar-Schreibpfad ist von Phase 16 unberuehrt — MOHAMMED
+-- (secondary) darf weiterhin kommentieren (seit 20260826000001).
 do $$
 declare v text;
 begin
@@ -749,14 +877,12 @@ begin
   exception when others then v := 'ABGELEHNT';
   end;
   execute 'reset role';
-  insert into _r values (25,'Kommentar-INSERT seit 20260826000001 fuer den Sekundaeren erlaubt','AKZEPTIERT',v);
-  raise notice 'CASE 25 -> %', v;
+  insert into _r values (29,'Kommentar-INSERT fuer den Sekundaeren bleibt erlaubt (Phase 16 unberuehrt)','AKZEPTIERT',v);
+  raise notice 'CASE 29 -> %', v;
 end $$;
 
--- CASE 26: Mitarbeiter haben weiterhin KEIN direktes UPDATE auf jobs — der
--- Statuswechsel bleibt auf die zwei RPC-Uebergaenge beschraenkt. Geprueft
--- ueber die Zeilenwirkung (die Employee-Policy erlaubt nur SELECT, ein
--- UPDATE trifft daher 0 Zeilen).
+-- CASE 30: Mitarbeiter haben weiterhin KEIN direktes UPDATE auf jobs — der
+-- Statuswechsel bleibt auf die RPCs beschraenkt (Phase 16 unberuehrt).
 do $$
 declare betroffen int; v text;
 begin
@@ -774,9 +900,9 @@ begin
   select v||'/kunde='||customer_name into v
   from public.jobs where id='f4000000-0000-0000-0000-000000000001';
 
-  insert into _r values (26,'Mitarbeiter kann jobs nicht direkt aendern (kein neues UPDATE-Recht)',
+  insert into _r values (30,'Mitarbeiter kann jobs nicht direkt aendern (kein neues UPDATE-Recht)',
     'zeilen=0/kunde=K1', v);
-  raise notice 'CASE 26 -> %', v;
+  raise notice 'CASE 30 -> %', v;
 end $$;
 
 
@@ -788,13 +914,15 @@ select case_no, beschreibung, erwartet, ergebnis,
 from _r order by case_no;
 
 do $$
-declare fails int;
+declare fails int; gesamt int; liste text;
 begin
-  select count(*) into fails from _r where ergebnis is distinct from erwartet;
+  select count(*), count(*) filter (where ergebnis is distinct from erwartet) into gesamt, fails from _r;
+  select coalesce(string_agg('#'||case_no||' '||beschreibung||' (erw='||erwartet||' ist='||coalesce(ergebnis,'NULL')||')', ' ;; ' order by case_no), '')
+    into liste from _r where ergebnis is distinct from erwartet;
   if fails > 0 then
-    raise exception 'SHARED JOB TIME TEST: % Fall/Faelle FEHLGESCHLAGEN', fails;
+    raise exception 'SHARED JOB TIME TEST: % von % FEHLGESCHLAGEN -> %', fails, gesamt, liste;
   end if;
-  raise notice 'ALLE 27 FAELLE PASS';
+  raise notice 'ALLE % FAELLE PASS', gesamt;
 end $$;
 
 rollback;

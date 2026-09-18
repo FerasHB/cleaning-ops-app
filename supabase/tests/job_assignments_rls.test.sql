@@ -277,9 +277,25 @@ end $$;
 -- B. Nachweis-Bewahrung
 -- =========================================================
 
--- CASE 10: Nachweis-behaftete Zeile wird beim Mengenwechsel BEWAHRT
+-- CASE 10-13: Nachweis-Bewahrung seit Phase 16 (20260917000000).
+--
+-- Vor Phase 16 ueberlebte JEDE nachweisbehaftete Zeile (Anwesenheit ODER
+-- Review) einen Mengenwechsel stillschweigend als Historie, waehrend der
+-- Rest der Menge trotzdem ersetzt wurde ("stiller Teilerfolg"). Phase 16
+-- aendert das NUR fuer GESTARTETE Zuweisungen (employee_started_at IS NOT
+-- NULL): der GESAMTE Aufruf wird jetzt abgelehnt, bevor irgendetwas
+-- geschrieben wird (set_job_assignments, Abschnitt "(B) Bereits gestartete
+-- Zuweisungen sind nicht entfernbar"). Fuer eine REINE Review-Zeile (nicht
+-- gestartet) gilt weiterhin das alte Verhalten unveraendert: sie blockiert
+-- die Aenderung nicht und ueberlebt still als Historie, solange sie nicht
+-- selbst aus der Zielmenge herausfaellt UND gestartet ist.
+--
+-- CASE 10 und 13 pruefen diese beiden Faelle getrennt und bewusst, statt
+-- sie (wie vor Phase 16) in einem einzigen Aufruf zu vermischen.
+
+-- CASE 10: Entfernen einer GESTARTETEN Zuweisung wird komplett abgelehnt.
 do $$
-declare v text;
+declare v text; v_msg text;
 begin
   update public.job_assignments set attendance='started', employee_started_at=now()
    where job_id='d4000000-0000-0000-0000-000000000001' and employee_id='d2000000-0000-0000-0000-000000000002';
@@ -288,18 +304,75 @@ begin
 
   perform pg_temp.act_as('d2000000-0000-0000-0000-000000000001');
   execute 'set local role authenticated';
-  -- beide bisherigen ersetzen durch einen dritten Mitarbeiter
+  -- Versuch, beide bisherigen (einer davon GESTARTET) durch einen dritten
+  -- Mitarbeiter zu ersetzen -> muss als Ganzes scheitern.
+  begin
+    perform public.set_job_assignments('d4000000-0000-0000-0000-000000000001',
+      array['d2000000-0000-0000-0000-000000000004']::uuid[]);
+    v := 'ERLAUBT';
+  exception when others then
+    v := 'ABGELEHNT';
+    v_msg := sqlerrm;
+  end;
+  execute 'reset role';
+
+  insert into _r values (10,'Phase16: Entfernen einer GESTARTETEN Zuweisung wird komplett abgelehnt',
+    'ABGELEHNT', v);
+  raise notice 'CASE 10 -> % (%)', v, v_msg;
+end $$;
+
+-- CASE 11: die Ablehnung aus CASE 10 ist KEIN Teilerfolg — die Menge ist
+-- exakt so, wie sie vor dem Versuch war (beide Zeilen, keine dritte).
+do $$
+declare v text;
+begin
+  v := pg_temp.zuw('d4000000-0000-0000-0000-000000000001');
+  insert into _r values (11,'CASE-10-Ablehnung mutiert NICHTS: Menge bleibt unveraendert (kein Teilerfolg)',
+    'd2000000-0000-0000-0000-000000000002:started,d2000000-0000-0000-0000-000000000003:assigned/absent', v);
+  raise notice 'CASE 11 -> %', v;
+end $$;
+
+-- CASE 12: die Ablehnungsmeldung nennt den blockierenden Mitarbeiter (Anna
+-- Eins) — keine generische Fehlermeldung, die eine Aufraeumung verlangt,
+-- ohne zu sagen von wem.
+do $$
+declare v_msg text;
+begin
+  perform pg_temp.act_as('d2000000-0000-0000-0000-000000000001');
+  execute 'set local role authenticated';
+  begin
+    perform public.set_job_assignments('d4000000-0000-0000-0000-000000000001',
+      array['d2000000-0000-0000-0000-000000000004']::uuid[]);
+  exception when others then v_msg := sqlerrm;
+  end;
+  execute 'reset role';
+  insert into _r values (12,'Ablehnungsmeldung nennt den gestarteten Mitarbeiter (Anna Eins)',
+    'true', (v_msg like '%Anna Eins%')::text);
+  raise notice 'CASE 12 -> %', v_msg;
+end $$;
+
+-- CASE 13: OHNE gestarteten Mitarbeiter im Weg (die gestartete Zeile
+-- bleibt diesmal Teil der Zielmenge) laesst sich die UEBRIGE Menge weiter
+-- restrukturieren, und die reine Review-Zeile (nicht gestartet) ueberlebt
+-- weiterhin still als Historie — unveraendert seit vor Phase 16.
+do $$
+declare v text;
+begin
+  perform pg_temp.act_as('d2000000-0000-0000-0000-000000000001');
+  execute 'set local role authenticated';
+  -- 002 (gestartet) bleibt in der Zielmenge -> kein Blocker mehr.
+  -- 003 (nur Review, NICHT gestartet) faellt raus, ueberlebt aber still.
   perform public.set_job_assignments('d4000000-0000-0000-0000-000000000001',
-    array['d2000000-0000-0000-0000-000000000004']::uuid[]);
+    array['d2000000-0000-0000-0000-000000000002','d2000000-0000-0000-0000-000000000004']::uuid[]);
   execute 'reset role';
 
   v := pg_temp.zuw('d4000000-0000-0000-0000-000000000001');
-  insert into _r values (10,'Nachweis-Zeilen (Anwesenheit/Review) ueberleben den Mengenwechsel',
+  insert into _r values (13,'Ohne gestarteten Blocker: Restrukturierung erlaubt, reine Review-Zeile ueberlebt weiterhin still',
     'd2000000-0000-0000-0000-000000000002:started,d2000000-0000-0000-0000-000000000003:assigned/absent,d2000000-0000-0000-0000-000000000004:assigned', v);
-  raise notice 'CASE 10 -> %', v;
+  raise notice 'CASE 13 -> %', v;
 end $$;
 
--- CASE 11: Primaer bleibt gedeckt; Nachweis-Zeile wird nicht automatisch primaer
+-- CASE 14: Primaer bleibt gedeckt; Nachweis-Zeile wird nicht automatisch primaer
 do $$
 declare v text;
 begin
@@ -314,12 +387,12 @@ begin
      ||'/gedeckt='||(select (exists(select 1 from public.job_assignments ja
           where ja.job_id=j.id and ja.employee_id=j.assigned_to))::text
         from public.jobs j where j.id='d4000000-0000-0000-0000-000000000001');
-  insert into _r values (11,'Bestehender Primaer bleibt erhalten und springt nicht auf die neue Zuweisung',
+  insert into _r values (14,'Bestehender Primaer bleibt erhalten und springt nicht auf die neue Zuweisung',
     'unveraendert=true/nicht_der_neue=true/gedeckt=true', v);
-  raise notice 'CASE 11 -> %', v;
+  raise notice 'CASE 14 -> %', v;
 end $$;
 
--- CASE 12: anonymisierte Zeile (Konto geloescht) ueberlebt den Mengenwechsel
+-- CASE 15: anonymisierte Zeile (Konto geloescht) ueberlebt den Mengenwechsel
 do $$
 declare v text;
 begin
@@ -340,9 +413,9 @@ begin
   v := 'zuw='||pg_temp.zuw('d4000000-0000-0000-0000-000000000005')
        ||'/snapshot_erhalten='||(select count(*) from public.job_assignments
             where job_id='d4000000-0000-0000-0000-000000000005' and employee_name_snapshot='Lars Loeschbar')::text;
-  insert into _r values (12,'Anonymisierte Zeile ueberlebt den Mengenwechsel',
+  insert into _r values (15,'Anonymisierte Zeile ueberlebt den Mengenwechsel',
     'zuw=d2000000-0000-0000-0000-000000000003:assigned,ANON:assigned/snapshot_erhalten=1', v);
-  raise notice 'CASE 12 -> %', v;
+  raise notice 'CASE 15 -> %', v;
 end $$;
 
 
@@ -350,7 +423,7 @@ end $$;
 -- C. Lese-Policies
 -- =========================================================
 
--- CASE 13: Admin liest Zuweisungen der EIGENEN Firma
+-- CASE 16: Admin liest Zuweisungen der EIGENEN Firma
 do $$
 declare v text; n int;
 begin
@@ -359,11 +432,11 @@ begin
   select count(*) into n from public.job_assignments where job_id='d4000000-0000-0000-0000-000000000001';
   execute 'reset role';
   v := 'sichtbar='||n::text;
-  insert into _r values (13,'Admin liest Zuweisungen der eigenen Firma','sichtbar=3',v);
-  raise notice 'CASE 13 -> %', v;
+  insert into _r values (16,'Admin liest Zuweisungen der eigenen Firma','sichtbar=3',v);
+  raise notice 'CASE 16 -> %', v;
 end $$;
 
--- CASE 14: Admin sieht KEINE Zuweisungen einer fremden Firma
+-- CASE 17: Admin sieht KEINE Zuweisungen einer fremden Firma
 do $$
 declare v text; n int;
 begin
@@ -373,11 +446,11 @@ begin
   select count(*) into n from public.job_assignments where job_id='d4000000-0000-0000-0000-000000000001';
   execute 'reset role';
   v := 'sichtbar='||n::text;
-  insert into _r values (14,'Admin der Firma B sieht Zuweisungen der Firma A nicht','sichtbar=0',v);
-  raise notice 'CASE 14 -> %', v;
+  insert into _r values (17,'Admin der Firma B sieht Zuweisungen der Firma A nicht','sichtbar=0',v);
+  raise notice 'CASE 17 -> %', v;
 end $$;
 
--- CASE 15: Employee sieht ALLE Zuweisungen SEINES Auftrags (Variante B)
+-- CASE 18: Employee sieht ALLE Zuweisungen SEINES Auftrags (Variante B)
 do $$
 declare v text; n int;
 begin
@@ -386,11 +459,11 @@ begin
   select count(*) into n from public.job_assignments where job_id='d4000000-0000-0000-0000-000000000001';
   execute 'reset role';
   v := 'sichtbar='||n::text;
-  insert into _r values (15,'Employee sieht alle Zuweisungen seines eigenen Auftrags (Variante B)','sichtbar=3',v);
-  raise notice 'CASE 15 -> %', v;
+  insert into _r values (18,'Employee sieht alle Zuweisungen seines eigenen Auftrags (Variante B)','sichtbar=3',v);
+  raise notice 'CASE 18 -> %', v;
 end $$;
 
--- CASE 16: Employee sieht Kollegennamen OHNE profiles-Zugriff
+-- CASE 19: Employee sieht Kollegennamen OHNE profiles-Zugriff
 do $$
 declare v text; namen text; profil_sichtbar int;
 begin
@@ -402,12 +475,12 @@ begin
   select count(*) into profil_sichtbar from public.profiles where id='d2000000-0000-0000-0000-000000000002';
   execute 'reset role';
   v := 'namen='||coalesce(namen,'-')||'/fremdes_profil_sichtbar='||profil_sichtbar::text;
-  insert into _r values (16,'Kollegennamen kommen aus dem Snapshot; profiles bleibt zu',
+  insert into _r values (19,'Kollegennamen kommen aus dem Snapshot; profiles bleibt zu',
     'namen=Anna Eins,Bert Zwei,Cora Drei/fremdes_profil_sichtbar=0', v);
-  raise notice 'CASE 16 -> %', v;
+  raise notice 'CASE 19 -> %', v;
 end $$;
 
--- CASE 17: Employee sieht KEINE Zuweisungen fremder Auftraege
+-- CASE 20: Employee sieht KEINE Zuweisungen fremder Auftraege
 do $$
 declare v text; n int;
 begin
@@ -416,11 +489,11 @@ begin
   select count(*) into n from public.job_assignments where job_id='d4000000-0000-0000-0000-000000000005';
   execute 'reset role';
   v := 'sichtbar='||n::text;
-  insert into _r values (17,'Employee sieht Zuweisungen fremder Auftraege nicht','sichtbar=0',v);
-  raise notice 'CASE 17 -> %', v;
+  insert into _r values (20,'Employee sieht Zuweisungen fremder Auftraege nicht','sichtbar=0',v);
+  raise notice 'CASE 20 -> %', v;
 end $$;
 
--- CASE 18: Employee einer FREMDEN Firma sieht nichts
+-- CASE 21: Employee einer FREMDEN Firma sieht nichts
 do $$
 declare v text; n int;
 begin
@@ -429,11 +502,11 @@ begin
   select count(*) into n from public.job_assignments;
   execute 'reset role';
   v := 'sichtbar='||n::text;
-  insert into _r values (18,'Employee der Firma B sieht keine Zuweisungen der Firma A','sichtbar=0',v);
-  raise notice 'CASE 18 -> %', v;
+  insert into _r values (21,'Employee der Firma B sieht keine Zuweisungen der Firma A','sichtbar=0',v);
+  raise notice 'CASE 21 -> %', v;
 end $$;
 
--- CASE 19: DEAKTIVIERTER Mitarbeiter verliert den Lesezugriff
+-- CASE 22: DEAKTIVIERTER Mitarbeiter verliert den Lesezugriff
 do $$
 declare v text; n int;
 begin
@@ -444,22 +517,22 @@ begin
   execute 'reset role';
   update public.profiles set is_active=true where id='d2000000-0000-0000-0000-000000000004';
   v := 'sichtbar='||n::text;
-  insert into _r values (19,'Deaktivierter Mitarbeiter sieht keine Zuweisungen mehr','sichtbar=0',v);
-  raise notice 'CASE 19 -> %', v;
+  insert into _r values (22,'Deaktivierter Mitarbeiter sieht keine Zuweisungen mehr','sichtbar=0',v);
+  raise notice 'CASE 22 -> %', v;
 end $$;
 
--- CASE 20: anon hat keinerlei Tabellenrechte (ueber die Rechtevergabe geprueft)
+-- CASE 23: anon hat keinerlei Tabellenrechte (ueber die Rechtevergabe geprueft)
 do $$
 declare v text;
 begin
   v := 'anon_tabellenrechte='||coalesce((select string_agg(distinct privilege_type,'+')
         from information_schema.role_table_grants
         where table_schema='public' and table_name='job_assignments' and grantee='anon'),'KEINE');
-  insert into _r values (20,'anon: keine Tabellenrechte auf job_assignments','anon_tabellenrechte=KEINE',v);
-  raise notice 'CASE 20 -> %', v;
+  insert into _r values (23,'anon: keine Tabellenrechte auf job_assignments','anon_tabellenrechte=KEINE',v);
+  raise notice 'CASE 23 -> %', v;
 end $$;
 
--- CASE 21: Employee-Policy ist REKURSIONSFREI
+-- CASE 24: Employee-Policy ist REKURSIONSFREI
 --   Eine Policy AUF job_assignments, die job_assignments abfragt, waere
 --   ohne SECURITY-DEFINER-Helfer unendlich rekursiv (SQLSTATE 42P17).
 do $$
@@ -473,8 +546,8 @@ begin
   exception when others then v := 'FEHLER('||sqlstate||')';
   end;
   execute 'reset role';
-  insert into _r values (21,'Employee-Policy ohne RLS-Rekursion','OK/sichtbar=3',v);
-  raise notice 'CASE 21 -> %', v;
+  insert into _r values (24,'Employee-Policy ohne RLS-Rekursion','OK/sichtbar=3',v);
+  raise notice 'CASE 24 -> %', v;
 end $$;
 
 
@@ -482,7 +555,7 @@ end $$;
 -- D. Schreibsperren fuer nicht-privilegierte Rollen
 -- =========================================================
 
--- CASE 22: KEINE Schreibrechte fuer authenticated (weder Employee noch Admin)
+-- CASE 25: KEINE Schreibrechte fuer authenticated (weder Employee noch Admin)
 --   Die Verweigerung laeuft hier ueber das fehlende Privileg, greift also
 --   VOR jeder Policy-Auswertung und gilt fuer beide Rollen gleichermassen.
 do $$
@@ -492,11 +565,11 @@ begin
         from information_schema.role_table_grants
         where table_schema='public' and table_name='job_assignments'
           and grantee='authenticated' and privilege_type in ('INSERT','UPDATE','DELETE')),'KEINE');
-  insert into _r values (22,'authenticated hat weder INSERT noch UPDATE noch DELETE','schreibrechte=KEINE',v);
-  raise notice 'CASE 22 -> %', v;
+  insert into _r values (25,'authenticated hat weder INSERT noch UPDATE noch DELETE','schreibrechte=KEINE',v);
+  raise notice 'CASE 25 -> %', v;
 end $$;
 
--- CASE 23: es existiert AUCH KEINE Schreib-Policy (zweite Verriegelung)
+-- CASE 26: es existiert AUCH KEINE Schreib-Policy (zweite Verriegelung)
 do $$
 declare v text;
 begin
@@ -504,12 +577,12 @@ begin
         where schemaname='public' and tablename='job_assignments' and cmd <> 'SELECT')
      ||'/select_policies='||(select count(*)::text from pg_policies
         where schemaname='public' and tablename='job_assignments' and cmd = 'SELECT');
-  insert into _r values (23,'Keine INSERT/UPDATE/DELETE-Policy; genau zwei SELECT-Policies',
+  insert into _r values (26,'Keine INSERT/UPDATE/DELETE-Policy; genau zwei SELECT-Policies',
     'schreib_policies=0/select_policies=2', v);
-  raise notice 'CASE 23 -> %', v;
+  raise notice 'CASE 26 -> %', v;
 end $$;
 
--- CASE 24: Policy-Helfer sind fuer Clients nicht aufrufbar
+-- CASE 27: Policy-Helfer sind fuer Clients nicht aufrufbar
 do $$
 declare v text := '';
 begin
@@ -521,12 +594,12 @@ begin
                       or has_function_privilege('anon','public.job_in_current_company(uuid)','EXECUTE'))::text
      ||'/rpc_auth='||has_function_privilege('authenticated','public.set_job_assignments(uuid,uuid[])','EXECUTE')::text
      ||'/rpc_anon='||has_function_privilege('anon','public.set_job_assignments(uuid,uuid[])','EXECUTE')::text;
-  insert into _r values (24,'EXECUTE: Helfer fuer authenticated noetig, fuer anon gesperrt; RPC nur authenticated',
+  insert into _r values (27,'EXECUTE: Helfer fuer authenticated noetig, fuer anon gesperrt; RPC nur authenticated',
     'helfer_auth=true/helfer_anon=false/rpc_auth=true/rpc_anon=false', v);
-  raise notice 'CASE 24 -> %', v;
+  raise notice 'CASE 27 -> %', v;
 end $$;
 
--- CASE 25: Tabellen-Grants — nur SELECT fuer authenticated, nichts fuer anon
+-- CASE 28: Tabellen-Grants — nur SELECT fuer authenticated, nichts fuer anon
 do $$
 declare v text;
 begin
@@ -536,8 +609,8 @@ begin
   where table_schema='public' and table_name='job_assignments' and grantee='authenticated';
   v := v || '/anon='||coalesce((select string_agg(distinct privilege_type,'+') from information_schema.role_table_grants
         where table_schema='public' and table_name='job_assignments' and grantee='anon'),'KEINE');
-  insert into _r values (25,'Grants: authenticated nur SELECT, anon keine','auth=SELECT/anon=KEINE',v);
-  raise notice 'CASE 25 -> %', v;
+  insert into _r values (28,'Grants: authenticated nur SELECT, anon keine','auth=SELECT/anon=KEINE',v);
+  raise notice 'CASE 28 -> %', v;
 end $$;
 
 
@@ -545,7 +618,7 @@ end $$;
 -- E. Zusammenspiel mit den Phase-2-Triggern
 -- =========================================================
 
--- CASE 26: Primaer-Neuberechnung und keine doppelten Zeilen
+-- CASE 29: Primaer-Neuberechnung und keine doppelten Zeilen
 do $$
 declare v text;
 begin
@@ -561,11 +634,11 @@ begin
      ||'/duplikate='||(select count(*)::text from (
           select job_id, employee_id from public.job_assignments
           where employee_id is not null group by 1,2 having count(*)>1) d);
-  insert into _r values (26,'Phase-2-Primaer gedeckt, keine doppelten Zuweisungen','legacy_gedeckt=true/duplikate=0',v);
-  raise notice 'CASE 26 -> %', v;
+  insert into _r values (29,'Phase-2-Primaer gedeckt, keine doppelten Zuweisungen','legacy_gedeckt=true/duplikate=0',v);
+  raise notice 'CASE 29 -> %', v;
 end $$;
 
--- CASE 27: Schreibverstaerkung ist durch die Mengengroesse begrenzt
+-- CASE 30: Schreibverstaerkung ist durch die Mengengroesse begrenzt
 do $$
 declare v text; u0 bigint; u1 bigint;
 begin
@@ -578,12 +651,12 @@ begin
   u1 := pg_temp.jobs_updates();
   execute 'reset role';
   v := 'jobs_updates_hoechstens_6='||((u1-u0) <= 6)::text||'/gemessen='||(u1-u0)::text;
-  insert into _r values (27,'Schreibverstaerkung durch Mengengroesse begrenzt (nicht mengenbasiert)',
+  insert into _r values (30,'Schreibverstaerkung durch Mengengroesse begrenzt (nicht mengenbasiert)',
     'jobs_updates_hoechstens_6=true/gemessen=' || (u1-u0)::text, v);
-  raise notice 'CASE 27 -> %', v;
+  raise notice 'CASE 30 -> %', v;
 end $$;
 
--- CASE 28: alter Client-Pfad (createJob/updateJob ueber assigned_to) bleibt intakt
+-- CASE 31: alter Client-Pfad (createJob/updateJob ueber assigned_to) bleibt intakt
 do $$
 declare v text;
 begin
@@ -598,12 +671,12 @@ begin
    where id='d4000000-0000-0000-0000-000000000009';
   execute 'reset role';
   v := 'zuw='||pg_temp.zuw('d4000000-0000-0000-0000-000000000009')||'/legacy='||pg_temp.legacy('d4000000-0000-0000-0000-000000000009');
-  insert into _r values (28,'Alter Client-Pfad (createJob/updateJob) unveraendert funktionsfaehig',
+  insert into _r values (31,'Alter Client-Pfad (createJob/updateJob) unveraendert funktionsfaehig',
     'zuw=d2000000-0000-0000-0000-000000000003:assigned/legacy=d2000000-0000-0000-0000-000000000003', v);
-  raise notice 'CASE 28 -> %', v;
+  raise notice 'CASE 31 -> %', v;
 end $$;
 
--- CASE 29: Recurring-Parent und Occurrence verhalten sich unveraendert
+-- CASE 32: Recurring-Parent und Occurrence verhalten sich unveraendert
 do $$
 declare v text;
 begin
@@ -616,12 +689,12 @@ begin
      ||'/parent_legacy='||pg_temp.legacy('d4000000-0000-0000-0000-000000000004')
      ||'/occurrence_unveraendert='||(pg_temp.zuw('d4000000-0000-0000-0000-000000000005') =
         'd2000000-0000-0000-0000-000000000003:assigned,ANON:assigned')::text;
-  insert into _r values (29,'Recurring-Parent erhaelt Vorlage; Occurrence bleibt unveraendert (Phase 4 offen)',
+  insert into _r values (32,'Recurring-Parent erhaelt Vorlage; Occurrence bleibt unveraendert (Phase 4 offen)',
     'parent_zuw=d2000000-0000-0000-0000-000000000002:assigned/parent_legacy=d2000000-0000-0000-0000-000000000002/occurrence_unveraendert=true', v);
-  raise notice 'CASE 29 -> %', v;
+  raise notice 'CASE 32 -> %', v;
 end $$;
 
--- CASE 30: Invariante ueber alle Testauftraege
+-- CASE 33: Invariante ueber alle Testauftraege
 do $$
 declare v text;
 begin
@@ -630,8 +703,8 @@ begin
   where j.assigned_to is not null
     and not exists (select 1 from public.job_assignments ja
                     where ja.job_id=j.id and ja.employee_id=j.assigned_to);
-  insert into _r values (30,'Invariante: assigned_to IS NULL ODER durch Zuweisung gedeckt','verletzungen=0',v);
-  raise notice 'CASE 30 -> %', v;
+  insert into _r values (33,'Invariante: assigned_to IS NULL ODER durch Zuweisung gedeckt','verletzungen=0',v);
+  raise notice 'CASE 33 -> %', v;
 end $$;
 
 
@@ -649,7 +722,7 @@ begin
   if fails > 0 then
     raise exception 'JOB ASSIGNMENTS RLS TEST: % Fall/Faelle FEHLGESCHLAGEN', fails;
   end if;
-  raise notice 'ALLE 30 FAELLE PASS';
+  raise notice 'ALLE 33 FAELLE PASS';
 end $$;
 
 rollback;

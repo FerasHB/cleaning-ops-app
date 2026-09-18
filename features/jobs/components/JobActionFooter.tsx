@@ -157,6 +157,43 @@ export function JobActionFooter({
         />
       ) : null}
 
+      {waitingOnOthers ? (
+        <View style={styles.pendingInfo}>
+          <Ionicons
+            name="checkmark-done"
+            size={20}
+            color={theme.colors.statusInProgress}
+          />
+          <Text style={styles.pendingInfoText}>
+            Deine Arbeitszeit ist erfasst. Der Auftrag bleibt in Arbeit, bis
+            alle Zugewiesenen abgeschlossen haben.
+          </Text>
+        </View>
+      ) : null}
+
+      {startBlockedReason ? (
+        <View style={styles.blockedInfo}>
+          <Ionicons
+            name="time-outline"
+            size={20}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <Text style={styles.blockedInfoText}>{startBlockedReason}</Text>
+        </View>
+      ) : null}
+
+      {showForceComplete ? (
+        <Button
+          label="Auftrag administrativ abschließen"
+          variant="secondary"
+          icon="shield-checkmark-outline"
+          disabled={submitting}
+          onPress={() => onForceComplete?.()}
+          accessibilityRole="button"
+          accessibilityLabel="Auftrag administrativ abschließen"
+        />
+      ) : null}
+
       {isDone ? (
         <View style={styles.doneInfo}>
           <Ionicons
