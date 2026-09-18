@@ -10,13 +10,9 @@
 // entstehen.
 //
 // AUSFÜHREN:
-//   deno test --no-check supabase/functions/dispatch-notifications/index.test.ts
-// (--no-check: siehe Testbericht — jsr:@supabase/supabase-js@2 ist unversioniert
-//  und löst inzwischen eine neuere Version mit inkompatiblen Generics auf; das
-//  betrifft ausschließlich den unveränderten SDK-Aufrufcode in handleRequest()
-//  und besteht bereits identisch im verifizierten Production-v8-Quellstand
-//  9aab305, unabhängig von diesem Fix. Die hier getestete Routing-/Vorlagen-
-//  Logik ist von diesem Dependency-Drift nicht betroffen.)
+//   deno test supabase/functions/dispatch-notifications/index.test.ts
+// (volle Typprüfung, kein --no-check nötig — siehe markDelivery()-Signatur
+//  in index.ts: SupabaseClient statt ReturnType<typeof createClient>.)
 
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1";
 import {

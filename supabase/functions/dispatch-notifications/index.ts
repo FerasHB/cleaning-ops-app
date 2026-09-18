@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import {
   notificationTexts,
   resolveNotificationLocale,
@@ -533,7 +533,7 @@ if (import.meta.main) {
 // Ruft die Zustands-RPC auf und gibt den resultierenden Status zurück
 // ('sent' | 'failed' | 'pending'). Fehler hier dürfen den Lauf nicht abbrechen.
 async function markDelivery(
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: SupabaseClient,
   deliveryId: string,
   outcome: "sent" | "retry" | "permanent_fail" | "missing_token",
   error?: string,
