@@ -1,5 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import {
+  notificationTexts,
+  resolveNotificationLocale,
+  type NotificationLocale,
+  type PushContent,
+} from "../_shared/notificationTranslations.ts";
 
 // =========================================================
 // Edge Function: dispatch-notifications
@@ -59,6 +65,10 @@ type ClaimedDelivery = {
   expo_push_token: string | null;
   recipient_active: boolean | null;
   recipient_role: string | null;
+  // Seit 20260915000000 (Phase E): Sprache des EMPFÄNGERS (profiles.locale),
+  // nicht die der Firma und nicht die des Auslösers. Roh-Wert aus der DB —
+  // Validierung/Fallback übernimmt resolveNotificationLocale().
+  recipient_locale: string | null;
   // Seit 20260821000000 (Abwesenheits-Events). Bei Job-Events NULL.
   entity_type: string | null;
   entity_id: string | null;
@@ -106,13 +116,21 @@ function isEligible(row: ClaimedDelivery): boolean {
   return row.recipient_role === expected;
 }
 
-// "2026-08-25" -> "25.08.2026". Der Dispatcher bekommt reine Datumsstrings
-// (date-Spalten), niemals Zeitstempel — deshalb kein Zeitzonen-Handling.
-function formatDate(value: string | null): string | null {
+// "2026-08-25" -> lokalisiertes Datum ("25.08.2026" / "08/25/2026" / …). Der
+// Dispatcher bekommt reine Datumsstrings (date-Spalten), niemals Zeitstempel —
+// deshalb timeZone: "UTC", damit Date.UTC() keine Tagesverschiebung erzeugt.
+function formatDate(value: string | null, locale: NotificationLocale): string | null {
   if (!value) return null;
-  const [y, m, d] = value.slice(0, 10).split("-");
+  const [y, m, d] = value.slice(0, 10).split("-").map(Number);
   if (!y || !m || !d) return null;
-  return `${d}.${m}.${y}`;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const tag = notificationTexts(locale).dateLocaleTag;
+  return new Intl.DateTimeFormat(tag, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }
 
 type ExpoTicket =
@@ -130,8 +148,8 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function jobTitle(row: ClaimedDelivery): string {
-  return row.service_name?.trim() || row.customer_name?.trim() || "Auftrag";
+function jobTitle(row: ClaimedDelivery, locale: NotificationLocale): string {
+  return row.service_name?.trim() || row.customer_name?.trim() || notificationTexts(locale).fallbackJobTitle;
 }
 
 // Der Admin soll am Text erkennen, WELCHER Auftrag gemeint ist, ohne die App
@@ -144,16 +162,14 @@ function jobTitle(row: ClaimedDelivery): string {
 // Wie bei job_started/job_completed stehen hier nur customer_name/
 // service_name zur Verfügung (keine Adresse, keine Terminierung) — dieselbe
 // Einschränkung wie bei den bestehenden zwei Events, siehe Kommentar oben.
-function buildAssignedContent(row: ClaimedDelivery): { title: string; body: string } {
+function buildAssignedContent(row: ClaimedDelivery, locale: NotificationLocale): PushContent {
+  const t = notificationTexts(locale);
   const service = row.service_name?.trim();
   const customer = row.customer_name?.trim();
-  const what = jobTitle(row);
-  const at = service && customer ? ` bei ${customer}` : "";
+  const what = jobTitle(row, locale);
+  const at = service && customer ? t.atCustomer(customer) : "";
 
-  return {
-    title: "Neuer Auftrag",
-    body: `Dir wurde „${what}“${at} zugewiesen.`,
-  };
+  return t.assignment({ what, at });
 }
 
 // Abwesenheits-Texte. Zeitraum kommt aus den Schnappschuss-Spalten der Outbox,
@@ -163,101 +179,75 @@ function buildAssignedContent(row: ClaimedDelivery): { title: string; body: stri
 // Offenes Ende (end_date IS NULL) ist bei Krankheit ein REGULÄRER Zustand
 // ("bis auf Weiteres"), kein Fehler — der Text darf dann kein leeres oder
 // kaputtes Datum zeigen.
-function buildAbsenceContent(row: ClaimedDelivery): { title: string; body: string } {
-  const who = row.employee_name?.trim() || "Ein Mitarbeiter";
-  const from = formatDate(row.absence_start_date);
-  const to = formatDate(row.absence_end_date);
+function buildAbsenceContent(row: ClaimedDelivery, locale: NotificationLocale): PushContent {
+  const t = notificationTexts(locale);
+  const who = row.employee_name?.trim() || t.fallbackEmployeeName;
+  const from = formatDate(row.absence_start_date, locale);
+  const to = formatDate(row.absence_end_date, locale);
 
   // "vom 10.08. bis 14.08." | "ab 10.08." (offenes Ende) | "" (kein Datum)
-  const range = from && to ? `vom ${from} bis ${to}` : from ? `ab ${from}` : "";
+  const range = from && to ? t.rangeBetween(from, to) : from ? t.rangeFrom(from) : "";
   const rangeSuffix = range ? ` ${range}` : "";
 
   switch (row.event_type) {
     case "vacation_requested":
-      return {
-        title: "Neuer Urlaubsantrag",
-        body: range
-          ? `${who} hat Urlaub ${range} beantragt.`
-          : `${who} hat Urlaub beantragt.`,
-      };
+      return t.vacationRequested({ who, range });
     case "sickness_reported":
-      return {
-        title: "Neue Krankmeldung",
-        body: range
-          ? `${who} hat sich krankgemeldet (${range}).`
-          : `${who} hat sich krankgemeldet.`,
-      };
+      return t.sicknessReported({ who, range });
     case "sickness_updated":
-      return {
-        title: "Krankmeldung aktualisiert",
-        body: to
-          ? `${who} hat den Zeitraum der Krankmeldung geändert (neues Ende: ${to}).`
-          : `${who} hat die Krankmeldung auf unbestimmte Zeit verlängert.`,
-      };
+      return t.sicknessUpdated({ who, to });
     case "vacation_approved":
-      return {
-        title: "Urlaub genehmigt",
-        body: `Dein Urlaubsantrag${rangeSuffix} wurde genehmigt.`,
-      };
+      return t.vacationApproved({ rangeSuffix });
     case "vacation_rejected":
-      return {
-        title: "Urlaub abgelehnt",
-        body: `Dein Urlaubsantrag${rangeSuffix} wurde abgelehnt.`,
-      };
+      return t.vacationRejected({ rangeSuffix });
     default:
-      return { title: "Abwesenheit", body: `${who}: Abwesenheit aktualisiert.` };
+      return t.absenceDefault({ who });
   }
 }
 
 // Kommentar-Push. Der Kommentartext selbst steht BEWUSST NICHT drin:
 // Datenschutz (Push landet auf dem Sperrbildschirm), unbekannte Länge und
 // unnötiges Rauschen. Der Nutzer öffnet den Auftrag und liest dort.
-function buildCommentContent(row: ClaimedDelivery): { title: string; body: string } {
-  const who = row.employee_name?.trim() || "Jemand";
+function buildCommentContent(row: ClaimedDelivery, locale: NotificationLocale): PushContent {
+  const t = notificationTexts(locale);
+  const who = row.employee_name?.trim() || t.fallbackSomeone;
   const service = row.service_name?.trim();
   const customer = row.customer_name?.trim();
 
   // Gleiche Fallback-Kette wie bei den Job-Events: fehlt die Leistung, rückt
   // der Kunde nach und darf dann nicht zusätzlich als "bei …" erscheinen.
-  const what = jobTitle(row);
-  const at = service && customer ? ` bei ${customer}` : "";
+  const what = jobTitle(row, locale);
+  const at = service && customer ? t.atCustomer(customer) : "";
 
-  return {
-    title: "Neuer Kommentar",
-    body: `${who} hat einen Kommentar zu „${what}“${at} geschrieben.`,
-  };
+  return t.comment({ who, what, at });
 }
 
-function buildContent(row: ClaimedDelivery): { title: string; body: string } {
+function buildContent(row: ClaimedDelivery, locale: NotificationLocale): PushContent {
   if (row.entity_type === "comment") {
-    return buildCommentContent(row);
+    return buildCommentContent(row, locale);
   }
 
   if (row.entity_type === "absence") {
-    return buildAbsenceContent(row);
+    return buildAbsenceContent(row, locale);
   }
 
   if (row.event_type === "job_assigned") {
-    return buildAssignedContent(row);
+    return buildAssignedContent(row, locale);
   }
 
-  const who = row.employee_name?.trim() || "Ein Mitarbeiter";
+  const t = notificationTexts(locale);
+  const who = row.employee_name?.trim() || t.fallbackEmployeeName;
   const service = row.service_name?.trim();
   const customer = row.customer_name?.trim();
 
   // `what` ist die in Anführungszeichen gesetzte Leistung. Fehlt sie, rückt
   // der Kunde nach (jobTitle) — dann darf er NICHT zusätzlich als "bei …"
   // erscheinen, sonst steht er doppelt in der Zeile.
-  const what = jobTitle(row);
-  const at = service && customer ? ` bei ${customer}` : "";
+  const what = jobTitle(row, locale);
+  const at = service && customer ? t.atCustomer(customer) : "";
 
   const done = row.event_type === "job_completed";
-  const verb = done ? "abgeschlossen" : "gestartet";
-
-  return {
-    title: done ? "Auftrag abgeschlossen" : "Auftrag gestartet",
-    body: `${who} hat „${what}“${at} ${verb}.`,
-  };
+  return done ? t.jobCompleted({ who, what, at }) : t.jobStarted({ who, what, at });
 }
 
 Deno.serve(async (req) => {
@@ -392,7 +382,8 @@ Deno.serve(async (req) => {
 
       // Ein Token pro Message -> Ticket[i] gehört eindeutig zu sendable[i].
       const messages = sendable.map((d) => {
-        const { title, body } = buildContent(d);
+        const locale = resolveNotificationLocale(d.recipient_locale);
+        const { title, body } = buildContent(d, locale);
         return {
           to: d.expo_push_token,
           sound: "default",
