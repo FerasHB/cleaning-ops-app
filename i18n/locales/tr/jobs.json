@@ -24,7 +24,8 @@
     "title": "Aktif İş",
     "runningSince": "{{time}} beri devam ediyor",
     "completeButton": "İşi Tamamla",
-    "startOwnButton": "Kendi Katılımımı Başlat"
+    "startOwnButton": "Kendi Katılımımı Başlat",
+    "waitingOnOthers": "Çalışma süren kaydedildi. Atanan herkes kendi kısmını tamamlayana kadar iş devam ediyor olarak kalır."
   },
   "startBlock": {
     "noDateConfigured": "Bu iş için bir tarih belirlenmemiş. Lütfen yöneticinle iletişime geç.",
@@ -226,5 +227,17 @@
     "notRecorded": "kaydedilmedi",
     "infoText": "Bu, işin toplam süresidir — bireysel bir çalışanın çalışma süresinden farklı olabilir.",
     "infoTextSharedSuffix": "Bu süre işin başlangıç ve tamamlanma zamanından hesaplanır; kimin başlattığından bağımsızdır."
+  },
+  "forceComplete": {
+    "buttonLabel": "İşi Yönetici Olarak Tamamla",
+    "title": "Yönetici Tamamlaması",
+    "closeA11y": "Kapat",
+    "bodyText": "İş tamamlandı olarak işaretlenecek. Bu işlem hiçbir çalışanın çalışma süresini DEĞİŞTİRMEZ veya EKLEMEZ — eksik olan kendi süreleri puantajda düzeltme gerektiren olarak görünmeye devam eder ve orada gerçek süreyle girilmelidir.",
+    "reasonLabel": "Sebep (zorunlu)",
+    "reasonPlaceholder": "örn. çalışan tamamlamayı unuttu",
+    "reasonRequiredError": "Lütfen bir sebep gir — bu, denetim kaydına kaydedilir.",
+    "fallbackError": "İş tamamlanamadı.",
+    "confirmButton": "Tamamla",
+    "cancelButton": "Vazgeç"
   }
 }

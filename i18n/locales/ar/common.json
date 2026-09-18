@@ -134,5 +134,12 @@
     "a11yOffline": "لا يوجد إنترنت. لن تُفقد التغييرات.",
     "a11ySaving": "جارٍ حفظ التغييرات.",
     "a11yError": "تعذر حفظ التغييرات."
+  },
+  "updateRequired": {
+    "title": "التحديث مطلوب",
+    "message": "لم يعد إصدار التطبيق هذا مدعومًا. يرجى تحديث التطبيق للمتابعة.",
+    "updateButton": "التحديث الآن",
+    "storeHint": "يرجى البحث عن ”TaskOps Manager“ في App Store أو Google Play وتثبيت آخر تحديث.",
+    "logoutButton": "تسجيل الخروج"
   }
 }

@@ -5,11 +5,18 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  COMPANY_LOADING_EXPORT_ERROR,
-  COMPANY_UNAVAILABLE_EXPORT_ERROR,
   getTimesheetExportBlockReason,
   resolveTimesheetCompanyName,
 } from "../services/timesheets/timesheetCompany.ts";
+
+// getTimesheetExportBlockReason() nimmt seit der Lokalisierung (2026-09-18)
+// t als expliziten Parameter (Muster wie utils/jobSchedule.ts, siehe dortiger
+// Kommentar) statt der Datei-eigenen Modul-Konstanten von vorher — dieser
+// Test laeuft ausserhalb der App ohne initialisiertes i18next, ein simpler
+// Echo-Mock reicht: geprueft wird nur, ob DIESELBE Uebersetzungs-KEY-Kategorie
+// zurueckkommt, nicht der uebersetzte Text selbst (den prueft kein Script,
+// sondern die i18n-Locale-JSONs direkt).
+const t = (key) => key;
 import { buildTimesheetHtml } from "../services/timesheets/timesheetHtml.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -90,30 +97,34 @@ assert.equal(
     companyLoading: true,
     companyLoadError: null,
     companyName: null,
+    t,
   }),
-  COMPANY_LOADING_EXPORT_ERROR,
+  "timesheets:exportBlockedLoading",
 );
 assert.equal(
   getTimesheetExportBlockReason({
     companyLoading: false,
     companyLoadError: "Firmendaten konnten nicht geladen werden.",
     companyName: null,
+    t,
   }),
-  COMPANY_UNAVAILABLE_EXPORT_ERROR,
+  "timesheets:exportBlockedUnavailable",
 );
 assert.equal(
   getTimesheetExportBlockReason({
     companyLoading: false,
     companyLoadError: null,
     companyName: null,
+    t,
   }),
-  COMPANY_UNAVAILABLE_EXPORT_ERROR,
+  "timesheets:exportBlockedUnavailable",
 );
 assert.equal(
   getTimesheetExportBlockReason({
     companyLoading: false,
     companyLoadError: null,
     companyName: testCompany,
+    t,
   }),
   null,
 );

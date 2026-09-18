@@ -126,5 +126,12 @@
     "a11yOffline": "No internet. Changes won't be lost.",
     "a11ySaving": "Changes are being saved.",
     "a11yError": "Changes could not be saved."
+  },
+  "updateRequired": {
+    "title": "Update Required",
+    "message": "This app version is no longer supported. Please update the app to continue.",
+    "updateButton": "Update Now",
+    "storeHint": "Please search for “TaskOps Manager” in the App Store or Google Play and install the latest update.",
+    "logoutButton": "Log Out"
   }
 }

@@ -129,8 +129,7 @@ export function JobActionFooter({
             color={theme.colors.statusInProgress}
           />
           <Text style={styles.pendingInfoText}>
-            Deine Arbeitszeit ist erfasst. Der Auftrag bleibt in Arbeit, bis
-            alle Zugewiesenen abgeschlossen haben.
+            {t("jobs:activeJob.waitingOnOthers")}
           </Text>
         </View>
       ) : null}
@@ -148,13 +147,13 @@ export function JobActionFooter({
 
       {showForceComplete ? (
         <Button
-          label="Auftrag administrativ abschließen"
+          label={t("jobs:forceComplete.buttonLabel")}
           variant="secondary"
           icon="shield-checkmark-outline"
           disabled={submitting}
           onPress={() => onForceComplete?.()}
           accessibilityRole="button"
-          accessibilityLabel="Auftrag administrativ abschließen"
+          accessibilityLabel={t("jobs:forceComplete.buttonLabel")}
         />
       ) : null}
 

@@ -34,6 +34,8 @@
   "summary_other": "Total · {{count}} jobs",
   "exportButton": "Export PDF",
   "exportFailed": "PDF export failed.",
+  "exportBlockedLoading": "Company data is still loading. Please try the PDF export again in a moment.",
+  "exportBlockedUnavailable": "The company name could not be loaded. PDF export is therefore not possible.",
   "loadFailed": "Timesheet could not be loaded.",
   "fallbackEmployeeName": "Employee",
   "shareTitle": "Share Timesheet",

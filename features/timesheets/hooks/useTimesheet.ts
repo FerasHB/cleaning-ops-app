@@ -222,6 +222,7 @@ export function useTimesheet(
     companyLoading,
     companyLoadError,
     companyName,
+    t,
   });
   const canExportPdf = exportBlockReason === null;
 

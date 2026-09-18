@@ -1,12 +1,15 @@
+// Plain-function-Datei (keine Komponente) — kein useTranslation()-Hook
+// möglich. ANDERS als utils/userMessages.ts nutzt diese Datei NICHT die
+// exportierte i18next-Instanz direkt (import { i18next } from "@/i18n"):
+// dieser Alias-Import wird transitiv von scripts/check-timesheet-company-
+// name.mjs eingelesen, einem schmalen node --experimental-strip-types-
+// Runner ohne Pfad-Alias-Aufloesung. Stattdessen wie
+// utils/jobSchedule.ts (getStartBlockMessage) das Muster "t als expliziter
+// Parameter" — der Aufrufer (features/timesheets/hooks/useTimesheet.ts)
+// hat aus useTranslation() ohnehin ein aktuelles t.
 type CompanyNameSource = {
   name?: string | null;
 } | null;
-
-export const COMPANY_LOADING_EXPORT_ERROR =
-  "Firmendaten werden noch geladen. Bitte versuche den PDF-Export gleich erneut.";
-
-export const COMPANY_UNAVAILABLE_EXPORT_ERROR =
-  "Der Firmenname konnte nicht geladen werden. Der PDF-Export ist deshalb nicht möglich.";
 
 /** Liefert ausschließlich einen belastbaren, nicht-leeren Firmennamen. */
 export function resolveTimesheetCompanyName(
@@ -24,10 +27,13 @@ export function getTimesheetExportBlockReason(params: {
   companyLoading: boolean;
   companyLoadError: string | null;
   companyName: string | null;
+  t: (key: string) => string;
 }): string | null {
-  if (params.companyLoading) return COMPANY_LOADING_EXPORT_ERROR;
+  if (params.companyLoading) {
+    return params.t("timesheets:exportBlockedLoading");
+  }
   if (params.companyLoadError || !params.companyName) {
-    return COMPANY_UNAVAILABLE_EXPORT_ERROR;
+    return params.t("timesheets:exportBlockedUnavailable");
   }
   return null;
 }

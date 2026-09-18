@@ -24,7 +24,8 @@
     "title": "Aktiver Job",
     "runningSince": "Läuft seit {{time}}",
     "completeButton": "Job abschließen",
-    "startOwnButton": "Eigene Teilnahme starten"
+    "startOwnButton": "Eigene Teilnahme starten",
+    "waitingOnOthers": "Deine Arbeitszeit ist erfasst. Der Auftrag bleibt in Arbeit, bis alle Zugewiesenen abgeschlossen haben."
   },
   "startBlock": {
     "noDateConfigured": "Für diesen Auftrag ist kein Termin hinterlegt. Bitte wende dich an deinen Administrator.",
@@ -226,5 +227,17 @@
     "notRecorded": "nicht erfasst",
     "infoText": "Dies ist die Gesamtlaufzeit des Auftrags — sie kann von der individuellen Arbeitszeit einzelner Mitarbeitender abweichen.",
     "infoTextSharedSuffix": "Sie wird aus Start und Abschluss des Auftrags berechnet, unabhängig davon, wer sie gedrückt hat."
+  },
+  "forceComplete": {
+    "buttonLabel": "Auftrag administrativ abschließen",
+    "title": "Administrativ abschließen",
+    "closeA11y": "Schließen",
+    "bodyText": "Der Auftrag wird als erledigt markiert. Die Arbeitszeit der Mitarbeitenden wird dabei NICHT verändert und NICHT ergänzt – fehlende eigene Zeiten bleiben im Stundenzettel als Korrekturbedarf sichtbar und müssen dort mit der tatsächlichen Zeit nachgetragen werden.",
+    "reasonLabel": "Grund (Pflicht)",
+    "reasonPlaceholder": "z. B. Mitarbeiter hat den Abschluss vergessen",
+    "reasonRequiredError": "Bitte gib einen Grund an – er wird im Prüfpfad gespeichert.",
+    "fallbackError": "Der Auftrag konnte nicht abgeschlossen werden.",
+    "confirmButton": "Abschließen",
+    "cancelButton": "Abbrechen"
   }
 }

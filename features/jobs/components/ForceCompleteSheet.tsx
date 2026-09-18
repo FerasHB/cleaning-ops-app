@@ -22,6 +22,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -48,6 +49,7 @@ export function ForceCompleteSheet({
   onConfirm,
 }: Props) {
   const theme = useAppTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [reason, setReason] = useState("");
@@ -63,7 +65,7 @@ export function ForceCompleteSheet({
   const handleConfirm = async () => {
     const trimmed = reason.trim();
     if (!trimmed) {
-      setError("Bitte gib einen Grund an – er wird im Prüfpfad gespeichert.");
+      setError(t("jobs:forceComplete.reasonRequiredError"));
       return;
     }
 
@@ -75,7 +77,7 @@ export function ForceCompleteSheet({
       onClose();
     } catch (err) {
       setError(
-        toUserMessage(err, "Der Auftrag konnte nicht abgeschlossen werden."),
+        toUserMessage(err, t("jobs:forceComplete.fallbackError")),
       );
     } finally {
       setSubmitting(false);
@@ -102,9 +104,9 @@ export function ForceCompleteSheet({
                   size={18}
                   color={theme.colors.primary}
                 />
-                <Text style={styles.title}>Administrativ abschließen</Text>
+                <Text style={styles.title}>{t("jobs:forceComplete.title")}</Text>
               </View>
-              <TouchableOpacity onPress={close} accessibilityLabel="Schließen">
+              <TouchableOpacity onPress={close} accessibilityLabel={t("jobs:forceComplete.closeA11y")}>
                 <Ionicons
                   name="close"
                   size={22}
@@ -119,11 +121,7 @@ export function ForceCompleteSheet({
               ) : null}
 
               <Text style={styles.body}>
-                Der Auftrag wird als erledigt markiert. Die Arbeitszeit der
-                Mitarbeitenden wird dabei NICHT verändert und NICHT ergänzt –
-                fehlende eigene Zeiten bleiben im Stundenzettel als
-                Korrekturbedarf sichtbar und müssen dort mit der tatsächlichen
-                Zeit nachgetragen werden.
+                {t("jobs:forceComplete.bodyText")}
               </Text>
 
               {error ? (
@@ -133,24 +131,24 @@ export function ForceCompleteSheet({
               ) : null}
 
               <Input
-                label="Grund (Pflicht)"
+                label={t("jobs:forceComplete.reasonLabel")}
                 value={reason}
                 onChangeText={setReason}
-                placeholder="z. B. Mitarbeiter hat den Abschluss vergessen"
+                placeholder={t("jobs:forceComplete.reasonPlaceholder")}
                 multiline
                 numberOfLines={3}
               />
 
               <View style={styles.actions}>
                 <Button
-                  label="Abschließen"
+                  label={t("jobs:forceComplete.confirmButton")}
                   icon="checkmark"
                   loading={submitting}
                   disabled={submitting}
                   onPress={handleConfirm}
                 />
                 <Button
-                  label="Abbrechen"
+                  label={t("jobs:forceComplete.cancelButton")}
                   variant="secondary"
                   disabled={submitting}
                   onPress={close}

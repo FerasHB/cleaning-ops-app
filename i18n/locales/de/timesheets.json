@@ -34,6 +34,8 @@
   "summary_other": "Summe · {{count}} Jobs",
   "exportButton": "PDF exportieren",
   "exportFailed": "PDF-Export fehlgeschlagen.",
+  "exportBlockedLoading": "Firmendaten werden noch geladen. Bitte versuche den PDF-Export gleich erneut.",
+  "exportBlockedUnavailable": "Der Firmenname konnte nicht geladen werden. Der PDF-Export ist deshalb nicht möglich.",
   "loadFailed": "Stundenzettel konnte nicht geladen werden.",
   "fallbackEmployeeName": "Mitarbeiter",
   "shareTitle": "Stundenzettel teilen",

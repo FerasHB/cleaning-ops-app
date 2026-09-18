@@ -38,6 +38,8 @@
   "summary_other": "الإجمالي · {{count}} مهمة",
   "exportButton": "تصدير PDF",
   "exportFailed": "تعذر تصدير ملف PDF.",
+  "exportBlockedLoading": "لا تزال بيانات الشركة قيد التحميل. يرجى إعادة محاولة تصدير PDF بعد قليل.",
+  "exportBlockedUnavailable": "تعذر تحميل اسم الشركة، لذا لا يمكن تصدير PDF.",
   "loadFailed": "تعذر تحميل سجل الدوام.",
   "fallbackEmployeeName": "موظف",
   "shareTitle": "مشاركة سجل الدوام",

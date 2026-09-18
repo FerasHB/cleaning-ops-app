@@ -126,5 +126,12 @@
     "a11yOffline": "İnternet yok. Değişiklikler kaybolmaz.",
     "a11ySaving": "Değişiklikler kaydediliyor.",
     "a11yError": "Değişiklikler kaydedilemedi."
+  },
+  "updateRequired": {
+    "title": "Güncelleme Gerekli",
+    "message": "Bu uygulama sürümü artık desteklenmiyor. Devam etmek için lütfen uygulamayı güncelle.",
+    "updateButton": "Şimdi Güncelle",
+    "storeHint": "Lütfen App Store veya Google Play'de “TaskOps Manager” araması yap ve en son güncellemeyi yükle.",
+    "logoutButton": "Çıkış Yap"
   }
 }

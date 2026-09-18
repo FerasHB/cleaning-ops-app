@@ -24,7 +24,8 @@
     "title": "Active Job",
     "runningSince": "Running since {{time}}",
     "completeButton": "Complete Job",
-    "startOwnButton": "Start My Participation"
+    "startOwnButton": "Start My Participation",
+    "waitingOnOthers": "Your work time is recorded. The job stays in progress until everyone assigned has completed their part."
   },
   "startBlock": {
     "noDateConfigured": "No date is set for this job. Please contact your administrator.",
@@ -226,5 +227,17 @@
     "notRecorded": "not recorded",
     "infoText": "This is the job's total duration — it may differ from an individual employee's working time.",
     "infoTextSharedSuffix": "It is calculated from the job's start and completion, regardless of who pressed them."
+  },
+  "forceComplete": {
+    "buttonLabel": "Force-Complete Job",
+    "title": "Force-Complete",
+    "closeA11y": "Close",
+    "bodyText": "The job will be marked as done. This does NOT change or add any employee's work time — missing own times remain visible in the timesheet as needing correction and must be entered there with the actual time.",
+    "reasonLabel": "Reason (required)",
+    "reasonPlaceholder": "e.g. employee forgot to complete the job",
+    "reasonRequiredError": "Please enter a reason — it is stored in the audit trail.",
+    "fallbackError": "The job could not be completed.",
+    "confirmButton": "Complete",
+    "cancelButton": "Cancel"
   }
 }

@@ -12,12 +12,14 @@ import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Linking, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 
 export default function UpdateRequiredScreen() {
   const theme = useAppTheme();
+  const { t } = useTranslation();
   const { updateUrl, signOut } = useAuth();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -47,11 +49,10 @@ export default function UpdateRequiredScreen() {
           <Ionicons name="cloud-download-outline" size={40} color={theme.colors.primary} />
         </View>
 
-        <Text style={styles.title}>App-Update erforderlich</Text>
+        <Text style={styles.title}>{t("common:updateRequired.title")}</Text>
 
         <Text style={styles.message}>
-          Diese App-Version wird nicht mehr unterstützt. Bitte aktualisiere die
-          App, um fortzufahren.
+          {t("common:updateRequired.message")}
         </Text>
 
         {updateUrl ? (
@@ -60,18 +61,17 @@ export default function UpdateRequiredScreen() {
             onPress={handleUpdate}
             activeOpacity={0.82}
           >
-            <Text style={styles.primaryBtnText}>Jetzt aktualisieren</Text>
+            <Text style={styles.primaryBtnText}>{t("common:updateRequired.updateButton")}</Text>
             <Ionicons name="open-outline" size={18} color={theme.colors.onPrimaryContainer} />
           </TouchableOpacity>
         ) : (
           <Text style={styles.hint}>
-            Bitte suche „TaskOps Manager" im App Store bzw. bei Google Play und
-            installiere das neueste Update.
+            {t("common:updateRequired.storeHint")}
           </Text>
         )}
 
         <TouchableOpacity style={styles.secondaryBtn} onPress={handleLogout} activeOpacity={0.75}>
-          <Text style={styles.secondaryBtnText}>Abmelden</Text>
+          <Text style={styles.secondaryBtnText}>{t("common:updateRequired.logoutButton")}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
