@@ -61,21 +61,22 @@ export function KPICard({
       style={[styles.card, accentColor && styles.cardWithBorder, active && styles.cardActive, style]}
       {...wrapperProps}
     >
-      {/* Icon oben rechts */}
-      {icon && (
-        <View style={styles.iconWrap}>
+      {/* Label + Icon als echte Flex-Geschwister in einer Zeile — kein
+          absolutes Icon-Overlay mehr (siehe Kopf-Kommentar): so bleibt
+          garantiert Platz für beide, unabhängig von Textlänge/-richtung. */}
+      <View style={styles.headerRow}>
+        <Text style={styles.label} numberOfLines={1}>
+          {label}
+        </Text>
+        {icon && (
           <Ionicons
             name={icon}
             size={18}
             color={accentColor ?? theme.colors.primary}
+            style={styles.icon}
           />
-        </View>
-      )}
-
-      {/* Label */}
-      <Text style={styles.label} numberOfLines={1}>
-        {label}
-      </Text>
+        )}
+      </View>
 
       {/* Wert */}
       <Text style={styles.value}>{value}</Text>
@@ -110,19 +111,24 @@ function createStyles(
       ...theme.shadows.sm,
     },
     cardWithBorder: {
-      borderLeftWidth: 4,
-      borderLeftColor: accentColor ?? theme.colors.primary,
+      borderStartWidth: 4,
+      borderStartColor: accentColor ?? theme.colors.primary,
     },
     cardActive: {
       backgroundColor: theme.colors.surfaceContainerHigh,
       borderColor: accentColor ?? theme.colors.primary,
     },
-    iconWrap: {
-      position: "absolute",
-      top: theme.spacing.md,
-      right: theme.spacing.md,
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: theme.spacing.xs,
+    },
+    icon: {
+      flexShrink: 0,
     },
     label: {
+      flex: 1,
       fontSize: theme.typography.size.xs,
       fontWeight: theme.typography.weight.semibold,
       fontFamily: theme.typography.family.semibold,

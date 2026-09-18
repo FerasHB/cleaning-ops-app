@@ -19,9 +19,10 @@ import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { WorkedTimeCard } from "@/features/jobs/components/WorkedTimeCard";
 import type { Job } from "@/types/job";
-import { formatDateTimeDE } from "@/utils/date";
+import { formatDateTimeLocalized } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -48,6 +49,7 @@ type Props = {
 export function JobTimelineCard({ job, showPlaceholder, isAdmin }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   if (job.startedAt) {
     return <WorkedTimeCard job={job} isAdmin={isAdmin} />;
@@ -55,7 +57,7 @@ export function JobTimelineCard({ job, showPlaceholder, isAdmin }: Props) {
 
   if (!showPlaceholder) return null;
 
-  const scheduledText = formatDateTimeDE(job.scheduledStart);
+  const scheduledText = formatDateTimeLocalized(job.scheduledStart);
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
@@ -68,11 +70,11 @@ export function JobTimelineCard({ job, showPlaceholder, isAdmin }: Props) {
           />
         </View>
         <View style={styles.textBlock}>
-          <Text style={styles.title}>Noch nicht gestartet</Text>
+          <Text style={styles.title}>{t("jobs:card.notStartedYet")}</Text>
           <Text style={styles.subtitle}>
             {scheduledText
-              ? `Geplant für ${scheduledText}.`
-              : "Für diesen Auftrag ist noch kein Termin geplant."}
+              ? t("jobs:detail.scheduledFor", { date: scheduledText })
+              : t("jobs:detail.noScheduleHint")}
           </Text>
         </View>
       </View>

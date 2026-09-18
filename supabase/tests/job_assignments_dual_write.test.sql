@@ -462,9 +462,18 @@ begin
     into n_nach, c_nach
   from public.job_assignments where job_id::text like 'e5000000%';
 
+  -- HINWEIS (20260918, Post-Deploy Hardening): der erwartete counts-Wert
+  -- sank von 6 auf 0, weil compat_sync_assignments_from_legacy() seither
+  -- attendance/employee_started_at/employee_completed_at NICHT MEHR aus
+  -- new.status ableitet (Astra-Audit Befund 1) — die 30 hier per mk_job()
+  -- mit direktem assigned_to-Schreibvorgang erzeugten Zeilen entstehen
+  -- deshalb alle neutral als 'assigned', unabhaengig vom uebergebenen
+  -- Job-Status. Die eigentliche Aussage dieses Falls (unbeteiligte
+  -- Schreibvorgaenge aendern den Bestand nicht) bleibt unveraendert
+  -- gueltig: 0->0 ist ebenso stabil wie zuvor 6->6.
   v := 'zeilen='||n_vor::text||'->'||n_nach::text||'/counts='||c_vor::text||'->'||c_nach::text;
   insert into _dw values (21,'Produktionsaehnlicher Bestand (30 Zeilen) bleibt durch unbeteiligte Schreibvorgaenge stabil',
-    'zeilen=30->30/counts=6->6', v);
+    'zeilen=30->30/counts=0->0', v);
   raise notice 'CASE 21 -> %', v;
 end $$;
 

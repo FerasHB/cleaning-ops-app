@@ -3,18 +3,15 @@
 // components/ui — der bestehende `StatusBadge` ist fest an JobStatus/
 // utils/jobStatus.ts gebunden (siehe dessen Kopfkommentar) und für einen
 // eigenen Status-Enum nicht gedacht.
+//
+// Beschriftung übersetzt (i18n/locales/*/absences.json, status.*) — gemeinsame
+// Quelle für Mitarbeiter (AbsenceCard) UND Admin (AdminAbsenceRow), analog zu
+// hooks/useJobStatusLabels.ts für Job-Status.
 
 import { Badge } from "@/components/ui";
 import type { AbsenceStatus } from "@/types/absence";
 import React from "react";
-
-const LABELS: Record<AbsenceStatus, string> = {
-  requested: "Angefragt",
-  approved: "Genehmigt",
-  rejected: "Abgelehnt",
-  cancelled: "Storniert",
-  reported: "Gemeldet",
-};
+import { useTranslation } from "react-i18next";
 
 const VARIANTS: Record<
   AbsenceStatus,
@@ -28,5 +25,8 @@ const VARIANTS: Record<
 };
 
 export function AbsenceStatusBadge({ status }: { status: AbsenceStatus }) {
-  return <Badge label={LABELS[status]} variant={VARIANTS[status]} />;
+  const { t } = useTranslation();
+  return (
+    <Badge label={t(`absences:status.${status}`)} variant={VARIANTS[status]} />
+  );
 }

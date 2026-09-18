@@ -105,6 +105,14 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
   (E.164, selbst editierbar) + `phone_verified_at` (Reserve). Telefon-Normalisierung/-Format:
   `utils/phone.ts` (E.164, DE-Default, **ohne** libphonenumber). Tap-auf-Nummer → Bestätigung → Dialer:
   `callPhone()` in `utils/dialogs.ts` bzw. die `PhoneRow`-Komponente.
+  `profiles.locale` (20260915000000, Default `de`, `de`/`en`/`ar`/`tr`) ist die **Sprache pro Nutzer**
+  (nicht pro Firma — `companies.locale` bleibt Firmen-Default, z. B. für Rechnungen, und wird NICHT
+  für Push verwendet). Selbst editierbar wie `phone` (kein Guard-Trigger-Eintrag nötig). Wird bei
+  explizitem Sprachwechsel im Client synchronisiert (`services/profile/updateOwnLocale.ts`), nie beim
+  Kaltstart, und blockiert den lokalen Wechsel bei Fehler/Offline nie. `claim_notification_deliveries()`
+  liefert sie als `recipient_locale` an `dispatch-notifications` (Push-Text-Lokalisierung, deutscher
+  Fallback bei fehlendem/ungültigem Wert; Server übersetzt nur Grammatik/Labels, nie gespeicherte
+  Geschäftsdaten wie Kunden-/Mitarbeitername).
   `jobs` hat zusätzlich Terminierungs-Spalten: `job_type` (enum `single`|`recurring`), `date`,
   `start_time`, `recurring_days text[]`, `is_active`. Wiederkehrende Aufträge werden als **eine Regel**
   gespeichert (keine vorausberechneten Einzel-Jobs).
@@ -226,6 +234,17 @@ Die Route-Dateien sind dünn — die eigentliche UI liegt in `features/` (z. B. 
 - **Keyboard-Handling Kommentare:** `JobDetailScreen` nutzt `KeyboardAvoidingView` + ScrollView-Ref; bei
   Fokus auf das Kommentarfeld (`onInputFocus`) wird ans Ende gescrollt, damit Eingabe + Senden über der
   Tastatur sichtbar bleiben.
+- **Client-Compatibility (Migration `20260916120000`) — Web ist bewusst kein unterstütztes
+  Ziel für Job-Schreibpfade.** `start_own_job`/`complete_own_job`/`set_job_assignments` prüfen serverseitig
+  `enforce_min_client_version()` anhand der Header `x-taskops-platform`/`x-taskops-build`
+  (`utils/clientBuild.ts` → `lib/supabase.ts`). Offiziell supported sind nur native iOS-/Android-Builds;
+  Web ist Dev-/QA-Ziel. `getClientPlatform()` liefert für Web absichtlich `null` → keine Header → sobald
+  `app_config.enforcement_enabled=true` ist, bekommt ein Web-Aufruf dieser RPCs dieselbe 22023-Ablehnung
+  wie ein zu alter mobiler Client. **Keinen Web-Bypass einbauen** — fehlende Header müssen weiterhin einen
+  nicht unterstützten Client identifizieren können, das ist der Zweck der Durchsetzung, nicht ihre Lücke.
+  Der client-seitige `isVersionBlocked`-Hinweis (`AuthContext.tsx`, reiner UX-Nudge, keine Sicherheitsgrenze)
+  blockiert Web ebenfalls nie, aus demselben Grund (kein Store-Update-Pfad) — das ist unabhängig von der
+  harten Server-Durchsetzung und ändert nichts an obigem.
 - Lokale Dateien gehören nicht ins Repo: `.claude/` und `supabase/.temp/` sind in `.gitignore`.
 
 ## Bekannte technische Schuld

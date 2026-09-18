@@ -20,22 +20,7 @@
 // Datensatz weggelassen; „eingeklappt" ist nicht dasselbe wie „verborgen".
 
 import type { Job } from "@/types/job";
-
-/** Deterministische deutsche Monatsnamen (kein Intl-/Locale-Risiko). */
-const MONTH_NAMES = [
-  "Januar",
-  "Februar",
-  "März",
-  "April",
-  "Mai",
-  "Juni",
-  "Juli",
-  "August",
-  "September",
-  "Oktober",
-  "November",
-  "Dezember",
-];
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 /** Gruppen-Key für Termine ohne Datum (defensiv — sollte nie vorkommen). */
 export const NO_DATE_GROUP_KEY = "__no_date__";
@@ -82,14 +67,15 @@ function monthKeyOf(dateKey: string): string {
   return dateKey ? dateKey.slice(0, 7) : NO_DATE_GROUP_KEY;
 }
 
-/** "2026-08" → "August 2026". */
+/** "2026-08" → "August 2026" (sprachabhängig, z.B. "August 2026" en). */
 function monthLabelOf(monthKey: string): string {
-  if (monthKey === NO_DATE_GROUP_KEY) return "Ohne Datum";
-  const [year, month] = monthKey.split("-");
-  const index = parseInt(month, 10) - 1;
-  const name = MONTH_NAMES[index];
-  if (!name || !year) return monthKey;
-  return `${name} ${year}`;
+  if (monthKey === NO_DATE_GROUP_KEY) return i18next.t("admin:schedule.noDate");
+  const [year, month] = monthKey.split("-").map((n) => parseInt(n, 10));
+  if (!year || !month) return monthKey;
+  const date = new Date(year, month - 1, 1);
+  if (isNaN(date.getTime())) return monthKey;
+  const localeTag = INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+  return date.toLocaleDateString(localeTag, { month: "long", year: "numeric" });
 }
 
 /**

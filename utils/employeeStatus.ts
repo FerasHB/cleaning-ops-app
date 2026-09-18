@@ -4,6 +4,7 @@
 // Eingeladen/Aktiv/Inaktiv-Logik nicht doppelt gepflegt wird.
 
 import type { EmployeeOption } from "@/types/job";
+import { i18next } from "@/i18n";
 
 export type EmployeeStatusVariant = "pending" | "active" | "inactive";
 
@@ -19,10 +20,10 @@ export function getEmployeeStatus(
   employee: Pick<EmployeeOption, "isActive" | "inviteAcceptedAt">,
 ): EmployeeStatus {
   if (!employee.inviteAcceptedAt) {
-    return { label: "Eingeladen", variant: "pending" };
+    return { label: i18next.t("admin:employeesList.statusPending"), variant: "pending" };
   }
   if (employee.isActive === false) {
-    return { label: "Inaktiv", variant: "inactive" };
+    return { label: i18next.t("admin:employeesList.statusInactive"), variant: "inactive" };
   }
-  return { label: "Aktiv", variant: "active" };
+  return { label: i18next.t("admin:employeesList.statusActive"), variant: "active" };
 }

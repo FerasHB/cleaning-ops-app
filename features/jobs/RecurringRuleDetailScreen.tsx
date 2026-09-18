@@ -58,6 +58,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, StatusBar, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { toUserMessage } from "@/utils/userMessages";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   /** Die Parent-Regel. Der Aufrufer hat bereits geprüft, dass es eine ist. */
@@ -78,6 +79,7 @@ export default function RecurringRuleDetailScreen({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
 
   const { employees, deleteJob } = useJobs();
 
@@ -135,7 +137,7 @@ export default function RecurringRuleDetailScreen({
   // benutzt (identische Aufteilung, keine zweite Wahrheit).
   const agendaSummary = useMemo(
     () => buildOccurrenceAgenda(occurrences, todayKey),
-    [occurrences, todayKey],
+    [occurrences, todayKey, i18n.language],
   );
 
   // Aktiv-Status über ALLE Zugewiesenen: false, sobald einer deaktiviert ist;
@@ -205,21 +207,21 @@ export default function RecurringRuleDetailScreen({
       await loadOccurrences();
     } catch (err: unknown) {
       setActionError(
-        toUserMessage(err, "Aktion fehlgeschlagen."),
+        toUserMessage(err, t("admin:recurringRules.actionFailedFallback")),
       );
     } finally {
       setRuleBusy(false);
     }
-  }, [ruleId, rule.isActive, onRuleRefreshed, loadOccurrences]);
+  }, [ruleId, rule.isActive, onRuleRefreshed, loadOccurrences, t]);
 
   const handleDeleteRule = useCallback(() => {
     Alert.alert(
-      "Dauerauftrag löschen",
-      "Regeln mit bereits gestarteten oder abgeschlossenen Terminen können aus Sicherheitsgründen nicht gelöscht werden. Fortfahren?",
+      t("admin:recurringRules.deleteConfirmTitle"),
+      t("admin:recurringRules.deleteConfirmMessage"),
       [
-        { text: "Abbrechen", style: "cancel" },
+        { text: t("common:actions.cancel"), style: "cancel" },
         {
-          text: "Löschen",
+          text: t("common:actions.delete"),
           style: "destructive",
           onPress: async () => {
             setActionError("");
@@ -233,7 +235,7 @@ export default function RecurringRuleDetailScreen({
               setActionError(
                 toUserMessage(
                   err,
-                  "Löschen nicht möglich (geschützte Historie).",
+                  t("admin:recurringRules.deleteFailedFallback"),
                 ),
               );
             } finally {
@@ -243,7 +245,7 @@ export default function RecurringRuleDetailScreen({
         },
       ],
     );
-  }, [deleteJob, ruleId]);
+  }, [deleteJob, ruleId, t]);
 
   // Aktion erst nach dem Schließen des Sheets auslösen — ein Alert oder
   // Navigations-Push während der Modal-Animation wird auf iOS verschluckt.
@@ -262,20 +264,26 @@ export default function RecurringRuleDetailScreen({
   const ruleActive = rule.isActive ?? true;
   const menuItems: ActionMenuItem[] = useMemo(
     () => [
-      { key: "edit", label: "Bearbeiten", icon: "create-outline" },
+      {
+        key: "edit",
+        label: t("admin:recurringRules.menuEdit"),
+        icon: "create-outline",
+      },
       {
         key: "toggle",
-        label: ruleActive ? "Deaktivieren" : "Aktivieren",
+        label: ruleActive
+          ? t("admin:recurringRules.menuDeactivate")
+          : t("admin:recurringRules.menuActivate"),
         icon: ruleActive ? "pause-outline" : "play-outline",
       },
       {
         key: "delete",
-        label: "Löschen",
+        label: t("admin:recurringRules.menuDelete"),
         icon: "trash-outline",
         destructive: true,
       },
     ],
-    [ruleActive],
+    [ruleActive, t],
   );
 
   // Eine Regel wird nie ausgeführt — Start-/Abschlusszeiten auf der Regel-Zeile

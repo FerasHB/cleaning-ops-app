@@ -53,3 +53,9 @@ supabase/.temp/
 backups/
 
 supabase/baseline/
+
+# scripts/verify-recurring-occurrence-display.mjs: disposable compile
+# scratch dir, created inside root (not os.tmpdir()) so its compiled
+# output can resolve node_modules; removed in a finally block, this is
+# just a backstop for an interrupted run.
+.verify-recurring-occ-tmp-*/

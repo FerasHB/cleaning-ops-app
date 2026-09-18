@@ -38,6 +38,7 @@
 // angezeigt (kein 0:00-Eintrag, kein Fallback), siehe mapEntry.
 
 import { supabase } from "@/lib/supabase";
+import { i18next } from "@/i18n";
 import { buildTimesheetAbsence } from "@/services/timesheets/timesheetAbsence.service";
 import { buildTimesheetHtml } from "@/services/timesheets/timesheetHtml";
 import type {
@@ -175,11 +176,11 @@ function mapEntry(row: TimesheetAssignmentRow): TimesheetEntry | null {
   };
 }
 
-// Lesbare Kurzbeschreibung je Lücken-Art (deutsch, für die Admin-Liste).
-const GAP_LABELS: Record<TimesheetGapReason, string> = {
-  no_time: "Keine eigene Zeit erfasst",
-  start_only: "Beginn erfasst, Abschluss fehlt",
-  end_only: "Abschluss erfasst, Beginn fehlt",
+// Lesbare Kurzbeschreibung je Lücken-Art, für die Admin-Liste.
+const GAP_LABEL_KEYS: Record<TimesheetGapReason, string> = {
+  no_time: "admin:timesheet.reasonNoTime",
+  start_only: "admin:timesheet.reasonStartOnly",
+  end_only: "admin:timesheet.reasonEndOnly",
 };
 
 /**
@@ -236,7 +237,7 @@ function mapGap(
     sharedStartedAt: row.j.started_at,
     sharedCompletedAt: row.j.completed_at,
     reason,
-    reasonLabel: GAP_LABELS[reason],
+    reasonLabel: i18next.t(GAP_LABEL_KEYS[reason]),
   };
 }
 
@@ -412,12 +413,12 @@ export async function exportTimesheetPdf(data: TimesheetData): Promise<void> {
 
   const canShare = await Sharing.isAvailableAsync();
   if (!canShare) {
-    throw new Error("Teilen wird auf diesem Gerät nicht unterstützt.");
+    throw new Error(i18next.t("timesheets:shareNotSupported"));
   }
 
   await Sharing.shareAsync(uri, {
     mimeType: "application/pdf",
-    dialogTitle: "Stundenzettel teilen",
+    dialogTitle: i18next.t("timesheets:shareTitle"),
     UTI: "com.adobe.pdf",
   });
 }

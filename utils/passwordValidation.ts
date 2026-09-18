@@ -4,6 +4,11 @@
 // Muss mit der serverseitigen Mindestlänge übereinstimmen (Supabase Auth
 // `password_min_length` — siehe supabase/config.toml und Abschlussbericht
 // für den nötigen Dashboard-Abgleich auf Staging/Prod).
+//
+// Plain-function-Datei (keine Komponente) — kein useTranslation()-Hook
+// möglich. Nutzt wie utils/dialogs.ts die exportierte i18next-Instanz direkt.
+
+import { i18next } from "@/i18n";
 
 export const MIN_PASSWORD_LENGTH = 10;
 
@@ -17,8 +22,6 @@ export const MIN_PASSWORD_LENGTH = 10;
 // 500ers zu verlassen. Byte- statt zeichenbasiert geprüft, da Unicode-Zeichen
 // (Emoji, Umlaute außerhalb Latin-1 etc.) mehr als 1 Byte belegen können.
 export const MAX_PASSWORD_BYTES = 72;
-
-export const PASSWORD_MISMATCH_MESSAGE = "Die Passwörter stimmen nicht überein.";
 
 export type PasswordValidationResult = {
   valid: boolean;
@@ -48,23 +51,29 @@ export function validatePassword(password: string): PasswordValidationResult {
   const errors: string[] = [];
 
   if (!password.trim()) {
-    errors.push("Bitte ein Passwort eingeben.");
+    errors.push(i18next.t("common:validation.passwordRequired"));
   } else if (password.length < MIN_PASSWORD_LENGTH) {
-    errors.push(`Das Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`);
+    errors.push(
+      i18next.t("common:validation.passwordMinLength", {
+        min: MIN_PASSWORD_LENGTH,
+      }),
+    );
   } else if (utf8ByteLength(password) > MAX_PASSWORD_BYTES) {
-    errors.push("Das Passwort ist zu lang.");
+    errors.push(i18next.t("common:validation.passwordTooLong"));
   }
 
   return { valid: errors.length === 0, errors };
 }
 
-/** Wie validatePassword, plus Abgleich mit der Bestätigung. Null bei gültiger Eingabe, sonst eine deutsche Fehlermeldung. */
+/** Wie validatePassword, plus Abgleich mit der Bestätigung. Null bei gültiger Eingabe, sonst eine übersetzte Fehlermeldung. */
 export function validateNewPassword(
   password: string,
   confirmPassword: string,
 ): string | null {
   const { valid, errors } = validatePassword(password);
   if (!valid) return errors[0];
-  if (password !== confirmPassword) return PASSWORD_MISMATCH_MESSAGE;
+  if (password !== confirmPassword) {
+    return i18next.t("common:validation.passwordMismatch");
+  }
   return null;
 }

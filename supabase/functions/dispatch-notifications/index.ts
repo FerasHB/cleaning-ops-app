@@ -1,5 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import {
+  notificationTexts,
+  resolveNotificationLocale,
+  type NotificationLocale,
+  type PushContent,
+} from "../_shared/notificationTranslations.ts";
 
 // =========================================================
 // Edge Function: dispatch-notifications
@@ -43,7 +49,7 @@ const MAX_BATCHES = 20; // Sicherheitskappe: max. 1000 Deliveries pro Aufruf
 const PROCESSING_TIMEOUT_SECONDS = 120;
 const MAX_ATTEMPTS = 5;
 
-type ClaimedDelivery = {
+export type ClaimedDelivery = {
   delivery_id: string;
   outbox_id: string;
   recipient_id: string;
@@ -59,6 +65,10 @@ type ClaimedDelivery = {
   expo_push_token: string | null;
   recipient_active: boolean | null;
   recipient_role: string | null;
+  // Seit 20260915000000 (Phase E): Sprache des EMPFÄNGERS (profiles.locale),
+  // nicht die der Firma und nicht die des Auslösers. Roh-Wert aus der DB —
+  // Validierung/Fallback übernimmt resolveNotificationLocale().
+  recipient_locale: string | null;
   // Seit 20260821000000 (Abwesenheits-Events). Bei Job-Events NULL.
   entity_type: string | null;
   entity_id: string | null;
@@ -90,14 +100,45 @@ const EVENT_RECIPIENT_ROLE: Record<string, "admin" | "employee" | "any"> = {
 
 // Unbekanntes Event -> "admin" als konservativer Rückfall (entspricht dem
 // Verhalten vor dieser Änderung, als alles an Admins ging).
-function expectedRoleFor(eventType: string): "admin" | "employee" | "any" {
+export function expectedRoleFor(eventType: string): "admin" | "employee" | "any" {
   return EVENT_RECIPIENT_ROLE[eventType] ?? "admin";
+}
+
+// Vollständige, explizite Liste aller aktuell unterstützten Event-Typen samt
+// dem entity_type, den claim_notification_deliveries() für sie garantiert
+// (notification_outbox_fill_entity() bzw. enqueue_absence_notification()/
+// notify_job_comment() setzen entity_type serverseitig, NIE der Client).
+//
+// WARUM DIESE PRÜFUNG EXISTIERT (20260916130000-Regression):
+// Verliert eine künftige Änderung erneut entity_type/entity_id aus der
+// Claim-RPC (oder liefert ein neuer, noch nicht angebundener Event-Typ eine
+// unerwartete entity_type-Kombination), darf das Ergebnis NIEMALS eine
+// falsche "<Name> hat <Auftrag> gestartet."-Meldung sein — das ist exakt der
+// Fehler, den dieser Fix behebt. isRoutableEvent() ist die einzige Stelle,
+// die entscheidet, ob eine Delivery überhaupt ein Template bekommt; buildContent()
+// wird NUR für als routable erkannte Zeilen aufgerufen.
+const JOB_EVENT_TYPES = new Set(["job_started", "job_completed", "job_assigned"]);
+const ABSENCE_EVENT_TYPES = new Set([
+  "vacation_requested",
+  "sickness_reported",
+  "sickness_updated",
+  "vacation_approved",
+  "vacation_rejected",
+]);
+const COMMENT_EVENT_TYPES = new Set(["comment_added"]);
+
+export function isRoutableEvent(row: ClaimedDelivery): boolean {
+  if (COMMENT_EVENT_TYPES.has(row.event_type)) return row.entity_type === "comment";
+  if (ABSENCE_EVENT_TYPES.has(row.event_type)) return row.entity_type === "absence";
+  if (JOB_EVENT_TYPES.has(row.event_type)) return row.entity_type === "job";
+  // Unbekannter event_type -> nicht routbar. NIE auf ein Job-Template zurückfallen.
+  return false;
 }
 
 // Empfänger zustellbar? Immer: Konto aktiv. Zusätzlich muss die Rolle zum
 // Event passen — außer bei "any"-Events, deren Empfängermenge serverseitig
 // bereits exakt bestimmt wurde.
-function isEligible(row: ClaimedDelivery): boolean {
+export function isEligible(row: ClaimedDelivery): boolean {
   if (row.recipient_active !== true) return false;
   const expected = expectedRoleFor(row.event_type);
   if (expected === "any") {
@@ -106,13 +147,21 @@ function isEligible(row: ClaimedDelivery): boolean {
   return row.recipient_role === expected;
 }
 
-// "2026-08-25" -> "25.08.2026". Der Dispatcher bekommt reine Datumsstrings
-// (date-Spalten), niemals Zeitstempel — deshalb kein Zeitzonen-Handling.
-function formatDate(value: string | null): string | null {
+// "2026-08-25" -> lokalisiertes Datum ("25.08.2026" / "08/25/2026" / …). Der
+// Dispatcher bekommt reine Datumsstrings (date-Spalten), niemals Zeitstempel —
+// deshalb timeZone: "UTC", damit Date.UTC() keine Tagesverschiebung erzeugt.
+function formatDate(value: string | null, locale: NotificationLocale): string | null {
   if (!value) return null;
-  const [y, m, d] = value.slice(0, 10).split("-");
+  const [y, m, d] = value.slice(0, 10).split("-").map(Number);
   if (!y || !m || !d) return null;
-  return `${d}.${m}.${y}`;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const tag = notificationTexts(locale).dateLocaleTag;
+  return new Intl.DateTimeFormat(tag, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }
 
 type ExpoTicket =
@@ -130,8 +179,8 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function jobTitle(row: ClaimedDelivery): string {
-  return row.service_name?.trim() || row.customer_name?.trim() || "Auftrag";
+function jobTitle(row: ClaimedDelivery, locale: NotificationLocale): string {
+  return row.service_name?.trim() || row.customer_name?.trim() || notificationTexts(locale).fallbackJobTitle;
 }
 
 // Der Admin soll am Text erkennen, WELCHER Auftrag gemeint ist, ohne die App
@@ -144,16 +193,14 @@ function jobTitle(row: ClaimedDelivery): string {
 // Wie bei job_started/job_completed stehen hier nur customer_name/
 // service_name zur Verfügung (keine Adresse, keine Terminierung) — dieselbe
 // Einschränkung wie bei den bestehenden zwei Events, siehe Kommentar oben.
-function buildAssignedContent(row: ClaimedDelivery): { title: string; body: string } {
+function buildAssignedContent(row: ClaimedDelivery, locale: NotificationLocale): PushContent {
+  const t = notificationTexts(locale);
   const service = row.service_name?.trim();
   const customer = row.customer_name?.trim();
-  const what = jobTitle(row);
-  const at = service && customer ? ` bei ${customer}` : "";
+  const what = jobTitle(row, locale);
+  const at = service && customer ? t.atCustomer(customer) : "";
 
-  return {
-    title: "Neuer Auftrag",
-    body: `Dir wurde „${what}“${at} zugewiesen.`,
-  };
+  return t.assignment({ what, at });
 }
 
 // Abwesenheits-Texte. Zeitraum kommt aus den Schnappschuss-Spalten der Outbox,
@@ -163,104 +210,82 @@ function buildAssignedContent(row: ClaimedDelivery): { title: string; body: stri
 // Offenes Ende (end_date IS NULL) ist bei Krankheit ein REGULÄRER Zustand
 // ("bis auf Weiteres"), kein Fehler — der Text darf dann kein leeres oder
 // kaputtes Datum zeigen.
-function buildAbsenceContent(row: ClaimedDelivery): { title: string; body: string } {
-  const who = row.employee_name?.trim() || "Ein Mitarbeiter";
-  const from = formatDate(row.absence_start_date);
-  const to = formatDate(row.absence_end_date);
+function buildAbsenceContent(row: ClaimedDelivery, locale: NotificationLocale): PushContent {
+  const t = notificationTexts(locale);
+  const who = row.employee_name?.trim() || t.fallbackEmployeeName;
+  const from = formatDate(row.absence_start_date, locale);
+  const to = formatDate(row.absence_end_date, locale);
 
   // "vom 10.08. bis 14.08." | "ab 10.08." (offenes Ende) | "" (kein Datum)
-  const range = from && to ? `vom ${from} bis ${to}` : from ? `ab ${from}` : "";
+  const range = from && to ? t.rangeBetween(from, to) : from ? t.rangeFrom(from) : "";
   const rangeSuffix = range ? ` ${range}` : "";
 
   switch (row.event_type) {
     case "vacation_requested":
-      return {
-        title: "Neuer Urlaubsantrag",
-        body: range
-          ? `${who} hat Urlaub ${range} beantragt.`
-          : `${who} hat Urlaub beantragt.`,
-      };
+      return t.vacationRequested({ who, range });
     case "sickness_reported":
-      return {
-        title: "Neue Krankmeldung",
-        body: range
-          ? `${who} hat sich krankgemeldet (${range}).`
-          : `${who} hat sich krankgemeldet.`,
-      };
+      return t.sicknessReported({ who, range });
     case "sickness_updated":
-      return {
-        title: "Krankmeldung aktualisiert",
-        body: to
-          ? `${who} hat den Zeitraum der Krankmeldung geändert (neues Ende: ${to}).`
-          : `${who} hat die Krankmeldung auf unbestimmte Zeit verlängert.`,
-      };
+      return t.sicknessUpdated({ who, to });
     case "vacation_approved":
-      return {
-        title: "Urlaub genehmigt",
-        body: `Dein Urlaubsantrag${rangeSuffix} wurde genehmigt.`,
-      };
+      return t.vacationApproved({ rangeSuffix });
     case "vacation_rejected":
-      return {
-        title: "Urlaub abgelehnt",
-        body: `Dein Urlaubsantrag${rangeSuffix} wurde abgelehnt.`,
-      };
+      return t.vacationRejected({ rangeSuffix });
     default:
-      return { title: "Abwesenheit", body: `${who}: Abwesenheit aktualisiert.` };
+      return t.absenceDefault({ who });
   }
 }
 
 // Kommentar-Push. Der Kommentartext selbst steht BEWUSST NICHT drin:
 // Datenschutz (Push landet auf dem Sperrbildschirm), unbekannte Länge und
 // unnötiges Rauschen. Der Nutzer öffnet den Auftrag und liest dort.
-function buildCommentContent(row: ClaimedDelivery): { title: string; body: string } {
-  const who = row.employee_name?.trim() || "Jemand";
+function buildCommentContent(row: ClaimedDelivery, locale: NotificationLocale): PushContent {
+  const t = notificationTexts(locale);
+  const who = row.employee_name?.trim() || t.fallbackSomeone;
   const service = row.service_name?.trim();
   const customer = row.customer_name?.trim();
 
   // Gleiche Fallback-Kette wie bei den Job-Events: fehlt die Leistung, rückt
   // der Kunde nach und darf dann nicht zusätzlich als "bei …" erscheinen.
-  const what = jobTitle(row);
-  const at = service && customer ? ` bei ${customer}` : "";
+  const what = jobTitle(row, locale);
+  const at = service && customer ? t.atCustomer(customer) : "";
 
-  return {
-    title: "Neuer Kommentar",
-    body: `${who} hat einen Kommentar zu „${what}“${at} geschrieben.`,
-  };
+  return t.comment({ who, what, at });
 }
 
-function buildContent(row: ClaimedDelivery): { title: string; body: string } {
+export function buildContent(row: ClaimedDelivery, locale: NotificationLocale): PushContent {
   if (row.entity_type === "comment") {
-    return buildCommentContent(row);
+    return buildCommentContent(row, locale);
   }
 
   if (row.entity_type === "absence") {
-    return buildAbsenceContent(row);
+    return buildAbsenceContent(row, locale);
   }
 
   if (row.event_type === "job_assigned") {
-    return buildAssignedContent(row);
+    return buildAssignedContent(row, locale);
   }
 
-  const who = row.employee_name?.trim() || "Ein Mitarbeiter";
+  const t = notificationTexts(locale);
+  const who = row.employee_name?.trim() || t.fallbackEmployeeName;
   const service = row.service_name?.trim();
   const customer = row.customer_name?.trim();
 
   // `what` ist die in Anführungszeichen gesetzte Leistung. Fehlt sie, rückt
   // der Kunde nach (jobTitle) — dann darf er NICHT zusätzlich als "bei …"
   // erscheinen, sonst steht er doppelt in der Zeile.
-  const what = jobTitle(row);
-  const at = service && customer ? ` bei ${customer}` : "";
+  const what = jobTitle(row, locale);
+  const at = service && customer ? t.atCustomer(customer) : "";
 
   const done = row.event_type === "job_completed";
-  const verb = done ? "abgeschlossen" : "gestartet";
-
-  return {
-    title: done ? "Auftrag abgeschlossen" : "Auftrag gestartet",
-    body: `${who} hat „${what}“${at} ${verb}.`,
-  };
+  return done ? t.jobCompleted({ who, what, at }) : t.jobStarted({ who, what, at });
 }
 
-Deno.serve(async (req) => {
+// `import.meta.main` schützt vor einem zweiten Server-Bind, wenn diese Datei
+// NICHT als Einstiegspunkt läuft (z. B. per Import aus index.test.ts) — reine
+// Testbarkeit, keine Verhaltensänderung im deployten Function-Container
+// (dort ist diese Datei immer der Einstiegspunkt, import.meta.main = true).
+export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -361,6 +386,14 @@ Deno.serve(async (req) => {
       claimedTotal += claimed.length;
 
       // Empfänger einordnen:
+      //  - event_type/entity_type-Kombination nicht erkannt -> endgültig
+      //    nicht zustellbar (permanent_fail). Das ist eine STRUKTURELLE
+      //    Dateninkonsistenz (z. B. ein Regressions-Fall wie 20260916130000,
+      //    oder ein noch nicht angebundener Event-Typ) — ein Retry ändert
+      //    daran nichts, deshalb dieselbe terminale Einstufung wie bei
+      //    DeviceNotRegistered, nicht "retry". Muss VOR buildContent()
+      //    geprüft werden: es darf niemals stillschweigend ein Job-gestartet-
+      //    Text für ein nicht erkanntes Event entstehen.
       //  - inaktiv / falsche Rolle für dieses Event -> endgültig nicht
       //    zustellbar (permanent_fail). job_started/job_completed gehen an
       //    Admins (Fan-out über fanout_notification_events), job_assigned
@@ -375,7 +408,10 @@ Deno.serve(async (req) => {
       //  - aktiver, passender Empfänger MIT Token -> senden
       const sendable: ClaimedDelivery[] = [];
       for (const d of claimed) {
-        if (!isEligible(d)) {
+        if (!isRoutableEvent(d)) {
+          await markDelivery(adminClient, d.delivery_id, "permanent_fail", `unsupported event_type/entity_type combination (event_type=${d.event_type}, entity_type=${d.entity_type})`);
+          failed++;
+        } else if (!isEligible(d)) {
           await markDelivery(adminClient, d.delivery_id, "permanent_fail", `recipient not eligible (inactive/not ${expectedRoleFor(d.event_type)})`);
           failed++;
         } else if (!d.expo_push_token) {
@@ -392,7 +428,8 @@ Deno.serve(async (req) => {
 
       // Ein Token pro Message -> Ticket[i] gehört eindeutig zu sendable[i].
       const messages = sendable.map((d) => {
-        const { title, body } = buildContent(d);
+        const locale = resolveNotificationLocale(d.recipient_locale);
+        const { title, body } = buildContent(d, locale);
         return {
           to: d.expo_push_token,
           sound: "default",
@@ -487,12 +524,16 @@ Deno.serve(async (req) => {
     console.error("[dispatch] fatal", message);
     return Response.json({ error: message }, { status: 500, headers: corsHeaders });
   }
-});
+}
+
+if (import.meta.main) {
+  Deno.serve(handleRequest);
+}
 
 // Ruft die Zustands-RPC auf und gibt den resultierenden Status zurück
 // ('sent' | 'failed' | 'pending'). Fehler hier dürfen den Lauf nicht abbrechen.
 async function markDelivery(
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: SupabaseClient,
   deliveryId: string,
   outcome: "sent" | "retry" | "permanent_fail" | "missing_token",
   error?: string,

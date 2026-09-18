@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { JobType } from "@/types/job";
 import type { WeekdayKey } from "@/utils/recurrence";
+import { i18next } from "@/i18n";
 
 export type JobFormValues = {
     customerName: string;
@@ -108,38 +109,38 @@ export function useJobForm(initialValues?: Partial<JobFormValues>) {
         const nextErrors: JobFormErrors = {};
 
         if (!values.customerName.trim()) {
-            nextErrors.customerName = "Kunde ist erforderlich.";
+            nextErrors.customerName = i18next.t("admin:jobForm.validation.customerRequired");
         }
 
         if (!values.location.trim()) {
-            nextErrors.location = "Adresse ist erforderlich.";
+            nextErrors.location = i18next.t("admin:jobForm.validation.addressRequired");
         }
 
         if (!values.service.trim()) {
-            nextErrors.service = "Service ist erforderlich.";
+            nextErrors.service = i18next.t("admin:jobForm.validation.serviceRequired");
         }
 
         // ── Terminierung je nach Auftragstyp ──
         if (values.jobType === "single") {
             if (!values.singleDateTime) {
-                nextErrors.singleDateTime = "Bitte wähle Datum und Uhrzeit.";
+                nextErrors.singleDateTime = i18next.t("admin:jobForm.validation.selectDateTime");
             }
         } else {
             if (values.recurringDays.length === 0) {
-                nextErrors.recurringDays = "Bitte wähle mindestens einen Wochentag.";
+                nextErrors.recurringDays = i18next.t("admin:jobForm.validation.selectWeekday");
             }
             if (!values.startTime) {
-                nextErrors.startTime = "Bitte wähle eine Uhrzeit.";
+                nextErrors.startTime = i18next.t("admin:jobForm.validation.selectTime");
             }
             if (!values.recurrenceStartDate) {
-                nextErrors.recurrenceStartDate = "Bitte wähle ein Startdatum.";
+                nextErrors.recurrenceStartDate = i18next.t("admin:jobForm.validation.selectStartDate");
             }
             if (
                 values.recurrenceStartDate &&
                 values.recurrenceEndDate &&
                 values.recurrenceEndDate < values.recurrenceStartDate
             ) {
-                nextErrors.recurrenceEndDate = "Enddatum darf nicht vor dem Startdatum liegen.";
+                nextErrors.recurrenceEndDate = i18next.t("admin:jobForm.validation.endBeforeStart");
             }
         }
 

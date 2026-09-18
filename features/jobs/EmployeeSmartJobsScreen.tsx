@@ -51,11 +51,16 @@ import JobCard from "@/components/JobCard";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import type { AppTheme } from "@/constants/theme";
 import type { Job } from "@/types/job";
-import { canRunJobActions } from "@/utils/jobAssignees";
-import { isJobToday } from "@/utils/jobSchedule";
-import { getJobStatusLabel, JOB_STATUS_ORDER } from "@/utils/jobStatus";
+import {
+  canCompleteOwnAssignment,
+  canRunJobActions,
+  canStartOwnAssignment,
+} from "@/utils/jobAssignees";
+import { isJobStartDateAllowed, isJobToday } from "@/utils/jobSchedule";
+import { JOB_STATUS_ORDER } from "@/utils/jobStatus";
 import {
   buildJobQueueSections,
   getTodayStatusCounts,
@@ -65,6 +70,7 @@ import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   RefreshControl,
   SectionList,
@@ -76,36 +82,10 @@ import {
   type SectionListData,
 } from "react-native";
 
-// Gleiche Quelle/Reihenfolge wie die Filter-Chips der Übersicht — Wortlaut
-// darf nicht auseinanderlaufen (utils/jobStatus.ts ist kanonisch).
-const FILTERS: { key: JobStatusFilter; label: string }[] = [
-  { key: "all", label: "Alle" },
-  ...JOB_STATUS_ORDER.map((key) => ({ key, label: getJobStatusLabel(key) })),
-];
-
 // Wie viele überfällige Aufträge sofort sichtbar sind, bevor "Weitere
 // anzeigen" nötig wird — verhindert, dass Historie den Bildschirm vor der
 // heutigen Arbeit dominiert (siehe PR-Vorgabe "63 überfällige Aufträge").
 const INITIAL_OVERDUE_COUNT = 3;
-
-const EMPTY_MESSAGES: Record<JobStatusFilter, { title: string; message: string }> = {
-  all: {
-    title: "Keine Aufträge",
-    message: "Aktuell sind keine Aufträge für dich geplant.",
-  },
-  open: {
-    title: "Keine offenen Aufträge",
-    message: "Aktuell sind dir keine offenen Aufträge zugewiesen.",
-  },
-  in_progress: {
-    title: "Kein Auftrag in Arbeit",
-    message: "Aktuell läuft kein Auftrag.",
-  },
-  completed: {
-    title: "Noch keine erledigten Aufträge",
-    message: "Abgeschlossene Aufträge erscheinen hier.",
-  },
-};
 
 // Eine Zeile der SectionList — ein "Auftrags-Tagesblock" ODER eine
 // hervorgehobene Einzel-Sektion (Aktiv/Überfällig/Nächstes). `showMoreCount`
@@ -121,6 +101,36 @@ type JobListSection = {
 export default function EmployeeSmartJobsScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const jobStatusLabels = useJobStatusLabels();
+
+  // Gleiche Quelle/Reihenfolge wie die Filter-Chips der Übersicht — Wortlaut
+  // darf nicht auseinanderlaufen (utils/jobStatus.ts + hooks/useJobStatusLabels.ts
+  // sind kanonisch). useMemo statt Modul-Konstante, damit ein Sprachwechsel
+  // sofort greift.
+  const FILTERS = useMemo<{ key: JobStatusFilter; label: string }[]>(
+    () => [
+      { key: "all", label: t("common:filters.all") },
+      ...JOB_STATUS_ORDER.map((key) => ({ key, label: jobStatusLabels[key] })),
+    ],
+    [t, jobStatusLabels],
+  );
+
+  const emptyMessages = useMemo<Record<JobStatusFilter, { title: string; message: string }>>(
+    () => ({
+      all: { title: t("jobs:smartEmpty.allTitle"), message: t("jobs:smartEmpty.allMessage") },
+      open: { title: t("jobs:smartEmpty.openTitle"), message: t("jobs:smartEmpty.openMessage") },
+      in_progress: {
+        title: t("jobs:smartEmpty.inProgressTitle"),
+        message: t("jobs:smartEmpty.inProgressMessage"),
+      },
+      completed: {
+        title: t("jobs:smartEmpty.completedTitle"),
+        message: t("jobs:smartEmpty.completedMessage"),
+      },
+    }),
+    [t],
+  );
 
   const { role, profile } = useAuth();
   const {
@@ -176,21 +186,37 @@ export default function EmployeeSmartJobsScreen() {
 
   const handleStart = useCallback(
     (jobId: string) =>
-      runJobAction(() => startJob(jobId), "Job konnte nicht gestartet werden."),
-    [runJobAction, startJob],
+      runJobAction(() => startJob(jobId), t("jobs:errors.startFailed")),
+    [runJobAction, startJob, t],
   );
 
   const handleComplete = useCallback(
     (jobId: string) =>
       runJobAction(
         () => completeJob(jobId),
-        "Job konnte nicht abgeschlossen werden.",
+        t("jobs:errors.completeFailed"),
       ),
-    [runJobAction, completeJob],
+    [runJobAction, completeJob, t],
   );
 
   const canRunActions = useCallback(
     (job: Job) => canRunJobActions(job, role, profile?.id),
+    [role, profile?.id],
+  );
+
+  // PHASE 16 — Sichtbarkeit der Quick-Actions folgt nicht mehr allein dem
+  // Auftragsstatus (siehe JobCard.tsx canStart/canComplete-Kommentar):
+  //   - Start auch im Nachzügler-Fall (Auftrag läuft, eigene Teilnahme noch
+  //     nicht begonnen) UND nur am gültigen Geschäftstermin.
+  //   - Abschließen nur nach eigenem Start.
+  const canStartJob = useCallback(
+    (job: Job) =>
+      canStartOwnAssignment(job, role, profile?.id) &&
+      isJobStartDateAllowed(job),
+    [role, profile?.id],
+  );
+  const canCompleteJob = useCallback(
+    (job: Job) => canCompleteOwnAssignment(job, role, profile?.id),
     [role, profile?.id],
   );
 
@@ -207,9 +233,12 @@ export default function EmployeeSmartJobsScreen() {
   // nicht am "Weitere anzeigen"-Toggle — die Sektions-BERECHNUNG bleibt
   // stabil, während `showAllOverdue` nur bestimmt, wie viel davon sichtbar
   // ist (siehe listSections unten).
+  // i18n.language in den Deps: buildJobQueueSections formatiert Datumsgruppen
+  // (dateGroupLabel) in der aktiven Sprache — ohne diese Abhängigkeit
+  // blieben die Gruppentitel nach einem Sprachwechsel auf dem alten Stand.
   const sections = useMemo(
     () => buildJobQueueSections(jobs, now, role, profile?.id, filter),
-    [jobs, now, role, profile?.id, filter],
+    [jobs, now, role, profile?.id, filter, i18n.language],
   );
 
   const visibleOverdue = showAllOverdue
@@ -217,7 +246,7 @@ export default function EmployeeSmartJobsScreen() {
     : sections.overdue.slice(0, INITIAL_OVERDUE_COUNT);
   const hiddenOverdueCount = sections.overdue.length - visibleOverdue.length;
 
-  const emptyMessage = EMPTY_MESSAGES[filter];
+  const emptyMessage = emptyMessages[filter];
 
   // ── Flache Sektionsliste für die SectionList ──
   // Jede Karte erscheint hier in GENAU einer Sektion (siehe Dedup-Regeln in
@@ -227,24 +256,21 @@ export default function EmployeeSmartJobsScreen() {
     const result: JobListSection[] = [];
 
     if (sections.active.length > 0) {
-      result.push({ key: "active", title: "In Arbeit", data: sections.active });
+      result.push({ key: "active", title: jobStatusLabels.in_progress, data: sections.active });
     }
 
     if (sections.overdue.length > 0) {
       result.push({
         key: "overdue",
-        title: "Überfällig",
-        subtitle:
-          sections.overdue.length === 1
-            ? "1 überfälliger Auftrag"
-            : `${sections.overdue.length} überfällige Aufträge`,
+        title: t("jobs:smart.overdue"),
+        subtitle: t("jobs:smart.overdueSubtitle", { count: sections.overdue.length }),
         data: visibleOverdue,
         showMoreCount: hiddenOverdueCount > 0 ? hiddenOverdueCount : undefined,
       });
     }
 
     if (sections.next) {
-      result.push({ key: "next", title: "Als Nächstes", data: [sections.next] });
+      result.push({ key: "next", title: t("jobs:smart.next"), data: [sections.next] });
     }
 
     if (sections.today) {
@@ -266,7 +292,7 @@ export default function EmployeeSmartJobsScreen() {
     }
 
     return result;
-  }, [sections, visibleOverdue, hiddenOverdueCount, filter]);
+  }, [sections, visibleOverdue, hiddenOverdueCount, filter, t, jobStatusLabels]);
 
   const keyExtractor = useCallback((job: Job) => job.id, []);
 
@@ -278,10 +304,12 @@ export default function EmployeeSmartJobsScreen() {
         onPress={() => router.push(`/jobs/${item.id}`)}
         onStart={canRunActions(item) ? () => handleStart(item.id) : undefined}
         onComplete={canRunActions(item) ? () => handleComplete(item.id) : undefined}
+        canStart={canStartJob(item)}
+        canComplete={canCompleteJob(item)}
       />
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [now, canRunActions, handleStart, handleComplete],
+    [now, canRunActions, canStartJob, canCompleteJob, handleStart, handleComplete],
   );
 
   const renderSectionHeader = useCallback(
@@ -304,14 +332,14 @@ export default function EmployeeSmartJobsScreen() {
             accessibilityRole="button"
           >
             <Text style={styles.showMoreText}>
-              {`Weitere ${section.showMoreCount} anzeigen`}
+              {t("jobs:smart.showMore", { count: section.showMoreCount })}
             </Text>
             <Ionicons name="chevron-down" size={16} color={theme.colors.primary} />
           </TouchableOpacity>
         ) : null}
       </View>
     ),
-    [styles, theme.colors.primary],
+    [styles, theme.colors.primary, t],
   );
 
   const itemSeparator = useCallback(
@@ -332,7 +360,7 @@ export default function EmployeeSmartJobsScreen() {
         <View style={styles.loadErrorWrap}>
           <ErrorBanner
             message={dataError}
-            actionLabel="Erneut versuchen"
+            actionLabel={t("common:actions.retry")}
             onAction={() => {
               void handleRefresh();
             }}
@@ -348,18 +376,18 @@ export default function EmployeeSmartJobsScreen() {
           Blick hilft. Zahlen sind klar "Heute" beschriftet, damit sie sich
           nicht mit dem darunterliegenden Status-Filter vermischen. */}
       <View style={styles.header}>
-        <Text style={styles.title}>Meine Aufträge</Text>
+        <Text style={styles.title}>{t("jobs:smart.title")}</Text>
         {todayCounts.total > 0 ? (
           <View style={styles.summaryRow}>
             <View style={styles.summaryChip}>
               <Text style={styles.summaryChipText}>
-                Heute {todayCounts.total}
+                {t("jobs:smart.todayChip", { count: todayCounts.total })}
               </Text>
             </View>
             {todayCounts.open > 0 ? (
               <View style={[styles.summaryChip, styles.summaryChipOpen]}>
                 <Text style={[styles.summaryChipText, styles.summaryChipOpenText]}>
-                  {getJobStatusLabel("open")} {todayCounts.open}
+                  {jobStatusLabels.open} {todayCounts.open}
                 </Text>
               </View>
             ) : null}
@@ -368,20 +396,20 @@ export default function EmployeeSmartJobsScreen() {
                 <Text
                   style={[styles.summaryChipText, styles.summaryChipProgressText]}
                 >
-                  {getJobStatusLabel("in_progress")} {todayCounts.inProgress}
+                  {jobStatusLabels.in_progress} {todayCounts.inProgress}
                 </Text>
               </View>
             ) : null}
             {todayCounts.completed > 0 ? (
               <View style={[styles.summaryChip, styles.summaryChipDone]}>
                 <Text style={[styles.summaryChipText, styles.summaryChipDoneText]}>
-                  {getJobStatusLabel("completed")} {todayCounts.completed}
+                  {jobStatusLabels.completed} {todayCounts.completed}
                 </Text>
               </View>
             ) : null}
           </View>
         ) : (
-          <Text style={styles.subtitle}>Heute sind keine Aufträge geplant.</Text>
+          <Text style={styles.subtitle}>{t("jobs:smart.noJobsToday")}</Text>
         )}
       </View>
 

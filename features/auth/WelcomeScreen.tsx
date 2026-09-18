@@ -3,9 +3,11 @@
 
 import { AuthBrand } from "@/features/auth/components/AuthBrand";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Animated,
   StatusBar,
@@ -17,16 +19,18 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 
-// Feature-Punkte die auf dem Welcome Screen angezeigt werden
-const FEATURES = [
-  { icon: "briefcase-outline" as const,  text: "Jobs erstellen & zuweisen" },
-  { icon: "phone-portrait-outline" as const, text: "Echtzeit-Updates für Mitarbeiter" },
-  { icon: "cloud-outline" as const,      text: "Offline-fähig für den Außendienst" },
-];
-
 export default function WelcomeScreen() {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
+
+  // Feature-Punkte die auf dem Welcome Screen angezeigt werden
+  const FEATURES = [
+    { icon: "briefcase-outline" as const, text: t("auth:welcome.features.createAssign") },
+    { icon: "phone-portrait-outline" as const, text: t("auth:welcome.features.realtimeUpdates") },
+    { icon: "cloud-outline" as const, text: t("auth:welcome.features.offlineCapable") },
+  ];
 
   // Einmal-Fade-in Animation
   const opacity    = useRef(new Animated.Value(0)).current;
@@ -49,7 +53,7 @@ export default function WelcomeScreen() {
       <Animated.View style={[styles.content, { opacity, transform: [{ translateY }] }]}>
         {/* ── Oberer Bereich: Branding ── */}
         <View style={styles.top}>
-          <AuthBrand tagline="Field Service, simplified." />
+          <AuthBrand tagline={t("auth:welcome.tagline")} />
 
           {/* Feature-Liste */}
           <View style={styles.featureList}>
@@ -72,9 +76,9 @@ export default function WelcomeScreen() {
             onPress={() => router.push("/register")}
             activeOpacity={0.82}
           >
-            <Text style={styles.primaryBtnText}>Firma registrieren</Text>
+            <Text style={styles.primaryBtnText}>{t("auth:welcome.registerButton")}</Text>
             <Ionicons
-              name="arrow-forward"
+              name={isRTL ? "arrow-back" : "arrow-forward"}
               size={18}
               color={theme.colors.onPrimaryContainer}
             />
@@ -86,12 +90,12 @@ export default function WelcomeScreen() {
             onPress={() => router.push("/login")}
             activeOpacity={0.75}
           >
-            <Text style={styles.secondaryBtnText}>Ich habe bereits ein Konto</Text>
+            <Text style={styles.secondaryBtnText}>{t("auth:welcome.haveAccountButton")}</Text>
           </TouchableOpacity>
 
           {/* Hinweis-Text */}
           <Text style={styles.hint}>
-            Nur für Unternehmer und autorisierte Firmeninhaber
+            {t("auth:welcome.hint")}
           </Text>
         </View>
       </Animated.View>

@@ -1,0 +1,94 @@
+{
+  "title": "İzinler",
+  "actions": {
+    "requestVacation": "İzin Talep Et",
+    "reportSickness": "Hastalık Bildir"
+  },
+  "empty": {
+    "noAbsences": "Henüz kaydedilmiş bir izin yok."
+  },
+  "groups": {
+    "current": "Güncel",
+    "upcoming": "Yaklaşan",
+    "past": "Geçmiş"
+  },
+  "types": {
+    "vacation": "İzin",
+    "sickness": "Hastalık"
+  },
+  "status": {
+    "requested": "Talep Edildi",
+    "approved": "Onaylandı",
+    "rejected": "Reddedildi",
+    "cancelled": "İptal Edildi",
+    "reported": "Bildirildi"
+  },
+  "card": {
+    "adminNoteLabel": "Yöneticiden not",
+    "cancelVacationConfirmTitle": "Talebi İptal Et",
+    "cancelVacationConfirmMessage": "Bu izin talebini gerçekten iptal etmek istiyor musun?",
+    "cancelSicknessConfirmTitle": "Hastalık Bildirimini İptal Et",
+    "cancelSicknessConfirmMessage": "Bu hastalık bildirimini gerçekten iptal etmek istiyor musun?",
+    "cancelConfirm": "İptal Et",
+    "cancelVacationAction": "Talebi İptal Et",
+    "cancelSicknessAction": "Hastalık Bildirimini İptal Et",
+    "updateEndAction": "Bitiş Tarihini Güncelle",
+    "expectedUntilLabel": "Tahmini bitiş",
+    "noEndDatePlaceholder": "Bitiş tarihi bilinmiyor",
+    "removeEndDate": "Bitiş Tarihini Kaldır",
+    "rangeSincePrefix": "Başlangıç"
+  },
+  "balance": {
+    "title": "{{year}} İzin",
+    "annualEntitlement": "Yıllık Hak Ediş",
+    "used": "Kullanılan",
+    "adjustments": "Düzeltmeler",
+    "remaining": "Kalan İzin",
+    "days": "{{count}} gün",
+    "pendingRequests": "Bekleyen Talepler",
+    "pendingFootnote": "Sayılan günler ancak onaylandıktan sonra kesinleşir."
+  },
+  "requestVacation": {
+    "title": "İzin Talep Et",
+    "fromLabel": "Başlangıç",
+    "toLabel": "Bitiş",
+    "noteLabel": "Not (opsiyonel)",
+    "notePlaceholder": "örn. yönetici için sebep veya not",
+    "submitButton": "İzin Talep Et",
+    "successTitle": "İzin Talep Edildi",
+    "successMessage": "İzin talebin gönderildi ve incelenmeyi bekliyor."
+  },
+  "reportSickness": {
+    "title": "Hastalık Bildir",
+    "sinceLabel": "Hastalık başlangıcı",
+    "untilLabel": "Tahmini bitiş (opsiyonel)",
+    "untilPlaceholder": "Henüz bilinmiyor",
+    "noteLabel": "Not (opsiyonel)",
+    "notePlaceholder": "örn. hastalık türü, yerine bakacak kişi",
+    "submitButton": "Hastalık Bildir",
+    "successTitle": "Hastalık Bildirimi Kaydedildi",
+    "successMessage": "Hastalık bildirimin kaydedildi."
+  },
+  "errors": {
+    "loadFailed": "İzinler yüklenemedi.",
+    "actionFailed": "İşlem gerçekleştirilemedi.",
+    "loadSingleFailed": "İzin kaydı yüklenemedi.",
+    "onlyEmployeesVacation": "Yalnızca çalışanlar izin talep edebilir.",
+    "onlyEmployeesSickness": "Yalnızca çalışanlar hastalık bildirebilir.",
+    "onlyEmployeesCancelVacation": "Yalnızca çalışanlar kendi izinlerini iptal edebilir.",
+    "onlyEmployeesCancelSickness": "Yalnızca çalışanlar kendi hastalık bildirimlerini iptal edebilir.",
+    "onlyEmployeesUpdateSickness": "Yalnızca çalışanlar kendi hastalık bildirimlerini güncelleyebilir.",
+    "datesRequired": "Lütfen başlangıç ve bitiş tarihi gir.",
+    "startDateRequired": "Lütfen bir başlangıç tarihi gir.",
+    "endBeforeStart": "Bitiş tarihi başlangıç tarihinden önce olamaz.",
+    "overlapsVacation": "Bu tarih aralığı mevcut bir izin talebiyle çakışıyor.",
+    "overlapsSickness": "Bu tarih aralığı hâlihazırda aktif bir hastalık bildirimiyle çakışıyor.",
+    "vacationNotCancellable": "Bu izin artık iptal edilemez — ya zaten geçmiş ya da hakkında karar verilmiş.",
+    "sicknessNotFound": "Bu hastalık bildirimi bulunamadı veya zaten kapatılmış.",
+    "requestFailed": "İzin talebi gönderilemedi.",
+    "reportFailed": "Hastalık bildirimi kaydedilemedi.",
+    "cancelVacationFailed": "İzin iptal edilemedi.",
+    "cancelSicknessFailed": "Hastalık bildirimi iptal edilemedi.",
+    "updateEndFailed": "Bitiş tarihi güncellenemedi."
+  }
+}

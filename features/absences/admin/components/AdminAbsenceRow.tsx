@@ -20,6 +20,7 @@ import { confirmDialog } from "@/utils/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useTranslation } from "react-i18next";
 import { AbsenceStatusBadge } from "../../components/AbsenceStatusBadge";
 import { RejectVacationSheet } from "./RejectVacationSheet";
 
@@ -41,6 +42,7 @@ export function AdminAbsenceRow({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const [rejectSheetOpen, setRejectSheetOpen] = useState(false);
   const [deductionSheetOpen, setDeductionSheetOpen] = useState(false);
 
@@ -78,9 +80,12 @@ export function AdminAbsenceRow({
     }
 
     const confirmed = await confirmDialog({
-      title: "Urlaub genehmigen",
-      message: `Urlaubsantrag von ${absence.employeeName} (${formatAbsenceDateRange(absence)}) genehmigen?`,
-      confirmLabel: "Genehmigen",
+      title: t("admin:absenceAdmin.approveConfirmTitle"),
+      message: t("admin:absenceAdmin.approveConfirmMessage", {
+        name: absence.employeeName,
+        range: formatAbsenceDateRange(absence),
+      }),
+      confirmLabel: t("admin:absenceAdmin.approveConfirmLabel"),
     });
     if (confirmed) onApprove(absence.id);
   };
@@ -112,7 +117,9 @@ export function AdminAbsenceRow({
               </Text>
             ) : (
               <Text style={styles.typeLabel}>
-                {isVacation ? "Urlaub" : "Krankheit"}
+                {isVacation
+                  ? t("absences:types.vacation")
+                  : t("absences:types.sickness")}
               </Text>
             )}
             <Text style={styles.dateRange}>{formatAbsenceDateRange(absence)}</Text>
@@ -129,7 +136,9 @@ export function AdminAbsenceRow({
 
       {reviewerNote ? (
         <View style={styles.adminNoteWrap}>
-          <Text style={styles.adminNoteLabel}>Deine Notiz</Text>
+          <Text style={styles.adminNoteLabel}>
+            {t("admin:absenceAdmin.adminNoteLabel")}
+          </Text>
           <Text style={styles.note} numberOfLines={4}>
             {reviewerNote}
           </Text>
@@ -145,7 +154,9 @@ export function AdminAbsenceRow({
             onPress={handleApprove}
           >
             <Ionicons name="checkmark" size={16} color={theme.colors.statusCompleted} />
-            <Text style={styles.approveBtnText}>Genehmigen</Text>
+            <Text style={styles.approveBtnText}>
+              {t("admin:absenceAdmin.approveButton")}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -155,7 +166,9 @@ export function AdminAbsenceRow({
             onPress={() => setRejectSheetOpen(true)}
           >
             <Ionicons name="close" size={16} color={theme.colors.error} />
-            <Text style={styles.rejectBtnText}>Ablehnen</Text>
+            <Text style={styles.rejectBtnText}>
+              {t("admin:absenceAdmin.rejectButton")}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -178,7 +191,7 @@ export function AdminAbsenceRow({
           }
           accessibilityRole="button"
         >
-          <Text style={styles.auLinkText}>Arbeitsunfähigkeit prüfen</Text>
+          <Text style={styles.auLinkText}>{t("admin:absenceAdmin.checkAuLink")}</Text>
         </TouchableOpacity>
       ) : null}
       <VacationDeductionSheet

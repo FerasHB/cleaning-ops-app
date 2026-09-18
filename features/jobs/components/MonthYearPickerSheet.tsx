@@ -10,8 +10,9 @@
 // Pressable, darin ein Jahres-Schrittschalter und ein Raster aus zwölf
 // Monatsnamen.
 //
-// Die Monatsnamen kommen aus `MONTH_NAMES_DE` (utils/calendarMonth) — also
-// aus derselben Quelle wie der Titel im Kalender-Kopf.
+// Die Monatsnamen kommen über Intl in der aktiven App-Sprache — dieselbe
+// Zuordnung (INTL_LOCALE_TAGS) wie der Titel im Kalender-Kopf (siehe
+// utils/calendarMonth.ts formatMonthLabel).
 //
 // Auswahl wirkt SOFORT: ein Tipp auf den Monat übernimmt Monat + eingestelltes
 // Jahr und schließt. Ein zusätzlicher „Übernehmen"-Schritt wäre bei einer
@@ -20,14 +21,16 @@
 
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import {
-  MONTH_NAMES_DE,
   monthIndexOfMonthKey,
   monthKeyOfParts,
   yearOfMonthKey,
 } from "@/utils/calendarMonth";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Modal,
   Pressable,
@@ -43,6 +46,12 @@ import {
  * wandern, in denen es nie Aufträge geben wird.
  */
 const YEAR_SPAN = 5;
+
+/** Volle Monatsnamen (Index 0 = Januar) in der übergebenen Sprache. */
+function buildMonthNames(localeTag: string): string[] {
+  const formatter = new Intl.DateTimeFormat(localeTag, { month: "long" });
+  return Array.from({ length: 12 }, (_, i) => formatter.format(new Date(2024, i, 1)));
+}
 
 type Props = {
   visible: boolean;
@@ -60,7 +69,15 @@ export function MonthYearPickerSheet({
   onClose,
 }: Props) {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+
+  const monthNames = useMemo(
+    () =>
+      buildMonthNames(INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE"),
+    [i18n.language],
+  );
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const minYear = currentYear - YEAR_SPAN;
@@ -94,14 +111,14 @@ export function MonthYearPickerSheet({
             den Inhalt nicht zugeht. */}
         <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.headerRow}>
-            <Text style={styles.title}>Monat und Jahr</Text>
+            <Text style={styles.title}>{t("jobs:picker.title")}</Text>
             <TouchableOpacity
               style={styles.closeBtn}
               onPress={onClose}
               activeOpacity={0.7}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Auswahl schließen"
+              accessibilityLabel={t("jobs:picker.close")}
             >
               <Ionicons name="close" size={20} color={theme.colors.onSurfaceVariant} />
             </TouchableOpacity>
@@ -115,12 +132,12 @@ export function MonthYearPickerSheet({
               disabled={year <= minYear}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Vorheriges Jahr"
+              accessibilityLabel={t("jobs:picker.prevYear")}
             >
-              <Ionicons name="chevron-back" size={18} color={theme.colors.primary} />
+              <Ionicons name={isRTL ? "chevron-forward" : "chevron-back"} size={18} color={theme.colors.primary} />
             </TouchableOpacity>
 
-            <Text style={styles.yearLabel} accessibilityLabel={`Jahr ${year}`}>
+            <Text style={styles.yearLabel} accessibilityLabel={t("jobs:picker.yearA11y", { year })}>
               {year}
             </Text>
 
@@ -130,24 +147,24 @@ export function MonthYearPickerSheet({
               disabled={year >= maxYear}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Nächstes Jahr"
+              accessibilityLabel={t("jobs:picker.nextYear")}
             >
-              <Ionicons name="chevron-forward" size={18} color={theme.colors.primary} />
+              <Ionicons name={isRTL ? "chevron-back" : "chevron-forward"} size={18} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
 
           {/* ── Monatsraster (3 je Zeile) ── */}
           <View style={styles.monthGrid}>
-            {MONTH_NAMES_DE.map((name, index) => {
+            {monthNames.map((name, index) => {
               const isActive = year === activeYear && index === activeMonthIndex;
               return (
                 <TouchableOpacity
-                  key={name}
+                  key={index}
                   style={[styles.monthCell, isActive && styles.monthCellActive]}
                   onPress={() => handlePick(index)}
                   activeOpacity={0.8}
                   accessibilityRole="button"
-                  accessibilityLabel={`${name} ${year}`}
+                  accessibilityLabel={t("jobs:picker.monthA11y", { month: name, year })}
                   accessibilityState={{ selected: isActive }}
                 >
                   <Text

@@ -17,6 +17,12 @@ export type AuthProfile = {
   // Selbst editierbar über die RLS-Policy "update own profile". Die Spalte
   // `phone` existiert schon seit dem Baseline-Schema — hier gefahrlos wählbar.
   phone: string | null;
+  // Server-seitige Sprachpräferenz (Phase E, 20260915000000; de/en/ar/tr,
+  // Default 'de'). Steuert NUR Push-Benachrichtigungen — die App-UI-Sprache
+  // bleibt in AsyncStorage. Wird beim authentifizierten Bootstrap gegen die
+  // lokale Sprache abgeglichen (Phase E.1, siehe reconcileServerLocale in
+  // context/AuthContext.tsx).
+  locale: string;
 };
 
 // Unterscheidet "kein Netz" (erwartbar, retryt sich von selbst beim
@@ -40,7 +46,7 @@ export async function getProfileByUserId(
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "id, full_name, company_id, role, is_active, invite_accepted_at, phone",
+        "id, full_name, company_id, role, is_active, invite_accepted_at, phone, locale",
       )
       .eq("id", userId)
       .single();

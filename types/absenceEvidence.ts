@@ -12,15 +12,6 @@
 
 export type AuEvidenceStatus = "pending" | "confirmed" | "rejected";
 
-export const AU_STATUS_LABELS: Record<AuEvidenceStatus, string> = {
-  pending: "AU offen",
-  confirmed: "AU bestätigt",
-  rejected: "AU abgelehnt",
-};
-
-/** Kein Nachweis vorhanden = noch gar nicht geprüft. */
-export const AU_NOT_REVIEWED_LABEL = "Nicht geprüft";
-
 export type AbsenceEvidence = {
   id: string;
   absenceId: string;

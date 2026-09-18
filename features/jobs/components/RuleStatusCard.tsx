@@ -19,6 +19,7 @@ import type { RuleHealth, RuleHealthState } from "@/utils/recurringRule";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 /**
  * GENAU EIN Erklärungstext je Zustand — Symptom und nächster Schritt in einem.
@@ -33,18 +34,21 @@ import { StyleSheet, Text, View } from "react-native";
  * über die bestehenden Wege (Anlegen, Speichern, Aktivieren) — dieser Text
  * beschreibt sie, er löst nichts aus.
  */
-function explanationFor(state: RuleHealthState): string | null {
+function explanationFor(
+  state: RuleHealthState,
+  t: (key: string) => string,
+): string | null {
   switch (state) {
     case "no_occurrences":
-      return "Für den kommenden Zeitraum liegen keine Termine vor. Termine entstehen beim Anlegen sowie beim Speichern oder Aktivieren der Regel — öffne „Bearbeiten“ und speichere die Regel, um den Zeitraum aufzufrischen.";
+      return t("admin:recurringRules.explanation.noOccurrences");
     case "horizon_expired":
-      return "Das Enddatum der Regel liegt in der Vergangenheit. Setze unter „Bearbeiten“ ein neues Enddatum, damit wieder Termine erzeugt werden.";
+      return t("admin:recurringRules.explanation.horizonExpired");
     case "inactive":
-      return "Diese Regel ist deaktiviert: Sie erzeugt keine neuen Termine und erscheint Mitarbeitenden nicht. Über das Menü oben rechts lässt sie sich wieder aktivieren.";
+      return t("admin:recurringRules.explanation.inactive");
     case "inactive_employee":
-      return "Mindestens eine zugewiesene Person ist deaktiviert. Weise die Regel unter „Bearbeiten“ einer aktiven Person zu, damit die erzeugten Termine sichtbar bleiben.";
+      return t("admin:recurringRules.explanation.inactiveEmployee");
     case "completed_rule":
-      return "Der Status dieser Regel steht auf „erledigt“. Eine Regel wird nie erledigt — das deutet auf einen Altbestand hin und sollte geprüft werden.";
+      return t("admin:recurringRules.explanation.completedRule");
     case "healthy":
       return null;
   }
@@ -57,6 +61,7 @@ type Props = {
 export function RuleStatusCard({ health }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   // Gesunde Regeln brauchen keine Erklärung.
   if (health.state === "healthy") return null;
@@ -65,7 +70,7 @@ export function RuleStatusCard({ health }: Props) {
   const accent = isWarning ? theme.colors.statusOpen : theme.colors.onSurfaceVariant;
   // Zustandsspezifischer Text hat Vorrang; `hint` ist nur der Rückfall, falls
   // je ein neuer Zustand ohne eigene Erklärung dazukommt.
-  const body = explanationFor(health.state) ?? health.hint ?? null;
+  const body = explanationFor(health.state, t) ?? health.hint ?? null;
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>

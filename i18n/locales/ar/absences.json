@@ -1,0 +1,94 @@
+{
+  "title": "الغيابات",
+  "actions": {
+    "requestVacation": "طلب إجازة",
+    "reportSickness": "الإبلاغ عن مرض"
+  },
+  "empty": {
+    "noAbsences": "لا توجد غيابات مسجَّلة بعد."
+  },
+  "groups": {
+    "current": "الحالية",
+    "upcoming": "القادمة",
+    "past": "السابقة"
+  },
+  "types": {
+    "vacation": "إجازة",
+    "sickness": "مرض"
+  },
+  "status": {
+    "requested": "مطلوبة",
+    "approved": "موافَق عليها",
+    "rejected": "مرفوضة",
+    "cancelled": "ملغاة",
+    "reported": "تم الإبلاغ"
+  },
+  "card": {
+    "adminNoteLabel": "ملاحظة من المسؤول",
+    "cancelVacationConfirmTitle": "إلغاء الطلب",
+    "cancelVacationConfirmMessage": "هل تريد بالتأكيد إلغاء طلب الإجازة هذا؟",
+    "cancelSicknessConfirmTitle": "إلغاء بلاغ المرض",
+    "cancelSicknessConfirmMessage": "هل تريد بالتأكيد إلغاء بلاغ المرض هذا؟",
+    "cancelConfirm": "إلغاء",
+    "cancelVacationAction": "إلغاء الطلب",
+    "cancelSicknessAction": "إلغاء بلاغ المرض",
+    "updateEndAction": "تحديث تاريخ الانتهاء",
+    "expectedUntilLabel": "حتى تاريخ متوقع",
+    "noEndDatePlaceholder": "تاريخ الانتهاء غير معروف",
+    "removeEndDate": "إزالة تاريخ الانتهاء",
+    "rangeSincePrefix": "منذ"
+  },
+  "balance": {
+    "title": "إجازة {{year}}",
+    "annualEntitlement": "الاستحقاق السنوي",
+    "used": "المستخدم",
+    "adjustments": "التعديلات",
+    "remaining": "الرصيد المتبقي",
+    "days": "{{count}} يوم",
+    "pendingRequests": "طلبات معلَّقة",
+    "pendingFootnote": "تُحتسب الأيام بشكل نهائي فقط بعد الموافقة."
+  },
+  "requestVacation": {
+    "title": "طلب إجازة",
+    "fromLabel": "من",
+    "toLabel": "إلى",
+    "noteLabel": "ملاحظة (اختياري)",
+    "notePlaceholder": "مثال: السبب أو ملاحظة للمسؤول",
+    "submitButton": "طلب إجازة",
+    "successTitle": "تم تقديم طلب الإجازة",
+    "successMessage": "تم تقديم طلب إجازتك وهو الآن قيد المراجعة."
+  },
+  "reportSickness": {
+    "title": "الإبلاغ عن مرض",
+    "sinceLabel": "مريض منذ",
+    "untilLabel": "حتى تاريخ متوقع (اختياري)",
+    "untilPlaceholder": "غير معروف بعد",
+    "noteLabel": "ملاحظة (اختياري)",
+    "notePlaceholder": "مثال: نوع المرض، ترتيبات التغطية",
+    "submitButton": "الإبلاغ عن مرض",
+    "successTitle": "تم حفظ بلاغ المرض",
+    "successMessage": "تم تسجيل بلاغ مرضك."
+  },
+  "errors": {
+    "loadFailed": "تعذر تحميل الغيابات.",
+    "actionFailed": "تعذر تنفيذ هذا الإجراء.",
+    "loadSingleFailed": "تعذر تحميل بيانات الغياب.",
+    "onlyEmployeesVacation": "يمكن للموظفين فقط طلب الإجازة.",
+    "onlyEmployeesSickness": "يمكن للموظفين فقط الإبلاغ عن المرض.",
+    "onlyEmployeesCancelVacation": "يمكن للموظفين فقط إلغاء إجازتهم الخاصة.",
+    "onlyEmployeesCancelSickness": "يمكن للموظفين فقط إلغاء بلاغ مرضهم الخاص.",
+    "onlyEmployeesUpdateSickness": "يمكن للموظفين فقط تحديث بلاغ مرضهم الخاص.",
+    "datesRequired": "يرجى تحديد تاريخ البداية والنهاية.",
+    "startDateRequired": "يرجى تحديد تاريخ البداية.",
+    "endBeforeStart": "لا يمكن أن يكون تاريخ الانتهاء قبل تاريخ البداية.",
+    "overlapsVacation": "تتداخل هذه الفترة مع طلب إجازة قائم بالفعل.",
+    "overlapsSickness": "تتداخل هذه الفترة مع بلاغ مرض نشط بالفعل.",
+    "vacationNotCancellable": "لم يعد بالإمكان إلغاء هذه الإجازة — فهي إما منتهية بالفعل أو تم اتخاذ قرار بشأنها.",
+    "sicknessNotFound": "تعذر العثور على بلاغ المرض هذا أو أنه مغلق بالفعل.",
+    "requestFailed": "تعذر تقديم طلب الإجازة.",
+    "reportFailed": "تعذر حفظ بلاغ المرض.",
+    "cancelVacationFailed": "تعذر إلغاء الإجازة.",
+    "cancelSicknessFailed": "تعذر إلغاء بلاغ المرض.",
+    "updateEndFailed": "تعذر تحديث تاريخ الانتهاء."
+  }
+}

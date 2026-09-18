@@ -6,6 +6,7 @@
 
 import { supabase } from "@/lib/supabase";
 import type { JobPhoto, UploadPhotoInput } from "@/types/photo";
+import { i18next } from "@/i18n";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Konstanten
@@ -44,16 +45,17 @@ function validateUploadInput(mimeType: string, fileSize: number): AllowedMimeTyp
 
   if (!isAllowed) {
     // HEIC und alle anderen unbekannten Formate landen hier.
-    throw new Error(
-      "Dieses Dateiformat wird nicht unterstützt. Bitte wähle ein Foto im Format JPEG, PNG oder WebP.",
-    );
+    throw new Error(i18next.t("jobs:photos.unsupportedFormatError"));
   }
 
   if (fileSize > MAX_FILE_SIZE_BYTES) {
     const maxMb = MAX_FILE_SIZE_BYTES / (1024 * 1024);
     const actualMb = (fileSize / (1024 * 1024)).toFixed(1);
     throw new Error(
-      `Das Foto ist zu groß (${actualMb} MB). Maximal erlaubt sind ${maxMb} MB.`,
+      i18next.t("jobs:photos.fileTooLargeError", {
+        actualMb: String(actualMb),
+        maxMb: String(maxMb),
+      }),
     );
   }
 
@@ -149,7 +151,7 @@ export async function uploadJobPhoto(input: UploadPhotoInput): Promise<JobPhoto>
     if (__DEV__) {
       console.error("[photos] Upload fehlgeschlagen:", storageError);
     }
-    throw new Error("Das Foto konnte nicht hochgeladen werden.");
+    throw new Error(i18next.t("jobs:photos.uploadFailedStorage"));
   }
 
   // 3. Metadaten in Tabelle speichern
@@ -173,9 +175,7 @@ export async function uploadJobPhoto(input: UploadPhotoInput): Promise<JobPhoto>
     if (__DEV__) {
       console.error("[photos] Speichern der Metadaten fehlgeschlagen:", dbError);
     }
-    throw new Error(
-      "Das Foto konnte nicht gespeichert werden. Bitte versuche es erneut.",
-    );
+    throw new Error(i18next.t("jobs:photos.uploadFailedMetadata"));
   }
 
   const photo = mapPhoto(data as JobPhotoRow);
@@ -209,7 +209,7 @@ export async function getJobPhotos(jobId: string): Promise<JobPhoto[]> {
     if (__DEV__) {
       console.error("[photos] Laden fehlgeschlagen:", error);
     }
-    throw new Error("Die Fotos konnten nicht geladen werden.");
+    throw new Error(i18next.t("jobs:photos.loadFailedService"));
   }
 
   if (!data || data.length === 0) {

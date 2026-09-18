@@ -11,12 +11,14 @@ import {
 import type { JobPhoto, UploadPhotoInput } from "@/types/photo";
 import { isNetworkError } from "@/utils/networkError";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toUserMessage } from "@/utils/userMessages";
 
 type UploadArgs = Omit<UploadPhotoInput, "jobId" | "companyId">;
 
 export function useJobPhotos(jobId: string, isOnline: boolean) {
   const { profile } = useAuth();
+  const { t } = useTranslation();
 
   const [photos, setPhotos] = useState<JobPhoto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,13 +52,13 @@ export function useJobPhotos(jobId: string, isOnline: boolean) {
         setError(null);
       } else {
         setError(
-          toUserMessage(err, "Fotos konnten nicht geladen werden."),
+          toUserMessage(err, t("jobs:photos.loadFailedFallback")),
         );
       }
     } finally {
       setLoading(false);
     }
-  }, [jobId, isOnline]);
+  }, [jobId, isOnline, t]);
 
   useEffect(() => {
     setLoading(true);
@@ -69,9 +71,7 @@ export function useJobPhotos(jobId: string, isOnline: boolean) {
   const upload = useCallback(
     async (args: UploadArgs) => {
       if (!profile?.company_id) {
-        throw new Error(
-          "Kein Unternehmen verknüpft. Bitte neu einloggen.",
-        );
+        throw new Error(t("jobs:photos.noCompanyError"));
       }
 
       setUploading(true);
@@ -86,14 +86,14 @@ export function useJobPhotos(jobId: string, isOnline: boolean) {
         // Neues Foto vorne einfügen (neueste zuerst, analog Service-Sortierung)
         setPhotos((prev) => [newPhoto, ...prev]);
       } catch (err: unknown) {
-        const message = toUserMessage(err, "Upload fehlgeschlagen.");
+        const message = toUserMessage(err, t("jobs:photos.uploadFailedFallback"));
         setError(message);
         throw err;
       } finally {
         setUploading(false);
       }
     },
-    [jobId, profile?.company_id],
+    [jobId, profile?.company_id, t],
   );
 
   return { photos, loading, uploading, error, offline, upload, reload: load };

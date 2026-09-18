@@ -210,7 +210,7 @@ function createStyles(theme: AppTheme) {
     statActiveDot: {
       position: "absolute",
       top: theme.spacing.md,
-      right: theme.spacing.md,
+      end: theme.spacing.md,
       width: 6,
       height: 6,
       borderRadius: theme.radius.full,

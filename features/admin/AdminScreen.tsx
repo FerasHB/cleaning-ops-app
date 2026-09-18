@@ -28,6 +28,7 @@ import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
 import { alertDialog } from "@/utils/dialogs";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
+import { useTranslation } from "react-i18next";
 
 // ─────────────────────────────────────────────
 // Section-Block (theme-aware Karte mit Header)
@@ -98,6 +99,7 @@ function createSectionStyles(theme: AppTheme) {
 export default function AdminScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { createJob, employees, loading } = useJobs();
   const { loading: authLoading } = useAuth();
@@ -220,11 +222,14 @@ export default function AdminScreen() {
           // — dann aber mit Teil-Erfolg-Hinweis statt vollem Erfolg.
           if (recurringOccurrencesFailed) {
             await alertDialog(
-              "Job angelegt",
-              "Der Job wurde angelegt, aber die Termine konnten nicht vollständig erzeugt werden. Bitte prüfe die Terminierung.",
+              t("admin:jobForm.createdPartialDialogTitle"),
+              t("admin:jobForm.createdPartialDialogMessage"),
             );
           } else {
-            await alertDialog("Erstellt", "Der Job wurde erfolgreich angelegt.");
+            await alertDialog(
+              t("admin:jobForm.createdDialogTitle"),
+              t("admin:jobForm.createdDialogMessage"),
+            );
           }
 
           leaveWithoutWarning(() => router.replace("/(admin-tabs)/jobs"));
@@ -232,8 +237,8 @@ export default function AdminScreen() {
       );
     } catch (err: unknown) {
       // Bei einem Fehler wird NICHT navigiert — der Admin bleibt im Formular.
-      const msg = toUserMessage(err, "Job konnte nicht erstellt werden.");
-      await alertDialog("Fehler", msg);
+      const msg = toUserMessage(err, t("admin:jobForm.createFailedFallback"));
+      await alertDialog(t("common:errors.title"), msg);
     } finally {
       // Sperre in beiden Fällen wieder freigeben (Erfolg wie Fehler).
       submittingRef.current = false;
@@ -256,7 +261,7 @@ export default function AdminScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <AppHeader
-          title="Neuer Job"
+          title={t("admin:jobForm.createTitle")}
           showBack
           onBack={() => {
             if (router.canGoBack()) {
@@ -275,8 +280,8 @@ export default function AdminScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <SectionBlock
-            title="Job-Details"
-            subtitle="Mit * markierte Felder sind Pflicht"
+            title={t("admin:jobForm.createSectionTitle")}
+            subtitle={t("admin:jobForm.requiredFieldsHint")}
           >
             <JobFormFields
               values={values}
@@ -290,7 +295,7 @@ export default function AdminScreen() {
               gleiche Optik, gleicher Lade-Spinner und gleiche Tap-Fläche wie
               im Bearbeiten-Screen. */}
           <Button
-            label="Job erstellen"
+            label={t("admin:dashboard.createJobFab")}
             onPress={handleCreateJob}
             loading={submitting}
             disabled={loading || submitting}

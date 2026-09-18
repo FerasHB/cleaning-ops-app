@@ -16,6 +16,7 @@ import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/utils/passwordValida
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -29,19 +30,15 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const DEFAULT_INVALID_MESSAGE =
-  "Der Link ist ungültig. Bitte fordere einen neuen Link an.";
-const EXPIRED_RESET_MESSAGE =
-  "Der Link zum Zurücksetzen des Passworts ist abgelaufen. Bitte fordere einen neuen Link an.";
-
 export default function ResetPasswordScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { endRecoverySession } = useAuth();
   const { status, invalidMessage, recheck } = useAuthLinkSession(
-    DEFAULT_INVALID_MESSAGE,
-    EXPIRED_RESET_MESSAGE,
+    t("auth:resetPassword.invalidDefaultMessage"),
+    t("auth:resetPassword.expiredMessage"),
     // SICHERHEITSGRENZE: markiert die entstehende Session als reine
     // Reset-Sitzung — siehe services/auth/recoveryMode.ts.
     "recovery",
@@ -92,9 +89,7 @@ export default function ResetPasswordScreen() {
       // Passwort des Recovery-Kontos blieb aber unverändert.
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
-        setFormError(
-          "Deine Sitzung für das Zurücksetzen ist nicht mehr gültig. Bitte fordere einen neuen Link an.",
-        );
+        setFormError(t("auth:resetPassword.errors.sessionExpired"));
         return;
       }
 
@@ -104,7 +99,7 @@ export default function ResetPasswordScreen() {
 
       if (error) {
         setFormError(
-          toFriendlyAuthErrorMessage(error, "Passwort konnte nicht gesetzt werden."),
+          toFriendlyAuthErrorMessage(error, t("auth:resetPassword.errors.setPasswordFailed")),
         );
         return;
       }
@@ -112,7 +107,7 @@ export default function ResetPasswordScreen() {
       // Supabase liefert bei Erfolg den aktualisierten User zurück. Fehlt er,
       // wurde NICHTS bestätigt geändert — dann darf hier kein Erfolg erscheinen.
       if (!updated?.user) {
-        setFormError("Passwort konnte nicht gesetzt werden.");
+        setFormError(t("auth:resetPassword.errors.setPasswordFailed"));
         return;
       }
 
@@ -192,7 +187,7 @@ export default function ResetPasswordScreen() {
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.centerHint}>Link wird geprüft …</Text>
+          <Text style={styles.centerHint}>{t("auth:resetPassword.checkingText")}</Text>
         </View>
       </SafeAreaView>
     );
@@ -210,7 +205,7 @@ export default function ResetPasswordScreen() {
           <View style={styles.errorIconWrap}>
             <Ionicons name="alert-circle" size={44} color={theme.colors.error} />
           </View>
-          <Text style={styles.centerTitle}>Link ungültig</Text>
+          <Text style={styles.centerTitle}>{t("auth:resetPassword.invalidTitle")}</Text>
           <Text style={styles.centerText}>{invalidMessage}</Text>
 
           <TouchableOpacity
@@ -218,21 +213,21 @@ export default function ResetPasswordScreen() {
             onPress={() => router.replace("/forgot-password")}
             activeOpacity={0.82}
           >
-            <Text style={styles.primaryBtnText}>Neuen Link anfordern</Text>
+            <Text style={styles.primaryBtnText}>{t("auth:resetPassword.requestNewLinkButton")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.linkBtn}
             onPress={recheck}
             activeOpacity={0.75}
           >
-            <Text style={styles.linkBtnText}>Link erneut prüfen</Text>
+            <Text style={styles.linkBtnText}>{t("auth:resetPassword.recheckLink")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.linkBtn}
             onPress={handleAbandonRecovery}
             activeOpacity={0.75}
           >
-            <Text style={styles.linkBtnText}>Zurück zum Login</Text>
+            <Text style={styles.linkBtnText}>{t("auth:resetPassword.backToLoginLink")}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -251,9 +246,9 @@ export default function ResetPasswordScreen() {
               color={theme.colors.statusCompleted}
             />
           </View>
-          <Text style={styles.centerTitle}>Passwort gesetzt</Text>
+          <Text style={styles.centerTitle}>{t("auth:resetPassword.successTitle")}</Text>
           <Text style={styles.centerText}>
-            Dein neues Passwort wurde gespeichert. Bitte melde dich damit an.
+            {t("auth:resetPassword.successText")}
           </Text>
           {acceptInviteGaveUp ? (
             // Nur nach explizitem "Trotzdem fortfahren" auf dem Retry-
@@ -262,8 +257,7 @@ export default function ResetPasswordScreen() {
             // den Zugang betrifft, soll das nicht stillschweigend als
             // vollständiger Erfolg erscheinen.
             <Text style={styles.centerText}>
-              Solltest du dich danach nicht wie gewohnt anmelden können, wende
-              dich bitte an deinen Administrator.
+              {t("auth:resetPassword.successFallbackNote")}
             </Text>
           ) : null}
 
@@ -272,7 +266,7 @@ export default function ResetPasswordScreen() {
             onPress={() => router.replace("/login")}
             activeOpacity={0.82}
           >
-            <Text style={styles.primaryBtnText}>Zum Login</Text>
+            <Text style={styles.primaryBtnText}>{t("auth:resetPassword.successLoginButton")}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -295,11 +289,9 @@ export default function ResetPasswordScreen() {
           <View style={styles.errorIconWrap}>
             <Ionicons name="alert-circle" size={44} color={theme.colors.error} />
           </View>
-          <Text style={styles.centerTitle}>Fast geschafft</Text>
+          <Text style={styles.centerTitle}>{t("auth:resetPassword.retryTitle")}</Text>
           <Text style={styles.centerText}>
-            Dein neues Passwort wurde gespeichert. Ein letzter Schritt zur
-            Fertigstellung deines Kontos ist aber fehlgeschlagen. Bitte
-            versuche es erneut, solange du hier bist.
+            {t("auth:resetPassword.retryText")}
           </Text>
 
           <TouchableOpacity
@@ -311,7 +303,7 @@ export default function ResetPasswordScreen() {
             {retryingAccept ? (
               <ActivityIndicator size="small" color={theme.colors.onPrimary} />
             ) : (
-              <Text style={styles.primaryBtnText}>Erneut versuchen</Text>
+              <Text style={styles.primaryBtnText}>{t("auth:resetPassword.retryButton")}</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity
@@ -319,7 +311,7 @@ export default function ResetPasswordScreen() {
             onPress={handleContinueAnyway}
             activeOpacity={0.75}
           >
-            <Text style={styles.linkBtnText}>Trotzdem fortfahren</Text>
+            <Text style={styles.linkBtnText}>{t("auth:resetPassword.continueAnywayLink")}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -350,9 +342,9 @@ export default function ResetPasswordScreen() {
                 color={theme.colors.onPrimaryContainer}
               />
             </View>
-            <Text style={styles.title}>Neues Passwort festlegen</Text>
+            <Text style={styles.title}>{t("auth:resetPassword.formTitle")}</Text>
             <Text style={styles.subtitle}>
-              Vergib ein neues Passwort für dein Konto.
+              {t("auth:resetPassword.formSubtitle")}
             </Text>
           </View>
 
@@ -363,8 +355,8 @@ export default function ResetPasswordScreen() {
 
             <View style={styles.passwordField}>
               <PasswordInput
-                label="Neues Passwort"
-                placeholder="Mindestens 10 Zeichen"
+                label={t("auth:resetPassword.newPasswordLabel")}
+                placeholder={t("auth:resetPassword.passwordPlaceholder", { min: MIN_PASSWORD_LENGTH })}
                 value={newPassword}
                 onChangeText={(text) => {
                   setNewPassword(text);
@@ -387,14 +379,14 @@ export default function ResetPasswordScreen() {
                     passwordMeetsLength && styles.passwordHintTextMet,
                   ]}
                 >
-                  Mindestens {MIN_PASSWORD_LENGTH} Zeichen
+                  {t("auth:resetPassword.passwordMinHint", { min: MIN_PASSWORD_LENGTH })}
                 </Text>
               </View>
             </View>
 
             <PasswordInput
-              label="Passwort bestätigen"
-              placeholder="Passwort wiederholen"
+              label={t("auth:resetPassword.passwordConfirmLabel")}
+              placeholder={t("auth:resetPassword.passwordConfirmPlaceholder")}
               value={confirmPassword}
               onChangeText={(text) => {
                 setConfirmPassword(text);
@@ -416,7 +408,7 @@ export default function ResetPasswordScreen() {
               {submitting ? (
                 <ActivityIndicator size="small" color={theme.colors.onPrimary} />
               ) : (
-                <Text style={styles.primaryBtnText}>Passwort speichern</Text>
+                <Text style={styles.primaryBtnText}>{t("auth:resetPassword.saveButton")}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -479,7 +471,7 @@ function createStyles(theme: AppTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      paddingLeft: 2,
+      paddingStart: 2,
     },
     passwordHintText: {
       fontSize: theme.typography.size.xs,

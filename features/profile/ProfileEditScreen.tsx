@@ -22,6 +22,7 @@ import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -36,6 +37,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function ProfileEditScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const { profile, user, refreshProfile } = useAuth();
 
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
@@ -54,11 +56,11 @@ export default function ProfileEditScreen() {
 
     let ok = true;
     if (!fullName.trim()) {
-      setNameError("Name ist erforderlich.");
+      setNameError(t("profile:edit.nameRequired"));
       ok = false;
     }
     if (phone.trim() && !isValidPhone(phone)) {
-      setPhoneError("Bitte gib eine gültige Telefonnummer ein (z. B. 0170 1234567).");
+      setPhoneError(t("profile:edit.invalidPhone"));
       ok = false;
     }
     if (!ok) return;
@@ -69,7 +71,7 @@ export default function ProfileEditScreen() {
       await refreshProfile();
       router.back();
     } catch (err) {
-      setFormError(toUserMessage(err, "Profil konnte nicht gespeichert werden."));
+      setFormError(toUserMessage(err, t("profile:edit.saveFailed")));
     } finally {
       setSaving(false);
     }
@@ -81,7 +83,7 @@ export default function ProfileEditScreen() {
         barStyle={theme.isDark ? "light-content" : "dark-content"}
         backgroundColor={theme.colors.background}
       />
-      <AppHeader title="Profil bearbeiten" showBack />
+      <AppHeader title={t("profile:edit.title")} showBack />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -98,11 +100,11 @@ export default function ProfileEditScreen() {
             ) : null}
 
             <Input
-              label="Vollständiger Name"
-              placeholder="Max Mustermann"
+              label={t("profile:edit.fullNameLabel")}
+              placeholder={t("profile:edit.fullNamePlaceholder")}
               value={fullName}
-              onChangeText={(t) => {
-                setFullName(t);
+              onChangeText={(text) => {
+                setFullName(text);
                 setNameError("");
               }}
               error={nameError}
@@ -111,11 +113,11 @@ export default function ProfileEditScreen() {
             />
 
             <Input
-              label="Telefon (optional)"
+              label={t("profile:edit.phoneLabel")}
               placeholder="0170 1234567"
               value={phone}
-              onChangeText={(t) => {
-                setPhone(t);
+              onChangeText={(text) => {
+                setPhone(text);
                 setPhoneError("");
               }}
               error={phoneError}
@@ -131,18 +133,18 @@ export default function ProfileEditScreen() {
                 color={theme.colors.outline}
               />
               <Text style={styles.infoText}>
-                E-Mail: {email} — über die Anmeldung, hier nicht änderbar.
+                {t("profile:edit.emailInfo", { email })}
               </Text>
             </View>
 
             <Button
-              label="Speichern"
+              label={t("common:actions.save")}
               loading={saving}
               onPress={handleSave}
               style={{ marginTop: theme.spacing.sm }}
             />
             <Button
-              label="Abbrechen"
+              label={t("common:actions.cancel")}
               variant="ghost"
               onPress={() => router.back()}
             />

@@ -16,17 +16,24 @@
 // Aufrufer (EditJobScreen) filtert solche IDs deshalb vor dem Absenden
 // zusätzlich heraus; siehe dortigen Kommentar bei handleSave.
 //
-// Absichtlich NICHT versucht: eine Zeile als "bereits gestartet/
-// abgeschlossen und deshalb nicht entfernbar" zu kennzeichnen. Der Client
-// kennt den Anwesenheits-/Review-Zustand einer Zuweisung nicht — JobAssignee
-// (types/job.ts) trägt bewusst keine attendance-Felder. Eine solche
-// Kennzeichnung wäre geraten, nicht belegt.
+// PHASE 16 — `lockedEmployeeIds`: Zeilen, deren Zuweisung BEREITS GESTARTET
+// ist, werden ausgewählt+gesperrt dargestellt und können nicht abgewählt
+// werden. Das spiegelt die serverseitige Ablehnung in set_job_assignments
+// (Migration 20260917000000): der Versuch, eine gestartete Zuweisung zu
+// entfernen, lehnt den GESAMTEN Speichervorgang ab. Ohne diese Kennzeichnung
+// liefe der Admin in eine Ablehnung, die er nicht kommen sieht.
+//
+// Der frühere Hinweis an dieser Stelle ("der Client kennt den
+// Anwesenheitszustand nicht") ist überholt: JobAssignee trägt seit Phase B1
+// employeeStartedAt/employeeCompletedAt, die Angabe ist also belegt und nicht
+// geraten. Der Aufrufer leitet die IDs über getStartedAssigneeIds ab.
 
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { EmployeeOption } from "@/types/job";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useTranslation } from "react-i18next";
 import type { AppTheme } from "@/constants/theme";
 
 type Props = {
@@ -34,6 +41,11 @@ type Props = {
   selectedEmployeeIds: string[];
   onChange: (next: string[]) => void;
   emptyLabel?: string;
+  /**
+   * Mitarbeiter, die ihre Teilnahme bereits begonnen haben und deshalb nicht
+   * entfernbar sind (Phase 16, siehe Kopf-Kommentar).
+   */
+  lockedEmployeeIds?: string[];
 };
 
 // Dedupliziert nach id — defensiv, auch wenn der Aufrufer (EditJobScreen
@@ -53,19 +65,26 @@ export function EmployeeMultiSelector({
   employees,
   selectedEmployeeIds,
   onChange,
-  emptyLabel = "Keine Mitarbeiter verfügbar.",
+  emptyLabel,
+  lockedEmployeeIds = [],
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
+  const resolvedEmptyLabel = emptyLabel ?? t("admin:jobForm.noEmployeesAvailable");
 
   const uniqueEmployees = useMemo(() => dedupeById(employees), [employees]);
   const selectedSet = useMemo(
     () => new Set(selectedEmployeeIds),
     [selectedEmployeeIds],
   );
+  const lockedSet = useMemo(
+    () => new Set(lockedEmployeeIds),
+    [lockedEmployeeIds],
+  );
 
-  const toggle = (employeeId: string, isInactive: boolean) => {
-    if (isInactive) return;
+  const toggle = (employeeId: string, isBlocked: boolean) => {
+    if (isBlocked) return;
 
     const next = selectedSet.has(employeeId)
       ? selectedEmployeeIds.filter((id) => id !== employeeId)
@@ -76,7 +95,7 @@ export function EmployeeMultiSelector({
   if (uniqueEmployees.length === 0) {
     return (
       <View style={styles.wrapper}>
-        <Text style={styles.emptyText}>{emptyLabel}</Text>
+        <Text style={styles.emptyText}>{resolvedEmptyLabel}</Text>
       </View>
     );
   }
@@ -85,25 +104,29 @@ export function EmployeeMultiSelector({
     <View style={styles.wrapper}>
       {uniqueEmployees.map((emp) => {
         const isInactive = emp.isActive === false;
+        const isLocked = lockedSet.has(emp.id);
+        // Gestartet hat Vorrang vor inaktiv: die Meldung ist die
+        // handlungsrelevante von beiden.
+        const sublabel = isLocked
+          ? t("admin:jobForm.employeeSelector.startedSublabel")
+          : isInactive
+            ? t("admin:jobForm.employeeSelector.inactiveSublabel")
+            : t("admin:jobForm.employeeSelector.activeSublabel");
         return (
           <EmployeeCheckboxRow
             key={emp.id}
             label={emp.fullName}
-            sublabel={
-              isInactive
-                ? "Inaktiv – Auswahl kann hier nicht geändert werden"
-                : "Mitarbeiter"
-            }
+            sublabel={sublabel}
             isSelected={selectedSet.has(emp.id)}
-            disabled={isInactive}
-            onPress={() => toggle(emp.id, isInactive)}
+            disabled={isInactive || isLocked}
+            onPress={() => toggle(emp.id, isInactive || isLocked)}
           />
         );
       })}
 
       {selectedEmployeeIds.length === 0 ? (
         <Text style={styles.unassignedHint}>
-          Niemand zugewiesen – Job bleibt offen.
+          {t("admin:jobForm.employeeSelector.unassignedHint")}
         </Text>
       ) : null}
     </View>

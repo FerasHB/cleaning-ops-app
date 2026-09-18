@@ -562,13 +562,35 @@ begin
 end $$;
 
 -- CASE 22: start_own_job funktioniert unveraendert (ANNA, Primaer).
+-- Zeitstempel jetzt now()-relativ statt fest auf 2026-08-05: die 12h-
+-- Vertrauensfenster-Pruefung aus Phase 16 (20260917000000, Abschnitt (a))
+-- lehnt jeden Aktionszeitpunkt ab, der mehr als 12h in der Vergangenheit
+-- liegt — ein fest verdrahtetes historisches Datum altert damit
+-- zwangslaeufig aus dem Fenster heraus.
+--
+-- b4...001.date wurde oben mit dem SESSION-current_date angelegt (UTC in
+-- der lokalen Docker-Instanz), waehrend job_start_date_allowed() den
+-- Aktionszeitpunkt nach Europe/Berlin konvertiert — im taeglichen ~2h-
+-- Fenster, in dem UTC und Europe/Berlin unterschiedliche Kalendertage
+-- sehen, koennte now() sonst auf einem anderen Berliner Datum landen als
+-- b4...001.date (dieselbe Klasse Problem wie in
+-- paused_recurring_occurrence_start_guard.test.sql, dort an der Fixture
+-- selbst behoben). Hier NICHT die gemeinsame Mehrfach-Job-Fixture oben
+-- anfassen — stattdessen nur diese EINE, fuer CASE 22/23 verwendete Zeile
+-- direkt vor der RPC auf das tatsaechliche heutige Geschaeftsdatum
+-- (Europe/Berlin) korrigieren. Das ist deterministisch, unabhaengig von der
+-- tatsaechlichen Uhrzeit, und beeinflusst keinen der uebrigen 24 Faelle
+-- dieser Datei (keiner davon prueft jobs.date).
 do $$
 declare v text;
 begin
+  update public.jobs set date = (now() at time zone 'Europe/Berlin')::date
+   where id='b4000000-0000-0000-0000-000000000001';
+
   perform pg_temp.act_as('b2000000-0000-0000-0000-000000000002');
   execute 'set local role authenticated';
   begin
-    perform public.start_own_job('b4000000-0000-0000-0000-000000000001', timestamptz '2026-08-05 08:00+00');
+    perform public.start_own_job('b4000000-0000-0000-0000-000000000001', now());
     v := 'OK';
   exception when others then v := 'FEHLER('||sqlstate||')';
   end;
@@ -579,22 +601,65 @@ begin
 end $$;
 
 -- CASE 23: complete_own_job durch den SEKUNDAEREN — geteilte Job-Uhr bleibt
--- intakt (Anna startet, Bernd schliesst ab).
+-- intakt (Anna startet den Auftrag, Bernd schliesst ihn ab).
+--
+-- Seit Phase 16 (20260917000000) darf complete_own_job nur noch die EIGENE
+-- Teilnahme abschliessen, und die setzt einen EIGENEN Start voraus ("Du
+-- musst diesen Auftrag zuerst selbst starten..."). Bernd muss deshalb jetzt
+-- zuerst seine eigene Teilnahme starten (Nachzuegler-Zweig: der Auftrag ist
+-- bereits in_progress, das aendert jobs.started_at NICHT — die geteilte Uhr
+-- bleibt Annas urspruenglicher Zeitpunkt), bevor er abschliessen kann.
+--
+-- ZWEITE, ebenfalls Phase-16-bedingte Anpassung: der Auftrags-Lebenszyklus
+-- wird seit Phase 16 aus der VOLLSTAENDIGEN Zuweisungsmenge abgeleitet
+-- (maybe_complete_job/job_assignment_unresolved) statt "der erste Abschluss
+-- gewinnt". J1 hat ZWEI Zuweisungen (Anna + Bernd); jobs.status wechselt
+-- erst auf 'completed', wenn BEIDE ihre eigene Teilnahme abgeschlossen
+-- haben. Anna muss deshalb zusaetzlich ihre eigene Teilnahme abschliessen —
+-- Bernds Abschluss ist dann der tatsaechlich abschliessende (zweite)
+-- Uebergang, genau der Fall, den dieser Test pruefen soll (Uhr bleibt trotz
+-- unterschiedlicher Akteure fuer Start/Abschluss intakt). Ein kleiner
+-- (5 Minuten) statt der urspruenglich fest verdrahteten 2 Stunden Abstand
+-- zwischen Start und Abschluss — der exakte Betrag war nie der
+-- Pruefgegenstand, lediglich "> 0 und plausibel"; ein kleinerer,
+-- now()-basierter Abstand ist ebenso aussagekraeftig und robuster.
 do $$
-declare v text;
+declare v text; v_own_start text; v_anna text;
 begin
+  -- Anna (Primaer) schliesst zuerst ihre EIGENE Teilnahme ab — sonst bleibt
+  -- der Auftrag auch nach Bernds Abschluss in_progress (s.o.).
+  perform pg_temp.act_as('b2000000-0000-0000-0000-000000000002');
+  execute 'set local role authenticated';
+  begin
+    perform public.complete_own_job('b4000000-0000-0000-0000-000000000001', now());
+    v_anna := 'OK';
+  exception when others then v_anna := 'FEHLER('||sqlstate||')';
+  end;
+  execute 'reset role';
+
   perform pg_temp.act_as('b2000000-0000-0000-0000-000000000003');
   execute 'set local role authenticated';
   begin
-    perform public.complete_own_job('b4000000-0000-0000-0000-000000000001', timestamptz '2026-08-05 10:00+00');
+    perform public.start_own_job('b4000000-0000-0000-0000-000000000001', now());
+    v_own_start := 'OK';
+  exception when others then v_own_start := 'FEHLER('||sqlstate||')';
+  end;
+  begin
+    perform public.complete_own_job('b4000000-0000-0000-0000-000000000001', now() + interval '5 minutes');
     v := 'OK';
   exception when others then v := 'FEHLER('||sqlstate||')';
   end;
   execute 'reset role';
-  select v||'/'||status::text||'/dauer='||(completed_at - started_at)::text
+  raise notice 'CASE 23 (Anna eigener Abschluss) -> %', v_anna;
+  -- coalesce um die Dauer: eine NULL (z. B. wenn complete_own_job doch
+  -- scheitert und completed_at leer bleibt) darf den gesamten String nicht
+  -- stillschweigend auf NULL ziehen (Standard-SQL-NULL-Verkettung) — sonst
+  -- zeigt ein kuenftiger Fehlschlag hier keinen Klartext mehr an.
+  select v||'/'||status::text||'/dauer_positiv='||coalesce(((completed_at - started_at) > interval '0')::text,'NULL')
     into v from public.jobs where id='b4000000-0000-0000-0000-000000000001';
-  insert into _r values (23,'complete_own_job durch Sekundaeren; geteilte Job-Uhr intakt','OK/completed/dauer=02:00:00',v);
-  raise notice 'CASE 23 -> %', v;
+  insert into _r values (23,'complete_own_job durch Sekundaeren (nach eigenem Start); geteilte Job-Uhr intakt',
+    'eigener_start=OK/OK/completed/dauer_positiv=true', 'eigener_start='||v_own_start||'/'||v);
+  raise notice 'CASE 23 -> eigener_start=% %', v_own_start, v;
 end $$;
 
 -- CASE 24: der Admin kann Auftraege weiterhin direkt aendern.

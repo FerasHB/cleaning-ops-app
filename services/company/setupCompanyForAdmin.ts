@@ -1,3 +1,4 @@
+import { i18next } from "@/i18n";
 import { supabase } from "@/lib/supabase";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
 import { normalizeEmail } from "@/utils/email";
@@ -27,7 +28,7 @@ export async function setupCompanyForAdmin(
 
   const trimmedName = opts.companyName.trim();
   if (!trimmedName) {
-    throw new Error("Firmenname fehlt.");
+    throw new Error(i18next.t("auth:setupCompanyService.missingName"));
   }
 
   const contactEmail = opts.contactEmail?.trim()
@@ -38,7 +39,7 @@ export async function setupCompanyForAdmin(
   if (opts.contactPhone?.trim()) {
     contactPhone = normalizePhone(opts.contactPhone);
     if (!contactPhone) {
-      throw new Error("Bitte gib eine gültige Firmen-Telefonnummer ein.");
+      throw new Error(i18next.t("auth:setupCompanyService.invalidCompanyPhone"));
     }
   }
 
@@ -46,7 +47,7 @@ export async function setupCompanyForAdmin(
   if (opts.adminPhone?.trim()) {
     adminPhone = normalizePhone(opts.adminPhone);
     if (!adminPhone) {
-      throw new Error("Bitte gib eine gültige Telefonnummer ein.");
+      throw new Error(i18next.t("auth:setupCompanyService.invalidPhone"));
     }
   }
 
@@ -60,12 +61,12 @@ export async function setupCompanyForAdmin(
   if (error) {
     console.error("setupCompanyForAdmin RPC error:", error);
     throw new Error(
-      toFriendlyAuthErrorMessage(error, "Firma konnte nicht erstellt werden."),
+      toFriendlyAuthErrorMessage(error, i18next.t("auth:setupCompanyService.createFailed")),
     );
   }
 
   if (typeof data !== "string" || !data) {
-    throw new Error("Keine gültige Company-ID zurückbekommen.");
+    throw new Error(i18next.t("auth:setupCompanyService.noCompanyId"));
   }
 
   return data;

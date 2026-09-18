@@ -27,8 +27,10 @@ import type {
 } from "@/types/absence";
 import { toUserMessage } from "@/utils/userMessages";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function useAbsences() {
+  const { t } = useTranslation();
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -53,7 +55,7 @@ export function useAbsences() {
     } catch (err) {
       if (mountedRef.current) {
         setLoadError(
-          toUserMessage(err, "Die Abwesenheiten konnten nicht geladen werden."),
+          toUserMessage(err, t("absences:errors.loadFailed")),
         );
       }
     } finally {
@@ -86,7 +88,7 @@ export function useAbsences() {
         return await action();
       } catch (err) {
         if (mountedRef.current) {
-          setActionError(toUserMessage(err, "Die Aktion konnte nicht ausgeführt werden."));
+          setActionError(toUserMessage(err, t("absences:errors.actionFailed")));
         }
         return null;
       } finally {

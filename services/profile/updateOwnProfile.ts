@@ -11,6 +11,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { normalizePhone } from "@/utils/phone";
+import { i18next } from "@/i18n";
 
 type UpdateOwnProfileInput = {
   fullName: string;
@@ -21,7 +22,7 @@ type UpdateOwnProfileInput = {
 export async function updateOwnProfile(input: UpdateOwnProfileInput): Promise<void> {
   const fullName = input.fullName.trim();
   if (!fullName) {
-    throw new Error("Name ist erforderlich.");
+    throw new Error(i18next.t("profile:edit.nameRequired"));
   }
 
   let phone: string | null = null;
@@ -29,7 +30,7 @@ export async function updateOwnProfile(input: UpdateOwnProfileInput): Promise<vo
   if (rawPhone) {
     phone = normalizePhone(rawPhone);
     if (!phone) {
-      throw new Error("Bitte gib eine gültige Telefonnummer ein (z. B. 0170 1234567).");
+      throw new Error(i18next.t("profile:edit.invalidPhone"));
     }
   }
 
@@ -38,7 +39,7 @@ export async function updateOwnProfile(input: UpdateOwnProfileInput): Promise<vo
     error: userError,
   } = await supabase.auth.getUser();
   if (userError) throw userError;
-  if (!user) throw new Error("Kein eingeloggter Benutzer gefunden.");
+  if (!user) throw new Error(i18next.t("common:errors.notAuthenticated"));
 
   const { error } = await supabase
     .from("profiles")

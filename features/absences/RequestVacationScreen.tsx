@@ -12,6 +12,7 @@ import { formatDateISO } from "@/utils/date";
 import { alertDialog } from "@/utils/dialogs";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -27,6 +28,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function RequestVacationScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -36,10 +38,10 @@ export default function RequestVacationScreen() {
 
   const validate = (): string | null => {
     if (!startDate || !endDate) {
-      return "Bitte Von- und Bis-Datum angeben.";
+      return t("absences:errors.datesRequired");
     }
     if (formatDateISO(endDate)! < formatDateISO(startDate)!) {
-      return "Das Enddatum darf nicht vor dem Startdatum liegen.";
+      return t("absences:errors.endBeforeStart");
     }
     return null;
   };
@@ -61,12 +63,15 @@ export default function RequestVacationScreen() {
       });
 
       await alertDialog(
-        "Urlaub beantragt",
-        "Dein Urlaubsantrag wurde eingereicht und wartet auf Prüfung.",
+        t("absences:requestVacation.successTitle"),
+        t("absences:requestVacation.successMessage"),
       );
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Der Urlaubsantrag konnte nicht gestellt werden.");
+      // err.message ist bereits übersetzt: requestOwnVacation() wirft über
+      // translateRpcError()/toUserMessage() (siehe absences.service.ts), die
+      // beide i18next.t() nutzen — kein roher Server-/RPC-Text kommt hier an.
+      setError(err instanceof Error ? err.message : t("absences:errors.requestFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -78,7 +83,7 @@ export default function RequestVacationScreen() {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <AppHeader title="Urlaub beantragen" showBack />
+        <AppHeader title={t("absences:requestVacation.title")} showBack />
 
         <ScrollView
           contentContainerStyle={styles.content}
@@ -91,20 +96,20 @@ export default function RequestVacationScreen() {
 
           <View style={styles.form}>
             <DateTimeField
-              label="Von"
+              label={t("absences:requestVacation.fromLabel")}
               mode="date"
               value={startDate}
               onChange={setStartDate}
             />
             <DateTimeField
-              label="Bis"
+              label={t("absences:requestVacation.toLabel")}
               mode="date"
               value={endDate}
               onChange={setEndDate}
             />
             <Input
-              label="Notiz (optional)"
-              placeholder="z. B. Grund oder Hinweis für den Admin"
+              label={t("absences:requestVacation.noteLabel")}
+              placeholder={t("absences:requestVacation.notePlaceholder")}
               value={note}
               onChangeText={setNote}
               multiline
@@ -121,7 +126,9 @@ export default function RequestVacationScreen() {
             {submitting ? (
               <ActivityIndicator size="small" color={theme.colors.onPrimary} />
             ) : (
-              <Text style={styles.submitButtonText}>Urlaub beantragen</Text>
+              <Text style={styles.submitButtonText}>
+                {t("absences:requestVacation.submitButton")}
+              </Text>
             )}
           </TouchableOpacity>
         </ScrollView>

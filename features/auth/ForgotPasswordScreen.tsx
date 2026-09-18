@@ -4,6 +4,7 @@
 
 import { ErrorBanner, Input } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { supabase } from "@/lib/supabase";
 import { createAuthRedirectUrl } from "@/services/auth/authRedirect";
 import { toFriendlyAuthErrorMessage } from "@/utils/authErrorMessages";
@@ -11,6 +12,7 @@ import { isValidEmail, normalizeEmail } from "@/utils/email";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -26,7 +28,9 @@ import type { AppTheme } from "@/constants/theme";
 
 export default function ForgotPasswordScreen() {
   const theme  = useAppTheme();
+  const isRTL  = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [email,     setEmail]     = useState("");
   const [emailError, setEmailError] = useState("");
@@ -40,11 +44,11 @@ export default function ForgotPasswordScreen() {
     setFormError("");
 
     if (!email.trim()) {
-      setEmailError("E-Mail ist erforderlich.");
+      setEmailError(t("auth:forgotPassword.validation.emailRequired"));
       return;
     }
     if (!isValidEmail(email)) {
-      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein.");
+      setEmailError(t("auth:forgotPassword.validation.emailInvalid"));
       return;
     }
 
@@ -68,7 +72,7 @@ export default function ForgotPasswordScreen() {
 
       if (error) {
         setFormError(
-          toFriendlyAuthErrorMessage(error, "Reset fehlgeschlagen. Bitte versuche es erneut."),
+          toFriendlyAuthErrorMessage(error, t("auth:forgotPassword.errors.resetFailed")),
         );
         return;
       }
@@ -93,14 +97,12 @@ export default function ForgotPasswordScreen() {
           <View style={styles.successIconWrap}>
             <Ionicons name="checkmark-circle" size={48} color={theme.colors.statusCompleted} />
           </View>
-          <Text style={styles.successTitle}>E-Mail wurde gesendet</Text>
+          <Text style={styles.successTitle}>{t("auth:forgotPassword.successTitle")}</Text>
           <Text style={styles.successText}>
-            Falls ein Konto mit{" "}
-            <Text style={styles.successEmail}>{email.trim()}</Text>
-            {" "}existiert, erhältst du in Kürze einen Link zum Zurücksetzen deines Passworts.
+            {t("auth:forgotPassword.successText", { email: email.trim() })}
           </Text>
           <Text style={styles.successHint}>
-            Bitte auch den Spam-Ordner prüfen.
+            {t("auth:forgotPassword.successHint")}
           </Text>
 
           <TouchableOpacity
@@ -108,7 +110,7 @@ export default function ForgotPasswordScreen() {
             onPress={() => router.replace("/login")}
             activeOpacity={0.82}
           >
-            <Text style={styles.backBtnText}>Zurück zum Login</Text>
+            <Text style={styles.backBtnText}>{t("auth:forgotPassword.successBackButton")}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -138,8 +140,8 @@ export default function ForgotPasswordScreen() {
             onPress={() => router.back()}
             activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={20} color={theme.colors.primary} />
-            <Text style={styles.navBackText}>Login</Text>
+            <Ionicons name={isRTL ? "arrow-forward" : "arrow-back"} size={20} color={theme.colors.primary} />
+            <Text style={styles.navBackText}>{t("auth:forgotPassword.navBack")}</Text>
           </TouchableOpacity>
 
           {/* ── Icon + Texte ── */}
@@ -147,9 +149,9 @@ export default function ForgotPasswordScreen() {
             <View style={styles.iconWrap}>
               <Ionicons name="lock-open-outline" size={30} color={theme.colors.onPrimaryContainer} />
             </View>
-            <Text style={styles.title}>Passwort zurücksetzen</Text>
+            <Text style={styles.title}>{t("auth:forgotPassword.title")}</Text>
             <Text style={styles.subtitle}>
-              Gib deine E-Mail-Adresse ein. Wir senden dir einen Link zum Zurücksetzen deines Passworts.
+              {t("auth:forgotPassword.subtitle")}
             </Text>
           </View>
 
@@ -160,10 +162,10 @@ export default function ForgotPasswordScreen() {
             ) : null}
 
             <Input
-              label="E-Mail-Adresse"
-              placeholder="name@firma.de"
+              label={t("auth:forgotPassword.emailLabel")}
+              placeholder={t("auth:forgotPassword.emailPlaceholder")}
               value={email}
-              onChangeText={(t) => { setEmail(t); setEmailError(""); setFormError(""); }}
+              onChangeText={(v) => { setEmail(v); setEmailError(""); setFormError(""); }}
               error={emailError}
               autoCapitalize="none"
               keyboardType="email-address"
@@ -183,10 +185,10 @@ export default function ForgotPasswordScreen() {
                 name="send-outline"
                 size={16}
                 color={theme.colors.onPrimaryContainer}
-                style={{ marginRight: 8 }}
+                style={{ marginEnd: 8 }}
               />
               <Text style={styles.resetBtnText}>
-                {loading ? "Senden..." : "Reset-Link senden"}
+                {loading ? t("auth:forgotPassword.sendButtonLoading") : t("auth:forgotPassword.sendButton")}
               </Text>
             </TouchableOpacity>
 
@@ -196,7 +198,7 @@ export default function ForgotPasswordScreen() {
               activeOpacity={0.75}
               style={styles.loginLinkRow}
             >
-              <Text style={styles.loginLinkText}>Zurück zum Login</Text>
+              <Text style={styles.loginLinkText}>{t("auth:forgotPassword.backToLoginLink")}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -331,11 +333,6 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onSurfaceVariant,
       textAlign: "center",
       lineHeight: theme.typography.lineHeight.sm,
-    },
-    successEmail: {
-      fontWeight: theme.typography.weight.semibold,
-      fontFamily: theme.typography.family.semibold,
-      color: theme.colors.onSurface,
     },
     successHint: {
       fontSize: theme.typography.size.xs,

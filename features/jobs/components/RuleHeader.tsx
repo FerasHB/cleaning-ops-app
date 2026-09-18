@@ -17,6 +17,7 @@ import type { RuleHealth } from "@/utils/recurringRule";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   rule: Pick<Job, "customerName" | "service" | "location">;
@@ -26,6 +27,7 @@ type Props = {
 export function RuleHeader({ rule, health }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const subline = [rule.service, rule.location].filter(Boolean).join(" · ");
 
@@ -37,7 +39,9 @@ export function RuleHeader({ rule, health }: Props) {
           size={13}
           color={theme.colors.primary}
         />
-        <Text style={styles.eyebrow}>DAUERAUFTRAG</Text>
+        <Text style={styles.eyebrow}>
+          {t("admin:recurringRules.eyebrowLabel")}
+        </Text>
       </View>
 
       <View style={styles.titleRow}>

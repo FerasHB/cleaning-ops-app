@@ -17,10 +17,11 @@ import { WeekdayDots } from "@/components/ui/WeekdayDots";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job } from "@/types/job";
-import { formatDateOnlyDE } from "@/utils/date";
+import { formatDateOnlyLocalized } from "@/utils/date";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   rule: Pick<
@@ -38,23 +39,28 @@ type Props = {
 export function RuleScheduleSummary({ rule, horizonDate }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
-  const timeLabel = rule.startTime ? `${rule.startTime} Uhr` : "Keine Uhrzeit";
+  const timeLabel = rule.startTime
+    ? t("jobs:card.scheduleTime", { time: rule.startTime })
+    : t("admin:recurringRules.noTime");
 
   const rangeLabel = useMemo(() => {
-    const start = formatDateOnlyDE(rule.recurrenceStartDate);
-    const end = formatDateOnlyDE(rule.recurrenceEndDate);
+    const start = formatDateOnlyLocalized(rule.recurrenceStartDate);
+    const end = formatDateOnlyLocalized(rule.recurrenceEndDate);
     if (start && end) return `${start} – ${end}`;
-    if (start) return `ab ${start}`;
-    if (end) return `bis ${end}`;
-    return "Kein Zeitraum hinterlegt";
-  }, [rule.recurrenceStartDate, rule.recurrenceEndDate]);
+    if (start) return t("admin:recurringRules.rangeFrom", { date: start });
+    if (end) return t("admin:recurringRules.rangeUntil", { date: end });
+    return t("admin:recurringRules.noDateRange");
+  }, [rule.recurrenceStartDate, rule.recurrenceEndDate, t]);
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>
       <View style={styles.labelRow}>
         <Ionicons name="repeat-outline" size={12} color={theme.colors.primary} />
-        <Text style={styles.label}>WIEDERHOLUNG</Text>
+        <Text style={styles.label}>
+          {t("admin:recurringRules.weekdaysLabel")}
+        </Text>
       </View>
 
       <WeekdayDots days={rule.recurringDays} />
@@ -75,7 +81,9 @@ export function RuleScheduleSummary({ rule, horizonDate }: Props) {
         {horizonDate ? (
           <MetaRow
             icon="flag-outline"
-            text={`Termine erzeugt bis ${formatDateOnlyDE(horizonDate)}`}
+            text={t("admin:recurringRules.occurrencesGeneratedUntil", {
+              date: formatDateOnlyLocalized(horizonDate),
+            })}
             styles={styles}
             theme={theme}
           />

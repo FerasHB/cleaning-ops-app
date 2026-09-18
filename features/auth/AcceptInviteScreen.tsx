@@ -16,6 +16,7 @@ import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/utils/passwordValida
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   ActivityIndicator,
@@ -30,17 +31,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const DEFAULT_INVALID_MESSAGE =
-  "Diese Einladung ist ungültig. Bitte wende dich an deinen Administrator für eine neue Einladung.";
-const EXPIRED_INVITE_MESSAGE =
-  "Diese Einladung ist abgelaufen. Bitte bitte deinen Administrator, dir eine neue Einladung zu senden.";
-
 export default function AcceptInviteScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const { status, invalidMessage, recheck } = useAuthLinkSession(
-    DEFAULT_INVALID_MESSAGE,
-    EXPIRED_INVITE_MESSAGE,
+    t("auth:acceptInvite.invalidDefaultMessage"),
+    t("auth:acceptInvite.expiredMessage"),
     // Einladungs-Annahme ist BEWUSST kein Recovery-Modus: sie führt regulär in
     // die App, der Zugang wird dort über profiles.invite_accepted_at gesteuert
     // (siehe app/index.tsx). Unverändertes Verhalten.
@@ -90,7 +87,7 @@ export default function AcceptInviteScreen() {
 
       if (error) {
         setFormError(
-          toFriendlyAuthErrorMessage(error, "Passwort konnte nicht gesetzt werden."),
+          toFriendlyAuthErrorMessage(error, t("auth:acceptInvite.errors.setPasswordFailed")),
         );
         return;
       }
@@ -123,7 +120,7 @@ export default function AcceptInviteScreen() {
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.centerHint}>Einladung wird geprüft …</Text>
+          <Text style={styles.centerHint}>{t("auth:acceptInvite.checkingText")}</Text>
         </View>
       </SafeAreaView>
     );
@@ -145,7 +142,7 @@ export default function AcceptInviteScreen() {
               color={theme.colors.error}
             />
           </View>
-          <Text style={styles.centerTitle}>Einladung ungültig</Text>
+          <Text style={styles.centerTitle}>{t("auth:acceptInvite.invalidTitle")}</Text>
           <Text style={styles.centerText}>{invalidMessage}</Text>
 
           <TouchableOpacity
@@ -153,14 +150,14 @@ export default function AcceptInviteScreen() {
             onPress={recheck}
             activeOpacity={0.75}
           >
-            <Text style={styles.linkBtnText}>Link erneut prüfen</Text>
+            <Text style={styles.linkBtnText}>{t("auth:acceptInvite.recheckLink")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={handleBackToLogin}
             activeOpacity={0.82}
           >
-            <Text style={styles.primaryBtnText}>Zurück zum Login</Text>
+            <Text style={styles.primaryBtnText}>{t("auth:acceptInvite.backToLoginButton")}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -179,9 +176,9 @@ export default function AcceptInviteScreen() {
               color={theme.colors.statusCompleted}
             />
           </View>
-          <Text style={styles.centerTitle}>Konto eingerichtet</Text>
+          <Text style={styles.centerTitle}>{t("auth:acceptInvite.successTitle")}</Text>
           <Text style={styles.centerText}>
-            Dein Passwort wurde gespeichert. Bitte melde dich jetzt an.
+            {t("auth:acceptInvite.successText")}
           </Text>
 
           <TouchableOpacity
@@ -189,7 +186,7 @@ export default function AcceptInviteScreen() {
             onPress={() => router.replace("/login")}
             activeOpacity={0.82}
           >
-            <Text style={styles.primaryBtnText}>Zum Login</Text>
+            <Text style={styles.primaryBtnText}>{t("auth:acceptInvite.successLoginButton")}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -220,9 +217,9 @@ export default function AcceptInviteScreen() {
                 color={theme.colors.onPrimaryContainer}
               />
             </View>
-            <Text style={styles.title}>Willkommen bei TaskOps Manager</Text>
+            <Text style={styles.title}>{t("auth:acceptInvite.formTitle")}</Text>
             <Text style={styles.subtitle}>
-              Lege dein Passwort fest, um dein Konto zu aktivieren.
+              {t("auth:acceptInvite.formSubtitle")}
             </Text>
           </View>
 
@@ -236,8 +233,8 @@ export default function AcceptInviteScreen() {
 
             <View style={styles.passwordField}>
               <PasswordInput
-                label="Passwort"
-                placeholder="Mindestens 10 Zeichen"
+                label={t("auth:acceptInvite.passwordLabel")}
+                placeholder={t("auth:acceptInvite.passwordPlaceholder", { min: MIN_PASSWORD_LENGTH })}
                 value={newPassword}
                 onChangeText={(text) => {
                   setNewPassword(text);
@@ -260,14 +257,14 @@ export default function AcceptInviteScreen() {
                     passwordMeetsLength && styles.passwordHintTextMet,
                   ]}
                 >
-                  Mindestens {MIN_PASSWORD_LENGTH} Zeichen
+                  {t("auth:acceptInvite.passwordMinHint", { min: MIN_PASSWORD_LENGTH })}
                 </Text>
               </View>
             </View>
 
             <PasswordInput
-              label="Passwort bestätigen"
-              placeholder="Passwort wiederholen"
+              label={t("auth:acceptInvite.passwordConfirmLabel")}
+              placeholder={t("auth:acceptInvite.passwordConfirmPlaceholder")}
               value={confirmPassword}
               onChangeText={(text) => {
                 setConfirmPassword(text);
@@ -295,7 +292,7 @@ export default function AcceptInviteScreen() {
                   color={theme.colors.onPrimary}
                 />
               ) : (
-                <Text style={styles.primaryBtnText}>Konto aktivieren</Text>
+                <Text style={styles.primaryBtnText}>{t("auth:acceptInvite.activateButton")}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -358,7 +355,7 @@ function createStyles(theme: AppTheme) {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      paddingLeft: 2,
+      paddingStart: 2,
     },
     passwordHintText: {
       fontSize: theme.typography.size.xs,

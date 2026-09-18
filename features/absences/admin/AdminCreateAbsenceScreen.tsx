@@ -16,6 +16,7 @@ import type { AppTheme } from "@/constants/theme";
 import type { AbsenceType } from "@/types/absence";
 import { formatDateISO } from "@/utils/date";
 import { alertDialog } from "@/utils/dialogs";
+import { toUserMessage } from "@/utils/userMessages";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
@@ -29,12 +30,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
 import { EmployeePickerField } from "./components/EmployeePickerField";
-
-const TYPE_OPTIONS: { key: AbsenceType; label: string }[] = [
-  { key: "vacation", label: "Urlaub" },
-  { key: "sickness", label: "Krankheit" },
-];
 
 export default function AdminCreateAbsenceScreen({
   preselectedEmployeeId,
@@ -43,7 +40,13 @@ export default function AdminCreateAbsenceScreen({
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
   const { employees } = useJobs();
+
+  const TYPE_OPTIONS: { key: AbsenceType; label: string }[] = [
+    { key: "vacation", label: t("absences:types.vacation") },
+    { key: "sickness", label: t("absences:types.sickness") },
+  ];
 
   const [employeeId, setEmployeeId] = useState<string | null>(
     preselectedEmployeeId ?? null,
@@ -56,13 +59,13 @@ export default function AdminCreateAbsenceScreen({
   const [submitting, setSubmitting] = useState(false);
 
   const validate = (): string | null => {
-    if (!employeeId) return "Bitte einen Mitarbeiter auswählen.";
-    if (!startDate) return "Bitte ein Startdatum angeben.";
+    if (!employeeId) return t("admin:absenceAdmin.create.employeeRequiredError");
+    if (!startDate) return t("admin:absenceAdmin.create.startDateRequiredError");
     if (type === "vacation" && !endDate) {
-      return "Bitte ein Enddatum für den Urlaub angeben.";
+      return t("admin:absenceAdmin.create.endDateRequiredError");
     }
     if (endDate && formatDateISO(endDate)! < formatDateISO(startDate)!) {
-      return "Das Enddatum darf nicht vor dem Startdatum liegen.";
+      return t("admin:absenceAdmin.create.endBeforeStartError");
     }
     return null;
   };
@@ -92,19 +95,17 @@ export default function AdminCreateAbsenceScreen({
       // Genehmigung samt Abzugsbestätigung läuft dann über die bestehende
       // Urlaubsanträge-Ansicht (admin_review_vacation), nicht hier.
       await alertDialog(
-        "Abwesenheit erfasst",
+        t("admin:absenceAdmin.create.createdDialogTitle"),
         type === "vacation"
           ? created.status === "approved"
-            ? "Der Urlaub wurde als genehmigt erfasst."
-            : "Der Urlaub wurde erfasst. Für diesen Mitarbeiter wird ein Urlaubskonto geführt — die Genehmigung samt Abzugsbestätigung erfolgt über die Urlaubsanträge-Liste."
-          : "Die Krankmeldung wurde erfasst.",
+            ? t("admin:absenceAdmin.create.createdVacationApproved")
+            : t("admin:absenceAdmin.create.createdVacationPendingLedger")
+          : t("admin:absenceAdmin.create.createdSickness"),
       );
       router.back();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Die Abwesenheit konnte nicht erfasst werden.",
+        toUserMessage(err, t("admin:absenceAdmin.create.createFailedFallback")),
       );
     } finally {
       setSubmitting(false);
@@ -117,7 +118,7 @@ export default function AdminCreateAbsenceScreen({
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <AppHeader title="Abwesenheit erfassen" showBack />
+        <AppHeader title={t("admin:absenceAdmin.create.headerTitle")} showBack />
 
         <ScrollView
           contentContainerStyle={styles.content}
@@ -136,7 +137,9 @@ export default function AdminCreateAbsenceScreen({
             />
 
             <View>
-              <Text style={styles.sectionLabel}>Art *</Text>
+              <Text style={styles.sectionLabel}>
+                {t("admin:absenceAdmin.create.typeSectionLabel")}
+              </Text>
               <View style={styles.segment}>
                 {TYPE_OPTIONS.map((opt) => {
                   const active = type === opt.key;
@@ -162,24 +165,30 @@ export default function AdminCreateAbsenceScreen({
             </View>
 
             <DateTimeField
-              label="Von *"
+              label={t("admin:absenceAdmin.create.fromLabel")}
               mode="date"
               value={startDate}
               onChange={setStartDate}
             />
             <DateTimeField
-              label={type === "vacation" ? "Bis *" : "Bis (optional)"}
+              label={
+                type === "vacation"
+                  ? t("admin:absenceAdmin.create.toLabelVacation")
+                  : t("admin:absenceAdmin.create.toLabelSickness")
+              }
               mode="date"
               value={endDate}
               onChange={setEndDate}
               placeholder={
-                type === "sickness" ? "Kein Enddatum bekannt" : undefined
+                type === "sickness"
+                  ? t("admin:absenceAdmin.create.noEndDatePlaceholder")
+                  : undefined
               }
             />
 
             <Input
-              label="Notiz (optional)"
-              placeholder="z. B. telefonisch gemeldet"
+              label={t("admin:absenceAdmin.create.noteLabel")}
+              placeholder={t("admin:absenceAdmin.create.notePlaceholder")}
               value={note}
               onChangeText={setNote}
               multiline
@@ -196,7 +205,9 @@ export default function AdminCreateAbsenceScreen({
             {submitting ? (
               <ActivityIndicator size="small" color={theme.colors.onPrimary} />
             ) : (
-              <Text style={styles.submitButtonText}>Abwesenheit erfassen</Text>
+              <Text style={styles.submitButtonText}>
+                {t("admin:absenceAdmin.create.submitButton")}
+              </Text>
             )}
           </TouchableOpacity>
         </ScrollView>

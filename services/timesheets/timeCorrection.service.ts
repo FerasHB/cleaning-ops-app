@@ -14,6 +14,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { toUserMessage } from "@/utils/userMessages";
+import { i18next } from "@/i18n";
 
 export type CorrectAssignmentTimeInput = {
   /** PK der job_assignments-Zeile. */
@@ -32,49 +33,40 @@ export type CorrectAssignmentTimeInput = {
 // an Entwickler. Deshalb hier eine gezielte Übersetzung: der Admin soll
 // erfahren, WARUM eine Korrektur nicht möglich ist, statt eine technische
 // Meldung zu sehen.
-const RPC_MESSAGE_MAP: { match: string; message: string }[] = [
-  {
-    match: "Only admins can correct",
-    message: "Nur Admins dürfen Arbeitszeiten korrigieren.",
-  },
-  {
-    match: "Assignment not found or not accessible",
-    message:
-      "Diese Zuweisung wurde nicht gefunden oder gehört nicht zu deiner Firma.",
-  },
-  {
-    match: "Only single jobs can be corrected",
-    message:
-      "Daueraufträge (Regeln) können nicht korrigiert werden — nur einzelne Termine erscheinen im Stundenzettel.",
-  },
-  {
-    match: "Cannot correct an anonymised assignment",
-    message:
-      "Diese Zuweisung gehört zu einem gelöschten Mitarbeiterkonto und kann nicht mehr korrigiert werden.",
-  },
-  {
-    match: "Only completed jobs can be corrected",
-    message:
-      "Nur abgeschlossene Aufträge können korrigiert werden. Dieser Auftrag ist noch nicht abgeschlossen.",
-  },
-  {
-    match: "cannot be corrected",
-    message:
-      "Dieser Auftrag wurde vor der Umstellung auf individuelle Arbeitszeiten abgeschlossen und kann nicht korrigiert werden.",
-  },
-  {
-    match: "Both new_started_at and new_completed_at are required",
-    message: "Bitte Beginn UND Ende angeben.",
-  },
-  {
-    match: "new_completed_at must be after new_started_at",
-    message: "Das Ende muss nach dem Beginn liegen.",
-  },
-  {
-    match: "A reason is required",
-    message: "Bitte einen Grund für die Korrektur angeben.",
-  },
-];
+function rpcMessageMap(): { match: string; key: string }[] {
+  return [
+    { match: "Only admins can correct", key: "admin:timesheet.correction.rpcErrors.onlyAdmins" },
+    {
+      match: "Assignment not found or not accessible",
+      key: "admin:timesheet.correction.rpcErrors.assignmentNotFound",
+    },
+    {
+      match: "Only single jobs can be corrected",
+      key: "admin:timesheet.correction.rpcErrors.onlySingleJobs",
+    },
+    {
+      match: "Cannot correct an anonymised assignment",
+      key: "admin:timesheet.correction.rpcErrors.anonymisedAssignment",
+    },
+    {
+      match: "Only completed jobs can be corrected",
+      key: "admin:timesheet.correction.rpcErrors.onlyCompletedJobs",
+    },
+    {
+      match: "cannot be corrected",
+      key: "admin:timesheet.correction.rpcErrors.cannotBeCorrected",
+    },
+    {
+      match: "Both new_started_at and new_completed_at are required",
+      key: "admin:timesheet.correction.validation.bothRequired",
+    },
+    {
+      match: "new_completed_at must be after new_started_at",
+      key: "admin:timesheet.correction.validation.endAfterStart",
+    },
+    { match: "A reason is required", key: "admin:timesheet.correction.validation.reasonRequired" },
+  ];
+}
 
 function translateRpcError(err: unknown): string {
   const raw =
@@ -82,11 +74,14 @@ function translateRpcError(err: unknown): string {
       ? String((err as { message?: unknown }).message ?? "")
       : "";
 
-  const hit = RPC_MESSAGE_MAP.find((entry) => raw.includes(entry.match));
-  if (hit) return hit.message;
+  const hit = rpcMessageMap().find((entry) => raw.includes(entry.match));
+  if (hit) return i18next.t(hit.key);
 
   // Netzwerk-/Offline-/generische Postgres-Codes deckt der zentrale Helfer ab.
-  return toUserMessage(err, "Die Zeitkorrektur konnte nicht gespeichert werden.");
+  return toUserMessage(
+    err,
+    i18next.t("admin:timesheet.correction.saveFailedFallback"),
+  );
 }
 
 /**
@@ -113,19 +108,19 @@ export function validateCorrection(input: {
   const now = input.now ?? new Date();
 
   if (!newStartedAt || !newCompletedAt) {
-    return "Bitte Beginn UND Ende angeben.";
+    return i18next.t("admin:timesheet.correction.validation.bothRequired");
   }
   if (newCompletedAt.getTime() <= newStartedAt.getTime()) {
-    return "Das Ende muss nach dem Beginn liegen.";
+    return i18next.t("admin:timesheet.correction.validation.endAfterStart");
   }
   if (
     newStartedAt.getTime() > now.getTime() ||
     newCompletedAt.getTime() > now.getTime()
   ) {
-    return "Zeiten dürfen nicht in der Zukunft liegen.";
+    return i18next.t("admin:timesheet.correction.validation.noFuture");
   }
   if (!reason.trim()) {
-    return "Bitte einen Grund für die Korrektur angeben.";
+    return i18next.t("admin:timesheet.correction.validation.reasonRequired");
   }
   return null;
 }
@@ -146,10 +141,10 @@ export async function correctAssignmentTime(
   // die Stundenzettel-Zeile löschen), aber ein solcher Aufruf soll gar nicht
   // erst das Gerät verlassen.
   if (!input.newStartedAt || !input.newCompletedAt) {
-    throw new Error("Bitte Beginn UND Ende angeben.");
+    throw new Error(i18next.t("admin:timesheet.correction.validation.bothRequired"));
   }
   if (!reason) {
-    throw new Error("Bitte einen Grund für die Korrektur angeben.");
+    throw new Error(i18next.t("admin:timesheet.correction.validation.reasonRequired"));
   }
 
   const { error } = await supabase.rpc("admin_correct_assignment_time", {

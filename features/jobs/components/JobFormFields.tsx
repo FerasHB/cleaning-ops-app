@@ -13,9 +13,24 @@ import { EmployeeMultiSelector } from "@/features/jobs/components/EmployeeMultiS
 import { JobFormValues } from "@/features/jobs/hooks/useJobForm";
 import { EmployeeOption, JobType } from "@/types/job";
 import { WEEKDAYS, type WeekdayKey } from "@/utils/recurrence";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import React, { useMemo } from "react";
 import { StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { useTranslation } from "react-i18next";
 import type { AppTheme } from "@/constants/theme";
+
+// Lokaler, locale-abhängiger Wochentags-Kürzel-Helfer statt WEEKDAYS.short
+// (fest Deutsch) zu verändern — dieselbe Referenz-Montag-Technik wie in
+// components/ui/WeekdayDots.tsx / utils/recurringRuleFilter.ts.
+const WEEKDAY_ORDER: WeekdayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const REFERENCE_MONDAY = new Date(2024, 0, 1); // 1. Januar 2024 ist ein Montag
+
+function localizedWeekdayShort(key: WeekdayKey, localeTag: string): string {
+  const dayIndex = WEEKDAY_ORDER.indexOf(key);
+  const d = new Date(REFERENCE_MONDAY);
+  d.setDate(d.getDate() + dayIndex);
+  return new Intl.DateTimeFormat(localeTag, { weekday: "short" }).format(d);
+}
 
 type JobFormFieldsProps = {
   values: JobFormValues;
@@ -39,11 +54,6 @@ type JobFormFieldsProps = {
   showEmployeePicker?: boolean;
 };
 
-const JOB_TYPE_OPTIONS: { key: JobType; label: string }[] = [
-  { key: "single", label: "Einmalig" },
-  { key: "recurring", label: "Wiederkehrend" },
-];
-
 export function JobFormFields({
   values,
   errors,
@@ -53,6 +63,13 @@ export function JobFormFields({
 }: JobFormFieldsProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const localeTag = INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE";
+
+  const jobTypeOptions: { key: JobType; label: string }[] = [
+    { key: "single", label: t("admin:jobForm.fields.typeSingle") },
+    { key: "recurring", label: t("admin:jobForm.fields.typeRecurring") },
+  ];
 
   const toggleWeekday = (key: WeekdayKey) => {
     const selected = values.recurringDays.includes(key);
@@ -65,33 +82,33 @@ export function JobFormFields({
   return (
     <>
       <Input
-        label="Kunde *"
-        placeholder="z.B. Müller GmbH"
+        label={t("admin:jobForm.fields.customerLabel")}
+        placeholder={t("admin:jobForm.fields.customerPlaceholder")}
         value={values.customerName}
         onChangeText={(val) => onChangeField("customerName", val)}
         error={errors.customerName}
       />
 
       <Input
-        label="Adresse *"
-        placeholder="z. B. Bahnhofstraße 12, 58507 Lüdenscheid"
+        label={t("admin:jobForm.fields.addressLabel")}
+        placeholder={t("admin:jobForm.fields.addressPlaceholder")}
         value={values.location}
         onChangeText={(val) => onChangeField("location", val)}
         error={errors.location}
       />
 
       <Input
-        label="Service *"
-        placeholder="z.B. Wartung, Installation"
+        label={t("admin:jobForm.fields.serviceLabel")}
+        placeholder={t("admin:jobForm.fields.servicePlaceholder")}
         value={values.service}
         onChangeText={(val) => onChangeField("service", val)}
         error={errors.service}
       />
 
       {/* ── Auftragstyp (Segmented Control) ── */}
-      <Text style={styles.sectionLabel}>Auftragstyp *</Text>
+      <Text style={styles.sectionLabel}>{t("admin:jobForm.fields.typeLabel")}</Text>
       <View style={styles.segment}>
-        {JOB_TYPE_OPTIONS.map((opt) => {
+        {jobTypeOptions.map((opt) => {
           const active = values.jobType === opt.key;
           return (
             <TouchableOpacity
@@ -117,8 +134,8 @@ export function JobFormFields({
       {values.jobType === "single" ? (
         <View>
           <DateTimeField
-            label="Datum & Uhrzeit *"
-            placeholder="Datum und Uhrzeit auswählen..."
+            label={t("admin:jobForm.fields.singleDateTimeLabel")}
+            placeholder={t("admin:jobForm.fields.singleDateTimePlaceholder")}
             value={values.singleDateTime}
             onChange={(val) => onChangeField("singleDateTime", val)}
             error={errors.singleDateTime}
@@ -127,7 +144,9 @@ export function JobFormFields({
       ) : (
         /* ── Wiederkehrend: Wochentage + Uhrzeit + aktiv ── */
         <View style={styles.recurringBlock}>
-          <Text style={styles.sectionLabel}>Wochentage *</Text>
+          <Text style={styles.sectionLabel}>
+            {t("admin:jobForm.fields.weekdaysLabel")}
+          </Text>
           <View style={styles.weekdayRow}>
             {WEEKDAYS.map((w) => {
               const active = values.recurringDays.includes(w.key);
@@ -144,7 +163,7 @@ export function JobFormFields({
                       active && styles.weekdayTextActive,
                     ]}
                   >
-                    {w.short}
+                    {localizedWeekdayShort(w.key, localeTag)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -155,8 +174,8 @@ export function JobFormFields({
           ) : null}
 
           <DateTimeField
-            label="Uhrzeit *"
-            placeholder="Uhrzeit auswählen..."
+            label={t("admin:jobForm.fields.timeLabel")}
+            placeholder={t("admin:jobForm.fields.timePlaceholder")}
             mode="time"
             value={values.startTime}
             onChange={(val) => onChangeField("startTime", val)}
@@ -164,8 +183,8 @@ export function JobFormFields({
           />
 
           <DateTimeField
-            label="Startdatum *"
-            placeholder="Startdatum auswählen..."
+            label={t("admin:jobForm.fields.startDateLabel")}
+            placeholder={t("admin:jobForm.fields.startDatePlaceholder")}
             mode="date"
             value={values.recurrenceStartDate}
             onChange={(val) => onChangeField("recurrenceStartDate", val)}
@@ -173,8 +192,8 @@ export function JobFormFields({
           />
 
           <DateTimeField
-            label="Enddatum (optional)"
-            placeholder="Kein Enddatum"
+            label={t("admin:jobForm.fields.endDateLabel")}
+            placeholder={t("admin:jobForm.fields.endDatePlaceholder")}
             mode="date"
             value={values.recurrenceEndDate}
             onChange={(val) => onChangeField("recurrenceEndDate", val)}
@@ -183,9 +202,11 @@ export function JobFormFields({
 
           <View style={styles.activeRow}>
             <View style={styles.activeTextWrap}>
-              <Text style={styles.activeLabel}>Aktiv</Text>
+              <Text style={styles.activeLabel}>
+                {t("admin:jobForm.fields.activeLabel")}
+              </Text>
               <Text style={styles.activeHint}>
-                Inaktive Aufträge werden Mitarbeitern nicht angezeigt.
+                {t("admin:jobForm.fields.activeHint")}
               </Text>
             </View>
             {/* Thumb/Track explizit setzen: Android zeichnete den Thumb
@@ -210,8 +231,8 @@ export function JobFormFields({
       )}
 
       <Input
-        label="Geplante Dauer in Minuten (optional)"
-        placeholder="z. B. 90"
+        label={t("admin:jobForm.fields.durationLabel")}
+        placeholder={t("admin:jobForm.fields.durationPlaceholder")}
         keyboardType="number-pad"
         value={values.durationMinutes}
         onChangeText={(val) =>
@@ -221,7 +242,9 @@ export function JobFormFields({
 
       {showEmployeePicker ? (
         <>
-          <Text style={styles.sectionLabel}>Mitarbeiter (optional)</Text>
+          <Text style={styles.sectionLabel}>
+            {t("admin:jobForm.fields.employeesLabel")}
+          </Text>
           <EmployeeMultiSelector
             employees={employees}
             selectedEmployeeIds={values.employeeIds}
@@ -231,8 +254,8 @@ export function JobFormFields({
       ) : null}
 
       <Input
-        label="Notizen (optional)"
-        placeholder="Interne Hinweise für dein Team"
+        label={t("admin:jobForm.fields.notesLabel")}
+        placeholder={t("admin:jobForm.fields.notesPlaceholder")}
         value={values.notes}
         onChangeText={(val) => onChangeField("notes", val)}
         multiline

@@ -20,11 +20,28 @@
 import type { AppTheme } from "@/constants/theme";
 import { CalendarDayCell } from "@/features/jobs/components/CalendarDayCell";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import type { AbsenceType } from "@/types/absence";
 import { buildMonthMatrix, type DaySummary } from "@/utils/calendarMonth";
-import { WEEKDAYS } from "@/utils/recurrence";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
+
+// Wochentags-Kürzel (Mo–So) in der aktiven Sprache — über Intl statt der
+// deutschen WEEKDAYS-Liste aus utils/recurrence.ts, die zusätzlich von vielen
+// Admin-Formularen (Wiederkehrend-Auswahl) importiert wird und außerhalb
+// dieses Bugfixes unangetastet bleibt. Referenzwoche bewusst fix gewählt
+// (ein bekannter Montag) — nur die WOCHENTAG-Reihenfolge zählt, das
+// tatsächliche Datum ist irrelevant.
+const REFERENCE_MONDAY = new Date(2024, 0, 1); // 1. Januar 2024 ist ein Montag
+function buildWeekdayShortLabels(localeTag: string): string[] {
+  const formatter = new Intl.DateTimeFormat(localeTag, { weekday: "short" });
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(REFERENCE_MONDAY);
+    d.setDate(d.getDate() + i);
+    return formatter.format(d);
+  });
+}
 
 type Props = {
   /** Angezeigter Monat als "YYYY-MM". */
@@ -54,16 +71,29 @@ export function MonthGrid({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { i18n } = useTranslation();
 
   const weeks = useMemo(() => buildMonthMatrix(monthKey), [monthKey]);
+  const weekdayShortLabels = useMemo(
+    () =>
+      buildWeekdayShortLabels(
+        INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE",
+      ),
+    [i18n.language],
+  );
 
   return (
     <View style={styles.container}>
-      {/* ── Wochentags-Kopf Mo–So ── */}
+      {/* ── Wochentags-Kopf Mo–So (sprachabhängig, siehe buildWeekdayShortLabels) ── */}
       <View style={styles.weekHeader}>
-        {WEEKDAYS.map((w) => (
-          <Text key={w.key} style={styles.weekHeaderCell} maxFontSizeMultiplier={1.2}>
-            {w.short}
+        {weekdayShortLabels.map((label, index) => (
+          <Text
+            key={index}
+            style={styles.weekHeaderCell}
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.2}
+          >
+            {label}
           </Text>
         ))}
       </View>

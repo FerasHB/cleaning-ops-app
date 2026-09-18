@@ -6,16 +6,22 @@
 import type { Job } from "@/types/job";
 import { getAssigneeNames } from "@/utils/jobAssignees";
 import { getJobDisplayTime } from "@/utils/jobSchedule";
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
 // Die vier Zeitplan-Filter (executable Jobs: single + Occurrences, nie Parents).
 export type ScheduleFilter = "heute" | "bevorstehend" | "ueberfaellig" | "erledigt";
 
-export const SCHEDULE_FILTERS: { key: ScheduleFilter; label: string }[] = [
-  { key: "heute", label: "Heute" },
-  { key: "bevorstehend", label: "Bevorstehend" },
-  { key: "ueberfaellig", label: "Überfällig" },
-  { key: "erledigt", label: "Erledigt" },
-];
+/** Labels sprachabhängig (i18next) — als Funktion, damit ein Sprachwechsel
+ * beim nächsten Aufruf sofort aktuelle Werte liefert (kein Modul-Konstanten-
+ * Cache in der falschen Sprache). */
+export function getScheduleFilters(): { key: ScheduleFilter; label: string }[] {
+  return [
+    { key: "heute", label: i18next.t("jobs:dateGroups.today") },
+    { key: "bevorstehend", label: i18next.t("admin:schedule.filterUpcoming") },
+    { key: "ueberfaellig", label: i18next.t("jobs:smart.overdue") },
+    { key: "erledigt", label: i18next.t("common:status.completed") },
+  ];
+}
 
 /**
  * Freitext-Suche über einen Termin (rein, testbar).
@@ -93,9 +99,10 @@ export type ScheduleSection = {
 };
 
 // Menschlich lesbares Datums-Label ("Heute", "Morgen", "Gestern", sonst
-// "Mo, 24.07.2026"). `ref` = heutiger Kalendertag als "YYYY-MM-DD".
+// "Mo, 24.07.2026") in der aktiven App-Sprache. `ref` = heutiger Kalendertag
+// als "YYYY-MM-DD".
 export function formatSectionTitle(dateKey: string, refKey: string): string {
-  if (dateKey === refKey) return "Heute";
+  if (dateKey === refKey) return i18next.t("jobs:dateGroups.today");
 
   const [y, m, d] = dateKey.split("-").map((n) => parseInt(n, 10));
   if (!y || !m || !d) return dateKey;
@@ -104,10 +111,11 @@ export function formatSectionTitle(dateKey: string, refKey: string): string {
   const [ry, rm, rd] = refKey.split("-").map((n) => parseInt(n, 10));
   const ref = new Date(ry, rm - 1, rd);
   const diffDays = Math.round((date.getTime() - ref.getTime()) / 86400000);
-  if (diffDays === 1) return "Morgen";
-  if (diffDays === -1) return "Gestern";
+  if (diffDays === 1) return i18next.t("jobs:dateGroups.tomorrow");
+  if (diffDays === -1) return i18next.t("admin:schedule.yesterday");
 
-  return date.toLocaleDateString("de-DE", {
+  const localeTag = INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+  return date.toLocaleDateString(localeTag, {
     weekday: "short",
     day: "2-digit",
     month: "2-digit",
@@ -152,7 +160,7 @@ export function groupByDate(
   if (buckets.has(NO_DATE)) {
     sections.push({
       dateKey: NO_DATE,
-      title: "Ohne Datum",
+      title: i18next.t("admin:schedule.noDate"),
       data: buckets.get(NO_DATE) ?? [],
     });
   }

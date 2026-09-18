@@ -23,6 +23,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 
 const SEARCH_THRESHOLD = 8;
 
@@ -35,7 +36,7 @@ type Props = {
 };
 
 export function EmployeePickerField({
-  label = "Mitarbeiter *",
+  label,
   employees,
   value,
   onChange,
@@ -43,6 +44,8 @@ export function EmployeePickerField({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
+  const resolvedLabel = label ?? t("admin:absenceAdmin.employeePicker.defaultLabel");
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -64,24 +67,28 @@ export function EmployeePickerField({
 
   return (
     <View style={styles.wrapper}>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
+      {resolvedLabel ? <Text style={styles.label}>{resolvedLabel}</Text> : null}
 
       <TouchableOpacity
         style={[styles.field, error && styles.fieldError]}
         onPress={() => setOpen(true)}
         activeOpacity={0.8}
         accessibilityRole="button"
-        accessibilityLabel="Mitarbeiter auswählen"
+        accessibilityLabel={t("admin:absenceAdmin.employeePicker.selectA11y")}
       >
         <Text
           style={[styles.fieldText, !selected && styles.fieldPlaceholder]}
           numberOfLines={1}
         >
-          {selected ? selected.fullName : "Mitarbeiter auswählen…"}
+          {selected
+            ? selected.fullName
+            : t("admin:absenceAdmin.employeePicker.selectPlaceholder")}
         </Text>
         {selected?.isActive === false ? (
           <View style={styles.inactiveTag}>
-            <Text style={styles.inactiveTagText}>Inaktiv</Text>
+            <Text style={styles.inactiveTagText}>
+              {t("admin:recurringRules.badgeInactive")}
+            </Text>
           </View>
         ) : null}
         <Ionicons
@@ -101,7 +108,9 @@ export function EmployeePickerField({
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
           <Pressable style={styles.sheet} onPress={() => {}}>
             <View style={styles.grabber} />
-            <Text style={styles.sheetTitle}>Mitarbeiter</Text>
+            <Text style={styles.sheetTitle}>
+              {t("admin:employeeFilter.sheetTitle")}
+            </Text>
 
             {showSearch ? (
               <View style={styles.sheetSearch}>
@@ -113,7 +122,7 @@ export function EmployeePickerField({
                 <TextInput
                   value={query}
                   onChangeText={setQuery}
-                  placeholder="Mitarbeiter suchen …"
+                  placeholder={t("admin:employeeFilter.searchPlaceholder")}
                   placeholderTextColor={theme.colors.outline}
                   style={styles.sheetSearchInput}
                   autoCapitalize="none"
@@ -149,7 +158,9 @@ export function EmployeePickerField({
                     </Text>
                     {emp.isActive === false ? (
                       <View style={styles.inactiveTag}>
-                        <Text style={styles.inactiveTagText}>Inaktiv</Text>
+                        <Text style={styles.inactiveTagText}>
+                          {t("admin:recurringRules.badgeInactive")}
+                        </Text>
                       </View>
                     ) : null}
                     {isSelected ? (
@@ -164,7 +175,7 @@ export function EmployeePickerField({
               })}
 
               {filtered.length === 0 ? (
-                <Text style={styles.noMatch}>Keine Treffer.</Text>
+                <Text style={styles.noMatch}>{t("admin:employeeFilter.noMatches")}</Text>
               ) : null}
             </ScrollView>
           </Pressable>

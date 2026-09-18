@@ -12,8 +12,10 @@
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { AppTheme } from "@/constants/theme";
 import type { EmployeeOption } from "@/types/job";
+import { i18next } from "@/i18n";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Modal,
   Pressable,
@@ -31,17 +33,26 @@ export type EmployeeSelection = "all" | "unassigned" | string;
 // Ab dieser Anzahl bekommt das Sheet ein eigenes Suchfeld.
 const SEARCH_THRESHOLD = 8;
 
-export const ALL_LABEL = "Alle Mitarbeiter";
-export const UNASSIGNED_LABEL = "Nicht zugewiesen";
+/** Lesbares Label der aktuellen Auswahl (für Chip/Accessibility). Sprach-
+ * abhängig über i18next — als Funktionen statt Modul-Konstanten, damit ein
+ * Sprachwechsel sofort aktuelle Werte liefert. */
+export function getAllLabel(): string {
+  return i18next.t("admin:employeeFilter.allLabel");
+}
+export function getUnassignedLabel(): string {
+  return i18next.t("common:states.unassigned");
+}
 
-/** Lesbares Label der aktuellen Auswahl (für Chip/Accessibility). */
 export function employeeSelectionLabel(
   selection: EmployeeSelection,
   employees: EmployeeOption[],
 ): string {
-  if (selection === "all") return ALL_LABEL;
-  if (selection === "unassigned") return UNASSIGNED_LABEL;
-  return employees.find((e) => e.id === selection)?.fullName ?? "Mitarbeiter";
+  if (selection === "all") return getAllLabel();
+  if (selection === "unassigned") return getUnassignedLabel();
+  return (
+    employees.find((e) => e.id === selection)?.fullName ??
+    i18next.t("profile:roles.employee")
+  );
 }
 
 type Props = {
@@ -53,6 +64,7 @@ type Props = {
 export function EmployeeFilterControl({ value, onChange, employees }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -81,9 +93,9 @@ export function EmployeeFilterControl({ value, onChange, employees }: Props) {
         onPress={() => setOpen(true)}
         activeOpacity={0.8}
         accessibilityRole="button"
-        accessibilityLabel="Mitarbeiter filtern"
+        accessibilityLabel={t("admin:employeeFilter.filterButtonA11y")}
         accessibilityValue={{ text: currentLabel }}
-        accessibilityHint="Öffnet die Mitarbeiter-Auswahl für den Zeitplan"
+        accessibilityHint={t("admin:employeeFilter.filterButtonHint")}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Ionicons
@@ -109,7 +121,7 @@ export function EmployeeFilterControl({ value, onChange, employees }: Props) {
           {/* Inneres Pressable fängt Taps, damit das Sheet nicht schließt */}
           <Pressable style={styles.sheet} onPress={() => {}}>
             <View style={styles.grabber} />
-            <Text style={styles.sheetTitle}>Mitarbeiter</Text>
+            <Text style={styles.sheetTitle}>{t("admin:employeeFilter.sheetTitle")}</Text>
 
             {showSearch ? (
               <View style={styles.sheetSearch}>
@@ -121,7 +133,7 @@ export function EmployeeFilterControl({ value, onChange, employees }: Props) {
                 <TextInput
                   value={query}
                   onChangeText={setQuery}
-                  placeholder="Mitarbeiter suchen …"
+                  placeholder={t("admin:employeeFilter.searchPlaceholder")}
                   placeholderTextColor={theme.colors.outline}
                   style={styles.sheetSearchInput}
                   autoCapitalize="none"
@@ -131,7 +143,7 @@ export function EmployeeFilterControl({ value, onChange, employees }: Props) {
                   <TouchableOpacity
                     onPress={() => setQuery("")}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityLabel="Mitarbeiter-Suche löschen"
+                    accessibilityLabel={t("admin:employeeFilter.clearSearchA11y")}
                   >
                     <Ionicons
                       name="close-circle"
@@ -149,14 +161,14 @@ export function EmployeeFilterControl({ value, onChange, employees }: Props) {
               showsVerticalScrollIndicator={false}
             >
               <Option
-                label={ALL_LABEL}
+                label={getAllLabel()}
                 selected={value === "all"}
                 onPress={() => select("all")}
                 styles={styles}
                 theme={theme}
               />
               <Option
-                label={UNASSIGNED_LABEL}
+                label={getUnassignedLabel()}
                 selected={value === "unassigned"}
                 onPress={() => select("unassigned")}
                 styles={styles}
@@ -179,7 +191,7 @@ export function EmployeeFilterControl({ value, onChange, employees }: Props) {
               ))}
 
               {showSearch && filteredEmployees.length === 0 ? (
-                <Text style={styles.noMatch}>Keine Treffer.</Text>
+                <Text style={styles.noMatch}>{t("admin:employeeFilter.noMatches")}</Text>
               ) : null}
             </ScrollView>
           </Pressable>
@@ -248,7 +260,7 @@ function createStyles(theme: AppTheme) {
     activeDot: {
       position: "absolute",
       top: 6,
-      right: 6,
+      end: 6,
       width: 8,
       height: 8,
       borderRadius: 4,

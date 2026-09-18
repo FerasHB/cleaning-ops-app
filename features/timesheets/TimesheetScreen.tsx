@@ -31,9 +31,12 @@ import {
 import { TimesheetAbsenceSection } from "@/features/timesheets/components/TimesheetAbsenceSection";
 import { useTimesheet } from "@/features/timesheets/hooks/useTimesheet";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import type { TimesheetGap } from "@/types/timesheet";
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   ScrollView,
@@ -47,7 +50,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function TimesheetScreen() {
   const theme = useAppTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const isRTL = useIsRTL();
+  const styles = useMemo(() => createStyles(theme, isRTL), [theme, isRTL]);
+  const { t } = useTranslation();
 
   const { role, profile } = useAuth();
   const isAdmin = role === "admin";
@@ -56,7 +61,7 @@ export default function TimesheetScreen() {
   const selfEmployee = useMemo(
     () =>
       !isAdmin && profile?.id
-        ? { id: profile.id, fullName: profile.full_name?.trim() || "Ich" }
+        ? { id: profile.id, fullName: profile.full_name?.trim() || t("timesheets:selfNameFallback") }
         : null,
     [isAdmin, profile?.id, profile?.full_name],
   );
@@ -74,6 +79,7 @@ export default function TimesheetScreen() {
     error,
     exporting,
     exportError,
+    canExportPdf,
     exportPdf,
     reload,
   } = useTimesheet(selfEmployee);
@@ -108,7 +114,7 @@ export default function TimesheetScreen() {
         backgroundColor={theme.colors.background}
       />
       <AppHeader
-        title={isAdmin ? "Stundenzettel" : "Meine Arbeitszeit"}
+        title={isAdmin ? t("timesheets:titleAdmin") : t("timesheets:titleMine")}
         showBack
       />
 
@@ -122,14 +128,14 @@ export default function TimesheetScreen() {
       {isAdmin ? (
         <View style={styles.section}>
           <SectionHeader
-            title="Mitarbeiter"
-            subtitle="Für wen soll der Nachweis erstellt werden?"
+            title={t("timesheets:employeeSection.title")}
+            subtitle={t("timesheets:employeeSection.subtitle")}
           />
           {employees.length === 0 ? (
             <Card>
               <EmptyState
-                title="Keine Mitarbeiter"
-                message="Lege zuerst Mitarbeiter an, um einen Nachweis zu erstellen."
+                title={t("timesheets:employeeSection.emptyTitle")}
+                message={t("timesheets:employeeSection.emptyMessage")}
                 icon="people-outline"
                 compact
               />
@@ -150,7 +156,7 @@ export default function TimesheetScreen() {
                         {emp.fullName}
                       </Text>
                       {emp.isActive === false && (
-                        <Text style={styles.empInactive}>Inaktiv</Text>
+                        <Text style={styles.empInactive}>{t("timesheets:employeeSection.inactive")}</Text>
                       )}
                     </View>
                     <Ionicons
@@ -170,7 +176,7 @@ export default function TimesheetScreen() {
 
       {/* ── Monat wählen ── */}
       <View style={styles.section}>
-        <SectionHeader title="Monat" subtitle="Abrechnungszeitraum" />
+        <SectionHeader title={t("timesheets:monthSection.title")} subtitle={t("timesheets:monthSection.subtitle")} />
         <Card>
           <View style={styles.monthRow}>
             <TouchableOpacity
@@ -180,7 +186,7 @@ export default function TimesheetScreen() {
               activeOpacity={0.7}
             >
               <Ionicons
-                name="chevron-back"
+                name={isRTL ? "chevron-forward" : "chevron-back"}
                 size={22}
                 color={theme.colors.onSurface}
               />
@@ -196,7 +202,7 @@ export default function TimesheetScreen() {
               activeOpacity={0.7}
             >
               <Ionicons
-                name="chevron-forward"
+                name={isRTL ? "chevron-back" : "chevron-forward"}
                 size={22}
                 color={
                   isCurrentMonth
@@ -216,8 +222,8 @@ export default function TimesheetScreen() {
       {isAdmin && gaps.length > 0 ? (
         <View style={styles.section}>
           <SectionHeader
-            title="Zeitkorrekturen erforderlich"
-            subtitle="Diese Aufträge zählen noch nicht zur Arbeitszeit"
+            title={t("admin:timesheet.gapsSectionTitle")}
+            subtitle={t("admin:timesheet.gapsSectionSubtitle")}
           />
           <Card padding={0}>
             {gaps.map((gap, idx) => (
@@ -248,7 +254,9 @@ export default function TimesheetScreen() {
                   onPress={() => openCorrection(gap)}
                   activeOpacity={0.75}
                 >
-                  <Text style={styles.gapButtonText}>Zeit korrigieren</Text>
+                  <Text style={styles.gapButtonText}>
+                    {t("admin:timesheet.correctTimeButton")}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -268,15 +276,15 @@ export default function TimesheetScreen() {
       {/* ── Vorschau ── */}
       <View style={styles.section}>
         <SectionHeader
-          title={isAdmin ? "Vorschau" : "Deine Zeiten"}
-          subtitle="Abgeschlossene Aufträge im Zeitraum"
+          title={isAdmin ? t("timesheets:previewSection.titleAdmin") : t("timesheets:previewSection.titleMine")}
+          subtitle={t("timesheets:previewSection.subtitle")}
         />
 
         {!selectedEmployeeId ? (
           <Card>
             <EmptyState
-              title="Mitarbeiter wählen"
-              message="Bitte zuerst einen Mitarbeiter auswählen."
+              title={t("timesheets:previewSection.selectEmployeeTitle")}
+              message={t("timesheets:previewSection.selectEmployeeMessage")}
               icon="person-outline"
             />
           </Card>
@@ -284,7 +292,7 @@ export default function TimesheetScreen() {
           <Card>
             <View style={styles.loadingBox}>
               <ActivityIndicator color={theme.colors.primary} />
-              <Text style={styles.muted}>Lade Stundenzettel…</Text>
+              <Text style={styles.muted}>{t("timesheets:previewSection.loading")}</Text>
             </View>
           </Card>
         ) : error ? (
@@ -292,11 +300,11 @@ export default function TimesheetScreen() {
         ) : !hasEntries ? (
           <Card>
             <EmptyState
-              title="Keine Einträge"
+              title={t("timesheets:previewSection.emptyTitle")}
               message={
                 isAdmin
-                  ? "Keine abgeschlossenen Jobs in diesem Zeitraum"
-                  : "In diesem Monat hast du noch keinen Auftrag abgeschlossen."
+                  ? t("timesheets:previewSection.emptyMessageAdmin")
+                  : t("timesheets:previewSection.emptyMessageMine")
               }
               icon="calendar-clear-outline"
             />
@@ -306,16 +314,16 @@ export default function TimesheetScreen() {
             {/* Tabellenkopf */}
             <View style={[styles.tableRow, styles.tableHead]}>
               <Text style={[styles.cell, styles.cellDay, styles.headText]}>
-                Tag
+                {t("timesheets:table.day")}
               </Text>
               <Text style={[styles.cell, styles.cellTime, styles.headText]}>
-                Beginn
+                {t("timesheets:table.begin")}
               </Text>
               <Text style={[styles.cell, styles.cellTime, styles.headText]}>
-                Ende
+                {t("timesheets:table.end")}
               </Text>
               <Text style={[styles.cell, styles.cellDur, styles.headText]}>
-                Dauer
+                {t("timesheets:table.duration")}
               </Text>
             </View>
 
@@ -348,7 +356,7 @@ export default function TimesheetScreen() {
             {/* Summenzeile */}
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>
-                Summe · {data!.jobCount} Job{data!.jobCount === 1 ? "" : "s"}
+                {t("timesheets:summary", { count: data!.jobCount })}
               </Text>
               <Text style={styles.summaryValue}>{data!.totalLabel} h</Text>
             </View>
@@ -360,11 +368,11 @@ export default function TimesheetScreen() {
 
       {/* ── Export ── */}
       <Button
-        label="PDF exportieren"
+        label={t("timesheets:exportButton")}
         icon="document-text-outline"
         onPress={exportPdf}
         loading={exporting}
-        disabled={!hasEntries || loading}
+        disabled={!hasEntries || loading || !canExportPdf}
         style={styles.exportBtn}
       />
 
@@ -382,15 +390,19 @@ export default function TimesheetScreen() {
 }
 
 // "YYYY-MM-DD" → "Mo 03.06." für die Vorschau (ohne Zeitzonen-Drift).
+// Wochentags-Kürzel sprachabhängig (i18next.language statt fest "de-DE") —
+// das Zahlenformat (TT.MM.) selbst bleibt unverändert (Datumsformat-Phase,
+// siehe i18n-Audit).
 function formatDayShort(isoDate: string): string {
   const [y, m, d] = isoDate.split("-").map((n) => parseInt(n, 10));
   if (!y || !m || !d) return isoDate;
   const date = new Date(y, m - 1, d);
-  const weekday = date.toLocaleDateString("de-DE", { weekday: "short" });
+  const localeTag = INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+  const weekday = date.toLocaleDateString(localeTag, { weekday: "short" });
   return `${weekday} ${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.`;
 }
 
-function createStyles(theme: AppTheme) {
+function createStyles(theme: AppTheme, isRTL: boolean) {
   return StyleSheet.create({
     safe: {
       flex: 1,
@@ -496,7 +508,9 @@ function createStyles(theme: AppTheme) {
     },
     cellDur: {
       flex: 1,
-      textAlign: "right",
+      // Letzte Spalte der Zeile — Text bleibt am ZEILENENDE ausgerichtet
+      // (rechts in LTR, links in RTL), nicht physisch fix rechts.
+      textAlign: isRTL ? "left" : "right",
     },
     headText: {
       fontSize: theme.typography.size.xs,

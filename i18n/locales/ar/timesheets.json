@@ -1,0 +1,69 @@
+{
+  "titleAdmin": "سجل الدوام",
+  "titleMine": "ساعات عملي",
+  "selfNameFallback": "أنا",
+  "employeeSection": {
+    "title": "الموظف",
+    "subtitle": "لمن يتم إعداد هذا السجل؟",
+    "emptyTitle": "لا يوجد موظفون",
+    "emptyMessage": "أضف موظفين أولاً لإنشاء سجل دوام.",
+    "inactive": "غير نشط"
+  },
+  "monthSection": {
+    "title": "الشهر",
+    "subtitle": "فترة الفوترة"
+  },
+  "previewSection": {
+    "titleAdmin": "معاينة",
+    "titleMine": "ساعاتك",
+    "subtitle": "الأعمال المكتملة خلال هذه الفترة",
+    "selectEmployeeTitle": "اختيار موظف",
+    "selectEmployeeMessage": "يرجى اختيار موظف أولاً.",
+    "loading": "جارٍ تحميل سجل الدوام…",
+    "emptyTitle": "لا توجد سجلات",
+    "emptyMessageAdmin": "لا توجد أعمال مكتملة خلال هذه الفترة",
+    "emptyMessageMine": "لم تُكمل أي عمل هذا الشهر بعد."
+  },
+  "table": {
+    "day": "اليوم",
+    "begin": "البداية",
+    "end": "النهاية",
+    "duration": "المدة"
+  },
+  "summary_zero": "الإجمالي · لا مهام",
+  "summary_one": "الإجمالي · مهمة واحدة",
+  "summary_two": "الإجمالي · مهمتان",
+  "summary_few": "الإجمالي · {{count}} مهام",
+  "summary_many": "الإجمالي · {{count}} مهمة",
+  "summary_other": "الإجمالي · {{count}} مهمة",
+  "exportButton": "تصدير PDF",
+  "exportFailed": "تعذر تصدير ملف PDF.",
+  "exportBlockedLoading": "لا تزال بيانات الشركة قيد التحميل. يرجى إعادة محاولة تصدير PDF بعد قليل.",
+  "exportBlockedUnavailable": "تعذر تحميل اسم الشركة، لذا لا يمكن تصدير PDF.",
+  "loadFailed": "تعذر تحميل سجل الدوام.",
+  "fallbackEmployeeName": "موظف",
+  "shareTitle": "مشاركة سجل الدوام",
+  "shareNotSupported": "المشاركة غير مدعومة على هذا الجهاز.",
+  "absenceSection": {
+    "noticesTitle": "ملاحظات",
+    "noticesSubtitle": "لا يتطلب أي إجراء، للعلم فقط",
+    "noticeTextVacation": "عمل رغم الإجازة في {{date}} ({{type}})",
+    "noticeTextAbsence": "عمل رغم غياب مُبلَّغ عنه في {{date}} ({{type}})",
+    "absencesTitle": "الغيابات",
+    "absencesSubtitle": "الإجازة والمرض خلال الفترة المحددة",
+    "typeSickness": "مريض",
+    "noPlannedWork": "لا توجد مهام مخطَّطة",
+    "plannedWorkDays_zero": "لا أيام عمل مخطَّطة · وقت المهام المخطَّط {{duration}} س",
+    "plannedWorkDays_one": "يوم عمل واحد مخطَّط · وقت المهام المخطَّط {{duration}} س",
+    "plannedWorkDays_two": "يوما عمل مخطَّطان · وقت المهام المخطَّط {{duration}} س",
+    "plannedWorkDays_few": "{{count}} أيام عمل مخطَّطة · وقت المهام المخطَّط {{duration}} س",
+    "plannedWorkDays_many": "{{count}} يوم عمل مخطَّط · وقت المهام المخطَّط {{duration}} س",
+    "plannedWorkDays_other": "{{count}} يوم عمل مخطَّط · وقت المهام المخطَّط {{duration}} س",
+    "calendarDays_zero": "لا أيام تقويمية",
+    "calendarDays_one": "يوم تقويمي واحد",
+    "calendarDays_two": "يومان تقويميان",
+    "calendarDays_few": "{{count}} أيام تقويمية",
+    "calendarDays_many": "{{count}} يومًا تقويميًا",
+    "calendarDays_other": "{{count}} يوم تقويمي"
+  }
+}

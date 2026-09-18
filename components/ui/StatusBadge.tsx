@@ -3,14 +3,15 @@
 // Job-Status-Badge mit farbigem Dot-Indikator.
 // Unterstützt alle drei Job-Status (open, in_progress, completed).
 //
-// Beschriftung UND Farben kommen aus `utils/jobStatus.ts` — der einzigen
-// Quelle für Job-Status-Darstellung (siehe dortigen Kopfkommentar).
+// Farben kommen aus `utils/jobStatus.ts`, Beschriftung (übersetzt) aus
+// `hooks/useJobStatusLabels.ts` — der einzigen Quelle für Job-Status-
+// Darstellung (siehe dortige Kopfkommentare).
 // Die frühere `labels`-Prop (custom Beschriftungen) ist entfallen: sie war der
 // Weg, über den die Arbeitszeit-Karte „Abgeschlossen" statt „Erledigt" zeigte.
-// Wer den Wortlaut ändern will, ändert ihn in JOB_STATUS_LABELS — für alle.
 // ─────────────────────────────────────────────────────────────────
 
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { getJobStatusMeta, type JobStatusMeta } from "@/utils/jobStatus";
@@ -24,9 +25,10 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status }: StatusBadgeProps) {
   const theme = useAppTheme();
+  const labels = useJobStatusLabels();
   const meta = useMemo(
-    () => getJobStatusMeta(status, theme.colors),
-    [status, theme.colors],
+    () => getJobStatusMeta(status, theme.colors, labels[status]),
+    [status, theme.colors, labels],
   );
   const styles = useMemo(() => createStyles(meta), [meta]);
 

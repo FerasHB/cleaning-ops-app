@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import type { Company, CompanyContactInput } from "@/types/company";
 import { normalizeEmail } from "@/utils/email";
 import { normalizePhone } from "@/utils/phone";
+import { i18next } from "@/i18n";
 
 type CompanyRow = {
   id: string;
@@ -72,7 +73,7 @@ export async function updateOwnCompany(
 ): Promise<Company> {
   const name = input.name.trim();
   if (!name) {
-    throw new Error("Firmenname ist erforderlich.");
+    throw new Error(i18next.t("admin:companySettings.nameRequiredError"));
   }
 
   const rawEmail = input.contactEmail.trim();
@@ -87,7 +88,7 @@ export async function updateOwnCompany(
   if (rawPhone) {
     phone = normalizePhone(rawPhone);
     if (!phone) {
-      throw new Error("Bitte gib eine gültige Telefonnummer ein (z. B. 0170 1234567).");
+      throw new Error(i18next.t("admin:companySettings.phoneInvalidError"));
     }
   }
 

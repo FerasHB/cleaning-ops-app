@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
@@ -53,6 +54,7 @@ type JobPhotosProps = {
 export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const { photos, loading, uploading, error, offline, upload } = useJobPhotos(
     jobId,
@@ -98,12 +100,12 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
     }
 
     Alert.alert(
-      "Foto hinzufügen",
-      "Wähle eine Quelle:",
+      t("jobs:photos.sourceDialogTitle"),
+      t("jobs:photos.sourceDialogMessage"),
       [
-        { text: "Foto aufnehmen", onPress: pickFromCamera },
-        { text: "Aus Galerie wählen", onPress: pickFromLibrary },
-        { text: "Abbrechen", style: "cancel" },
+        { text: t("jobs:photos.sourceCameraOption"), onPress: pickFromCamera },
+        { text: t("jobs:photos.sourceLibraryOption"), onPress: pickFromLibrary },
+        { text: t("common:actions.cancel"), style: "cancel" },
       ],
       { cancelable: true },
     );
@@ -118,12 +120,10 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
       // Über alertDialog statt Alert.alert, damit die Meldung auch im Web
       // sichtbar ist. Zusätzlich als uploadError spiegeln — so bleibt der
       // Grund am Bildschirm stehen und verschwindet nicht mit dem Dialog.
-      setUploadError(
-        "Kamera-Zugriff verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
-      );
+      setUploadError(t("jobs:photos.cameraPermissionDeniedError"));
       await alertDialog(
-        "Kamera-Zugriff verweigert",
-        "Damit du ein Foto aufnehmen kannst, benötigt die App Zugriff auf die Kamera. Bitte erteile die Berechtigung in den Einstellungen.",
+        t("jobs:photos.cameraPermissionDeniedTitle"),
+        t("jobs:photos.cameraPermissionDeniedMessage"),
       );
       return;
     }
@@ -145,12 +145,10 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       // Siehe pickFromCamera: sichtbar im Web UND dauerhaft am Bildschirm.
-      setUploadError(
-        "Zugriff auf die Fotomediathek verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
-      );
+      setUploadError(t("jobs:photos.libraryPermissionDeniedError"));
       await alertDialog(
-        "Zugriff verweigert",
-        "Damit du Fotos hochladen kannst, benötigt die App Zugriff auf deine Fotomediathek. Bitte erteile die Berechtigung in den Einstellungen.",
+        t("jobs:photos.libraryPermissionDeniedTitle"),
+        t("jobs:photos.libraryPermissionDeniedMessage"),
       );
       return;
     }
@@ -180,17 +178,16 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
     // HEIC und andere nicht erlaubte Formate clientseitig abfangen,
     // bevor der Service angesprochen wird.
     if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-      setUploadError(
-        "Dieses Dateiformat wird nicht unterstützt. Bitte wähle ein Foto im Format JPEG, PNG oder WebP.",
-      );
+      setUploadError(t("jobs:photos.unsupportedFormatError"));
       return;
     }
 
     // Dateigröße prüfen (nur wenn bekannt, Fallback auf Server-Limit)
     if (fileSize > 0 && fileSize > MAX_FILE_SIZE_BYTES) {
       const actualMb = (fileSize / (1024 * 1024)).toFixed(1);
+      const maxMb = String(MAX_FILE_SIZE_BYTES / (1024 * 1024));
       setUploadError(
-        `Das Foto ist zu groß (${actualMb} MB). Maximal erlaubt sind 10 MB.`,
+        t("jobs:photos.fileTooLargeError", { actualMb, maxMb }),
       );
       return;
     }
@@ -208,7 +205,7 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
       // Fehler wurde im Hook bereits in error-State gesetzt;
       // hier als lokalen uploadError spiegeln für direktes Feedback.
       setUploadError(
-        toUserMessage(err, "Upload fehlgeschlagen."),
+        toUserMessage(err, t("jobs:photos.uploadFailedFallback")),
       );
     }
   }
@@ -224,7 +221,7 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
       <View style={styles.headerRow}>
         <View style={styles.labelRow}>
           <Ionicons name="images-outline" size={12} color={theme.colors.primary} />
-          <Text style={styles.label}>FOTOS</Text>
+          <Text style={styles.label}>{t("jobs:photos.label")}</Text>
           {photos.length > 0 && (
             <Text style={styles.count}>({photos.length})</Text>
           )}
@@ -232,7 +229,11 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
 
         {canUpload && (
           <Button
-            label={uploading ? "Wird hochgeladen …" : "Foto hinzufügen"}
+            label={
+              uploading
+                ? t("jobs:photos.uploadingButton")
+                : t("jobs:photos.addButton")
+            }
             icon={uploading ? undefined : "camera-outline"}
             variant="secondary"
             fullWidth={false}
@@ -253,7 +254,7 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
             color={theme.colors.onSurfaceVariant}
           />
           <Text style={styles.offlineText}>
-            Foto-Upload nur mit Internetverbindung möglich.
+            {t("jobs:photos.offlineHint")}
           </Text>
         </View>
       )}
@@ -276,7 +277,9 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
             size={16}
             color={theme.colors.statusCompleted}
           />
-          <Text style={styles.successText}>Foto erfolgreich hochgeladen.</Text>
+          <Text style={styles.successText}>
+            {t("jobs:photos.successMessage")}
+          </Text>
         </View>
       )}
 
@@ -289,8 +292,8 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
         // Offline ohne geladene Fotos: ruhige Meldung statt rotem Fehler.
         <Text style={styles.emptyText}>
           {offline
-            ? "Fotos sind offline nicht verfügbar."
-            : "Noch keine Fotos vorhanden."}
+            ? t("jobs:photos.emptyOffline")
+            : t("jobs:photos.emptyDefault")}
         </Text>
       ) : (
         <ScrollView
@@ -306,7 +309,7 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
                 <Pressable
                   onPress={() => setPreviewUrl(photo.signedUrl)}
                   accessibilityRole="imagebutton"
-                  accessibilityLabel="Foto groß anzeigen"
+                  accessibilityLabel={t("jobs:photos.previewA11y")}
                 >
                   <Image
                     source={{ uri: photo.signedUrl }}
@@ -343,7 +346,7 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
             style={styles.previewCloseButton}
             onPress={() => setPreviewUrl(null)}
             accessibilityRole="button"
-            accessibilityLabel="Vorschau schließen"
+            accessibilityLabel={t("jobs:photos.previewCloseA11y")}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Ionicons name="close" size={28} color="#fff" />
@@ -489,7 +492,7 @@ function createStyles(theme: AppTheme) {
     previewCloseButton: {
       position: "absolute",
       top: Platform.OS === "ios" ? 56 : 24,
-      right: 20,
+      end: 20,
       zIndex: 2,
       width: 44,
       height: 44,

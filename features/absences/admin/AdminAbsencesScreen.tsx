@@ -33,14 +33,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AbsentTodayRow } from "./components/AbsentTodayRow";
 import { AdminAbsenceRow } from "./components/AdminAbsenceRow";
 import { useAdminAbsences } from "./hooks/useAdminAbsences";
+import { useTranslation } from "react-i18next";
 
 type Segment = "absent" | "vacation" | "sickness";
-
-const SEGMENTS: { key: Segment; label: string }[] = [
-  { key: "absent", label: "Abwesend" },
-  { key: "vacation", label: "Urlaubsanträge" },
-  { key: "sickness", label: "Krankmeldungen" },
-];
 
 export default function AdminAbsencesScreen({
   initialSegment = "vacation",
@@ -49,6 +44,13 @@ export default function AdminAbsencesScreen({
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
+
+  const SEGMENTS: { key: Segment; label: string }[] = [
+    { key: "absent", label: t("admin:absenceAdmin.segmentAbsent") },
+    { key: "vacation", label: t("admin:absenceAdmin.segmentVacation") },
+    { key: "sickness", label: t("admin:absenceAdmin.segmentSickness") },
+  ];
 
   const [segment, setSegment] = useState<Segment>(initialSegment);
 
@@ -91,7 +93,7 @@ export default function AdminAbsencesScreen({
         barStyle={theme.isDark ? "light-content" : "dark-content"}
         backgroundColor={theme.colors.background}
       />
-      <AppHeader title="Abwesenheiten verwalten" showBack />
+      <AppHeader title={t("admin:absenceAdmin.headerTitle")} showBack />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -112,7 +114,7 @@ export default function AdminAbsencesScreen({
           <View style={styles.bannerWrap}>
             <ErrorBanner
               message={loadError}
-              actionLabel="Erneut versuchen"
+              actionLabel={t("common:actions.retry")}
               onAction={() => {
                 void refresh();
               }}
@@ -159,7 +161,9 @@ export default function AdminAbsencesScreen({
           activeOpacity={0.85}
           onPress={() => router.push("/admin/absences/create")}
         >
-          <Text style={styles.createBtnText}>Abwesenheit erfassen</Text>
+          <Text style={styles.createBtnText}>
+            {t("admin:employeeDetail.recordAbsenceButton")}
+          </Text>
         </TouchableOpacity>
 
         {list.length === 0 ? (
@@ -167,10 +171,10 @@ export default function AdminAbsencesScreen({
             <EmptyState
               title={
                 segment === "vacation"
-                  ? "Keine offenen Urlaubsanträge."
+                  ? t("admin:absenceAdmin.emptyVacation")
                   : segment === "sickness"
-                    ? "Keine Krankmeldungen."
-                    : "Heute sind keine Mitarbeiter abwesend."
+                    ? t("admin:absenceAdmin.emptySickness")
+                    : t("admin:absenceAdmin.emptyAbsentToday")
               }
               icon={
                 segment === "vacation"

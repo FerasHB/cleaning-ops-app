@@ -21,6 +21,7 @@ import {
   type RuleFilters,
 } from "@/utils/recurringRuleFilter";
 import { Ionicons } from "@expo/vector-icons";
+import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal,
@@ -31,6 +32,31 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useTranslation } from "react-i18next";
+
+// Lokaler, locale-abhängiger Wochentags-Kürzel-Helfer statt WEEKDAYS.short
+// (fest Deutsch) zu verändern — dieselbe Referenz-Montag-Technik wie in
+// components/ui/WeekdayDots.tsx / utils/recurringRuleFilter.ts.
+const WEEKDAY_ORDER: WeekdayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const REFERENCE_MONDAY = new Date(2024, 0, 1); // 1. Januar 2024 ist ein Montag
+
+function referenceDateFor(key: WeekdayKey): Date {
+  const d = new Date(REFERENCE_MONDAY);
+  d.setDate(d.getDate() + WEEKDAY_ORDER.indexOf(key));
+  return d;
+}
+
+function localizedWeekdayShort(key: WeekdayKey, localeTag: string): string {
+  return new Intl.DateTimeFormat(localeTag, { weekday: "short" }).format(
+    referenceDateFor(key),
+  );
+}
+
+function localizedWeekdayLong(key: WeekdayKey, localeTag: string): string {
+  return new Intl.DateTimeFormat(localeTag, { weekday: "long" }).format(
+    referenceDateFor(key),
+  );
+}
 
 type Props = {
   visible: boolean;
@@ -49,6 +75,8 @@ export function RuleFilterSheet({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t, i18n } = useTranslation();
+  const localeTag = INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE";
 
   const [draft, setDraft] = useState<RuleFilters>(filters);
 
@@ -87,30 +115,35 @@ export function RuleFilterSheet({
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.grabber} />
-          <Text style={styles.sheetTitle}>Filter</Text>
+          <Text style={styles.sheetTitle}>
+            {t("admin:jobForm.ruleFilterSheet.title")}
+          </Text>
 
           <ScrollView
             style={styles.scroll}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            <FilterSection title="Status" styles={styles}>
+            <FilterSection
+              title={t("admin:jobForm.ruleFilterSheet.statusSectionTitle")}
+              styles={styles}
+            >
               <RadioOption
-                label="Alle"
+                label={t("common:filters.all")}
                 selected={draft.status === "all"}
                 onPress={() => setDraft((p) => ({ ...p, status: "all" }))}
                 styles={styles}
                 theme={theme}
               />
               <RadioOption
-                label="Aktiv"
+                label={t("admin:recurringRules.badgeActive")}
                 selected={draft.status === "active"}
                 onPress={() => setDraft((p) => ({ ...p, status: "active" }))}
                 styles={styles}
                 theme={theme}
               />
               <RadioOption
-                label="Inaktiv"
+                label={t("admin:recurringRules.badgeInactive")}
                 selected={draft.status === "inactive"}
                 onPress={() => setDraft((p) => ({ ...p, status: "inactive" }))}
                 styles={styles}
@@ -118,16 +151,19 @@ export function RuleFilterSheet({
               />
             </FilterSection>
 
-            <FilterSection title="Mitarbeiter" styles={styles}>
+            <FilterSection
+              title={t("admin:jobForm.ruleFilterSheet.employeeSectionTitle")}
+              styles={styles}
+            >
               <RadioOption
-                label="Alle Mitarbeiter"
+                label={t("admin:employeeFilter.allLabel")}
                 selected={draft.employee === "all"}
                 onPress={() => setDraft((p) => ({ ...p, employee: "all" }))}
                 styles={styles}
                 theme={theme}
               />
               <RadioOption
-                label="Nicht zugewiesen"
+                label={t("common:states.unassigned")}
                 selected={draft.employee === "unassigned"}
                 onPress={() =>
                   setDraft((p) => ({ ...p, employee: "unassigned" }))
@@ -149,7 +185,11 @@ export function RuleFilterSheet({
               ))}
             </FilterSection>
 
-            <FilterSection title="Wochentage" styles={styles} last>
+            <FilterSection
+              title={t("admin:jobForm.ruleFilterSheet.weekdaySectionTitle")}
+              styles={styles}
+              last
+            >
               <View style={styles.weekdayRow}>
                 {WEEKDAYS.map((w) => {
                   const active = draft.weekdays.includes(w.key);
@@ -164,7 +204,7 @@ export function RuleFilterSheet({
                       activeOpacity={0.8}
                       accessibilityRole="checkbox"
                       accessibilityState={{ checked: active }}
-                      accessibilityLabel={w.label}
+                      accessibilityLabel={localizedWeekdayLong(w.key, localeTag)}
                     >
                       <Text
                         style={[
@@ -172,7 +212,7 @@ export function RuleFilterSheet({
                           active && styles.weekdayTextActive,
                         ]}
                       >
-                        {w.short}
+                        {localizedWeekdayShort(w.key, localeTag)}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -187,18 +227,22 @@ export function RuleFilterSheet({
               onPress={handleReset}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Alle Filter zurücksetzen"
+              accessibilityLabel={t("admin:jobForm.ruleFilterSheet.resetA11y")}
             >
-              <Text style={styles.footerBtnSecondaryText}>Zurücksetzen</Text>
+              <Text style={styles.footerBtnSecondaryText}>
+                {t("admin:jobForm.ruleFilterSheet.resetButton")}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.footerBtnPrimary}
               onPress={handleApply}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel="Filter anwenden"
+              accessibilityLabel={t("admin:jobForm.ruleFilterSheet.applyA11y")}
             >
-              <Text style={styles.footerBtnPrimaryText}>Anwenden</Text>
+              <Text style={styles.footerBtnPrimaryText}>
+                {t("admin:jobForm.ruleFilterSheet.applyButton")}
+              </Text>
             </TouchableOpacity>
           </View>
         </Pressable>

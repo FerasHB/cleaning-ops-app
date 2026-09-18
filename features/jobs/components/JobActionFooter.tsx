@@ -23,6 +23,7 @@ import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -35,6 +36,23 @@ type Props = {
   onComplete: () => void;
   showEdit: boolean;
   onEdit: () => void;
+  /**
+   * PHASE 16: eigene Teilnahme ist erfasst, der AUFTRAG läuft aber weiter,
+   * weil noch nicht alle Zugewiesenen abgeschlossen haben. Bewusst OHNE
+   * Namen: fremde Arbeitszeiten/Anwesenheiten sind Personaldaten und werden
+   * Mitarbeitenden nicht angezeigt (siehe WorkedTimeCard).
+   */
+  waitingOnOthers?: boolean;
+  /**
+   * PHASE 16: Grund, warum „Starten" derzeit nicht möglich ist (Termin liegt
+   * in der Zukunft/Vergangenheit). Wird nur angezeigt, wenn kein Start-Button
+   * erscheint — der Mitarbeiter soll nicht ratlos vor einer leeren Leiste
+   * stehen.
+   */
+  startBlockedReason?: string | null;
+  /** PHASE 16: Admin-Zwangsabschluss für hängende Aufträge anbieten. */
+  showForceComplete?: boolean;
+  onForceComplete?: () => void;
 };
 
 export function JobActionFooter({
@@ -46,14 +64,26 @@ export function JobActionFooter({
   onComplete,
   showEdit,
   onEdit,
+  waitingOnOthers = false,
+  startBlockedReason = null,
+  showForceComplete = false,
+  onForceComplete,
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   // Nichts anzuzeigen (z. B. Mitarbeiter ohne Zuweisung auf einem offenen
   // Auftrag) → keine leere Leiste am Bildschirmrand stehen lassen.
-  const hasContent = canStart || canComplete || isDone || showEdit;
+  const hasContent =
+    canStart ||
+    canComplete ||
+    isDone ||
+    showEdit ||
+    waitingOnOthers ||
+    showForceComplete ||
+    !!startBlockedReason;
   if (!hasContent) {
     return null;
   }
@@ -69,25 +99,98 @@ export function JobActionFooter({
     >
       {canStart ? (
         <Button
-          label="Job starten"
+          label={t("jobs:footer.startButton")}
           icon="play"
           loading={submitting}
           disabled={submitting}
           onPress={onStart}
           accessibilityRole="button"
-          accessibilityLabel="Job starten"
+          accessibilityLabel={t("jobs:footer.startButton")}
         />
       ) : null}
 
       {canComplete ? (
         <Button
-          label="Job abschließen"
+          label={t("jobs:activeJob.completeButton")}
           icon="checkmark"
           loading={submitting}
           disabled={submitting}
           onPress={onComplete}
           accessibilityRole="button"
-          accessibilityLabel="Job abschließen"
+          accessibilityLabel={t("jobs:activeJob.completeButton")}
+        />
+      ) : null}
+
+      {waitingOnOthers ? (
+        <View style={styles.pendingInfo}>
+          <Ionicons
+            name="checkmark-done"
+            size={20}
+            color={theme.colors.statusInProgress}
+          />
+          <Text style={styles.pendingInfoText}>
+            {t("jobs:activeJob.waitingOnOthers")}
+          </Text>
+        </View>
+      ) : null}
+
+      {startBlockedReason ? (
+        <View style={styles.blockedInfo}>
+          <Ionicons
+            name="time-outline"
+            size={20}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <Text style={styles.blockedInfoText}>{startBlockedReason}</Text>
+        </View>
+      ) : null}
+
+      {showForceComplete ? (
+        <Button
+          label={t("jobs:forceComplete.buttonLabel")}
+          variant="secondary"
+          icon="shield-checkmark-outline"
+          disabled={submitting}
+          onPress={() => onForceComplete?.()}
+          accessibilityRole="button"
+          accessibilityLabel={t("jobs:forceComplete.buttonLabel")}
+        />
+      ) : null}
+
+      {waitingOnOthers ? (
+        <View style={styles.pendingInfo}>
+          <Ionicons
+            name="checkmark-done"
+            size={20}
+            color={theme.colors.statusInProgress}
+          />
+          <Text style={styles.pendingInfoText}>
+            Deine Arbeitszeit ist erfasst. Der Auftrag bleibt in Arbeit, bis
+            alle Zugewiesenen abgeschlossen haben.
+          </Text>
+        </View>
+      ) : null}
+
+      {startBlockedReason ? (
+        <View style={styles.blockedInfo}>
+          <Ionicons
+            name="time-outline"
+            size={20}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <Text style={styles.blockedInfoText}>{startBlockedReason}</Text>
+        </View>
+      ) : null}
+
+      {showForceComplete ? (
+        <Button
+          label="Auftrag administrativ abschließen"
+          variant="secondary"
+          icon="shield-checkmark-outline"
+          disabled={submitting}
+          onPress={() => onForceComplete?.()}
+          accessibilityRole="button"
+          accessibilityLabel="Auftrag administrativ abschließen"
         />
       ) : null}
 
@@ -98,19 +201,19 @@ export function JobActionFooter({
             size={20}
             color={theme.colors.statusCompleted}
           />
-          <Text style={styles.doneInfoText}>Dieser Job ist abgeschlossen.</Text>
+          <Text style={styles.doneInfoText}>{t("jobs:footer.doneMessage")}</Text>
         </View>
       ) : null}
 
       {showEdit ? (
         <Button
-          label="Bearbeiten"
+          label={t("jobs:footer.editButton")}
           variant="secondary"
           icon="create-outline"
           disabled={submitting}
           onPress={onEdit}
           accessibilityRole="button"
-          accessibilityLabel="Job bearbeiten"
+          accessibilityLabel={t("jobs:footer.editButtonA11y")}
         />
       ) : null}
     </View>
@@ -139,6 +242,43 @@ function createStyles(theme: AppTheme) {
       borderRadius: theme.radius.md,
       paddingVertical: theme.spacing.md,
       minHeight: theme.spacing.tapTarget,
+    },
+    // „Mein Teil ist fertig, der Auftrag läuft weiter" — bewusst in der
+    // In-Arbeit-Farbe, nicht in Grün: der Auftrag ist NICHT erledigt.
+    pendingInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.statusInProgressBg,
+      borderWidth: 1,
+      borderColor: theme.colors.statusInProgressBorder,
+      borderRadius: theme.radius.md,
+      paddingVertical: theme.spacing.md,
+      paddingHorizontal: theme.spacing.md,
+      minHeight: theme.spacing.tapTarget,
+    },
+    pendingInfoText: {
+      flex: 1,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.statusInProgress,
+    },
+    blockedInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.surfaceContainer,
+      borderRadius: theme.radius.md,
+      paddingVertical: theme.spacing.md,
+      paddingHorizontal: theme.spacing.md,
+      minHeight: theme.spacing.tapTarget,
+    },
+    blockedInfoText: {
+      flex: 1,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
     },
     doneInfoText: {
       fontSize: theme.typography.size.sm,

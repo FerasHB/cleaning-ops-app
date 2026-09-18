@@ -1,5 +1,6 @@
 import type { Job, JobAssignee } from "@/types/job";
 import { isPausedRecurringOccurrence } from "@/utils/jobSchedule";
+import { i18next } from "@/i18n";
 
 /**
  * Zentrale Helfer für die Anzeige der Zuweisungsmenge eines Auftrags.
@@ -33,10 +34,14 @@ import { isPausedRecurringOccurrence } from "@/utils/jobSchedule";
  * abbildet, ist falsch. Fällt mit Phase 11.
  */
 
-export const UNASSIGNED_LABEL = "Nicht zugewiesen";
+export function getUnassignedLabel(): string {
+  return i18next.t("common:states.unassigned");
+}
 
 /** Kennzeichnung für Zuweisungen, deren Mitarbeiterkonto gelöscht wurde. */
-export const DELETED_SUFFIX = " (ehemalig)";
+export function getDeletedSuffix(): string {
+  return i18next.t("common:states.deletedSuffix");
+}
 
 /** Alle Zugewiesenen eines Jobs — nie undefined, auch bei Alt-Daten. */
 export function getAssignees(job: Pick<Job, "assignees">): JobAssignee[] {
@@ -46,7 +51,7 @@ export function getAssignees(job: Pick<Job, "assignees">): JobAssignee[] {
 /** Namen aller Zugewiesenen in stabiler Reihenfolge (Service sortiert bereits). */
 export function getAssigneeNames(job: Pick<Job, "assignees">): string[] {
   return getAssignees(job).map((a) =>
-    a.isDeleted ? `${a.fullName}${DELETED_SUFFIX}` : a.fullName,
+    a.isDeleted ? `${a.fullName}${getDeletedSuffix()}` : a.fullName,
   );
 }
 
@@ -151,6 +156,115 @@ export function canRunJobActions(
 }
 
 /**
+ * Darf dieser Nutzer JETZT "Start" antippen? Deckt BEIDE Zweige von
+ * start_own_job ab (Migration 20260917000000):
+ *   1. der echte Übergang — Auftrag ist noch 'open';
+ *   2. der NACHZÜGLER-Fall — Auftrag läuft bereits (Kollegin hat gestartet),
+ *      DIESER Nutzer hat seine EIGENE Teilnahme aber noch nicht begonnen.
+ *
+ * Der zweite Zweig ist seit Phase 16 nicht mehr folgenlos: ohne einen
+ * eigenen Start kann dieser Nutzer später NICHT abschließen
+ * (canCompleteOwnAssignment). Ohne dieses Praedikat bliebe der Start-Button
+ * für einen spaeter hinzugekommenen Mitarbeiter dauerhaft verborgen, sobald
+ * ein anderer zuerst gestartet hat — der Server würde seinen Start-Aufruf
+ * aber jederzeit annehmen.
+ *
+ * PRUEFT NICHT den Termin (siehe getStartBlockMessage/isJobStartDateAllowed
+ * in utils/jobSchedule.ts) — das bleibt ein separater Schritt, weil er eine
+ * anzeigbare Meldung braucht, kein reines Ja/Nein.
+ */
+export function canStartOwnAssignment(
+  job: Pick<
+    Job,
+    "employeeId" | "jobType" | "assignees" | "parentJobId" | "isActive" | "status"
+  >,
+  role: string | null | undefined,
+  employeeId: string | null | undefined,
+): boolean {
+  if (!canRunJobActions(job, role, employeeId)) return false;
+  if (job.status === "open") return true;
+  if (job.status !== "in_progress") return false;
+  return !getOwnAssignee(job, employeeId)?.employeeStartedAt;
+}
+
+/** Die EIGENE Zuweisungszeile dieses Nutzers — oder null. */
+export function getOwnAssignee(
+  job: Pick<Job, "assignees">,
+  employeeId: string | null | undefined,
+): JobAssignee | null {
+  if (!employeeId) return null;
+  return getAssignees(job).find((a) => a.employeeId === employeeId) ?? null;
+}
+
+/**
+ * Darf dieser Nutzer JETZT auf "Abschliessen" tippen? (Phase 16)
+ *
+ * Spiegelt das Server-Praedikat von complete_own_job (Migration
+ * 20260917000000) VOLLSTAENDIG, nicht nur den namensgebenden Teil:
+ *   1. zusaetzlich zu den Bedingungen von `canRunJobActions` muss die EIGENE
+ *      Zuweisungszeile bereits einen eigenen Start tragen — der Start eines
+ *      KOLLEGEN berechtigt ausdruecklich NICHT zum Abschluss (Ursache des
+ *      Vorfalls vom 2026-09-16);
+ *   2. der Auftrag muss noch 'in_progress' sein — die RPC lehnt sonst mit
+ *      "Job not in progress" ab (status='open') bzw. der Aufruf waere ein
+ *      wirkungsloser No-Op (status='completed', z. B. nach Admin-
+ *      Zwangsabschluss oder weil die eigene Teilnahme schon abgeschlossen
+ *      ist — Punkt 3);
+ *   3. die EIGENE Teilnahme darf noch NICHT abgeschlossen sein — sonst wäre
+ *      der Button für ein bereits erledigtes Stueck Arbeit sichtbar.
+ *
+ * Frueher pruefte nur JobDetailScreen (2) und (3) zusaetzlich inline; jeder
+ * andere Aufrufer (Quick-Actions in Uebersicht/Jobs/Kalender) haette sonst
+ * "Abschliessen" auch auf einem bereits vollstaendig erledigten Auftrag
+ * gezeigt. Jetzt EINMAL hier, fuer alle Aufrufer gleich.
+ *
+ * KEIN Legacy-Zweig: ohne echte job_assignments-Zeile gibt es kein
+ * employee_started_at, und die RPC lehnt dann zwingend ab. Ein Button waere
+ * dort garantiert wirkungslos.
+ */
+export function canCompleteOwnAssignment(
+  job: Pick<
+    Job,
+    "employeeId" | "jobType" | "assignees" | "parentJobId" | "isActive" | "status"
+  >,
+  role: string | null | undefined,
+  employeeId: string | null | undefined,
+): boolean {
+  if (!canRunJobActions(job, role, employeeId)) return false;
+  if (job.status !== "in_progress") return false;
+  const own = getOwnAssignee(job, employeeId);
+  return !!own?.employeeStartedAt && !own?.employeeCompletedAt;
+}
+
+/**
+ * Hat dieser Nutzer seine eigene Teilnahme bereits abgeschlossen? Grundlage
+ * fuer den Zustand „mein Teil ist fertig, der Auftrag laeuft noch" (Phase 16).
+ */
+export function hasCompletedOwnAssignment(
+  job: Pick<Job, "assignees">,
+  employeeId: string | null | undefined,
+): boolean {
+  return !!getOwnAssignee(job, employeeId)?.employeeCompletedAt;
+}
+
+/**
+ * IDs aller Zugewiesenen, die ihre Teilnahme bereits BEGONNEN haben und
+ * deshalb nicht mehr aus der Zuweisung entfernt werden koennen (Phase 16).
+ *
+ * Spiegelt die Ablehnung in set_job_assignments: eine Zeile mit
+ * employee_started_at IS NOT NULL laesst sich nicht entfernen, der Versuch
+ * lehnt den GESAMTEN Speichervorgang ab. Der Picker muss das vorher zeigen,
+ * sonst faellt der Admin in eine Ablehnung, die er nicht kommen sieht.
+ */
+export function getStartedAssigneeIds(
+  job: Pick<Job, "assignees">,
+): string[] {
+  return getAssignees(job)
+    .filter((a) => !!a.employeeStartedAt && !!a.employeeId)
+    .map((a) => a.employeeId as string);
+}
+
+/**
  * Baut aus den LEGACY-Feldern (`employeeId`/`employeeName`) eine sichere
  * Ein-Element-Zuweisungsliste.
  *
@@ -218,7 +332,7 @@ export function buildLegacyAssignees(
     {
       assignmentId: `legacy:${job.id}:${job.employeeId}`,
       employeeId: job.employeeId,
-      fullName: job.employeeName?.trim() || "Unbekannt",
+      fullName: job.employeeName?.trim() || i18next.t("common:states.unknown"),
       isDeleted: false,
       // HART null (Phase B1): dieser Zweig kennt die echte Zuweisungszeile
       // nicht. Die geteilte Job-Uhr hier einzusetzen würde einem Mitarbeiter
@@ -247,7 +361,7 @@ export function formatAssigneesShort(
   maxNames: number = 2,
 ): string {
   const names = getAssigneeNames(job);
-  if (names.length === 0) return UNASSIGNED_LABEL;
+  if (names.length === 0) return getUnassignedLabel();
   if (names.length <= maxNames) return names.join(", ");
   return `${names.slice(0, maxNames).join(", ")} +${names.length - maxNames}`;
 }
@@ -258,5 +372,5 @@ export function formatAssigneesShort(
  */
 export function formatAssigneesFull(job: Pick<Job, "assignees">): string {
   const names = getAssigneeNames(job);
-  return names.length === 0 ? UNASSIGNED_LABEL : names.join(", ");
+  return names.length === 0 ? getUnassignedLabel() : names.join(", ");
 }

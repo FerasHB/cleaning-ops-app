@@ -10,17 +10,27 @@
 // Attrappen sind entfernt; rein informative Werte (E-Mail, Sprache) stehen
 // jetzt als nicht tippbare Info-Zeilen ohne Chevron.
 
-import { Card, InitialsAvatar } from "@/components/ui";
+import { ActionMenuSheet, Card, InitialsAvatar } from "@/components/ui";
+import type { ActionMenuItem } from "@/components/ui";
 import { alertDialog, callPhone, confirmDialog } from "@/utils/dialogs";
 import { useAuth } from "@/context/AuthContext";
 import { useOwnCompany } from "@/features/company/hooks/useOwnCompany";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useIsRTL } from "@/hooks/useIsRTL";
 import { formatPhoneForDisplay } from "@/utils/phone";
 import type { AppTheme } from "@/constants/theme";
+import {
+  changeAppLanguage,
+  LANGUAGE_NAMES,
+  SUPPORTED_LOCALES,
+  type AppLocale,
+} from "@/i18n";
+import { updateOwnLocale } from "@/services/profile/updateOwnLocale";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ScrollView,
   StatusBar,
@@ -43,17 +53,57 @@ export default function ProfileScreen({
   showBack?: boolean;
 }) {
   const theme = useAppTheme();
+  const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { user, profile, role, signOut } = useAuth();
   const { company } = useOwnCompany();
+  const { t, i18n } = useTranslation();
+  const [languageSheetVisible, setLanguageSheetVisible] = useState(false);
 
-  const email = user?.email ?? "Keine E-Mail";
+  const activeLocale = (i18n.language as AppLocale) ?? "de";
+  const languageItems: ActionMenuItem[] = SUPPORTED_LOCALES.map((locale) => ({
+    key: locale,
+    label: LANGUAGE_NAMES[locale],
+    icon: locale === activeLocale ? "checkmark-circle" : "ellipse-outline",
+  }));
+
+  // Sprachwechsel: i18next + Persistenz laufen in changeAppLanguage()
+  // (i18n/index.ts). Ein geändertes natives RTL-Flag (aktuell nur bei
+  // Arabisch) wirkt erst nach einem vollständigen Neustart — siehe
+  // i18n/rtl.ts. Wir lösen den Neustart hier bewusst NICHT selbst aus
+  // (kein expo-updates in diesem Projekt, kein Risiko einer Neustart-
+  // Schleife), sondern zeigen nur einen klaren Hinweis.
+  //
+  // updateOwnLocale() synchronisiert die Sprache zusätzlich zum Server
+  // (profiles.locale) — ausschließlich relevant für Push-Benachrichtigungen
+  // (Phase E). Bewusst NACH dem lokalen Wechsel und in eigenem try/catch:
+  // ein Server-/Offline-Fehler darf den bereits vollzogenen lokalen
+  // Sprachwechsel nie rückgängig machen oder verzögern.
+  const handleSelectLanguage = async (key: string) => {
+    setLanguageSheetVisible(false);
+    const locale = key as AppLocale;
+    if (locale === activeLocale) return;
+
+    const { restartRequired } = await changeAppLanguage(locale);
+    if (restartRequired) {
+      await alertDialog(t("common:language.restartTitle"), t("common:language.restartMessage"));
+    }
+
+    try {
+      await updateOwnLocale(locale);
+    } catch {
+      // Best effort — die lokale UI-Sprache ist bereits gewechselt.
+    }
+  };
+
+  const email = user?.email ?? t("profile:fallback.noEmail");
   const fullName = profile?.full_name?.trim() || email;
   const phone = profile?.phone?.trim() || null;
   const isAdmin = role === "admin";
   const hasCompany = !!profile?.company_id;
-  const companyLabel = company?.name?.trim() || (hasCompany ? "Firma verbunden" : null);
+  const companyLabel =
+    company?.name?.trim() || (hasCompany ? t("profile:fallback.companyConnected") : null);
 
   // ── Logout mit Bestätigung
   // Läuft über confirmDialog/alertDialog statt direkt über Alert.alert:
@@ -62,9 +112,9 @@ export default function ProfileScreen({
   // Die signOut-Logik selbst ist unverändert — sie wurde nur nie erreicht.
   const handleLogout = async () => {
     const bestaetigt = await confirmDialog({
-      title: "Abmelden",
-      message: "Möchtest du dich wirklich abmelden?",
-      confirmLabel: "Abmelden",
+      title: t("profile:dialogs.logout"),
+      message: t("profile:dialogs.logoutMessage"),
+      confirmLabel: t("profile:dialogs.logout"),
       destructive: true,
     });
 
@@ -79,8 +129,11 @@ export default function ProfileScreen({
       // im Web nichts anzeigte — ein fehlgeschlagener Logout sah damit aus wie
       // gar keine Reaktion. Der Nutzer bleibt bewusst angemeldet, statt in
       // einen halb abgemeldeten Zustand zu geraten.
-      const grund = toFriendlyAuthErrorMessage(error, "Unbekannter Fehler.");
-      await alertDialog("Abmelden fehlgeschlagen", `${grund}\n\nDu bist weiterhin angemeldet.`);
+      const grund = toFriendlyAuthErrorMessage(error, t("common:errors.unknown"));
+      await alertDialog(
+        t("profile:dialogs.logoutFailedTitle"),
+        `${grund}\n\n${t("profile:dialogs.logoutFailedSuffix")}`,
+      );
       return;
     }
 
@@ -115,11 +168,11 @@ export default function ProfileScreen({
             }}
           >
             <Ionicons
-              name="chevron-back"
+              name={isRTL ? "chevron-forward" : "chevron-back"}
               size={18}
               color={theme.colors.onSurface}
             />
-            <Text style={styles.backButtonText}>Zurück</Text>
+            <Text style={styles.backButtonText}>{t("common:actions.back")}</Text>
           </TouchableOpacity>
         )}
 
@@ -138,7 +191,7 @@ export default function ProfileScreen({
               <View style={styles.roleBadge}>
                 <View style={styles.roleDot} />
                 <Text style={styles.roleText}>
-                  {isAdmin ? "Admin" : "Mitarbeiter"}
+                  {isAdmin ? t("profile:roles.admin") : t("profile:roles.employee")}
                 </Text>
               </View>
 
@@ -164,17 +217,17 @@ export default function ProfileScreen({
             Admin-Bereich dieses Screens verlinkt. Mitarbeitende kommen jetzt
             hier an ihre eigenen Zeiten (gleiche Berechnung, eigene Sicht). */}
         {!isAdmin && (
-          <SettingsSection title="Meine Arbeit" styles={styles} theme={theme}>
+          <SettingsSection title={t("profile:sections.myWork")} styles={styles} theme={theme}>
             <SettingsRow
               icon="time-outline"
-              label="Meine Arbeitszeit"
+              label={t("profile:rows.myWorkingHours")}
               onPress={() => router.push("/timesheets")}
               styles={styles}
               theme={theme}
             />
             <SettingsRow
               icon="calendar-outline"
-              label="Abwesenheiten"
+              label={t("profile:rows.absences")}
               onPress={() => router.push("/absences")}
               isLast
               styles={styles}
@@ -184,10 +237,10 @@ export default function ProfileScreen({
         )}
 
         {/* ── Account ── */}
-        <SettingsSection title="Account" styles={styles} theme={theme}>
+        <SettingsSection title={t("profile:sections.account")} styles={styles} theme={theme}>
           <SettingsRow
             icon="person-outline"
-            label="Profil bearbeiten"
+            label={t("profile:rows.editProfile")}
             value={fullName}
             onPress={() => router.push("/profile/edit")}
             styles={styles}
@@ -195,22 +248,22 @@ export default function ProfileScreen({
           />
           <SettingsRow
             icon="call-outline"
-            label="Telefon"
-            value={phone ? formatPhoneForDisplay(phone) : "Nicht hinterlegt"}
+            label={t("profile:rows.phone")}
+            value={phone ? formatPhoneForDisplay(phone) : t("common:states.notProvided")}
             onPress={phone ? () => void callPhone(phone, { label: fullName }) : undefined}
             styles={styles}
             theme={theme}
           />
           <SettingsRow
             icon="mail-outline"
-            label="E-Mail"
+            label={t("profile:rows.email")}
             value={email}
             styles={styles}
             theme={theme}
           />
           <SettingsRow
             icon="lock-closed-outline"
-            label="Passwort ändern"
+            label={t("profile:rows.changePassword")}
             onPress={() => router.push("/change-password")}
             isLast
             styles={styles}
@@ -219,11 +272,16 @@ export default function ProfileScreen({
         </SettingsSection>
 
         {/* ── App ── */}
-        <SettingsSection title="App" styles={styles} theme={theme}>
+        <SettingsSection
+          title={t("common:language.sectionTitle")}
+          styles={styles}
+          theme={theme}
+        >
           <SettingsRow
             icon="language-outline"
-            label="Sprache"
-            value="Deutsch"
+            label={t("common:language.label")}
+            value={LANGUAGE_NAMES[activeLocale]}
+            onPress={() => setLanguageSheetVisible(true)}
             styles={styles}
             theme={theme}
           />
@@ -231,12 +289,12 @@ export default function ProfileScreen({
               Attrappe — der Hinweis erschien dort nie. */}
           <SettingsRow
             icon="contrast-outline"
-            label="Erscheinungsbild"
-            value="Systemeinstellung"
+            label={t("profile:rows.appearance")}
+            value={t("profile:rows.appearanceValue")}
             onPress={() => {
               void alertDialog(
-                "Erscheinungsbild",
-                "Die App folgt automatisch der Hell-/Dunkel-Einstellung deines Geräts.",
+                t("profile:dialogs.appearanceTitle"),
+                t("profile:dialogs.appearanceMessage"),
               );
             }}
             isLast
@@ -248,13 +306,13 @@ export default function ProfileScreen({
         {/* ── Administration (nur Admin) ── */}
         {isAdmin && (
           <SettingsSection
-            title="Administration"
+            title={t("admin:profile.sectionTitle")}
             styles={styles}
             theme={theme}
           >
             <SettingsRow
               icon="business-outline"
-              label="Firmendaten"
+              label={t("admin:companySettings.headerTitle")}
               value={company?.name ?? undefined}
               onPress={() => router.push("/company-settings")}
               styles={styles}
@@ -262,21 +320,21 @@ export default function ProfileScreen({
             />
             <SettingsRow
               icon="people-outline"
-              label="Team verwalten"
+              label={t("admin:profile.manageTeamRow")}
               onPress={() => router.push("/(admin-tabs)/employees")}
               styles={styles}
               theme={theme}
             />
             <SettingsRow
               icon="calendar-outline"
-              label="Abwesenheiten verwalten"
+              label={t("admin:absenceAdmin.headerTitle")}
               onPress={() => router.push("/admin/absences")}
               styles={styles}
               theme={theme}
             />
             <SettingsRow
               icon="document-text-outline"
-              label="Stundenzettel"
+              label={t("timesheets:titleAdmin")}
               onPress={() => router.push("/timesheets")}
               isLast
               styles={styles}
@@ -286,18 +344,18 @@ export default function ProfileScreen({
         )}
 
         {/* ── Konto & App-Info ── */}
-        <SettingsSection title="Sonstiges" styles={styles} theme={theme}>
+        <SettingsSection title={t("profile:sections.other")} styles={styles} theme={theme}>
           <SettingsRow
             icon="trash-outline"
-            label="Konto löschen"
+            label={t("profile:rows.deleteAccount")}
             onPress={() => router.push("/delete-account")}
             styles={styles}
             theme={theme}
           />
           <SettingsRow
             icon="information-circle-outline"
-            label="App-Version"
-            value={`Version ${APP_VERSION}`}
+            label={t("profile:rows.appVersion")}
+            value={t("profile:rows.appVersionValue", { version: APP_VERSION })}
             isLast
             styles={styles}
             theme={theme}
@@ -315,9 +373,17 @@ export default function ProfileScreen({
             size={18}
             color={theme.colors.error}
           />
-          <Text style={styles.logoutButtonText}>Abmelden</Text>
+          <Text style={styles.logoutButtonText}>{t("profile:dialogs.logout")}</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <ActionMenuSheet
+        visible={languageSheetVisible}
+        title={t("common:language.label")}
+        items={languageItems}
+        onClose={() => setLanguageSheetVisible(false)}
+        onSelect={handleSelectLanguage}
+      />
     </SafeAreaView>
   );
 }
@@ -368,6 +434,7 @@ function SettingsRow({
 }) {
   const Wrapper = onPress ? TouchableOpacity : View;
   const wrapperProps = onPress ? { onPress, activeOpacity: 0.7 } : {};
+  const isRTL = useIsRTL();
 
   return (
     <Wrapper
@@ -390,7 +457,7 @@ function SettingsRow({
         ) : null}
         {onPress && (
           <Ionicons
-            name="chevron-forward"
+            name={isRTL ? "chevron-back" : "chevron-forward"}
             size={16}
             color={theme.colors.outline}
           />
@@ -517,7 +584,7 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.onSurfaceVariant,
       letterSpacing: theme.typography.letterSpacing.wider,
       textTransform: "uppercase",
-      marginLeft: theme.spacing.xs,
+      marginStart: theme.spacing.xs,
     },
 
     // ── Row

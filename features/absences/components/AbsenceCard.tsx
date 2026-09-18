@@ -14,6 +14,7 @@ import { formatDateISO } from "@/utils/date";
 import { confirmDialog } from "@/utils/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { AbsenceStatusBadge } from "./AbsenceStatusBadge";
 
@@ -37,6 +38,7 @@ export function AbsenceCard({
 }: AbsenceCardProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { t } = useTranslation();
 
   const [editingEnd, setEditingEnd] = useState(false);
   const [draftEndDate, setDraftEndDate] = useState<Date | null>(
@@ -55,9 +57,9 @@ export function AbsenceCard({
 
   const handleCancelVacation = async () => {
     const confirmed = await confirmDialog({
-      title: "Anfrage stornieren",
-      message: "Möchtest du diesen Urlaubsantrag wirklich stornieren?",
-      confirmLabel: "Stornieren",
+      title: t("absences:card.cancelVacationConfirmTitle"),
+      message: t("absences:card.cancelVacationConfirmMessage"),
+      confirmLabel: t("absences:card.cancelConfirm"),
       destructive: true,
     });
     if (confirmed) onCancelVacation();
@@ -65,9 +67,9 @@ export function AbsenceCard({
 
   const handleCancelSickness = async () => {
     const confirmed = await confirmDialog({
-      title: "Krankmeldung stornieren",
-      message: "Möchtest du diese Krankmeldung wirklich stornieren?",
-      confirmLabel: "Stornieren",
+      title: t("absences:card.cancelSicknessConfirmTitle"),
+      message: t("absences:card.cancelSicknessConfirmMessage"),
+      confirmLabel: t("absences:card.cancelConfirm"),
       destructive: true,
     });
     if (confirmed) onCancelSickness();
@@ -106,7 +108,7 @@ export function AbsenceCard({
           </View>
           <View>
             <Text style={styles.typeLabel}>
-              {isVacation ? "Urlaub" : "Krankheit"}
+              {isVacation ? t("absences:types.vacation") : t("absences:types.sickness")}
             </Text>
             <Text style={styles.dateRange}>{formatAbsenceDateRange(absence)}</Text>
           </View>
@@ -122,7 +124,7 @@ export function AbsenceCard({
 
       {absence.adminNote ? (
         <View style={styles.adminNoteWrap}>
-          <Text style={styles.adminNoteLabel}>Notiz vom Admin</Text>
+          <Text style={styles.adminNoteLabel}>{t("absences:card.adminNoteLabel")}</Text>
           <Text style={styles.note} numberOfLines={3}>
             {absence.adminNote}
           </Text>
@@ -138,7 +140,9 @@ export function AbsenceCard({
               activeOpacity={0.8}
               onPress={handleCancelVacation}
             >
-              <Text style={styles.actionBtnDangerText}>Anfrage stornieren</Text>
+              <Text style={styles.actionBtnDangerText}>
+                {t("absences:card.cancelVacationAction")}
+              </Text>
             </TouchableOpacity>
           )}
 
@@ -151,7 +155,7 @@ export function AbsenceCard({
                 onPress={() => setEditingEnd((v) => !v)}
               >
                 <Text style={styles.actionBtnText}>
-                  {editingEnd ? "Abbrechen" : "Ende aktualisieren"}
+                  {editingEnd ? t("common:actions.cancel") : t("absences:card.updateEndAction")}
                 </Text>
               </TouchableOpacity>
 
@@ -162,7 +166,7 @@ export function AbsenceCard({
                 onPress={handleCancelSickness}
               >
                 <Text style={styles.actionBtnDangerText}>
-                  Krankmeldung stornieren
+                  {t("absences:card.cancelSicknessAction")}
                 </Text>
               </TouchableOpacity>
             </>
@@ -173,11 +177,11 @@ export function AbsenceCard({
       {editingEnd && (
         <View style={styles.editEndWrap}>
           <DateTimeField
-            label="Voraussichtlich bis"
+            label={t("absences:card.expectedUntilLabel")}
             mode="date"
             value={draftEndDate}
             onChange={setDraftEndDate}
-            placeholder="Kein Enddatum bekannt"
+            placeholder={t("absences:card.noEndDatePlaceholder")}
           />
           <View style={styles.editEndActions}>
             {draftEndDate && (
@@ -185,11 +189,11 @@ export function AbsenceCard({
                 style={styles.clearEndBtn}
                 onPress={() => setDraftEndDate(null)}
               >
-                <Text style={styles.clearEndText}>Enddatum entfernen</Text>
+                <Text style={styles.clearEndText}>{t("absences:card.removeEndDate")}</Text>
               </TouchableOpacity>
             )}
             <Button
-              label="Speichern"
+              label={t("common:actions.save")}
               onPress={handleSaveEnd}
               loading={busy}
               fullWidth={false}
