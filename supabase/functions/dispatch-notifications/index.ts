@@ -109,7 +109,7 @@ export function expectedRoleFor(eventType: string): "admin" | "employee" | "any"
 // (notification_outbox_fill_entity() bzw. enqueue_absence_notification()/
 // notify_job_comment() setzen entity_type serverseitig, NIE der Client).
 //
-// WARUM DIESE PRÜFUNG EXISTIERT (20260918010000-Regression):
+// WARUM DIESE PRÜFUNG EXISTIERT (20260916130000-Regression):
 // Verliert eine künftige Änderung erneut entity_type/entity_id aus der
 // Claim-RPC (oder liefert ein neuer, noch nicht angebundener Event-Typ eine
 // unerwartete entity_type-Kombination), darf das Ergebnis NIEMALS eine
@@ -388,7 +388,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       // Empfänger einordnen:
       //  - event_type/entity_type-Kombination nicht erkannt -> endgültig
       //    nicht zustellbar (permanent_fail). Das ist eine STRUKTURELLE
-      //    Dateninkonsistenz (z. B. ein Regressions-Fall wie 20260918010000,
+      //    Dateninkonsistenz (z. B. ein Regressions-Fall wie 20260916130000,
       //    oder ein noch nicht angebundener Event-Typ) — ein Retry ändert
       //    daran nichts, deshalb dieselbe terminale Einstufung wie bei
       //    DeviceNotRegistered, nicht "retry". Muss VOR buildContent()

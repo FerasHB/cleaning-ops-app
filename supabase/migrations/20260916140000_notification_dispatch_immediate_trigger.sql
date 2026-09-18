@@ -14,7 +14,7 @@
 -- 'dispatch_sweeper_secret') gelöst hat. Bis zum nächsten Cron-Tick (bis zu
 -- 60s) bleiben Kommentar-/Abwesenheits-/Zuweisungs-Events dadurch unnötig
 -- liegen, obwohl Versand + Vorlagen (nach der Vertragsreparatur in
--- 20260918010000) korrekt sind.
+-- 20260916130000) korrekt sind.
 --
 -- FIX: EIN neuer, migrierbarer AFTER-INSERT-Trigger auf notification_outbox,
 -- der denselben BEREITS FUNKTIONIERENDEN Auth-Mechanismus wie der Sweeper
@@ -28,19 +28,27 @@
 -- abgesetzte pg_net-Anfrage mit zurückgerollt — kein Dispatch für ein nie
 -- committetes Event.
 --
--- ENTSCHEIDUNG, DIE DIESE MIGRATION *NICHT* TRIFFT (siehe Abschlussbericht):
--- Ob der bestehende Dashboard-Webhook "dispatch-admin-notifications"
--- zusätzlich deaktiviert/umkonfiguriert werden soll, ist eine reine
--- Infrastruktur-/Dashboard-Entscheidung außerhalb von Git — diese Migration
--- trifft sie bewusst NICHT und dupliziert auch keinen Push (siehe unten:
--- claim_notification_deliveries() ist ohnehin FOR UPDATE SKIP LOCKED, ein
--- zweiter/dritter gleichzeitiger Aufruf verursacht höchstens einen
--- redundanten Leerlauf-Aufruf, NIEMALS einen doppelten Push).
+-- PRODUKT-ENTSCHEIDUNG (getroffen, nicht von dieser Migration ausgeführt):
+-- dieser migrations-verwaltete Trigger wird der KANONISCHE Sofort-Dispatch-
+-- Mechanismus; der bestehende Dashboard-Webhook "dispatch-admin-
+-- notifications" soll NICHT als zweiter dauerhafter Pfad bestehen bleiben.
+-- Diese Migration dupliziert deshalb bewusst NICHTS Gefährliches, falls
+-- beide vorübergehend gleichzeitig aktiv sind (claim_notification_
+-- deliveries() ist FOR UPDATE SKIP LOCKED, ein zweiter/dritter
+-- gleichzeitiger Aufruf verursacht höchstens einen redundanten Leerlauf-
+-- Aufruf, NIEMALS einen doppelten Push) — aber sie deaktiviert/löscht den
+-- Dashboard-Webhook selbst NICHT: das ist Dashboard-Zustand außerhalb von
+-- Git und folgt ERST NACH separat verifizierter Staging-Freigabe (siehe
+-- Abschlussbericht: Migration -> Function -> Trigger verifizieren -> Latenz
+-- verifizieren -> DANN Dashboard-Webhook deaktivieren).
 --
 -- FALLBACK UNVERÄNDERT: notification-dispatch-sweeper (1x/Minute,
 -- 20260717000003) bleibt bestehen und unverändert — fängt Backoff-Retries,
 -- hängende processing-Zeilen nach Crash und einen Ausfall dieses neuen
 -- Sofort-Triggers weiterhin ab.
+--
+-- ZEITSTEMPEL: siehe 20260916130000 (vorige Migration) für die Begründung,
+-- warum diese beiden Notification-Migrationen VOR Phase 16 datiert sind.
 
 create or replace function public.tg_dispatch_notifications_immediate()
 returns trigger

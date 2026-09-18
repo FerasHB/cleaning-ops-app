@@ -1,6 +1,6 @@
 // =========================================================
 // TEST: dispatch-notifications — Event-Routing, Vorlagen, Zustellbarkeit
-// (Regression für 20260918010000/020000 — Notification-Integrität + -Latenz)
+// (Regression für 20260916130000/140000 — Notification-Integrität + -Latenz)
 // =========================================================
 // Reine Unit-Tests der EXPORTIERTEN Funktionen aus index.ts — kein Netzwerk,
 // keine echte Supabase-Verbindung, kein echter Expo-Versand. Prüft genau die

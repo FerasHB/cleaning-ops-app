@@ -25,6 +25,24 @@
 -- NICHT Teil dieser Migration: Phase-16-Jobausführung, Pause/Resume,
 -- work_sessions, App-Erzwingungs-Konfiguration, Zeiterfassung — siehe
 -- Aufgabenstellung dieses Fixes (nur Notification-Integrität + -Latenz).
+--
+-- ZEITSTEMPEL BEWUSST GEWÄHLT (nicht der tatsächliche Autoringtag): diese
+-- Migration soll auf Production VOR Phase 16 laufen (20260917000000/
+-- 20260917000001/20260918000000), aber NACH 20260916120000_client_
+-- compatibility_foundation, dem aktuellen Production-Stand. Mit einem
+-- späteren Zeitstempel würde `supabase db push`/`migration up` beim
+-- SPÄTEREN Phase-16-Rollout hart mit "Found local migration files to be
+-- inserted before the last migration on remote database" abbrechen und
+-- zwingend --include-all verlangen — empirisch gegen die tatsächlich
+-- installierte Supabase-CLI verifiziert (lokale Simulation, kein Staging/
+-- Production berührt). Staging hat Phase 16 bereits — dort ist genau EINMAL
+-- --include-all nötig, wenn diese beiden Notification-Migrationen dort
+-- ankommen (ebenfalls lokal verifiziert: wendet idempotent/sauber an).
+-- Zwischen den beiden Umgebungen war keine Reihenfolge moeglich, die fuer
+-- BEIDE ohne Sonderbehandlung auskommt — diese Wahl haelt den Sonderfall
+-- auf der kleinen, bereits lokal verifizierten Notification-Aenderung
+-- (Staging) statt auf dem großen, geschäftskritischen Phase-16-Bundle
+-- (Production).
 
 drop function if exists public.claim_notification_deliveries(uuid, int, int);
 
@@ -85,7 +103,7 @@ comment on function public.claim_notification_deliveries(uuid, int, int) is
 'Nimmt fällige/hängende Deliveries atomar (FOR UPDATE SKIP LOCKED), setzt '
 'processing + attempts, liefert Empfänger-Token/Status/Locale UND die '
 'generische Entitätsidentität (entity_type/entity_id) + Abwesenheits-'
-'Schnappschüsse (absence_start_date/end_date). Seit 20260918010000: stellt '
+'Schnappschüsse (absence_start_date/end_date). Seit 20260916130000: stellt '
 'die vier bei 20260915000000 versehentlich entfernten Spalten wieder her — '
 'ohne sie routet der Dispatcher comment_added/Abwesenheits-Events fälschlich '
 'auf die Job-gestartet-Vorlage. Nur Service Role.';

@@ -1,13 +1,13 @@
 -- =========================================================
 -- TEST: Notification-Dispatch-Integrität + -Latenz
--- (Migrationen 20260918010000 + 20260918020000)
+-- (Migrationen 20260916130000 + 20260916140000)
 -- =========================================================
 -- Deckt die Regression ab, die dieser Fix behebt:
 --   claim_notification_deliveries() muss GLEICHZEITIG recipient_locale
 --   (Phase E, 20260915000000) UND entity_type/entity_id/absence_start_date/
 --   absence_end_date (20260821000000) liefern — 20260915000000 hatte die
 --   zweite Gruppe versehentlich entfernt.
--- Sowie den neuen Sofort-Trigger (20260918020000): authentifizierter
+-- Sowie den neuen Sofort-Trigger (20260916140000): authentifizierter
 -- pg_net-Aufruf über denselben Vault-Mechanismus wie der Minuten-Sweeper,
 -- OHNE das Secret jemals im Klartext preiszugeben, und ohne den Sweeper
 -- (Fallback) zu verändern.
