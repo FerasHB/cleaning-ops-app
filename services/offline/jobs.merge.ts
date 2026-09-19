@@ -1,5 +1,6 @@
-import { Job } from "@/types/job";
-import { PendingJobAction } from "./jobs.queue";
+import type { Job } from "@/types/job";
+import type { PendingJobAction } from "./jobs.queue";
+import type { WorkOperation } from "./workJournal.core";
 
 /**
  * Wendet eine einzelne Pending Action lokal auf einen Job an.
@@ -21,12 +22,9 @@ function applyPendingActionToJob(job: Job, action: PendingJobAction): Job {
       };
 
     case "complete_job":
-      return {
-        ...job,
-        status: "completed" as const,
-        completedAt: action.timestamp,
-        completedBy: action.userId,
-      };
+      // An employee finishing their assignment does not necessarily finish
+      // the shared job. Keep the parent lifecycle server-authoritative.
+      return job;
 
     default:
       return job;
@@ -102,4 +100,25 @@ export function hasPendingActionForJob(
   pendingActions: PendingJobAction[],
 ): boolean {
   return pendingActions.some((action) => action.jobId === jobId);
+}
+
+/** Assignment-only optimistic indicator, guarded by the server revision. */
+export function applyPendingWorkOperationsToJobs(jobs: Job[], operations: WorkOperation[]): Job[] {
+  const ordered = [...operations].sort((a, b) => a.localSequence - b.localSequence);
+  return jobs.map((job) => ({
+    ...job,
+    assignees: job.assignees.map((assignee) => {
+      const own = ordered.filter((op) => op.jobId === job.id && op.assignmentId === assignee.assignmentId);
+      const acknowledged = own.filter((op) => op.status === "acknowledged" && op.receipt).at(-1)?.receipt;
+      const canonical = acknowledged && acknowledged.workRevision > (assignee.workRevision ?? 0)
+        ? { ...assignee, trackingMode: "sessions" as const, workRevision: acknowledged.workRevision,
+          workReviewRequired: acknowledged.reviewRequired,
+          employeeStartedAt: acknowledged.employeeStartedAt,
+          employeeCompletedAt: acknowledged.employeeCompletedAt }
+        : assignee;
+      const latest = own.filter((op) => (op.status === "pending" || op.status === "syncing") &&
+        op.expectedRevision >= (canonical.workRevision ?? 0)).at(-1);
+      return latest ? { ...canonical, pendingWorkAction: latest.action } : canonical;
+    }),
+  }));
 }

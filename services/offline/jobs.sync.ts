@@ -116,9 +116,7 @@ export async function syncPendingJobActions(userId: string): Promise<{
   // dauerhaft fehlgeschlagene Aktionen NICHT erneut versuchen (sonst würde
   // jeder Sync-Lauf dieselbe Ablehnung wiederholen) — sie bleiben sichtbar,
   // bis der Nutzer sie ausdrücklich bestätigt (dismissFailedJobAction).
-  const actions = (await getPendingJobActions(userId)).filter(
-    (action) => action.status === "pending",
-  );
+  const actions = await getPendingJobActions(userId);
 
   if (!actions.length) {
     if (__DEV__) {
@@ -135,6 +133,9 @@ export async function syncPendingJobActions(userId: string): Promise<{
   let failed = 0;
 
   for (const action of actions) {
+    // A rejected predecessor stays in storage until explicitly dismissed.
+    // Do not allow a later pending action to overtake it on the next reconnect.
+    if (action.status === "failed_permanent") break;
     try {
       await executeAction(action);
 
@@ -158,6 +159,9 @@ export async function syncPendingJobActions(userId: string): Promise<{
       }
 
       failed++;
+      // The following legacy action may depend on this one. Preserve queue
+      // order instead of letting a later Start/Complete overtake the failure.
+      break;
     }
   }
 

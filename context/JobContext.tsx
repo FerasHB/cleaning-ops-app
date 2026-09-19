@@ -18,7 +18,18 @@ import {
   markJobCommentsAsRead as markJobCommentsAsReadService,
 } from "@/services/comments/comments.service";
 import { dispatchAdminNotifications } from "@/services/notifications/adminNotifications";
-import { applyPendingActionsToJobs } from "@/services/offline/jobs.merge";
+import {
+  applyPendingActionsToJobs,
+  applyPendingWorkOperationsToJobs,
+} from "@/services/offline/jobs.merge";
+import {
+  cacheWorkSummariesFromJobs,
+  executeAssignmentAction,
+  getAssignmentWorkSummary,
+  refreshActiveWorkSession,
+  workJournal,
+} from "@/services/jobs/workSessions.service";
+import { getCachedAppConfig } from "@/services/offline/appConfig.storage";
 import {
   addPendingJobAction,
   dismissFailedJobAction,
@@ -31,6 +42,8 @@ import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
 import { isNetworkError } from "@/utils/networkError";
 import { toUserMessage } from "@/utils/userMessages";
 import NetInfo from "@react-native-community/netinfo";
+import { AppState } from "react-native";
+import type { WorkOperation } from "@/services/offline/workJournal.core";
 import React, {
   createContext,
   useCallback,
@@ -117,6 +130,16 @@ const JobContext = createContext<JobContextType | undefined>(undefined);
 async function isOnline(): Promise<boolean> {
   const state = await NetInfo.fetch();
   return !!state.isConnected;
+}
+
+async function readWorkOperationsSafely(userId: string): Promise<WorkOperation[]> {
+  try {
+    return await workJournal.list(userId);
+  } catch (error) {
+    // Preserve an unreadable journal for recovery without hiding legacy jobs.
+    console.warn("Work journal could not be read:", error);
+    return [];
+  }
 }
 
 // Admin-Ladefenster: statt der gesamten Firmen-Historie (unbeschränkt) lädt der
@@ -210,6 +233,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const syncInProgressRef = useRef(false);
   const refreshJobsInProgressRef = useRef(false);
 
+  const refreshWorkExecution = useCallback(async () => {
+    if (!userId || !(await isOnline())) return;
+    await workJournal.sync(userId);
+    await refreshActiveWorkSession(userId);
+    const operations = await workJournal.list(userId);
+    const pendingAssignments = [...new Set(operations
+      .filter((op) => op.status === "pending" || op.status === "syncing")
+      .map((op) => op.assignmentId))];
+    await Promise.allSettled(pendingAssignments.map((id) => getAssignmentWorkSummary(userId, id)));
+  }, [userId]);
+
   const refreshPendingState = useCallback(async () => {
     if (!userId) {
       setPendingActions([]);
@@ -274,6 +308,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         }
         const serverJobs = await loadJobsForRole(isAdmin);
         await saveCachedJobs(userId, serverJobs);
+        if (!isAdmin) void cacheWorkSummariesFromJobs(userId, serverJobs).catch((err) =>
+          console.warn("Work summary cache refresh failed:", err));
 
         // Nur "pending" spiegeln — ein dauerhaft abgelehnter Eintrag ist am
         // Server definitiv NICHT passiert und darf die Anzeige nicht mehr
@@ -281,10 +317,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         const pendingActions = (await getPendingJobActions(userId)).filter(
           (a) => a.status === "pending",
         );
-        const mergedJobs = applyPendingActionsToJobs(
+        const mergedJobs = applyPendingWorkOperationsToJobs(applyPendingActionsToJobs(
           serverJobs,
           pendingActions,
-        );
+        ), await readWorkOperationsSafely(userId));
 
         // Ungelesene Kommentare best-effort dazumergen (online-only).
         // Schlägt das fehl, zeigen wir die Jobs trotzdem (ohne Punkt).
@@ -310,7 +346,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const pendingActions = (await getPendingJobActions(userId)).filter(
         (a) => a.status === "pending",
       );
-      const mergedJobs = applyPendingActionsToJobs(cachedJobs, pendingActions);
+      const mergedJobs = applyPendingWorkOperationsToJobs(
+        applyPendingActionsToJobs(cachedJobs, pendingActions), await readWorkOperationsSafely(userId));
 
       setJobs(mergedJobs);
     } catch (err: any) {
@@ -329,10 +366,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         const pendingActions = (await getPendingJobActions(userId)).filter(
           (a) => a.status === "pending",
         );
-        const mergedJobs = applyPendingActionsToJobs(
+        const mergedJobs = applyPendingWorkOperationsToJobs(applyPendingActionsToJobs(
           cachedJobs,
           pendingActions,
-        );
+        ), await readWorkOperationsSafely(userId));
 
         setJobs(mergedJobs);
       } catch (cacheErr) {
@@ -436,7 +473,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           getPendingJobActions(userId),
         ]);
         const pending = allPending.filter((a) => a.status === "pending");
-        setJobs(applyPendingActionsToJobs(cachedJobs, pending));
+        setJobs(applyPendingWorkOperationsToJobs(
+          applyPendingActionsToJobs(cachedJobs, pending), await readWorkOperationsSafely(userId)));
         setPendingActions(pending);
         setPendingCount(pending.length);
         setFailedActions(
@@ -462,6 +500,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       try {
         await runPendingSyncSafely();
+        void refreshWorkExecution().catch((err) => console.warn("Work refresh failed:", err));
         await Promise.all([refreshJobs(), refreshEmployees()]);
       } catch (err) {
         if (__DEV__) {
@@ -471,7 +510,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     };
 
     loadAll();
-  }, [session, userId, refreshJobs, refreshEmployees, runPendingSyncSafely]);
+  }, [session, userId, refreshJobs, refreshEmployees, runPendingSyncSafely, refreshWorkExecution]);
 
   useEffect(() => {
     if (!session) {
@@ -495,6 +534,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       try {
         await runPendingSyncSafely();
+        void refreshWorkExecution().catch((err) => console.warn("Work refresh failed:", err));
         await refreshJobs();
       } catch (err) {
         console.error("Failed to sync after reconnect:", err);
@@ -504,7 +544,15 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     return () => {
       unsubscribe();
     };
-  }, [session, refreshJobs, runPendingSyncSafely]);
+  }, [session, refreshJobs, runPendingSyncSafely, refreshWorkExecution]);
+
+  useEffect(() => {
+    if (!session) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshWorkExecution().catch((err) => console.warn("Work refresh failed:", err));
+    });
+    return () => subscription.remove();
+  }, [session, refreshWorkExecution]);
 
   useEffect(() => {
     if (!session) {
@@ -533,6 +581,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
             }
 
             await refreshJobs();
+            await refreshWorkExecution();
           } catch (err) {
             console.error("Realtime refresh failed:", err);
           }
@@ -547,7 +596,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, refreshJobs]);
+  }, [session, refreshJobs, refreshWorkExecution]);
 
   const createJob = useCallback(async (input: CreateJobInput) => {
     try {
@@ -660,6 +709,16 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
   const startJob = useCallback(async (jobId: string) => {
     try {
+      const ownJob = jobs.find((job) => job.id === jobId);
+      const ownAssignment = ownJob?.assignees.find((assignee) => assignee.employeeId === userId);
+      const capability = (await getCachedAppConfig())?.pauseResumeEnabled ?? false;
+      if (ownAssignment && (ownAssignment.trackingMode !== "legacy" || capability)) {
+        if (!userId || !ownJob?.companyId) throw new Error("Work assignment needs an online refresh before execution");
+        await executeAssignmentAction({ userId, companyId: ownJob.companyId, jobId,
+          assignmentId: ownAssignment.assignmentId, action: "start" });
+        await refreshJobs();
+        return;
+      }
       const online = await isOnline();
 
       if (online) {
@@ -737,10 +796,19 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to start job:", err);
       throw err;
     }
-  }, [userId]);
+  }, [jobs, refreshJobs, userId]);
 
   const completeJob = useCallback(async (jobId: string) => {
     try {
+      const ownJob = jobs.find((job) => job.id === jobId);
+      const ownAssignment = ownJob?.assignees.find((assignee) => assignee.employeeId === userId);
+      if (ownAssignment && ownAssignment.trackingMode !== "legacy") {
+        if (!userId || !ownJob?.companyId) throw new Error("Work assignment needs an online refresh before execution");
+        await executeAssignmentAction({ userId, companyId: ownJob.companyId, jobId,
+          assignmentId: ownAssignment.assignmentId, action: "complete" });
+        await refreshJobs();
+        return;
+      }
       const online = await isOnline();
 
       if (online) {
@@ -797,39 +865,13 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setPendingActions(nextActions);
       setPendingCount(nextActions.length);
 
-      setJobs((prevJobs) => {
-        // PHASE 16 offline: der Server entscheidet beim Sync, ob der AUFTRAG
-        // schliesst. Lokal wird dieselbe Regel auf den Cache angewandt —
-        // bleibt eine andere Zuweisung ungeloest (kein eigener Abschluss,
-        // Konto lebt oder sie hat selbst gestartet), bleibt der Auftrag in
-        // Arbeit. Sonst zeigte die App "erledigt", obwohl ein Kollege noch
-        // arbeitet, und korrigierte sich erst beim naechsten Refresh.
-        const current = prevJobs.find((j) => j.id === jobId);
-        const othersPending = (current?.assignees ?? []).some(
-          (a) =>
-            a.employeeId !== userId &&
-            !a.employeeCompletedAt &&
-            (!!a.employeeId || !!a.employeeStartedAt),
-        );
-
-        const nextJobs = updateJobInList(prevJobs, jobId, {
-          status: othersPending ? "in_progress" : "completed",
-          ...(othersPending
-            ? {}
-            : { completedAt: timestamp, completedBy: userId }),
-        });
-
-        saveCachedJobs(userId, nextJobs).catch((err) =>
-          console.error("Failed to cache jobs after offline complete:", err),
-        );
-
-        return nextJobs;
-      });
+      // Assignment completion stays pending locally. Only the server may
+      // decide whether every assignee has finished the parent job.
     } catch (err) {
       console.error("Failed to complete job:", err);
       throw err;
     }
-  }, [userId]);
+  }, [jobs, refreshJobs, userId]);
 
   const forceCompleteJob = useCallback(
     async (jobId: string, reason: string) => {

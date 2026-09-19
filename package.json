@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test:recurring-occurrence": "node scripts/verify-recurring-occurrence-display.mjs",
-    "test:timesheet-company": "node --experimental-strip-types scripts/check-timesheet-company-name.mjs"
+    "test:timesheet-company": "node --experimental-strip-types scripts/check-timesheet-company-name.mjs",
+    "test:work-journal": "node --experimental-strip-types --test scripts/check-work-journal.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
@@ -25,6 +26,7 @@
     "expo": "~54.0.37",
     "expo-application": "~7.0.8",
     "expo-constants": "~18.0.14",
+    "expo-crypto": "~15.0.9",
     "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.9",
     "expo-file-system": "~19.0.24",

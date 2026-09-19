@@ -40,10 +40,18 @@ export type JobAssignee = {
    */
   employeeStartedAt: string | null;
   employeeCompletedAt: string | null;
+  /** Execution metadata; optional for older cached jobs. */
+  trackingMode?: "legacy" | "sessions";
+  workRevision?: number;
+  workReviewRequired?: boolean;
+  /** Local indicator only. It never changes parent job status. */
+  pendingWorkAction?: "start" | "pause" | "resume" | "complete";
 };
 
 export type Job = {
   id: string;
+  /** Used by the account-scoped work journal; absent in pre-Phase-3 caches. */
+  companyId?: string;
   customerName: string;
   location: string;
   time: string;

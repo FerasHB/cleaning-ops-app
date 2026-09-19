@@ -11,6 +11,7 @@ export type AppConfig = {
   minBuildIos: number;
   minBuildAndroid: number;
   forceCompleteEnabled: boolean;
+  pauseResumeEnabled: boolean;
   updateUrlIos: string | null;
   updateUrlAndroid: string | null;
 };
@@ -22,6 +23,7 @@ const DEFAULTS: AppConfig = {
   minBuildIos: 1,
   minBuildAndroid: 1,
   forceCompleteEnabled: false,
+  pauseResumeEnabled: false,
   updateUrlIos: null,
   updateUrlAndroid: null,
 };
@@ -41,6 +43,9 @@ export async function fetchAppConfig(): Promise<AppConfig> {
     minBuildAndroid: Number(map.get("min_build_android") ?? DEFAULTS.minBuildAndroid),
     forceCompleteEnabled: Boolean(
       map.get("force_complete_enabled") ?? DEFAULTS.forceCompleteEnabled,
+    ),
+    pauseResumeEnabled: Boolean(
+      map.get("pause_resume_enabled") ?? DEFAULTS.pauseResumeEnabled,
     ),
     updateUrlIos: (map.get("update_url_ios") as string | null) ?? null,
     updateUrlAndroid: (map.get("update_url_android") as string | null) ?? null,

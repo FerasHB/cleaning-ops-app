@@ -41,6 +41,9 @@ type JobAssignmentRow = {
   // Individuelle Arbeitszeit (Phase 1 Worked Time) — Anzeige seit Phase B1.
   employee_started_at: string | null;
   employee_completed_at: string | null;
+  time_tracking_mode: "legacy" | "sessions";
+  work_revision: number;
+  work_review_required: boolean;
   profiles?:
   | { id: string; full_name: string | null }
   | { id: string; full_name: string | null }[]
@@ -50,6 +53,7 @@ type JobAssignmentRow = {
 // So sieht ein Job direkt aus der Datenbank aus
 type JobRow = {
   id: string;
+  company_id: string;
   customer_name: string;
   service_name: string;
   location_address: string;
@@ -248,6 +252,7 @@ function formatTimeRange(start: string | null, end: string | null): string {
 // Kommentar-/Foto-Schreibpfade und (c) den Schreibpfad — bis Phase 11.
 const JOB_SELECT = `
   id,
+  company_id,
   customer_name,
   service_name,
   location_address,
@@ -280,6 +285,9 @@ const JOB_SELECT = `
     assigned_at,
     employee_started_at,
     employee_completed_at,
+    time_tracking_mode,
+    work_revision,
+    work_review_required,
     profiles:employee_id (
       id,
       full_name
@@ -325,6 +333,9 @@ function mapAssignees(rows: JobAssignmentRow[] | null | undefined): JobAssignee[
           // abgeleitet (siehe types/job.ts).
           employeeStartedAt: row.employee_started_at,
           employeeCompletedAt: row.employee_completed_at,
+          trackingMode: row.time_tracking_mode,
+          workRevision: row.work_revision,
+          workReviewRequired: row.work_review_required,
         } satisfies JobAssignee,
       };
     })
@@ -398,6 +409,7 @@ async function readBackJob(row: JobRow): Promise<Job> {
 function mapJob(row: JobRow): Job {
   return {
     id: row.id,
+    companyId: row.company_id,
     customerName: row.customer_name,
     location: row.location_address,
     time: formatTimeRange(row.scheduled_start, row.scheduled_end),
