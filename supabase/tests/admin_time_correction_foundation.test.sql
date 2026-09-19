@@ -13,7 +13,7 @@
 --     employee_time_adjustments ohne Schreibrechte und firmenisoliert.
 --   * Validierung: leerer Grund, Ende <= Beginn, beide NULL, nicht
 --     abgeschlossener Auftrag, Alt-Auftrag vor dem Phase-1-Grenzwert.
---   * Regression: start_own_job/complete_own_job unveraendert.
+--   * Regression: echte Start-/Abschluss-RPCs mit Phase-16-Mehrfachzuweisung.
 --
 -- Aufrufe laufen als 'authenticated' (SET ROLE + request.jwt.claims), also
 -- ueber denselben Pfad wie die App.
@@ -49,9 +49,9 @@ insert into public.profiles (id, full_name) values
   ('a2000000-0000-0000-0000-0000000000c5','Bea')
 on conflict (id) do nothing;
 
-insert into public.companies (id, name, slug) values
-  ('a1000000-0000-0000-0000-0000000000c1','ATC Firma A','atc-firma-a-test'),
-  ('a1000000-0000-0000-0000-0000000000c2','ATC Firma B','atc-firma-b-test');
+insert into public.companies (id, name, slug, timezone) values
+  ('a1000000-0000-0000-0000-0000000000c1','ATC Firma A','atc-firma-a-test','Europe/Berlin'),
+  ('a1000000-0000-0000-0000-0000000000c2','ATC Firma B','atc-firma-b-test','Europe/Berlin');
 
 update public.profiles set company_id='a1000000-0000-0000-0000-0000000000c1', role='admin',    is_active=true where id='a2000000-0000-0000-0000-0000000000c1';
 update public.profiles set company_id='a1000000-0000-0000-0000-0000000000c1', role='employee', is_active=true where id in ('a2000000-0000-0000-0000-0000000000c2','a2000000-0000-0000-0000-0000000000c3');
@@ -78,17 +78,17 @@ create temporary table _atc (
 insert into public.jobs (id, company_id, assigned_to, created_by, customer_name, service_name,
                          location_address, status, job_type, date, start_time,
                          is_active, created_at, updated_at) values
-  ('a4000000-0000-0000-0000-0000000000c1','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Mueller','Unterhaltsreinigung','Hauptstr. 1','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
-  ('a4000000-0000-0000-0000-0000000000c2','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Altkunde','Grundreinigung','Altweg 2','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
-  ('a4000000-0000-0000-0000-0000000000c3','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Offen','Fensterreinigung','Offenweg 3','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
-  ('a4000000-0000-0000-0000-0000000000c4','a1000000-0000-0000-0000-0000000000c2',null,'a2000000-0000-0000-0000-0000000000c4','Fremd','Glasreinigung','Fremdweg 4','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
-  ('a4000000-0000-0000-0000-0000000000c6','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Anonym','Grundreinigung','Anonymweg 6','open','single',current_date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00');
+  ('a4000000-0000-0000-0000-0000000000c1','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Mueller','Unterhaltsreinigung','Hauptstr. 1','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
+  ('a4000000-0000-0000-0000-0000000000c2','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Altkunde','Grundreinigung','Altweg 2','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
+  ('a4000000-0000-0000-0000-0000000000c3','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Offen','Fensterreinigung','Offenweg 3','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
+  ('a4000000-0000-0000-0000-0000000000c4','a1000000-0000-0000-0000-0000000000c2',null,'a2000000-0000-0000-0000-0000000000c4','Fremd','Glasreinigung','Fremdweg 4','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00'),
+  ('a4000000-0000-0000-0000-0000000000c6','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Anonym','Grundreinigung','Anonymweg 6','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00');
 
 -- J5: Recurring-PARENT-Regel (traegt seit Phase 4 selbst Zuweisungen).
 insert into public.jobs (id, company_id, assigned_to, created_by, customer_name, service_name,
                          location_address, status, job_type, recurring_days, start_time,
                          is_active, recurrence_start_date, created_at, updated_at) values
-  ('a4000000-0000-0000-0000-0000000000c5','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Dauerkunde','Unterhaltsreinigung','Dauerweg 5','open','recurring',array['mon','tue','wed','thu','fri','sat','sun'],'08:00',true,current_date - 1,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00');
+  ('a4000000-0000-0000-0000-0000000000c5','a1000000-0000-0000-0000-0000000000c1',null,'a2000000-0000-0000-0000-0000000000c1','Dauerkunde','Unterhaltsreinigung','Dauerweg 5','open','recurring',array['mon','tue','wed','thu','fri','sat','sun'],'08:00',true,(now() at time zone 'Europe/Berlin')::date - 1,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00');
 
 -- Zuweisungen ueber den echten App-Pfad (set_job_assignments).
 do $$
@@ -116,40 +116,27 @@ begin
 end $$;
 
 -- =========================================================
--- AUSGANGSLAGE: Maria erfasst korrekt, Ahmad vergisst BEIDES.
--- Laeuft ueber die echten RPCs — damit ist die Ausgangslage zugleich der
--- Regressionsnachweis fuer start_own_job/complete_own_job (CASE 20/21).
+-- Historical correction fixtures: Phase 16 correctly rejects replaying these
+-- old timestamps through employee RPCs. Seed the persisted pre-Phase-16 state
+-- explicitly, including J1's missed participation, rather than bypassing guards.
+-- Live RPC regression coverage is separate below (cases 20/21/34).
 -- =========================================================
-do $$
-begin
-  -- J1: Maria startet 08:00 und schliesst 12:00 ab (NACH dem Cutoff).
-  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c3');
-  execute 'set local role authenticated';
-  perform public.start_own_job   ('a4000000-0000-0000-0000-0000000000c1', timestamptz '2026-08-20 08:00+00');
-  perform public.complete_own_job('a4000000-0000-0000-0000-0000000000c1', timestamptz '2026-08-20 12:00+00');
-  execute 'reset role';
+create temp table _history (job_id uuid, employee_id uuid, started_at timestamptz, completed_at timestamptz) on commit drop;
+insert into _history values
+  ('a4000000-0000-0000-0000-0000000000c1','a2000000-0000-0000-0000-0000000000c3','2026-08-20 08:00+00','2026-08-20 12:00+00'),
+  ('a4000000-0000-0000-0000-0000000000c2','a2000000-0000-0000-0000-0000000000c2','2026-07-01 08:00+00','2026-07-01 11:00+00'),
+  ('a4000000-0000-0000-0000-0000000000c4','a2000000-0000-0000-0000-0000000000c5','2026-08-20 09:00+00','2026-08-20 13:00+00'),
+  ('a4000000-0000-0000-0000-0000000000c6','a2000000-0000-0000-0000-0000000000c2','2026-08-20 09:00+00','2026-08-20 12:30+00');
 
-  -- J2: Ahmad hat den Alt-Auftrag selbst erledigt — VOR dem Cutoff.
-  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c2');
-  execute 'set local role authenticated';
-  perform public.start_own_job   ('a4000000-0000-0000-0000-0000000000c2', timestamptz '2026-07-01 08:00+00');
-  perform public.complete_own_job('a4000000-0000-0000-0000-0000000000c2', timestamptz '2026-07-01 11:00+00');
-  execute 'reset role';
+update public.job_assignments ja
+set attendance = 'completed', employee_started_at = h.started_at,
+    employee_completed_at = h.completed_at
+from _history h where ja.job_id = h.job_id and ja.employee_id = h.employee_id;
 
-  -- J4 (Firma B): Bea erledigt, NACH dem Cutoff.
-  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c5');
-  execute 'set local role authenticated';
-  perform public.start_own_job   ('a4000000-0000-0000-0000-0000000000c4', timestamptz '2026-08-20 09:00+00');
-  perform public.complete_own_job('a4000000-0000-0000-0000-0000000000c4', timestamptz '2026-08-20 13:00+00');
-  execute 'reset role';
-
-  -- J6: Ahmad erledigt, NACH dem Cutoff (Basis fuer die Anonymisierung).
-  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c2');
-  execute 'set local role authenticated';
-  perform public.start_own_job   ('a4000000-0000-0000-0000-0000000000c6', timestamptz '2026-08-20 09:00+00');
-  perform public.complete_own_job('a4000000-0000-0000-0000-0000000000c6', timestamptz '2026-08-20 12:30+00');
-  execute 'reset role';
-end $$;
+update public.jobs j
+set status = 'completed', started_at = h.started_at, completed_at = h.completed_at,
+    date = (h.started_at at time zone c.timezone)::date
+from _history h, public.companies c where j.id = h.job_id and c.id = j.company_id;
 
 -- J5 (Recurring-PARENT) kuenstlich in den korrigierbar AUSSEHENDEN Zustand
 -- bringen: status='completed' + vollstaendige geteilte Uhr NACH dem Cutoff.
@@ -169,29 +156,6 @@ where id = 'a4000000-0000-0000-0000-0000000000c5';
 update public.job_assignments
 set employee_id = null
 where job_id = 'a4000000-0000-0000-0000-0000000000c6';
-
--- CASE 20 (Regression): start_own_job hat geteilte Uhr UND Marias
--- Eigenzeit gesetzt — unveraendertes Phase-1-Verhalten.
-insert into _atc
-select 20, 'Regression: start_own_job setzt geteilte Uhr + Eigenzeit des Ausloesers', 'OK',
-  case when (select started_at from public.jobs where id='a4000000-0000-0000-0000-0000000000c1') = timestamptz '2026-08-20 08:00+00'
-        and (select employee_started_at from public.job_assignments
-             where job_id='a4000000-0000-0000-0000-0000000000c1' and employee_id='a2000000-0000-0000-0000-0000000000c3') = timestamptz '2026-08-20 08:00+00'
-       then 'OK' else 'ABWEICHUNG' end;
-
--- CASE 21 (Regression): complete_own_job ebenso; Ahmad hat als NICHT-Ausloeser
--- weiterhin KEINE Eigenzeit (genau der Anlass fuer die Korrektur).
-insert into _atc
-select 21, 'Regression: complete_own_job setzt Abschluss; Nicht-Ausloeser bleibt ohne Eigenzeit', 'OK',
-  case when (select completed_at from public.jobs where id='a4000000-0000-0000-0000-0000000000c1') = timestamptz '2026-08-20 12:00+00'
-        and (select employee_completed_at from public.job_assignments
-             where job_id='a4000000-0000-0000-0000-0000000000c1' and employee_id='a2000000-0000-0000-0000-0000000000c3') = timestamptz '2026-08-20 12:00+00'
-        and (select employee_started_at   from public.job_assignments
-             where job_id='a4000000-0000-0000-0000-0000000000c1' and employee_id='a2000000-0000-0000-0000-0000000000c2') is null
-        and (select employee_completed_at from public.job_assignments
-             where job_id='a4000000-0000-0000-0000-0000000000c1' and employee_id='a2000000-0000-0000-0000-0000000000c2') is null
-       then 'OK' else 'ABWEICHUNG' end;
-
 
 -- =========================================================
 -- SZENARIO 1+2: Admin korrigiert AHMAD (08:00–12:00) auf J1.
@@ -604,6 +568,57 @@ select 28, 'job_assignments weiterhin ohne Client-Schreibrechte', '0',
     where table_name='job_assignments' and grantee='authenticated'
       and privilege_type in ('INSERT','UPDATE','DELETE'));
 
+
+-- Live RPC regression: both assignees must record their own participation.
+-- Relative transaction timestamps stay inside the trust window, and the job
+-- date uses the company's business timezone even across local midnight.
+insert into public.jobs (id, company_id, created_by, customer_name, service_name,
+                         location_address, status, job_type, date, start_time, is_active)
+values ('a4000000-0000-0000-0000-0000000000c7','a1000000-0000-0000-0000-0000000000c1',
+        'a2000000-0000-0000-0000-0000000000c1','Live RPC','Test','Teststr. 7','open','single',
+        ((now() - interval '2 minutes') at time zone 'Europe/Berlin')::date,'08:00',true);
+
+do $$
+declare j public.jobs%rowtype; a public.job_assignments%rowtype; untouched boolean;
+begin
+  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c1');
+  execute 'set local role authenticated';
+  perform public.set_job_assignments('a4000000-0000-0000-0000-0000000000c7',
+    array['a2000000-0000-0000-0000-0000000000c2','a2000000-0000-0000-0000-0000000000c3']::uuid[]);
+  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c3');
+  perform public.start_own_job('a4000000-0000-0000-0000-0000000000c7',now() - interval '2 minutes');
+  execute 'reset role';
+  select * into strict j from public.jobs where id='a4000000-0000-0000-0000-0000000000c7';
+  select * into strict a from public.job_assignments where job_id=j.id and employee_id='a2000000-0000-0000-0000-0000000000c3';
+  select employee_started_at is null and employee_completed_at is null into strict untouched
+    from public.job_assignments where job_id=j.id and employee_id='a2000000-0000-0000-0000-0000000000c2';
+  insert into _atc values (20,'Live start sets shared/own start; colleague remains untouched','true',
+    (j.status='in_progress' and j.started_at=now()-interval '2 minutes'
+     and a.employee_started_at=j.started_at and untouched)::text);
+
+  execute 'set local role authenticated';
+  perform public.complete_own_job(j.id,now()-interval '1 minute');
+  execute 'reset role';
+  select * into strict j from public.jobs where id=j.id;
+  select * into strict a from public.job_assignments where job_id=j.id and employee_id='a2000000-0000-0000-0000-0000000000c3';
+  select employee_started_at is null and employee_completed_at is null into strict untouched
+    from public.job_assignments where job_id=j.id and employee_id='a2000000-0000-0000-0000-0000000000c2';
+  insert into _atc values (21,'Own completion does not close the job while colleague is unresolved','true',
+    (a.attendance='completed' and a.employee_completed_at=now()-interval '1 minute'
+     and j.status='in_progress' and j.completed_at is null and untouched)::text);
+
+  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c2');
+  execute 'set local role authenticated';
+  perform public.start_own_job(j.id,now()-interval '2 minutes');
+  perform public.complete_own_job(j.id,now());
+  execute 'reset role';
+  select * into strict j from public.jobs where id=j.id;
+  insert into _atc values (34,'Last participant closes job; both own time records remain','true',
+    (j.status='completed' and j.completed_at=now()
+     and (select count(*)=2 and bool_and(employee_started_at=now()-interval '2 minutes'
+              and employee_completed_at is not null and attendance='completed')
+          from public.job_assignments where job_id=j.id))::text);
+end $$;
 
 -- =========================================================
 -- Ergebnisuebersicht

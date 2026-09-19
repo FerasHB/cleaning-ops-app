@@ -60,9 +60,9 @@ insert into public.profiles (id, full_name) values
   ('c2000000-0000-0000-0000-000000000007','Lena Wagner')
 on conflict (id) do nothing;
 
-insert into public.companies (id, name, slug) values
-  ('c1000000-0000-0000-0000-000000000001','JA Firma A','ja-firma-a-test'),
-  ('c1000000-0000-0000-0000-000000000002','JA Firma B','ja-firma-b-test');
+insert into public.companies (id, name, slug, timezone) values
+  ('c1000000-0000-0000-0000-000000000001','JA Firma A','ja-firma-a-test','Europe/Berlin'),
+  ('c1000000-0000-0000-0000-000000000002','JA Firma B','ja-firma-b-test','Europe/Berlin');
 
 update public.profiles set company_id='c1000000-0000-0000-0000-000000000001', role='admin',    is_active=true  where id='c2000000-0000-0000-0000-000000000001';
 update public.profiles set company_id='c1000000-0000-0000-0000-000000000001', role='employee', is_active=true  where id='c2000000-0000-0000-0000-000000000002';
@@ -76,27 +76,32 @@ update public.profiles set company_id='c1000000-0000-0000-0000-000000000001', ro
 -- Alle mit BEWUSST ALTEM updated_at angelegt, damit der Touch-Trigger
 -- beobachtbar ist (der BEFORE-UPDATE-Trigger trg_jobs_updated_at feuert
 -- bei INSERT nicht).
+-- These are PRE-migration fixtures for the historical backfill below. The
+-- later compatibility trigger deliberately creates no attendance/time evidence
+-- (20260918000000), so it must not pre-populate the backfill's input rows.
+-- Disable only that trigger during historical fixture insertion, then restore it.
+alter table public.jobs disable trigger compat_sync_assignments_from_legacy_ins;
 insert into public.jobs (
   id, company_id, assigned_to, created_by, customer_name, service_name,
   location_address, status, started_at, completed_at, job_type, date,
   start_time, is_active, created_at, updated_at
 ) values
   -- J1: offen, zugewiesen A1              -> Backfill: attendance 'assigned'
-  ('c4000000-0000-0000-0000-000000000001','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000002','c2000000-0000-0000-0000-000000000001','Kunde 1','Service 1','Ort 1','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  ('c4000000-0000-0000-0000-000000000001','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000002','c2000000-0000-0000-0000-000000000001','Kunde 1','Service 1','Ort 1','open',   null,                          null,                          'single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J2: in Arbeit, zugewiesen A1          -> Backfill: attendance 'started'
-  ('c4000000-0000-0000-0000-000000000002','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000002','c2000000-0000-0000-0000-000000000001','Kunde 2','Service 2','Ort 2','in_progress', timestamptz '2026-06-01 08:00+00', null,                     'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  ('c4000000-0000-0000-0000-000000000002','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000002','c2000000-0000-0000-0000-000000000001','Kunde 2','Service 2','Ort 2','in_progress', timestamptz '2026-06-01 08:00+00', null,                     'single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J3: abgeschlossen, zugewiesen A2      -> Backfill: attendance 'completed'
-  ('c4000000-0000-0000-0000-000000000003','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000003','c2000000-0000-0000-0000-000000000001','Kunde 3','Service 3','Ort 3','completed',   timestamptz '2026-06-01 08:00+00', timestamptz '2026-06-01 10:00+00','single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  ('c4000000-0000-0000-0000-000000000003','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000003','c2000000-0000-0000-0000-000000000001','Kunde 3','Service 3','Ort 3','completed',   timestamptz '2026-06-01 08:00+00', timestamptz '2026-06-01 10:00+00','single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J4: offen, NICHT zugewiesen           -> Backfill: keine Zeile
-  ('c4000000-0000-0000-0000-000000000004','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 4','Service 4','Ort 4','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  ('c4000000-0000-0000-0000-000000000004','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 4','Service 4','Ort 4','open',   null,                          null,                          'single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J5: Arbeitsauftrag für Guard-/Touch-Fälle
-  ('c4000000-0000-0000-0000-000000000005','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 5','Service 5','Ort 5','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  ('c4000000-0000-0000-0000-000000000005','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 5','Service 5','Ort 5','open',   null,                          null,                          'single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J6: Auftrag der Firma B (Isolation)
-  ('c4000000-0000-0000-0000-000000000006','c1000000-0000-0000-0000-000000000002',null,                                  'c2000000-0000-0000-0000-000000000004','Kunde 6','Service 6','Ort 6','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  ('c4000000-0000-0000-0000-000000000006','c1000000-0000-0000-0000-000000000002',null,                                  'c2000000-0000-0000-0000-000000000004','Kunde 6','Service 6','Ort 6','open',   null,                          null,                          'single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J7: abgeschlossen, zugewiesen A4 (Konto wird später gelöscht)
-  ('c4000000-0000-0000-0000-000000000007','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000007','c2000000-0000-0000-0000-000000000001','Kunde 7','Service 7','Ort 7','completed',   timestamptz '2026-06-02 08:00+00', timestamptz '2026-06-02 10:00+00','single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  ('c4000000-0000-0000-0000-000000000007','c1000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000007','c2000000-0000-0000-0000-000000000001','Kunde 7','Service 7','Ort 7','completed',   timestamptz '2026-06-02 08:00+00', timestamptz '2026-06-02 10:00+00','single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J8: Auftrag zum Löschen (Cascade-Fall)
-  ('c4000000-0000-0000-0000-000000000008','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 8','Service 8','Ort 8','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
+  ('c4000000-0000-0000-0000-000000000008','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 8','Service 8','Ort 8','open',   null,                          null,                          'single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00'),
   -- J9: BEWUSST OHNE assigned_to — reserviert für die Touch-Trigger-Fälle 11–13.
   -- Ab Phase 2 (Migration 20260726000000) legt der Kompatibilitäts-Trigger
   -- compat_sync_assignments_from_legacy beim INSERT eines Auftrags MIT
@@ -104,7 +109,14 @@ insert into public.jobs (
   -- Zuweisung hätte hier also bereits eine Zeile, und der manuelle INSERT
   -- der Touch-Fälle liefe in die UNIQUE-Bedingung. Ein unzugewiesener
   -- Auftrag hält diese Fälle unabhängig von der Kompatibilitätsschicht.
-  ('c4000000-0000-0000-0000-000000000009','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 9','Service 9','Ort 9','open',   null,                          null,                          'single', current_date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00');
+  ('c4000000-0000-0000-0000-000000000009','c1000000-0000-0000-0000-000000000001',null,                                  'c2000000-0000-0000-0000-000000000001','Kunde 9','Service 9','Ort 9','open',   null,                          null,                          'single', (now() at time zone 'Europe/Berlin')::date, '08:00', true, timestamptz '2020-01-01 10:00+00', timestamptz '2020-01-01 10:00+00');
+
+alter table public.jobs enable trigger compat_sync_assignments_from_legacy_ins;
+-- J1 is the live open-job fixture used before the backfill case. Explicitly
+-- supply its single primary assignment, as the current trigger normally does.
+insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_by)
+values ('c4000000-0000-0000-0000-000000000001','c2000000-0000-0000-0000-000000000002',
+        'Anna Mueller','c2000000-0000-0000-0000-000000000001');
 
 create temporary table _ja_results (
   case_no      int,
@@ -431,8 +443,8 @@ begin
     union all
     -- J3 abgeschlossen -> completed, abrechenbar, Zeitstempel uebernommen
     select 3, 'J3='||ja.attendance::text||'/'||ja.counts_for_timesheet::text
-             ||'/start='||coalesce(ja.employee_started_at::text,'-')
-             ||'/end='||coalesce(ja.employee_completed_at::text,'-')
+             ||'/start='||(ja.employee_started_at is not distinct from timestamptz '2026-06-01 08:00+00')::text
+             ||'/end='||(ja.employee_completed_at is not distinct from timestamptz '2026-06-01 10:00+00')::text
              ||'/name='||ja.employee_name_snapshot
              ||'/by='||coalesce(ja.assigned_by::text,'-')
       from public.job_assignments ja
@@ -444,7 +456,7 @@ begin
 
   insert into _ja_results values (
     14,'Backfill: Status-Abbildung, Zeitstempel, Name, assigned_by, keine Zeile ohne assigned_to',
-    'J1=assigned/false | J3=completed/true/start=2026-06-01 08:00:00+00/end=2026-06-01 10:00:00+00/name=Tom Schmidt/by=c2000000-0000-0000-0000-000000000001 | J4rows=0',
+    'J1=assigned/false | J3=completed/true/start=true/end=true/name=Tom Schmidt/by=c2000000-0000-0000-0000-000000000001 | J4rows=0',
     v);
   raise notice 'CASE 14 -> %', v;
 end $$;

@@ -69,9 +69,9 @@ insert into public.profiles (id, full_name) values
   ('e2000000-0000-0000-0000-000000000006','Bea Fremdfirma')
 on conflict (id) do nothing;
 
-insert into public.companies (id,name,slug) values
-  ('e1000000-0000-0000-0000-000000000001','Lese Firma A','lese-firma-a-test'),
-  ('e1000000-0000-0000-0000-000000000002','Lese Firma B','lese-firma-b-test');
+insert into public.companies (id,name,slug,timezone) values
+  ('e1000000-0000-0000-0000-000000000001','Lese Firma A','lese-firma-a-test','Europe/Berlin'),
+  ('e1000000-0000-0000-0000-000000000002','Lese Firma B','lese-firma-b-test','Europe/Berlin');
 
 update public.profiles set company_id='e1000000-0000-0000-0000-000000000001', role='admin',    is_active=true where id='e2000000-0000-0000-0000-000000000001';
 update public.profiles set company_id='e1000000-0000-0000-0000-000000000001', role='employee', is_active=true where id in
@@ -85,14 +85,15 @@ update public.profiles set company_id='e1000000-0000-0000-0000-000000000002', ro
 --   J3 = Firma B, single, dortiger Mitarbeiter zugewiesen (Firmengrenze)
 --   J4 = Firma A, RECURRING-PARENT — bekommt eine Zuweisung als Vorlage
 --   J5 = Firma A, single, Occurrence von J4
+-- Phase 16 validates the job date in the company timezone, not the SQL session timezone.
 insert into public.jobs (id, company_id, assigned_to, created_by, customer_name, service_name,
                          location_address, status, job_type, date, start_time, recurring_days,
                          is_active, created_at, updated_at, parent_job_id) values
-  ('e4000000-0000-0000-0000-000000000001','e1000000-0000-0000-0000-000000000001',null,'e2000000-0000-0000-0000-000000000001','K1','S1','O1','open','single',current_date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
-  ('e4000000-0000-0000-0000-000000000002','e1000000-0000-0000-0000-000000000001',null,'e2000000-0000-0000-0000-000000000001','K2','S2','O2','open','single',current_date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
-  ('e4000000-0000-0000-0000-000000000003','e1000000-0000-0000-0000-000000000002',null,'e2000000-0000-0000-0000-000000000005','K3','S3','O3','open','single',current_date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
+  ('e4000000-0000-0000-0000-000000000001','e1000000-0000-0000-0000-000000000001',null,'e2000000-0000-0000-0000-000000000001','K1','S1','O1','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
+  ('e4000000-0000-0000-0000-000000000002','e1000000-0000-0000-0000-000000000001',null,'e2000000-0000-0000-0000-000000000001','K2','S2','O2','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
+  ('e4000000-0000-0000-0000-000000000003','e1000000-0000-0000-0000-000000000002',null,'e2000000-0000-0000-0000-000000000005','K3','S3','O3','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
   ('e4000000-0000-0000-0000-000000000004','e1000000-0000-0000-0000-000000000001',null,'e2000000-0000-0000-0000-000000000001','K4','S4','O4','open','recurring',null,'08:00',array['mon'],true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00',null),
-  ('e4000000-0000-0000-0000-000000000005','e1000000-0000-0000-0000-000000000001',null,'e2000000-0000-0000-0000-000000000001','K5','S5','O5','open','single',current_date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00','e4000000-0000-0000-0000-000000000004');
+  ('e4000000-0000-0000-0000-000000000005','e1000000-0000-0000-0000-000000000001',null,'e2000000-0000-0000-0000-000000000001','K5','S5','O5','open','single',(now() at time zone 'Europe/Berlin')::date,'08:00',null,true,timestamptz '2020-01-01 10:00+00',timestamptz '2020-01-01 10:00+00','e4000000-0000-0000-0000-000000000004');
 
 create temporary table _r (case_no int, beschreibung text, erwartet text, ergebnis text) on commit drop;
 

@@ -30,8 +30,8 @@
 //   (oder npm run test:recurring-occurrence)
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, statSync } from "node:fs";
+import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 
@@ -45,7 +45,7 @@ const out = mkdtempSync(join(root, ".verify-recurring-occ-tmp-"));
 
 // Die Vorbelegungs-Prüfung ist nur dann aussagekräftig, wenn die Zeitzone
 // einen UTC-Versatz hat — sonst fällt der Fehler gar nicht auf.
-if (!process.env.TZ) process.env.TZ = "Europe/Berlin";
+process.env.TZ = "Europe/Berlin";
 
 let passed = 0;
 const ok = (name, fn) => {
@@ -102,6 +102,7 @@ try {
   // über utils/ hinaus auch i18n/ (config.ts/resolveLocale.ts/rtl.ts/
   // storage.ts/locales/*.json, alle mit eigenen relativen Imports) erfasst.
   const jsDir = join(out, "js");
+  writeFileSync(join(jsDir, "package.json"), JSON.stringify({ type: "module" }));
   const jsFiles = [];
   const walk = (dir) => {
     for (const rel of readdirSync(dir, { withFileTypes: true })) {
@@ -114,18 +115,42 @@ try {
   // "…/date" -> …/date.js (direkte Datei). "…/i18n" -> ein Verzeichnis-
   // Import, den natives ESM (anders als CommonJS) nicht automatisch auf
   // index.js abbildet — hier von Hand nachholen.
-  const resolveJs = (absNoExt) => {
-    const asFile = `${absNoExt}.js`;
-    return existsSync(asFile) ? asFile : join(absNoExt, "index.js");
+  const resolveJs = (absPath) => {
+    // Resolve emitted files only: TypeScript was already compiled above.
+    const ext = extname(absPath);
+    const candidates = ext === ".ts" || ext === ".tsx"
+      ? [absPath.replace(/\.tsx?$/, ".js")]
+      : ext ? [absPath] : [`${absPath}.js`, join(absPath, "index.js")];
+    const file = candidates.find((p) => existsSync(p) && statSync(p).isFile());
+    if (!file || ![".js", ".json"].includes(extname(file))) {
+      throw new Error(`Cannot resolve emitted module: ${absPath}`);
+    }
+    return file;
   };
+  // The real i18n graph also imports native adapters, which Node cannot parse.
+  // These pure-helper tests never call them: fail loudly if that changes.
+  const nativeStub = join(jsDir, "native-test-adapters.js");
+  writeFileSync(nativeStub, `
+    const unavailable = () => { throw new Error("Native adapter called in pure-helper test"); };
+    export const Platform = { OS: "web" };
+    export const I18nManager = { getConstants: unavailable, allowRTL: unavailable, forceRTL: unavailable };
+    export const getLocales = unavailable;
+    export default { getItem: unavailable, setItem: unavailable };
+  `);
+  const nativeModules = new Set([
+    "react-native", "expo-localization", "@react-native-async-storage/async-storage",
+  ]);
   for (const file of jsFiles) {
     const src = readFileSync(file, "utf8").replace(
-      /(["'])(@\/[^"']+|\.\.?\/[^"']+)\1/g,
-      (_m, q, spec) => {
+      /(\bfrom\s+|\bimport\s*)(["'])(@\/[^"']+|\.\.?\/[^"']+|react-native|expo-localization|@react-native-async-storage\/async-storage)\2/g,
+      (_m, prefix, q, spec) => {
+        if (nativeModules.has(spec)) return `${prefix}${q}${pathToFileURL(nativeStub).href}${q}`;
         const absNoExt = spec.startsWith("@/")
           ? join(jsDir, spec.slice(2))
           : join(dirname(file), spec);
-        return `${q}${pathToFileURL(resolveJs(absNoExt)).href}${q}`;
+        const target = resolveJs(absNoExt);
+        // Native Node ESM requires a JSON import attribute; Metro does not.
+        return `${prefix}${q}${pathToFileURL(target).href}${q}${target.endsWith(".json") ? ' with { type: "json" }' : ""}`;
       },
     );
     writeFileSync(file, src);

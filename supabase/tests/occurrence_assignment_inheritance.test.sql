@@ -337,7 +337,9 @@ declare v text; occ uuid;
 begin
   occ := pg_temp.erster('cb000000-0000-0000-0000-000000000001');
   perform pg_temp.act_as('ca000000-0000-0000-0000-000000000001');
-  perform public.set_job_assignments(occ, array['ca000000-0000-0000-0000-00000000000a']::uuid[]);
+  -- Phase 16 rejects removing started B; retain B explicitly while replacing C with A.
+  perform public.set_job_assignments(occ, array['ca000000-0000-0000-0000-00000000000a',
+    'ca000000-0000-0000-0000-00000000000b']::uuid[]);
   perform public.reset_job_occurrence_assignments(occ);
   select coalesce(string_agg(pg_temp.kurz(ja.employee_id)||':'||ja.attendance::text, ',' order by pg_temp.kurz(ja.employee_id)),'LEER')
     into v from public.job_assignments ja where ja.job_id=occ;
@@ -375,7 +377,8 @@ declare v text; occ uuid;
 begin
   occ := pg_temp.erster('cb000000-0000-0000-0000-000000000001');
   perform pg_temp.act_as('ca000000-0000-0000-0000-000000000001');
-  perform public.set_job_assignments(occ, array['ca000000-0000-0000-0000-00000000000d']::uuid[]);
+  -- Keep B's started participation, as in case 15.
+  perform public.set_job_assignments(occ, array['ca000000-0000-0000-0000-00000000000b','ca000000-0000-0000-0000-00000000000d']::uuid[]);
   delete from auth.users where id='ca000000-0000-0000-0000-00000000000d';
   perform public.reset_job_occurrence_assignments(occ);
 

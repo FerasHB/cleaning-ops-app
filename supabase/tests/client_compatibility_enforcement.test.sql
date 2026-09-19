@@ -181,12 +181,13 @@ select pg_temp.note(15, 'Gate', 'Meldungstext exakt wie vom Client erwartet',
 -- ── Teil 3: dieselbe Pruefung ueber die ECHTEN geschuetzten RPCs ────
 -- start_own_job muss die Ablehnung VOR jeder Geschaeftslogik auswerten —
 -- unabhaengig davon, ob dieser Aufruf inhaltlich sonst erlaubt waere.
+-- Phase 16 validates the job date in the company timezone, not the SQL session timezone.
 insert into public.jobs (id, company_id, created_by, customer_name, service_name,
                          location_address, status, job_type, date, start_time,
                          is_active, created_at, updated_at)
 values ('c6200000-0000-0000-0000-000000000001','c6100000-0000-0000-0000-000000000001',
         'c6000000-0000-0000-0000-000000000001','Compat Job','Test','Teststr. 1',
-        'open','single', current_date, '10:00', true, now(), now());
+        'open','single', (now() at time zone 'Europe/Berlin')::date, '10:00', true, now(), now());
 
 insert into public.job_assignments (job_id, employee_id, employee_name_snapshot, assigned_by)
 values ('c6200000-0000-0000-0000-000000000001','c6000000-0000-0000-0000-000000000002','Compat Employee','c6000000-0000-0000-0000-000000000001');

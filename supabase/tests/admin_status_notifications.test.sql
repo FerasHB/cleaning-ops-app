@@ -99,6 +99,12 @@ insert into public.jobs (id,company_id,customer_name,service_name,location_addre
  ('15000000-0000-0000-0000-0000000000f1','56666666-6666-6666-6666-666666666666','Kunde T','Reinigung T','Weg 8','open','e5600000-0000-0000-0000-000000000001','single',true),
  ('15000000-0000-0000-0000-0000000000f2','57777777-7777-7777-7777-777777777777','Kunde X','Reinigung X','Weg 9','open','e5700000-0000-0000-0000-000000000001','single',true);
 
+-- Phase 16 requires a scheduled business date even for notification fixtures.
+update public.jobs j
+set date = (now() at time zone coalesce(c.timezone, 'Europe/Berlin'))::date
+from public.companies c
+where c.id = j.company_id and c.slug like 'n-firma-%';
+
 create temp table _r (case_no int, beschreibung text, erwartet text, ergebnis text) on commit drop;
 
 -- =========================================================
@@ -452,5 +458,13 @@ end $$;
 select case_no, beschreibung, erwartet, ergebnis,
   case when erwartet = ergebnis then 'PASS' else 'FAIL' end as verdikt
 from _r order by case_no;
+
+-- A printed FAIL must also fail psql/CI, not silently return exit code zero.
+do $$
+begin
+  if exists (select 1 from _r where ergebnis is distinct from erwartet) then
+    raise exception 'ADMIN STATUS NOTIFICATIONS TEST: assertion failure';
+  end if;
+end $$;
 
 rollback;
