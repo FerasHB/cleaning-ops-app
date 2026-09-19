@@ -11,7 +11,7 @@ import { Text, View } from "react-native";
 export function WorkReconciliationNotice({ jobId }: { jobId?: string }) {
   const theme = useAppTheme();
   const { t } = useTranslation();
-  const { jobs, workOperations, online, retryWorkSync, refreshJobs, refreshWorkUi,
+  const { jobs, workOperations, online, retryWorkSync, refreshJobs, refreshAssignmentWork,
     discardWorkOperation } = useJobs();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,8 +54,8 @@ export function WorkReconciliationNotice({ jobId }: { jobId?: string }) {
           disabled={!canRetry || !!busyId} loading={busyId === op.operationId}
           onPress={() => void run(op.operationId, retryWorkSync)} /> :
           <Button label={t("jobs:work.refresh")} icon="refresh-outline" variant="secondary"
-            disabled={!!busyId} onPress={() => void run(op.operationId, async () => {
-              await refreshJobs(); await refreshWorkUi();
+            disabled={!online || !!busyId} onPress={() => void run(op.operationId, async () => {
+              await refreshJobs(); await refreshAssignmentWork(op.assignmentId);
             })} />}
         {canDiscard ? <Button label={t("jobs:work.discard")}
           icon="trash-outline" variant="secondary" disabled={!!busyId}
