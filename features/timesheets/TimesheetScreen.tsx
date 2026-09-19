@@ -351,7 +351,7 @@ export default function TimesheetScreen() {
                 <Text style={styles.entryMeta} numberOfLines={1}>
                   {entry.customerName}
                   {entry.remark ? ` · ${entry.remark}` : ""}
-                  {entry.reviewRequired ? ` · ⚠ ${t("admin:recurringRules.badgeReview")}` : ""}
+                  {entry.reviewRequired ? ` · ⚠ ${t("jobs:work.reviewRequired")}` : ""}
                 </Text>
               </View>
             ))}

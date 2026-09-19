@@ -121,6 +121,7 @@
     "gapsSectionTitle": "Zeitkorrekturen erforderlich",
     "gapsSectionSubtitle": "Diese Aufträge zählen noch nicht zur Arbeitszeit",
     "correctTimeButton": "Zeit korrigieren",
+    "sessionCorrectionUnavailable": "Sitzungszeiten benötigen eine geprüfte Wiederherstellung; diese Zeitkorrektur ist dafür nicht zulässig.",
     "reasonNoTime": "Keine eigene Zeit erfasst",
     "reasonStartOnly": "Beginn erfasst, Abschluss fehlt",
     "reasonEndOnly": "Abschluss erfasst, Beginn fehlt",

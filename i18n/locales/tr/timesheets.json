@@ -54,4 +54,10 @@
     "calendarDays_one": "{{count}} takvim günü",
     "calendarDays_other": "{{count}} takvim günü"
   }
+,
+  "sessionGap": {
+    "missing": "Oturum kaydı yok — inceleme gerekiyor",
+    "invalid": "Oturum süreleri eksik veya tutarsız",
+    "review": "Oturum süresi kaydedildi — inceleme gerekiyor"
+  }
 }

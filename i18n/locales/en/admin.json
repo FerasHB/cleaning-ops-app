@@ -121,6 +121,7 @@
     "gapsSectionTitle": "Time Corrections Needed",
     "gapsSectionSubtitle": "These jobs don't count toward work time yet",
     "correctTimeButton": "Correct Time",
+    "sessionCorrectionUnavailable": "Session time requires a reviewed recovery workflow; this time correction cannot change it.",
     "reasonNoTime": "No own time recorded",
     "reasonStartOnly": "Start recorded, completion missing",
     "reasonEndOnly": "Completion recorded, start missing",

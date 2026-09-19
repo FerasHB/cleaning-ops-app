@@ -190,7 +190,7 @@ export function accountSessionAssignment(
   const workedMinutesByDay = roundedMinutesByDay(byDay, "workedMs");
   const interruptedMinutesByDay = roundedMinutesByDay(byDay, "interruptedMs");
   const entries: TimesheetEntry[] = [...byDay.entries()]
-    .filter(([date]) => date.startsWith(prefix))
+    .filter(([date, day]) => date.startsWith(prefix) && day.workedMs > 0)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, day]) => {
       const durationMinutes = workedMinutesByDay.get(date)!;

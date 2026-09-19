@@ -18,6 +18,10 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useIsRTL } from "@/hooks/useIsRTL";
 import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
+import { useSessionWorkedTime } from "@/hooks/useSessionWorkedTime";
+import { useAuth } from "@/context/AuthContext";
+import { useJobs } from "@/context/JobContext";
+import { deriveAssignmentWorkUi } from "@/utils/assignmentWorkUi";
 import { Ionicons } from "@expo/vector-icons";
 import { Job } from "@/types/job";
 import { getJobDisplayTime } from "@/utils/jobSchedule";
@@ -25,13 +29,14 @@ import {
   formatAssigneesFull,
   formatAssigneesShort,
   getAssignees,
+  getOwnAssignee,
 } from "@/utils/jobAssignees";
 import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { AppTheme } from "@/constants/theme";
-import { confirmCompleteJob } from "@/utils/jobDialogs";
+import { confirmCompleteJob, confirmCompleteWhilePaused } from "@/utils/jobDialogs";
 import { getJobStatusMeta } from "@/utils/jobStatus";
 import {
   formatDateISO,
@@ -161,6 +166,14 @@ export default function JobCard({
   const isRTL = useIsRTL();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { t, i18n } = useTranslation();
+  const { role, profile, pauseResumeEnabled } = useAuth();
+  const { pauseJob, resumeJob, workSummaries, recordedWorkSummaries, workOperations } = useJobs();
+  const own = getOwnAssignee(job, profile?.id);
+  const ownSummary = own ? workSummaries[own.assignmentId] : null;
+  const workUi = deriveAssignmentWorkUi({ job, role, userId: profile?.id,
+    capability: pauseResumeEnabled, summary: ownSummary, operations: workOperations });
+  const sessionWorkedLabel = useSessionWorkedTime(ownSummary,
+    own ? recordedWorkSummaries[own.assignmentId] : null, workUi.pending);
   // Beschriftung + Farben zentral — dieselbe Quelle wie StatusBadge im Detail.
   const jobStatusLabels = useJobStatusLabels();
   const status = getJobStatusMeta(job.status, theme.colors, jobStatusLabels[job.status]);
@@ -170,25 +183,31 @@ export default function JobCard({
   // durch); der State steuert nur die sichtbare Deaktivierung.
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState(false);
 
   const runAction = useCallback(
     async (action: () => void | Promise<void>, confirm: boolean) => {
       if (busyRef.current) return;
       busyRef.current = true;
       setBusy(true);
+      setActionError(false);
       try {
         // Abschließen ist unumkehrbar — vorher nachfragen. Start bleibt ohne
         // Rückfrage (zeitkritisch und unschädlich).
-        if (confirm && !(await confirmCompleteJob())) {
+        if (confirm && !(await (workUi.mode === "sessions" && workUi.state === "paused"
+          ? confirmCompleteWhilePaused() : confirmCompleteJob()))) {
           return;
         }
         await action();
+      } catch (error) {
+        setActionError(true);
+        throw error;
       } finally {
         busyRef.current = false;
         setBusy(false);
       }
     },
-    [],
+    [workUi.mode, workUi.state],
   );
 
   // Parent-Recurring-Regeln dürfen weder gestartet noch abgeschlossen werden.
@@ -198,7 +217,9 @@ export default function JobCard({
   const startTime = getJobDisplayTime(job);
 
   // Arbeitszeit — nur bei gestarteten/laufenden/abgeschlossenen Jobs vorhanden.
-  const { label: workedLabel } = useJobWorkedTime(job);
+  const { label: legacyWorkedLabel } = useJobWorkedTime(workUi.mode === "sessions"
+    ? { status: "open", startedAt: null, completedAt: null } : job);
+  const workedLabel = workUi.mode === "sessions" ? `${sessionWorkedLabel} h` : legacyWorkedLabel;
 
   // Zeit-Zeile je nach Auftragstyp
   let scheduleText: string | null = null;
@@ -243,11 +264,15 @@ export default function JobCard({
   // canStart/canComplete (Phase 16) überschreiben den reinen Status-Test,
   // wenn der Aufrufer sie übergibt — siehe Props-Kommentar.
   const showStartAction =
-    !isParentRule && !!onStart && (canStart ?? job.status === "open");
+    !isParentRule && !!onStart && (workUi.mode === "sessions"
+      ? workUi.canStart && (canStart ?? true)
+      : (canStart ?? job.status === "open"));
   const showCompleteAction =
     !isParentRule &&
     !!onComplete &&
-    (canComplete ?? job.status === "in_progress");
+    (workUi.mode === "sessions" ? workUi.canComplete : (canComplete ?? job.status === "in_progress"));
+  const showPauseAction = !isParentRule && workUi.mode === "sessions" && workUi.canPause;
+  const showResumeAction = !isParentRule && workUi.mode === "sessions" && workUi.canResume;
   // Mitarbeiter-Zeile: gekürzt („Anna, Bert +2"), das vollständige Register
   // steckt im Screenreader-Label. Ohne Zuweisung bleibt die Zeile ganz weg —
   // wie bisher, als employeeName schlicht null war.
@@ -260,7 +285,7 @@ export default function JobCard({
       : undefined;
 
   // Footer wird nur gerendert, wenn Mitarbeiter ODER Action vorhanden
-  const hasFooter = !!employeeText || showStartAction || showCompleteAction;
+  const hasFooter = !!employeeText || showStartAction || showCompleteAction || showPauseAction || showResumeAction;
 
   // ── Root-Style: farbige Statuskante an der Leserichtungs-Startseite
   // (borderStart* statt borderLeft* — kippt in RTL automatisch auf rechts).
@@ -381,6 +406,12 @@ export default function JobCard({
           </Text>
         </View>
       ) : null}
+      {workUi.mode === "sessions" ? <Text style={styles.metaText}>
+        {t(`jobs:work.state.${workUi.state}`)}
+        {workUi.pending ? ` · ${t(`jobs:work.pending.${workUi.pending.action}`)}` : ""}
+        {workUi.reviewRequired ? ` · ${t("jobs:work.reviewRequired")}` : ""}
+      </Text> : null}
+      {actionError ? <Text style={{ color: theme.colors.error }}>{t("jobs:work.actionFailed")}</Text> : null}
 
       {/* ── Hinweise (Heute-Kontext) ── */}
       {hints.length > 0 ? (
@@ -458,6 +489,16 @@ export default function JobCard({
               <Text style={styles.quickActionSuccessText}>{t("jobs:actions.complete")}</Text>
             </TouchableOpacity>
           ) : null}
+          {showPauseAction ? <TouchableOpacity style={[styles.quickActionPrimary, busy && styles.quickActionBusy]}
+            disabled={busy} onPress={() => void runAction(() => pauseJob(job.id), false).catch(() => {})}>
+            <Ionicons name="pause" size={13} color={theme.colors.onPrimaryContainer} />
+            <Text style={styles.quickActionPrimaryText}>{t("jobs:work.pause")}</Text>
+          </TouchableOpacity> : null}
+          {showResumeAction ? <TouchableOpacity style={[styles.quickActionPrimary, busy && styles.quickActionBusy]}
+            disabled={busy} onPress={() => void runAction(() => resumeJob(job.id), false).catch(() => {})}>
+            <Ionicons name="play" size={13} color={theme.colors.onPrimaryContainer} />
+            <Text style={styles.quickActionPrimaryText}>{t("jobs:work.resume")}</Text>
+          </TouchableOpacity> : null}
         </View>
       ) : null}
     </>

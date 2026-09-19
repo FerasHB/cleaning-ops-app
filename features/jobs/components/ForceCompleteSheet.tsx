@@ -40,6 +40,8 @@ type Props = {
   onClose: () => void;
   /** Führt den Abschluss aus; wirft bei serverseitiger Ablehnung. */
   onConfirm: (reason: string) => Promise<void>;
+  activeSessionBlocked?: boolean;
+  sessionStateLoading?: boolean;
 };
 
 export function ForceCompleteSheet({
@@ -47,6 +49,8 @@ export function ForceCompleteSheet({
   customerName,
   onClose,
   onConfirm,
+  activeSessionBlocked = false,
+  sessionStateLoading = false,
 }: Props) {
   const theme = useAppTheme();
   const { t } = useTranslation();
@@ -63,6 +67,7 @@ export function ForceCompleteSheet({
   };
 
   const handleConfirm = async () => {
+    if (activeSessionBlocked || sessionStateLoading) return;
     const trimmed = reason.trim();
     if (!trimmed) {
       setError(t("jobs:forceComplete.reasonRequiredError"));
@@ -123,6 +128,12 @@ export function ForceCompleteSheet({
               <Text style={styles.body}>
                 {t("jobs:forceComplete.bodyText")}
               </Text>
+              {activeSessionBlocked ? <Text style={styles.body}>
+                {t("jobs:work.forceActiveBlock")}
+              </Text> : null}
+              {sessionStateLoading ? <Text style={styles.body}>
+                {t("jobs:work.forceStateUnavailable")}
+              </Text> : null}
 
               {error ? (
                 <View style={styles.bannerWrap}>
@@ -144,7 +155,7 @@ export function ForceCompleteSheet({
                   label={t("jobs:forceComplete.confirmButton")}
                   icon="checkmark"
                   loading={submitting}
-                  disabled={submitting}
+                  disabled={submitting || activeSessionBlocked || sessionStateLoading}
                   onPress={handleConfirm}
                 />
                 <Button

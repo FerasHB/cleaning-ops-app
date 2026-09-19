@@ -75,7 +75,7 @@ function translateRpcError(err: unknown): string {
       : "";
 
   if (raw.includes("Session-aware work requires the reviewed session-recovery correction workflow")) {
-    return "Sitzungszeiten benötigen eine geprüfte Wiederherstellung; diese Zeitkorrektur ist dafür nicht zulässig.";
+    return i18next.t("admin:timesheet.sessionCorrectionUnavailable");
   }
 
   const hit = rpcMessageMap().find((entry) => raw.includes(entry.match));

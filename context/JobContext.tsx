@@ -8,6 +8,7 @@ import {
   getEmployees as getEmployeesService,
   setEmployeeActive as setEmployeeActiveService,
   getJobs,
+  getJobById,
   getScheduleOccurrences,
   PartialUpdateError,
   startJob as startJobService,
@@ -29,7 +30,6 @@ import {
   refreshActiveWorkSession,
   workJournal,
 } from "@/services/jobs/workSessions.service";
-import { getCachedAppConfig } from "@/services/offline/appConfig.storage";
 import {
   addPendingJobAction,
   dismissFailedJobAction,
@@ -41,9 +41,13 @@ import { syncPendingJobActions } from "@/services/offline/jobs.sync";
 import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
 import { isNetworkError } from "@/utils/networkError";
 import { toUserMessage } from "@/utils/userMessages";
+import { otherActiveJob, runAssignmentActionOnce } from "@/utils/assignmentWorkUi";
+import { confirmDialog } from "@/utils/dialogs";
 import NetInfo from "@react-native-community/netinfo";
 import { AppState } from "react-native";
-import type { WorkOperation } from "@/services/offline/workJournal.core";
+import { router } from "expo-router";
+import { i18next } from "@/i18n";
+import type { ActiveWorkSession, WorkAction, WorkOperation, WorkSummary } from "@/services/offline/workJournal.core";
 import React, {
   createContext,
   useCallback,
@@ -90,6 +94,16 @@ type JobContextType = {
   deleteJob: (jobId: string) => Promise<void>;
   startJob: (jobId: string) => Promise<void>;
   completeJob: (jobId: string) => Promise<void>;
+  pauseJob: (jobId: string) => Promise<void>;
+  resumeJob: (jobId: string) => Promise<void>;
+  workOperations: WorkOperation[];
+  activeWork: ActiveWorkSession | null;
+  workSummaries: Record<string, WorkSummary>;
+  recordedWorkSummaries: Record<string, WorkSummary>;
+  refreshWorkUi: () => Promise<void>;
+  refreshAssignmentWork: (assignmentId: string) => Promise<void>;
+  retryWorkSync: () => Promise<void>;
+  discardWorkOperation: (operationId: string) => Promise<void>;
   /**
    * Admin-Zwangsabschluss eines haengenden Auftrags (Phase 16). Online-only —
    * ein Lebenszyklus-Eingriff gehoert nicht in die Offline-Warteschlange.
@@ -201,7 +215,7 @@ function mergeUnreadFlags(jobs: Job[], unreadJobIds: string[]): Job[] {
 }
 
 export function JobProvider({ children }: { children: React.ReactNode }) {
-  const { session, role } = useAuth();
+  const { session, role, pauseResumeEnabled } = useAuth();
   const isAdmin = role === "admin";
 
   // Besitzer aller lokalen Job-Daten (Cache + Warteschlange). Kommt aus der
@@ -226,12 +240,28 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const [failedActions, setFailedActions] = useState<PendingJobAction[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFailed, setSyncFailed] = useState(false);
+  const [workOperations, setWorkOperations] = useState<WorkOperation[]>([]);
+  const [activeWork, setActiveWork] = useState<ActiveWorkSession | null>(null);
+  const [workSummaries, setWorkSummaries] = useState<Record<string, WorkSummary>>({});
+  const [recordedWorkSummaries, setRecordedWorkSummaries] = useState<Record<string, WorkSummary>>({});
+  const [workStateOwner, setWorkStateOwner] = useState<string | null>(null);
+  const currentUserRef = useRef(userId);
+  const workUiRefreshEpochRef = useRef(0);
+  const workUiJobsRef = useRef(jobs);
+  currentUserRef.current = userId;
+  workUiJobsRef.current = jobs;
 
   // Guards gegen doppelte Initialisierung / parallele Syncs
   const didInitialLoadRef = useRef(false);
   const hasHandledFirstNetInfoEventRef = useRef(false);
   const syncInProgressRef = useRef(false);
   const refreshJobsInProgressRef = useRef(false);
+  const sessionActionBusyRef = useRef(new Set<string>());
+  const extraWorkAssignmentIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    sessionActionBusyRef.current.clear();
+    extraWorkAssignmentIdsRef.current.clear();
+  }, [userId]);
 
   const refreshWorkExecution = useCallback(async () => {
     if (!userId || !(await isOnline())) return;
@@ -243,6 +273,62 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       .map((op) => op.assignmentId))];
     await Promise.allSettled(pendingAssignments.map((id) => getAssignmentWorkSummary(userId, id)));
   }, [userId]);
+
+  const refreshWorkUi = useCallback(async () => {
+    if (!userId || isAdmin) return;
+    const refreshEpoch = ++workUiRefreshEpochRef.current;
+    const [operations, active] = await Promise.all([workJournal.list(userId), workJournal.getActive(userId)]);
+    const assignmentIds = [...new Set([
+      ...workUiJobsRef.current.flatMap((job) => job.assignees
+        .filter((assignee) => assignee.employeeId === userId).map((assignee) => assignee.assignmentId)),
+      ...operations.filter((operation) => operation.status !== "acknowledged")
+        .map((operation) => operation.assignmentId),
+      ...(active ? [active.assignmentId] : []),
+      ...extraWorkAssignmentIdsRef.current,
+    ])];
+    const pairs = await Promise.all(assignmentIds.map(async (id) => [id,
+      await workJournal.getSummary(userId, id).catch(() => null),
+      await workJournal.getRecordedSummary(userId, id).catch(() => null)] as const));
+    if (currentUserRef.current !== userId || refreshEpoch !== workUiRefreshEpochRef.current) return;
+    setWorkStateOwner(userId);
+    setWorkOperations(operations.filter((operation) => operation.status !== "acknowledged"));
+    setActiveWork(active);
+    setWorkSummaries(Object.fromEntries(pairs.filter((item) => item[1]).map(([id, summary]) => [id, summary!])));
+    setRecordedWorkSummaries(Object.fromEntries(pairs.filter((item) => item[2]).map(([id, , summary]) => [id, summary!])));
+  }, [userId, isAdmin]);
+
+  const refreshAssignmentWork = useCallback(async (assignmentId: string) => {
+    if (!userId || isAdmin) return;
+    extraWorkAssignmentIdsRef.current.add(assignmentId);
+    await getAssignmentWorkSummary(userId, assignmentId);
+    await refreshWorkUi();
+  }, [userId, isAdmin, refreshWorkUi, jobs]);
+
+  useEffect(() => {
+    if (!userId || isAdmin) {
+      setWorkStateOwner(null); setWorkOperations([]); setActiveWork(null);
+      setWorkSummaries({}); setRecordedWorkSummaries({});
+      return;
+    }
+    void refreshWorkUi().catch((error) => console.warn("Work UI refresh failed:", error));
+  }, [userId, isAdmin, refreshWorkUi]);
+
+  const showActiveJobBlock = useCallback(async (activeJobId: string) => {
+    const open = await confirmDialog({
+      title: i18next.t("jobs:work.activeBlockTitle"),
+      message: i18next.t("jobs:work.activeBlockMessage"),
+      confirmLabel: i18next.t("jobs:work.openActiveJob"),
+    });
+    if (open) router.push(`/jobs/${activeJobId}`);
+  }, []);
+
+  const ensureNoOtherActive = useCallback(async (jobId: string) => {
+    if (!userId) return false;
+    const active = await workJournal.getActive(userId);
+    const blockedBy = otherActiveJob(active, jobId);
+    if (blockedBy) { await showActiveJobBlock(blockedBy); return false; }
+    return true;
+  }, [userId, showActiveJobBlock]);
 
   const refreshPendingState = useCallback(async () => {
     if (!userId) {
@@ -308,7 +394,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         }
         const serverJobs = await loadJobsForRole(isAdmin);
         await saveCachedJobs(userId, serverJobs);
-        if (!isAdmin) void cacheWorkSummariesFromJobs(userId, serverJobs).catch((err) =>
+        if (!isAdmin) await cacheWorkSummariesFromJobs(userId, serverJobs).catch((err) =>
           console.warn("Work summary cache refresh failed:", err));
 
         // Nur "pending" spiegeln — ein dauerhaft abgelehnter Eintrag ist am
@@ -439,6 +525,12 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setPendingCount(0);
       setIsSyncing(false);
       setSyncFailed(false);
+      setWorkOperations([]);
+      setActiveWork(null);
+      setWorkSummaries({});
+      setRecordedWorkSummaries({});
+      setWorkStateOwner(null);
+      extraWorkAssignmentIdsRef.current.clear();
 
       didInitialLoadRef.current = false;
       hasHandledFirstNetInfoEventRef.current = false;
@@ -500,7 +592,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       try {
         await runPendingSyncSafely();
-        void refreshWorkExecution().catch((err) => console.warn("Work refresh failed:", err));
+        void refreshWorkExecution().then(refreshWorkUi)
+          .catch((err) => console.warn("Work refresh failed:", err));
         await Promise.all([refreshJobs(), refreshEmployees()]);
       } catch (err) {
         if (__DEV__) {
@@ -510,7 +603,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     };
 
     loadAll();
-  }, [session, userId, refreshJobs, refreshEmployees, runPendingSyncSafely, refreshWorkExecution]);
+  }, [session, userId, refreshJobs, refreshEmployees, runPendingSyncSafely, refreshWorkExecution, refreshWorkUi]);
 
   useEffect(() => {
     if (!session) {
@@ -534,7 +627,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       try {
         await runPendingSyncSafely();
-        void refreshWorkExecution().catch((err) => console.warn("Work refresh failed:", err));
+        void refreshWorkExecution().then(refreshWorkUi)
+          .catch((err) => console.warn("Work refresh failed:", err));
         await refreshJobs();
       } catch (err) {
         console.error("Failed to sync after reconnect:", err);
@@ -544,15 +638,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     return () => {
       unsubscribe();
     };
-  }, [session, refreshJobs, runPendingSyncSafely, refreshWorkExecution]);
+  }, [session, refreshJobs, runPendingSyncSafely, refreshWorkExecution, refreshWorkUi]);
 
   useEffect(() => {
     if (!session) return;
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refreshWorkExecution().catch((err) => console.warn("Work refresh failed:", err));
+      if (state === "active") void refreshWorkExecution()
+        .then(refreshWorkUi)
+        .catch((err) => console.warn("Work refresh failed:", err));
     });
     return () => subscription.remove();
-  }, [session, refreshWorkExecution]);
+  }, [session, refreshWorkExecution, refreshWorkUi]);
 
   useEffect(() => {
     if (!session) {
@@ -582,6 +678,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
             await refreshJobs();
             await refreshWorkExecution();
+            await refreshWorkUi();
           } catch (err) {
             console.error("Realtime refresh failed:", err);
           }
@@ -596,7 +693,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, refreshJobs, refreshWorkExecution]);
+  }, [session, refreshJobs, refreshWorkExecution, refreshWorkUi]);
 
   const createJob = useCallback(async (input: CreateJobInput) => {
     try {
@@ -707,16 +804,52 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId]);
 
+  const performSessionAction = useCallback(async (job: Job, assignmentId: string, action: WorkAction) => {
+    if (!userId || !job.companyId) throw new Error("Work assignment needs an online refresh before execution");
+    const companyId = job.companyId;
+    await runAssignmentActionOnce(sessionActionBusyRef.current, assignmentId, async () => {
+      if ((action === "start" || action === "resume") && !await ensureNoOtherActive(job.id)) return;
+      try {
+        await executeAssignmentAction({ userId, companyId, jobId: job.id,
+          assignmentId, action, capability: pauseResumeEnabled });
+      } catch (error) {
+        if (action === "start" || action === "resume") {
+          try {
+            const active = await refreshActiveWorkSession(userId);
+            if (active && active.jobId !== job.id) {
+              await showActiveJobBlock(active.jobId);
+              return;
+            }
+          } catch { /* keep the original execution error */ }
+        }
+        throw error;
+      } finally {
+        await refreshWorkUi();
+        await refreshJobs();
+      }
+    });
+  }, [userId, pauseResumeEnabled, ensureNoOtherActive, showActiveJobBlock, refreshWorkUi, refreshJobs]);
+
+  const retryWorkSync = useCallback(async () => {
+    if (!userId || !(await isOnline())) return;
+    await workJournal.sync(userId);
+    await refreshWorkUi();
+    await refreshJobs();
+  }, [userId, refreshWorkUi, refreshJobs]);
+
+  const discardWorkOperation = useCallback(async (operationId: string) => {
+    if (!userId) return;
+    await workJournal.discardFailedLeaf(userId, operationId);
+    await refreshWorkUi();
+    await refreshJobs();
+  }, [userId, refreshWorkUi, refreshJobs]);
+
   const startJob = useCallback(async (jobId: string) => {
     try {
-      const ownJob = jobs.find((job) => job.id === jobId);
+      const ownJob = jobs.find((job) => job.id === jobId) ?? await getJobById(jobId);
       const ownAssignment = ownJob?.assignees.find((assignee) => assignee.employeeId === userId);
-      const capability = (await getCachedAppConfig())?.pauseResumeEnabled ?? false;
-      if (ownAssignment && (ownAssignment.trackingMode !== "legacy" || capability)) {
-        if (!userId || !ownJob?.companyId) throw new Error("Work assignment needs an online refresh before execution");
-        await executeAssignmentAction({ userId, companyId: ownJob.companyId, jobId,
-          assignmentId: ownAssignment.assignmentId, action: "start" });
-        await refreshJobs();
+      if (ownAssignment && (ownAssignment.trackingMode !== "legacy" || pauseResumeEnabled)) {
+        await performSessionAction(ownJob!, ownAssignment.assignmentId, "start");
         return;
       }
       const online = await isOnline();
@@ -796,17 +929,16 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to start job:", err);
       throw err;
     }
-  }, [jobs, refreshJobs, userId]);
+  }, [jobs, refreshJobs, userId, pauseResumeEnabled, performSessionAction]);
 
   const completeJob = useCallback(async (jobId: string) => {
     try {
-      const ownJob = jobs.find((job) => job.id === jobId);
+      const ownJob = jobs.find((job) => job.id === jobId) ?? await getJobById(jobId);
       const ownAssignment = ownJob?.assignees.find((assignee) => assignee.employeeId === userId);
-      if (ownAssignment && ownAssignment.trackingMode !== "legacy") {
-        if (!userId || !ownJob?.companyId) throw new Error("Work assignment needs an online refresh before execution");
-        await executeAssignmentAction({ userId, companyId: ownJob.companyId, jobId,
-          assignmentId: ownAssignment.assignmentId, action: "complete" });
-        await refreshJobs();
+      const summary = ownAssignment && userId
+        ? await workJournal.getSummary(userId, ownAssignment.assignmentId) : null;
+      if (ownAssignment && (ownAssignment.trackingMode === "sessions" || summary?.trackingMode === "sessions")) {
+        await performSessionAction(ownJob!, ownAssignment.assignmentId, "complete");
         return;
       }
       const online = await isOnline();
@@ -871,7 +1003,25 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to complete job:", err);
       throw err;
     }
-  }, [jobs, refreshJobs, userId]);
+  }, [jobs, refreshJobs, userId, performSessionAction]);
+
+  const pauseJob = useCallback(async (jobId: string) => {
+    if (!pauseResumeEnabled) return;
+    const job = jobs.find((item) => item.id === jobId) ?? await getJobById(jobId);
+    const own = job?.assignees.find((assignee) => assignee.employeeId === userId);
+    const summary = own && userId ? await workJournal.getSummary(userId, own.assignmentId) : null;
+    if (!job || !own || summary?.trackingMode !== "sessions") return;
+    await performSessionAction(job, own.assignmentId, "pause");
+  }, [jobs, userId, pauseResumeEnabled, performSessionAction]);
+
+  const resumeJob = useCallback(async (jobId: string) => {
+    if (!pauseResumeEnabled) return;
+    const job = jobs.find((item) => item.id === jobId) ?? await getJobById(jobId);
+    const own = job?.assignees.find((assignee) => assignee.employeeId === userId);
+    const summary = own && userId ? await workJournal.getSummary(userId, own.assignmentId) : null;
+    if (!job || !own || summary?.trackingMode !== "sessions") return;
+    await performSessionAction(job, own.assignmentId, "resume");
+  }, [jobs, userId, pauseResumeEnabled, performSessionAction]);
 
   const forceCompleteJob = useCallback(
     async (jobId: string, reason: string) => {
@@ -929,6 +1079,16 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      pauseJob,
+      resumeJob,
+      workOperations: userId && workStateOwner === userId ? workOperations : [],
+      activeWork: userId && workStateOwner === userId ? activeWork : null,
+      workSummaries: userId && workStateOwner === userId ? workSummaries : {},
+      recordedWorkSummaries: userId && workStateOwner === userId ? recordedWorkSummaries : {},
+      refreshWorkUi,
+      refreshAssignmentWork,
+      retryWorkSync,
+      discardWorkOperation,
       forceCompleteJob,
       markJobCommentsAsRead,
       unreadJobIds,
@@ -955,6 +1115,18 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       deleteJob,
       startJob,
       completeJob,
+      pauseJob,
+      resumeJob,
+      workOperations,
+      activeWork,
+      workSummaries,
+      recordedWorkSummaries,
+      workStateOwner,
+      userId,
+      refreshWorkUi,
+      refreshAssignmentWork,
+      retryWorkSync,
+      discardWorkOperation,
       forceCompleteJob,
       markJobCommentsAsRead,
       unreadJobIds,

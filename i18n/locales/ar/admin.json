@@ -121,6 +121,7 @@
     "gapsSectionTitle": "تصحيحات الوقت مطلوبة",
     "gapsSectionSubtitle": "لا تُحتسب هذه المهام بعد ضمن وقت العمل",
     "correctTimeButton": "تصحيح الوقت",
+    "sessionCorrectionUnavailable": "يتطلب وقت الجلسات إجراء استعادة خاضعًا للمراجعة؛ لا يمكن تغييره بتصحيح الوقت هذا.",
     "reasonNoTime": "لم يُسجَّل وقت خاص",
     "reasonStartOnly": "تم تسجيل البدء، الإكمال مفقود",
     "reasonEndOnly": "تم تسجيل الإكمال، البدء مفقود",

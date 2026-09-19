@@ -26,14 +26,20 @@ import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { WorkAction } from "@/services/offline/workJournal.core";
 
 type Props = {
   canStart: boolean;
   canComplete: boolean;
+  canPause?: boolean;
+  canResume?: boolean;
   isDone: boolean;
   submitting: boolean;
   onStart: () => void;
   onComplete: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
+  pendingAction?: WorkAction;
   showEdit: boolean;
   onEdit: () => void;
   /**
@@ -58,10 +64,15 @@ type Props = {
 export function JobActionFooter({
   canStart,
   canComplete,
+  canPause = false,
+  canResume = false,
   isDone,
   submitting,
   onStart,
   onComplete,
+  onPause,
+  onResume,
+  pendingAction,
   showEdit,
   onEdit,
   waitingOnOthers = false,
@@ -79,6 +90,9 @@ export function JobActionFooter({
   const hasContent =
     canStart ||
     canComplete ||
+    canPause ||
+    canResume ||
+    !!pendingAction ||
     isDone ||
     showEdit ||
     waitingOnOthers ||
@@ -121,6 +135,19 @@ export function JobActionFooter({
         />
       ) : null}
 
+      {canPause ? <Button label={t("jobs:work.pause")} icon="pause"
+        variant="secondary" loading={submitting} disabled={submitting} onPress={() => onPause?.()}
+        accessibilityRole="button" accessibilityLabel={t("jobs:work.pause")} /> : null}
+
+      {canResume ? <Button label={t("jobs:work.resume")} icon="play"
+        loading={submitting} disabled={submitting} onPress={() => onResume?.()}
+        accessibilityRole="button" accessibilityLabel={t("jobs:work.resume")} /> : null}
+
+      {pendingAction ? <View style={styles.pendingInfo}>
+        <Ionicons name="cloud-upload-outline" size={20} color={theme.colors.statusInProgress} />
+        <Text style={styles.pendingInfoText}>{t(`jobs:work.pending.${pendingAction}`)}</Text>
+      </View> : null}
+
       {waitingOnOthers ? (
         <View style={styles.pendingInfo}>
           <Ionicons
@@ -154,43 +181,6 @@ export function JobActionFooter({
           onPress={() => onForceComplete?.()}
           accessibilityRole="button"
           accessibilityLabel={t("jobs:forceComplete.buttonLabel")}
-        />
-      ) : null}
-
-      {waitingOnOthers ? (
-        <View style={styles.pendingInfo}>
-          <Ionicons
-            name="checkmark-done"
-            size={20}
-            color={theme.colors.statusInProgress}
-          />
-          <Text style={styles.pendingInfoText}>
-            Deine Arbeitszeit ist erfasst. Der Auftrag bleibt in Arbeit, bis
-            alle Zugewiesenen abgeschlossen haben.
-          </Text>
-        </View>
-      ) : null}
-
-      {startBlockedReason ? (
-        <View style={styles.blockedInfo}>
-          <Ionicons
-            name="time-outline"
-            size={20}
-            color={theme.colors.onSurfaceVariant}
-          />
-          <Text style={styles.blockedInfoText}>{startBlockedReason}</Text>
-        </View>
-      ) : null}
-
-      {showForceComplete ? (
-        <Button
-          label="Auftrag administrativ abschließen"
-          variant="secondary"
-          icon="shield-checkmark-outline"
-          disabled={submitting}
-          onPress={() => onForceComplete?.()}
-          accessibilityRole="button"
-          accessibilityLabel="Auftrag administrativ abschließen"
         />
       ) : null}
 

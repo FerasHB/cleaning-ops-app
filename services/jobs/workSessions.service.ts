@@ -73,7 +73,7 @@ export const workJournal = createWorkJournal({
   now: () => new Date().toISOString(),
 });
 
-async function fetchAssignmentWorkSummary(assignmentId: string): Promise<WorkSummary> {
+export async function fetchAssignmentWorkSummary(assignmentId: string): Promise<WorkSummary> {
   const { data, error } = await supabase.rpc("get_assignment_work_summary", { p_assignment_id: assignmentId });
   if (error) throw error;
   return canonicalSummary(data as Record<string, unknown>);
@@ -130,13 +130,13 @@ export async function cacheWorkSummariesFromJobs(userId: string, jobs: Job[]): P
 /** One entry point for online and offline execution; start/complete preserve legacy routing. */
 export async function executeAssignmentAction(input: {
   userId: string; companyId: string; jobId: string; assignmentId: string;
-  action: WorkAction; actionTimestamp?: string;
+  action: WorkAction; actionTimestamp?: string; capability?: boolean;
 }): Promise<{ route: "legacy"; result: unknown } | { route: "sessions"; operation: WorkOperation }> {
   let summary = await workJournal.getSummary(input.userId, input.assignmentId);
   if (!summary) summary = await getAssignmentWorkSummary(input.userId, input.assignmentId);
   const cachedCapability = await getCachedAppConfig();
-  let pauseResumeEnabled = cachedCapability?.pauseResumeEnabled ?? false;
-  if (!cachedCapability && (await NetInfo.fetch()).isConnected) {
+  let pauseResumeEnabled = input.capability ?? cachedCapability?.pauseResumeEnabled ?? false;
+  if (input.capability === undefined && !cachedCapability && (await NetInfo.fetch()).isConnected) {
     pauseResumeEnabled = (await fetchAppConfig()).pauseResumeEnabled;
   }
   if (resolveWorkRoute(summary, input.action, pauseResumeEnabled) === "legacy") {

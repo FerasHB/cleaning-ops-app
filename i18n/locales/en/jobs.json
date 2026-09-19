@@ -240,4 +240,56 @@
     "confirmButton": "Complete",
     "cancelButton": "Cancel"
   }
+,
+  "work": {
+    "state": {
+      "not_started": "Not started",
+      "active": "Active",
+      "paused": "Paused",
+      "completed": "Completed",
+      "loading": "Loading"
+    },
+    "pause": "Pause",
+    "resume": "Resume",
+    "pending": {
+      "start": "Start pending sync",
+      "pause": "Pause pending sync",
+      "resume": "Resume pending sync",
+      "complete": "Completion pending sync"
+    },
+    "savedLocally": "Saved on this device; will sync when connected",
+    "pausedSince": "Paused since {{time}}",
+    "reviewRequired": "Recorded time needs administrator review; not yet released for payroll",
+    "completePausedTitle": "Complete paused job?",
+    "completePausedMessage": "Your assignment will be completed. No work time will be added after the last pause.",
+    "activeBlockTitle": "Another job is active",
+    "activeBlockMessage": "Pause or complete the active job first. Jobs are not switched automatically.",
+    "openActiveJob": "Open active job",
+    "actionFailed": "The action could not be completed.",
+    "reconciliationTitle": "Review local work actions",
+    "failedAction": "{{action}} for {{job}} could not sync.",
+    "dependentWaiting": "Later dependent actions are waiting too.",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "discard": "Discard local action",
+    "discardTitle": "Discard local action?",
+    "discardMessage": "This removes the action from this device only. Check the actual work time first.",
+    "cannotDiscardChain": "This action has dependent local actions and cannot be discarded on its own. Administrator review is required.",
+    "adminReview": "Administrator review required",
+    "reason": {
+      "transport": "Connection lost. The saved action can be retried.",
+      "auth_expired": "Your session expired. Please sign in again.",
+      "unsupported": "This app version does not support the action yet.",
+      "revision_conflict": "The work state changed. Refresh and review it.",
+      "business_conflict": "The action conflicts with the current work state. Refresh and review it.",
+      "permanent_rejection": "The action was rejected. Administrator review may be needed."
+    },
+    "recordedTime": "Recorded work: {{time}} h",
+    "activeSince": "Active since {{time}}",
+    "forceActiveBlock": "Force complete is unavailable while an employee is actively recording work.",
+    "activeElsewhere": "Your active job is outside today’s list.",
+    "forceStateUnavailable": "Force complete is unavailable until the session state loads. Please refresh.",
+    "blockedWaiting": "{{action}} for {{job}} is waiting for an earlier local action.",
+    "unknownJob": "Job outside the current list"
+  }
 }

@@ -121,6 +121,7 @@
     "gapsSectionTitle": "Zaman Düzeltmesi Gerekiyor",
     "gapsSectionSubtitle": "Bu işler henüz çalışma süresine sayılmıyor",
     "correctTimeButton": "Zamanı Düzelt",
+    "sessionCorrectionUnavailable": "Oturum süresi incelenmiş bir kurtarma süreci gerektirir; bu zaman düzeltmesiyle değiştirilemez.",
     "reasonNoTime": "Kendi zamanı kaydedilmedi",
     "reasonStartOnly": "Başlangıç kaydedildi, tamamlanma eksik",
     "reasonEndOnly": "Tamamlanma kaydedildi, başlangıç eksik",

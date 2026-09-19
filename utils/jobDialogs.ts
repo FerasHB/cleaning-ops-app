@@ -31,3 +31,12 @@ export function confirmCompleteJob(): Promise<boolean> {
     cancelLabel: i18next.t("common:actions.cancel"),
   });
 }
+
+export function confirmCompleteWhilePaused(): Promise<boolean> {
+  return confirmDialog({
+    title: i18next.t("jobs:work.completePausedTitle"),
+    message: i18next.t("jobs:work.completePausedMessage"),
+    confirmLabel: i18next.t("jobs:actions.complete"),
+    cancelLabel: i18next.t("common:actions.cancel"),
+  });
+}

@@ -83,6 +83,8 @@ type AuthContextType = {
    * dies false — die Aktion bleibt verborgen, nie versehentlich sichtbar.
    */
   forceCompleteEnabled: boolean;
+  /** Fail-closed capability for the new employee session controls. */
+  pauseResumeEnabled: boolean;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -1042,6 +1044,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Fail CLOSED: appConfig===null (noch nicht geladen, Fetch fehlgeschlagen
   // und kein Cache) ergibt hier false, nicht true — siehe Typ-Kommentar oben.
   const forceCompleteEnabled = appConfig?.forceCompleteEnabled ?? false;
+  const pauseResumeEnabled = appConfig?.pauseResumeEnabled ?? false;
 
   const value = useMemo(
     () => ({
@@ -1059,6 +1062,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isVersionBlocked,
       updateUrl,
       forceCompleteEnabled,
+      pauseResumeEnabled,
     }),
     [
       session,
@@ -1074,6 +1078,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isVersionBlocked,
       updateUrl,
       forceCompleteEnabled,
+      pauseResumeEnabled,
     ],
   );
 

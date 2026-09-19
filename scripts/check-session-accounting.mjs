@@ -125,6 +125,18 @@ test("daily midnight slices preserve the rounded assignment total", () => {
   assert.equal(july.entries[0].durationMinutes, 0);
 });
 
+test("a full paused calendar day creates no zero-work timesheet row", () => {
+  const a = assignment({ employeeStartedAt: "2026-09-15T06:00:00Z", employeeCompletedAt: "2026-09-17T10:00:00Z" });
+  const work = [
+    session("2026-09-15T06:00:00Z", "2026-09-15T08:00:00Z", "s1"),
+    session("2026-09-17T08:00:00Z", "2026-09-17T10:00:00Z", "s2"),
+  ];
+  const result = account(a, work, 2026, 9);
+  assert.deepEqual(result.entries.map((e) => [e.date, e.durationMinutes]),
+    [["2026-09-15", 120], ["2026-09-17", 120]]);
+  assert.equal(result.entries.some((e) => e.date === "2026-09-16"), false);
+});
+
 test("German PDF uses session worked time and neutral interruption wording across app locales", () => {
   const result = account(assignment({ employeeCompletedAt: "2026-01-15T11:00:00Z" }), [
     session("2026-01-15T07:00:00Z", "2026-01-15T09:00:00Z", "s1"),
@@ -164,6 +176,16 @@ test("review warning appears in PDF without treating session time as clean payro
     totalMinutes: 120, totalLabel: "2:00", jobCount: 1, needsAttention: [] });
   assert.match(html, /Prüfung erforderlich/);
   assert.match(html, /nicht für die Abrechnung freigegeben/);
+});
+
+test("PDF session gap reason remains German even when the app reason is English", () => {
+  const html = buildTimesheetHtml({ companyName: "Firma", employeeId: "a", employeeName: "A",
+    year: 2026, month: 9, monthLabel: "September 2026", entries: [], totalMinutes: 0,
+    totalLabel: "0:00", jobCount: 0, needsAttention: [{ source: "sessions", reason: "session_missing",
+      reasonLabel: "No session recorded — review required", date: "2026-09-19",
+      customerName: "Kunde" }] });
+  assert.match(html, /Keine Sitzung erfasst/);
+  assert.doesNotMatch(html, /No session recorded/);
 });
 
 // Execute the actual Timesheet service with a small PostgREST-shaped fixture.

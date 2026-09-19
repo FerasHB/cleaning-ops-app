@@ -54,4 +54,10 @@
     "calendarDays_one": "{{count}} Kalendertag",
     "calendarDays_other": "{{count}} Kalendertage"
   }
+,
+  "sessionGap": {
+    "missing": "Keine Sitzung erfasst – Prüfung erforderlich",
+    "invalid": "Sitzungszeiten unvollständig oder widersprüchlich",
+    "review": "Sitzungszeit erfasst – Prüfung erforderlich"
+  }
 }

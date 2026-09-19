@@ -240,4 +240,56 @@
     "confirmButton": "Abschließen",
     "cancelButton": "Abbrechen"
   }
+,
+  "work": {
+    "state": {
+      "not_started": "Nicht begonnen",
+      "active": "Aktiv",
+      "paused": "Pausiert",
+      "completed": "Abgeschlossen",
+      "loading": "Wird geladen"
+    },
+    "pause": "Pausieren",
+    "resume": "Fortsetzen",
+    "pending": {
+      "start": "Start wartet auf Synchronisierung",
+      "pause": "Pause wartet auf Synchronisierung",
+      "resume": "Fortsetzen wartet auf Synchronisierung",
+      "complete": "Abschluss wartet auf Synchronisierung"
+    },
+    "savedLocally": "Lokal gespeichert; wird bei Verbindung synchronisiert",
+    "pausedSince": "Pausiert seit {{time}}",
+    "reviewRequired": "Erfasste Zeit – Prüfung durch Admin erforderlich; noch nicht für die Abrechnung freigegeben",
+    "completePausedTitle": "Pausierten Auftrag abschließen?",
+    "completePausedMessage": "Deine Zuweisung wird abgeschlossen. Seit der letzten Pause wird keine zusätzliche Arbeitszeit hinzugefügt.",
+    "activeBlockTitle": "Ein anderer Auftrag ist aktiv",
+    "activeBlockMessage": "Pausiere oder beende zuerst den aktiven Auftrag. Es wird kein automatischer Wechsel durchgeführt.",
+    "openActiveJob": "Aktiven Auftrag öffnen",
+    "actionFailed": "Die Aktion konnte nicht ausgeführt werden.",
+    "reconciliationTitle": "Lokale Arbeitsaktionen prüfen",
+    "failedAction": "{{action}} für {{job}} konnte nicht synchronisiert werden.",
+    "dependentWaiting": "Spätere abhängige Aktionen warten ebenfalls.",
+    "retry": "Erneut versuchen",
+    "refresh": "Aktualisieren",
+    "discard": "Lokale Aktion verwerfen",
+    "discardTitle": "Lokale Aktion verwerfen?",
+    "discardMessage": "Die Aktion wird nur auf diesem Gerät entfernt. Prüfe zuerst die tatsächliche Arbeitszeit.",
+    "cannotDiscardChain": "Diese Aktion hat abhängige lokale Aktionen und kann nicht einzeln verworfen werden. Admin-Prüfung erforderlich.",
+    "adminReview": "Administratorprüfung erforderlich",
+    "reason": {
+      "transport": "Verbindung unterbrochen. Die gespeicherte Aktion kann erneut gesendet werden.",
+      "auth_expired": "Sitzung abgelaufen. Bitte melde dich erneut an.",
+      "unsupported": "Diese App-Version unterstützt die Aktion noch nicht.",
+      "revision_conflict": "Der Arbeitsstand hat sich geändert. Bitte aktualisieren und prüfen.",
+      "business_conflict": "Die Aktion widerspricht dem aktuellen Arbeitsstand. Bitte aktualisieren und prüfen.",
+      "permanent_rejection": "Die Aktion wurde abgelehnt. Administratorprüfung kann nötig sein."
+    },
+    "recordedTime": "Erfasste Arbeitszeit: {{time}} h",
+    "activeSince": "Aktiv seit {{time}}",
+    "forceActiveBlock": "Zwangsabschluss nicht verfügbar: Ein Mitarbeiter erfasst noch aktiv Arbeitszeit.",
+    "activeElsewhere": "Dein aktiver Auftrag liegt außerhalb der heutigen Liste.",
+    "forceStateUnavailable": "Zwangsabschluss nicht verfügbar, bis der Sitzungsstand geladen wurde. Bitte aktualisieren.",
+    "blockedWaiting": "{{action}} für {{job}} wartet auf eine frühere lokale Aktion.",
+    "unknownJob": "Auftrag außerhalb der aktuellen Liste"
+  }
 }

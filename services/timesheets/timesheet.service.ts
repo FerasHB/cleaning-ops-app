@@ -440,9 +440,9 @@ export async function getTimesheet(params: {
         const date = candidateDate.startsWith(`${year}-${String(month).padStart(2, "0")}-`)
           ? candidateDate : `${year}-${String(month).padStart(2, "0")}-01`;
         const labels = {
-          session_missing: "Keine Sitzung erfasst – Prüfung erforderlich",
-          session_invalid: "Sitzungszeiten unvollständig oder widersprüchlich",
-          session_review: "Sitzungszeit erfasst – Prüfung erforderlich",
+          session_missing: i18next.t("timesheets:sessionGap.missing"),
+          session_invalid: i18next.t("timesheets:sessionGap.invalid"),
+          session_review: i18next.t("timesheets:sessionGap.review"),
         } as const;
         sessionGaps.push({
           source: "sessions", assignmentId: row.id, employeeId, employeeName,

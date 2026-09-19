@@ -54,4 +54,10 @@
     "calendarDays_one": "{{count}} calendar day",
     "calendarDays_other": "{{count}} calendar days"
   }
+,
+  "sessionGap": {
+    "missing": "No session recorded — review required",
+    "invalid": "Session times are incomplete or inconsistent",
+    "review": "Session time recorded — review required"
+  }
 }

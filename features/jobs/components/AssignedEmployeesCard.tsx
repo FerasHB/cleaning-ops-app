@@ -17,6 +17,9 @@ import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job, JobAssignee } from "@/types/job";
 import { formatTimeHHmm } from "@/utils/date";
+import { formatWorkedSeconds } from "@/utils/assignmentWorkUi";
+import { fetchAssignmentWorkSummary } from "@/services/jobs/workSessions.service";
+import type { WorkSummary } from "@/services/offline/workJournal.core";
 import {
   getAssignees,
   getDeletedSuffix,
@@ -25,7 +28,7 @@ import {
 } from "@/utils/jobAssignees";
 import { isCorrectableJob } from "@/utils/jobCorrection";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -40,6 +43,7 @@ type Props = {
   isAdmin?: boolean;
   /** Wird mit der gewählten Zuweisung gerufen (öffnet das Korrektur-Sheet). */
   onCorrectTime?: (assignee: JobAssignee) => void;
+  onSessionSummariesChange?: (summaries: Record<string, WorkSummary>) => void;
 };
 
 // "08:00 – 12:00" / "ab 08:00" / "bis 12:00" / null, wenn nichts erfasst ist.
@@ -64,12 +68,31 @@ export function AssignedEmployeesCard({
   job,
   isAdmin = false,
   onCorrectTime,
+  onSessionSummariesChange,
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { t } = useTranslation();
 
   const assignees = getAssignees(job);
+  const [sessionSummaries, setSessionSummaries] = useState<Record<string, WorkSummary>>({});
+  const sessionKey = assignees.filter((item) => item.trackingMode === "sessions")
+    .map((item) => `${item.assignmentId}:${item.workRevision ?? 0}`).join("|");
+  useEffect(() => {
+    if (!isAdmin || !sessionKey) return;
+    let cancelled = false;
+    const ids = assignees.filter((item) => item.trackingMode === "sessions").map((item) => item.assignmentId);
+    void Promise.allSettled(ids.map(fetchAssignmentWorkSummary)).then((results) => {
+      if (cancelled) return;
+      const summaries = Object.fromEntries(results.flatMap((result) => result.status === "fulfilled"
+        ? [[result.value.assignmentId, result.value]] : []));
+      setSessionSummaries(summaries);
+      onSessionSummariesChange?.(summaries);
+    });
+    return () => { cancelled = true; };
+  // The revision key changes whenever an assignment's work state changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, sessionKey, onSessionSummariesChange]);
   const label = t("jobs:card.assigneesHeading", { count: assignees.length || 1 });
 
   // ENTSCHEIDET ÜBER DEN GESAMTEN ADMIN-ZUSATZ (Status-Zeile UND Aktion).
@@ -110,6 +133,7 @@ export function AssignedEmployeesCard({
               : assignee.fullName;
 
             const timeLabel = ownTimeLabel(assignee, t);
+            const sessionSummary = sessionSummaries[assignee.assignmentId];
             const isComplete =
               !!assignee.employeeStartedAt && !!assignee.employeeCompletedAt;
             // Zwei Ebenen: der AUFTRAG muss korrigierbar sein
@@ -125,7 +149,9 @@ export function AssignedEmployeesCard({
                 key={assignee.assignmentId}
                 style={styles.row}
                 accessible
-                accessibilityLabel={displayName}
+                accessibilityLabel={isAdmin && assignee.trackingMode === "sessions" && sessionSummary
+                  ? `${displayName}, ${t(`jobs:work.state.${sessionSummary.assignmentState}`)}, ${t("jobs:work.recordedTime", {
+                    time: formatWorkedSeconds(sessionSummary.closedSeconds) })}` : displayName}
               >
                 <InitialsAvatar name={assignee.fullName} size={36} />
 
@@ -134,7 +160,7 @@ export function AssignedEmployeesCard({
 
                   {/* Zeitstatus nur für Admins UND nur an korrigierbaren
                       Aufträgen (siehe jobIsCorrectable oben). */}
-                  {showAdminTimeInfo ? (
+                  {showAdminTimeInfo && assignee.trackingMode !== "sessions" ? (
                     isComplete ? (
                       <Text style={styles.timeOk}>{timeLabel}</Text>
                     ) : (
@@ -147,6 +173,24 @@ export function AssignedEmployeesCard({
                       </Text>
                     )
                   ) : null}
+                  {isAdmin && assignee.trackingMode !== "sessions" ? <Text style={styles.timeOk}>
+                    {t(`jobs:work.state.${assignee.employeeCompletedAt ? "completed" : assignee.employeeStartedAt ? "active" : "not_started"}`)}
+                  </Text> : null}
+                  {isAdmin && assignee.trackingMode === "sessions" ? <>
+                    <Text style={styles.timeOk}>
+                      {t(`jobs:work.state.${sessionSummary?.assignmentState ?? (assignee.employeeCompletedAt ? "completed" : "loading")}`)}
+                      {sessionSummary ? ` · ${t("jobs:work.recordedTime", { time: formatWorkedSeconds(sessionSummary.closedSeconds) })}` : ""}
+                    </Text>
+                    {sessionSummary?.activeSince ? <Text style={styles.timeOk}>
+                      {t("jobs:work.activeSince", { time: formatTimeHHmm(new Date(sessionSummary.activeSince)) })}
+                    </Text> : null}
+                    {sessionSummary?.assignmentState === "paused" && sessionSummary.latestSessionEnd ?
+                      <Text style={styles.timeOk}>{t("jobs:work.pausedSince", {
+                        time: formatTimeHHmm(new Date(sessionSummary.latestSessionEnd)) })}</Text> : null}
+                    {(sessionSummary?.reviewRequired ?? assignee.workReviewRequired) ? <Text style={styles.reviewText}>
+                      {t("jobs:work.reviewRequired")}
+                    </Text> : null}
+                  </> : null}
                 </View>
 
                 {showAction ? (
@@ -225,6 +269,11 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.medium,
       fontWeight: theme.typography.weight.medium,
       color: theme.colors.error,
+    },
+    reviewText: {
+      fontSize: theme.typography.size.xs,
+      fontFamily: theme.typography.family.medium,
+      color: theme.colors.statusInProgress,
     },
     actionBtn: {
       width: 36,

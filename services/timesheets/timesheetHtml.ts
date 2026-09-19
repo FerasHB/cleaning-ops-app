@@ -67,6 +67,11 @@ export function buildTimesheetHtml(data: TimesheetData): string {
   const hasSessionEntries = data.entries.some((entry) => entry.source === "sessions");
   const sessionGaps = data.needsAttention.filter((gap) => gap.source === "sessions");
   const hasReview = data.entries.some((entry) => entry.reviewRequired) || sessionGaps.length > 0;
+  const germanGapReason = {
+    session_missing: "Keine Sitzung erfasst – Prüfung erforderlich",
+    session_invalid: "Sitzungszeiten unvollständig oder widersprüchlich",
+    session_review: "Sitzungszeit erfasst – Prüfung erforderlich",
+  } as const;
   const rows =
     data.entries.length > 0
       ? data.entries.map(renderRow).join("")
@@ -222,7 +227,7 @@ export function buildTimesheetHtml(data: TimesheetData): string {
     </tfoot>
   </table>
 
-  ${hasReview ? `<div class="review-warning"><strong>Prüfung erforderlich:</strong> Sitzungszeiten oder Zeitlücken sind noch nicht für die Abrechnung freigegeben.${sessionGaps.length ? `<br />${sessionGaps.map((gap) => escapeHtml(`${gap.date} · ${gap.customerName}: ${gap.reasonLabel}`)).join("<br />")}` : ""}</div>` : ""}
+  ${hasReview ? `<div class="review-warning"><strong>Prüfung erforderlich:</strong> Sitzungszeiten oder Zeitlücken sind noch nicht für die Abrechnung freigegeben.${sessionGaps.length ? `<br />${sessionGaps.map((gap) => escapeHtml(`${gap.date} · ${gap.customerName}: ${gap.reason in germanGapReason ? germanGapReason[gap.reason as keyof typeof germanGapReason] : gap.reasonLabel}`)).join("<br />")}` : ""}</div>` : ""}
 
   <div class="summary">
     <div class="box">

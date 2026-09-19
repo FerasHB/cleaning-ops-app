@@ -183,6 +183,8 @@ export function createWorkJournal(deps: WorkJournalDependencies) {
     const base = data.summaries[assignmentId];
     return base ? project(base, data.operations) : null;
   });
+  const getRecordedSummary = (userId: string, assignmentId: string) => serialized(async () =>
+    (await read(userId)).summaries[assignmentId] ?? null);
   const getActive = (userId: string) => serialized(async () => {
     const data = await read(userId);
     return projectActive(data.active, data.operations);
@@ -202,6 +204,21 @@ export function createWorkJournal(deps: WorkJournalDependencies) {
     data.active = active;
     await write(userId, data);
     return true;
+  });
+  /** Only a terminal failed leaf may be removed; descendants remain untouched. */
+  const discardFailedLeaf = (userId: string, operationId: string) => serialized(async () => {
+    if (await deps.currentUserId() !== userId) throw new Error("Authenticated user changed");
+    const data = await read(userId);
+    const index = data.operations.findIndex((op) => op.operationId === operationId);
+    const operation = data.operations[index];
+    if (!operation || !["blocked", "rejected_permanent"].includes(operation.status)) {
+      throw new Error("Only a failed work action can be discarded");
+    }
+    if (data.operations.some((op) => op.predecessorOperationId === operationId)) {
+      throw new Error("Dependent local actions must be resolved first");
+    }
+    data.operations.splice(index, 1);
+    await write(userId, data);
   });
   const enqueue = (input: { userId: string; companyId: string; jobId: string; assignmentId: string; action: WorkAction; actionTimestamp?: string }) => serialized(async () => {
     if (!input.userId || await deps.currentUserId() !== input.userId) throw new Error("Authenticated user changed");
@@ -340,5 +357,6 @@ export function createWorkJournal(deps: WorkJournalDependencies) {
     workers.set(userId, worker);
     return worker;
   };
-  return { enqueue, sync, list, getEpoch, getSummary, getActive, rememberSummary, rememberActive };
+  return { enqueue, sync, list, getEpoch, getSummary, getRecordedSummary, getActive,
+    rememberSummary, rememberActive, discardFailedLeaf };
 }

@@ -18,6 +18,7 @@ import {
   SectionHeader,
 } from "@/components/ui";
 import JobCard from "@/components/JobCard";
+import { WorkReconciliationNotice } from "@/features/jobs/components/WorkReconciliationNotice";
 import { useAuth } from "@/context/AuthContext";
 import {
   canCompleteOwnAssignment,
@@ -29,6 +30,8 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useIsRTL } from "@/hooks/useIsRTL";
 import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
 import { useJobWorkedTime } from "@/hooks/useJobWorkedTime";
+import { useSessionWorkedTime } from "@/hooks/useSessionWorkedTime";
+import { deriveAssignmentWorkUi, selectActiveEmployeeJob } from "@/utils/assignmentWorkUi";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
 import { isJobStartDateAllowed, isJobToday } from "@/utils/jobSchedule";
@@ -117,11 +120,16 @@ export default function EmployeeOverviewScreen() {
     [t, jobStatusLabels],
   );
 
-  const { profile, role } = useAuth();
+  const { profile, role, pauseResumeEnabled } = useAuth();
   const {
     jobs,
     startJob,
     completeJob,
+    pauseJob,
+    activeWork,
+    workSummaries,
+    recordedWorkSummaries,
+    workOperations,
     loading,
     error: dataError,
     refreshJobs,
@@ -255,13 +263,22 @@ export default function EmployeeOverviewScreen() {
   // activeJobOwnState weiter unten (Phase 16: das ist seit dem eigenen Start
   // nicht mehr dasselbe wie "der Auftrag läuft").
   const activeJob = useMemo(
-    () =>
-      jobs.find(
-        (j) =>
-          j.status === "in_progress" && canRunJobActions(j, role, profile?.id),
-      ),
-    [jobs, role, profile?.id],
+    () => selectActiveEmployeeJob(jobs, activeWork, pauseResumeEnabled, role, profile?.id),
+    [jobs, role, profile?.id, pauseResumeEnabled, activeWork?.jobId],
   );
+  const pausedJobs = useMemo(() => pauseResumeEnabled ? jobs.filter((item) => {
+    const own = item.assignees.find((assignee) => assignee.employeeId === profile?.id);
+    return own && workSummaries[own.assignmentId]?.assignmentState === "paused";
+  }) : [], [jobs, profile?.id, workSummaries, pauseResumeEnabled]);
+
+  const activeWorkUi = activeJob ? deriveAssignmentWorkUi({ job: activeJob, role,
+    userId: profile?.id, capability: pauseResumeEnabled,
+    summary: activeWork ? workSummaries[activeWork.assignmentId] : null,
+    operations: workOperations }) : null;
+  const sessionWorkedLabel = useSessionWorkedTime(
+    activeWork ? workSummaries[activeWork.assignmentId] : null,
+    activeWork ? recordedWorkSummaries[activeWork.assignmentId] : null,
+    activeWorkUi?.pending);
 
   // PHASE 16: welche Quick-Action passt zur EIGENEN Teilnahme an activeJob?
   //   - noch nicht selbst gestartet (Nachzügler) + Termin gültig -> "Start"
@@ -269,6 +286,7 @@ export default function EmployeeOverviewScreen() {
   //   - selbst bereits abgeschlossen (wartet auf andere)            -> keine Aktion
   const activeJobOwnAction = useMemo(() => {
     if (!activeJob) return null;
+    if (activeWorkUi?.mode === "sessions") return activeWorkUi.canComplete ? "complete" : null;
     if (canCompleteOwnAssignment(activeJob, role, profile?.id)) return "complete";
     if (
       canStartOwnAssignment(activeJob, role, profile?.id) &&
@@ -276,7 +294,7 @@ export default function EmployeeOverviewScreen() {
     )
       return "start";
     return null;
-  }, [activeJob, role, profile?.id]);
+  }, [activeJob, role, profile?.id, activeWorkUi]);
 
   // Laufzeit des aktiven Jobs. Der Hook muss unbedingt bei JEDEM Render
   // aufgerufen werden (Hook-Regeln) — ohne aktiven Job wird ein neutraler
@@ -341,6 +359,7 @@ export default function EmployeeOverviewScreen() {
     >
       {/* ── Save-Status ── */}
       <OfflineBanner />
+      <WorkReconciliationNotice />
 
       {/* ── Lade-/Aktualisierungsfehler der Jobs ──
           Bleibt sichtbar, ohne die bereits angezeigten (ggf. veralteten)
@@ -448,6 +467,14 @@ export default function EmployeeOverviewScreen() {
           überlagerten sich und ein Tap knapp neben dem Button navigierte
           stillschweigend, statt abzuschließen. Jetzt zwei klar getrennte
           Geschwister: oben der Navigations-Bereich, unten die Aktion. */}
+      {pauseResumeEnabled && activeWork && !activeJob ? <View style={styles.section}>
+        <SectionHeader title={t("jobs:activeJob.title")} />
+        <TouchableOpacity style={styles.activeCard}
+          onPress={() => router.push(`/jobs/${activeWork.jobId}`)}>
+          <Text style={styles.activeCustomer}>{t("jobs:work.openActiveJob")}</Text>
+          <Text style={styles.activeService}>{t("jobs:work.activeElsewhere")}</Text>
+        </TouchableOpacity>
+      </View> : null}
       {activeJob && (
         <View style={styles.section}>
           <SectionHeader title={t("jobs:activeJob.title")} />
@@ -465,7 +492,10 @@ export default function EmployeeOverviewScreen() {
                 <View style={styles.activeBadge}>
                   <View style={styles.activePulse} />
                   <Text style={styles.activeBadgeText}>
-                    {jobStatusLabels.in_progress}
+                    {pauseResumeEnabled
+                      ? activeWorkUi?.pending ? t(`jobs:work.pending.${activeWorkUi.pending.action}`)
+                        : t("jobs:work.state.active")
+                      : jobStatusLabels.in_progress}
                   </Text>
                 </View>
                 <Ionicons
@@ -502,7 +532,7 @@ export default function EmployeeOverviewScreen() {
                     läuft. Gleicher Hook wie JobCard/WorkedTimeCard (minütlicher
                     Tick, keine neue Timer-Architektur). Fehlt startedAt
                     (Alt-/Offline-Daten), bleibt es bei der geplanten Zeit. */}
-                {activeWorkedLabel ? (
+                {(pauseResumeEnabled ? sessionWorkedLabel : activeWorkedLabel) ? (
                   <View style={styles.activeMetaItem}>
                     <Ionicons
                       name="hourglass-outline"
@@ -510,7 +540,8 @@ export default function EmployeeOverviewScreen() {
                       color={theme.colors.onPrimaryContainer}
                     />
                     <Text style={styles.activeMetaText}>
-                      {t("jobs:activeJob.runningSince", { time: activeWorkedLabel })}
+                      {pauseResumeEnabled ? t("jobs:work.recordedTime", { time: sessionWorkedLabel })
+                        : t("jobs:activeJob.runningSince", { time: activeWorkedLabel })}
                     </Text>
                   </View>
                 ) : activeScheduledTime ? (
@@ -534,6 +565,14 @@ export default function EmployeeOverviewScreen() {
                 rein informativ (kein Button), bis der Auftrag insgesamt
                 schließt oder aus der Liste fällt. */}
             {activeJobOwnAction === "complete" ? (
+              <>
+              {activeWorkUi?.canPause ? <TouchableOpacity
+                style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
+                disabled={actionBusy} onPress={() => void runJobAction(
+                  () => pauseJob(activeJob.id), t("jobs:work.actionFailed"))}>
+                <Ionicons name="pause" size={16} color={theme.colors.statusCompleted} />
+                <Text style={styles.completeBtnText}>{t("jobs:work.pause")}</Text>
+              </TouchableOpacity> : null}
               <TouchableOpacity
                 style={[styles.completeBtn, actionBusy && styles.completeBtnBusy]}
                 activeOpacity={0.85}
@@ -551,6 +590,7 @@ export default function EmployeeOverviewScreen() {
                   {t("jobs:activeJob.completeButton")}
                 </Text>
               </TouchableOpacity>
+              </>
             ) : activeJobOwnAction === "start" ? (
               // Nachzügler: der Auftrag läuft bereits durch eine Kollegin,
               // die EIGENE Teilnahme hat aber noch nicht begonnen. Bewusst
@@ -576,6 +616,15 @@ export default function EmployeeOverviewScreen() {
           </View>
         </View>
       )}
+
+      {pausedJobs.length > 0 ? <View style={styles.section}>
+        <SectionHeader title={t("jobs:work.state.paused")} />
+        <View style={styles.jobList}>
+          {pausedJobs.map((item) => <JobCard key={item.id} job={item}
+            onPress={() => router.push(`/jobs/${item.id}`)}
+            onComplete={() => handleComplete(item.id)} canStart={false} canComplete />)}
+        </View>
+      </View> : null}
 
       {/* ── Heute anstehend ── */}
       <View style={styles.section}>

@@ -70,7 +70,7 @@ export function confirmDialog({
     // die Aktion in den Text — sonst stünde dort nur ein nacktes "OK".
     const bestaetigt =
       typeof window !== "undefined" &&
-      window.confirm(`${title}\n\n${message}`);
+      window.confirm(`${title}\n\n${message}\n\n${confirmLabel}`);
     return Promise.resolve(!!bestaetigt);
   }
 

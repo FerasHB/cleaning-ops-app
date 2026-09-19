@@ -23,6 +23,8 @@ import {
   OfflineBanner,
 } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useSessionWorkedTime } from "@/hooks/useSessionWorkedTime";
+import { deriveAssignmentWorkUi, hasActiveAssignmentSession } from "@/utils/assignmentWorkUi";
 import { useAuth } from "@/context/AuthContext";
 import { useJobs } from "@/context/JobContext";
 import RecurringRuleDetailScreen from "@/features/jobs/RecurringRuleDetailScreen";
@@ -33,6 +35,8 @@ import {
 } from "@/features/timesheets/components/TimeCorrectionSheet";
 import { ForceCompleteSheet } from "@/features/jobs/components/ForceCompleteSheet";
 import { JobActionFooter } from "@/features/jobs/components/JobActionFooter";
+import { SessionWorkStatus } from "@/features/jobs/components/SessionWorkStatus";
+import { WorkReconciliationNotice } from "@/features/jobs/components/WorkReconciliationNotice";
 import { JobComments } from "@/features/jobs/components/JobComments";
 import { JobDetailHeader } from "@/features/jobs/components/JobDetailHeader";
 import { JobLocationCard } from "@/features/jobs/components/JobLocationCard";
@@ -53,8 +57,9 @@ import {
   isPrimaryAssignee,
 } from "@/utils/jobAssignees";
 import { getStartBlockMessage } from "@/utils/jobSchedule";
-import { confirmCompleteJob } from "@/utils/jobDialogs";
+import { confirmCompleteJob, confirmCompleteWhilePaused } from "@/utils/jobDialogs";
 import type { Job } from "@/types/job";
+import type { WorkSummary } from "@/services/offline/workJournal.core";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -102,11 +107,17 @@ export default function JobDetailScreen() {
   }, []);
 
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { role, profile, forceCompleteEnabled } = useAuth();
+  const { role, profile, forceCompleteEnabled, pauseResumeEnabled } = useAuth();
   const {
     jobs,
     startJob,
     completeJob,
+    pauseJob,
+    resumeJob,
+    workOperations,
+    workSummaries,
+    recordedWorkSummaries,
+    refreshAssignmentWork,
     forceCompleteJob,
     loading,
     online,
@@ -123,6 +134,7 @@ export default function JobDetailScreen() {
 
   // PHASE 16: Admin-Zwangsabschluss (hängender Auftrag, Abschluss vergessen).
   const [forceCompleteOpen, setForceCompleteOpen] = useState(false);
+  const [adminSessionSummaries, setAdminSessionSummaries] = useState<Record<string, WorkSummary>>({});
 
   // Cache-first: zuerst aus dem (ggf. begrenzten) Context-Fenster.
   const cachedJob = useMemo(() => jobs.find((j) => j.id === id), [jobs, id]);
@@ -174,8 +186,21 @@ export default function JobDetailScreen() {
   }, [id, cachedJob, fetchAttempted]);
 
   const job = cachedJob ?? fetchedJob ?? undefined;
+  const ownAssignment = job?.assignees.find((assignee) => assignee.employeeId === profile?.id);
+  const ownSummary = ownAssignment ? workSummaries[ownAssignment.assignmentId] : null;
+  const ownRecorded = ownAssignment ? recordedWorkSummaries[ownAssignment.assignmentId] : null;
+  const workUi = job ? deriveAssignmentWorkUi({ job, role, userId: profile?.id,
+    capability: pauseResumeEnabled, summary: ownSummary, operations: workOperations }) : null;
+  const workedLabel = useSessionWorkedTime(ownSummary, ownRecorded, workUi?.pending);
+  const ownAssignmentId = ownAssignment?.assignmentId;
+  useEffect(() => {
+    if (ownAssignmentId && ownAssignment?.trackingMode === "sessions" && !ownSummary && online) {
+      void refreshAssignmentWork(ownAssignmentId).catch(() => {});
+    }
+  }, [ownAssignmentId, ownAssignment?.trackingMode, ownSummary, online, refreshAssignmentWork]);
 
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [actionError, setActionError] = useState("");
 
   const isAdmin = role === "admin";
@@ -286,6 +311,8 @@ export default function JobDetailScreen() {
 
   // ── Aktionen (nutzen weiter JobContext → Offline-Sync bleibt intakt)
   const handleStart = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setActionError("");
     try {
       setSubmitting(true);
@@ -296,16 +323,41 @@ export default function JobDetailScreen() {
       );
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 
+  const handlePause = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setActionError("");
+    try { await pauseJob(job.id); }
+    catch (err) { setActionError(toUserMessage(err, t("jobs:work.actionFailed"))); }
+    finally { setSubmitting(false); submittingRef.current = false; }
+  };
+
+  const handleResume = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setActionError("");
+    try { await resumeJob(job.id); }
+    catch (err) { setActionError(toUserMessage(err, t("jobs:work.actionFailed"))); }
+    finally { setSubmitting(false); submittingRef.current = false; }
+  };
+
   const handleComplete = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setActionError("");
 
     // Abschließen ist unumkehrbar (setzt completed_at) — vorher nachfragen.
     // Start bleibt bewusst ohne Rückfrage.
-    const bestaetigt = await confirmCompleteJob();
+    const bestaetigt = await (workUi?.mode === "sessions" && workUi.state === "paused"
+      ? confirmCompleteWhilePaused() : confirmCompleteJob());
     if (!bestaetigt) {
+      submittingRef.current = false;
       return;
     }
 
@@ -318,6 +370,7 @@ export default function JobDetailScreen() {
       );
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 
@@ -373,7 +426,7 @@ export default function JobDetailScreen() {
   const startBlockedReason = eligibleToStart
     ? getStartBlockMessage(job, t, localeTag)
     : null;
-  const canStart = eligibleToStart && !startBlockedReason;
+  const canStart = (workUi?.mode === "sessions" ? workUi.canStart : eligibleToStart) && !startBlockedReason;
 
   // PHASE 16 — ABSCHLUSS nur der EIGENEN Teilnahme und nur nach EIGENEM Start.
   // Der Start eines Kollegen berechtigt ausdrücklich nicht (Vorfall
@@ -381,7 +434,7 @@ export default function JobDetailScreen() {
   // Start gesetzt, Auftrag noch in_progress, eigener Teil noch nicht
   // abgeschlossen) — kein zusätzlicher Check hier nötig.
   const ownCompleted = hasCompletedOwnAssignment(job, profile?.id);
-  const canComplete = canCompleteOwnAssignment(job, role, profile?.id);
+  const canComplete = workUi?.mode === "sessions" ? workUi.canComplete : canCompleteOwnAssignment(job, role, profile?.id);
 
   // „Mein Teil ist fertig, der Auftrag läuft weiter" (Phase 16).
   const waitingOnOthers = ownCompleted && job.status === "in_progress";
@@ -458,6 +511,7 @@ export default function JobDetailScreen() {
         {/* Globaler Speicher-/Verbindungsstatus + Aktions-Fehler bleiben
             oben — Chrome, kein Inhalt, muss ohne Scrollen sichtbar sein. */}
         <OfflineBanner />
+        {!isAdmin ? <WorkReconciliationNotice jobId={job.id} /> : null}
         {actionError ? (
           <ErrorBanner
             message={actionError}
@@ -475,6 +529,7 @@ export default function JobDetailScreen() {
         <AssignedEmployeesCard
           job={job}
           isAdmin={isAdmin}
+          onSessionSummariesChange={setAdminSessionSummaries}
           onCorrectTime={(assignee) =>
             setCorrectionTarget({
               assignmentId: assignee.assignmentId,
@@ -490,6 +545,13 @@ export default function JobDetailScreen() {
             })
           }
         />
+
+        {workUi?.mode === "sessions" ? (
+          <SessionWorkStatus state={workUi.state} workedLabel={workedLabel}
+            pendingAction={workUi.pending?.action} reviewRequired={workUi.reviewRequired}
+            latestSessionEnd={workUi.pending?.action === "pause"
+              ? workUi.pending.actionTimestamp : ownRecorded?.latestSessionEnd} />
+        ) : null}
 
         {/* 4 — Zeitlicher Verlauf (Start/Ende/Akteure/Dauer bzw. geplant) */}
         <JobTimelineCard job={job} showPlaceholder isAdmin={isAdmin} />
@@ -529,6 +591,11 @@ export default function JobDetailScreen() {
       <JobActionFooter
         canStart={canStart}
         canComplete={canComplete}
+        canPause={workUi?.canPause ?? false}
+        canResume={workUi?.canResume ?? false}
+        onPause={handlePause}
+        onResume={handleResume}
+        pendingAction={workUi?.pending?.action}
         isDone={isDone}
         submitting={submitting}
         onStart={handleStart}
@@ -547,6 +614,9 @@ export default function JobDetailScreen() {
         customerName={job.customerName}
         onClose={() => setForceCompleteOpen(false)}
         onConfirm={handleForceComplete}
+        activeSessionBlocked={hasActiveAssignmentSession(adminSessionSummaries, job)}
+        sessionStateLoading={job.assignees.some((assignee) => assignee.trackingMode === "sessions" &&
+          !adminSessionSummaries[assignee.assignmentId])}
       />
 
       <TimeCorrectionSheet

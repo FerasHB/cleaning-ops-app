@@ -240,4 +240,56 @@
     "confirmButton": "Tamamla",
     "cancelButton": "Vazgeç"
   }
+,
+  "work": {
+    "state": {
+      "not_started": "Başlamadı",
+      "active": "Aktif",
+      "paused": "Duraklatıldı",
+      "completed": "Tamamlandı",
+      "loading": "Yükleniyor"
+    },
+    "pause": "Duraklat",
+    "resume": "Devam et",
+    "pending": {
+      "start": "Başlatma eşitleme bekliyor",
+      "pause": "Duraklatma eşitleme bekliyor",
+      "resume": "Devam ettirme eşitleme bekliyor",
+      "complete": "Tamamlama eşitleme bekliyor"
+    },
+    "savedLocally": "Bu cihaza kaydedildi; bağlantı kurulunca eşitlenecek",
+    "pausedSince": "{{time}} saatinden beri duraklatıldı",
+    "reviewRequired": "Kaydedilen süre yönetici incelemesi gerektiriyor; bordro için henüz onaylanmadı",
+    "completePausedTitle": "Duraklatılmış işi tamamla?",
+    "completePausedMessage": "Görevin tamamlanacak. Son duraklatmadan sonra ek çalışma süresi eklenmeyecek.",
+    "activeBlockTitle": "Başka bir iş aktif",
+    "activeBlockMessage": "Önce aktif işi duraklat veya tamamla. İşler otomatik değiştirilmez.",
+    "openActiveJob": "Aktif işi aç",
+    "actionFailed": "İşlem gerçekleştirilemedi.",
+    "reconciliationTitle": "Yerel iş işlemlerini incele",
+    "failedAction": "{{job}} için {{action}} eşitlenemedi.",
+    "dependentWaiting": "Sonraki bağımlı işlemler de bekliyor.",
+    "retry": "Yeniden dene",
+    "refresh": "Yenile",
+    "discard": "Yerel işlemi sil",
+    "discardTitle": "Yerel işlem silinsin mi?",
+    "discardMessage": "İşlem yalnızca bu cihazdan silinir. Önce gerçek çalışma süresini kontrol et.",
+    "cannotDiscardChain": "Bu işleme bağlı yerel işlemler var; tek başına silinemez. Yönetici incelemesi gerekir.",
+    "adminReview": "Yönetici incelemesi gerekiyor",
+    "reason": {
+      "transport": "Bağlantı kesildi. Kaydedilen işlem yeniden gönderilebilir.",
+      "auth_expired": "Oturumun sona erdi. Lütfen yeniden giriş yap.",
+      "unsupported": "Bu uygulama sürümü işlemi henüz desteklemiyor.",
+      "revision_conflict": "İş durumu değişti. Yenileyip kontrol et.",
+      "business_conflict": "İşlem mevcut iş durumuyla çelişiyor. Yenileyip kontrol et.",
+      "permanent_rejection": "İşlem reddedildi. Yönetici incelemesi gerekebilir."
+    },
+    "recordedTime": "Kaydedilen çalışma: {{time}} sa",
+    "activeSince": "{{time}} saatinden beri aktif",
+    "forceActiveBlock": "Bir çalışan aktif olarak süre kaydederken yönetici tamamlaması yapılamaz.",
+    "activeElsewhere": "Aktif işin bugünkü listenin dışında.",
+    "forceStateUnavailable": "Oturum durumu yüklenene kadar yönetici tamamlaması kullanılamaz. Lütfen yenile.",
+    "blockedWaiting": "{{job}} için {{action}} önceki bir yerel işlemi bekliyor.",
+    "unknownJob": "Güncel listenin dışındaki iş"
+  }
 }
