@@ -184,6 +184,7 @@ export function useTimesheet(
       employeeName,
       year: monthDate.getFullYear(),
       month: monthDate.getMonth() + 1,
+      companyTimezone: company?.timezone,
     })
       .then((result) => {
         if (!cancelled) setData(result);
@@ -216,6 +217,7 @@ export function useTimesheet(
     i18n.language,
     companyLoading,
     companyName,
+    company?.timezone,
   ]);
 
   const exportBlockReason = getTimesheetExportBlockReason({

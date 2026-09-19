@@ -11,7 +11,7 @@
 // hatte ein Mitarbeiter KEINE Möglichkeit, die eigene erfasste Arbeitszeit zu
 // sehen — obwohl genau diese Zeit aus seinen eigenen Aufträgen stammt.
 // Geändert hat sich nur die Sichtbarkeit: Abfrage (getTimesheet), Berechnung
-// und PDF-Aufbau sind unverändert, und RLS liefert Mitarbeitenden ohnehin nur
+// und PDF-Aufbau nutzen dieselben Daten, und RLS liefert Mitarbeitenden ohnehin nur
 // die eigenen zugewiesenen Aufträge ("employee read own assigned jobs").
 
 import {
@@ -215,15 +215,15 @@ export default function TimesheetScreen() {
         </Card>
       </View>
 
-      {/* ── Zeitkorrekturen erforderlich (nur Admin) ──
-          Bewusst ÜBER der Vorschau: diese Zuweisungen erzeugen keinen Eintrag
-          und fehlen daher in der Summe darunter. Wer erst die Summe sieht,
-          hält sie für vollständig. */}
+      {/* ── Zeitlücken und Sitzungsprüfung (nur Admin) ──
+          Bewusst ÜBER der Vorschau: Legacy-Lücken fehlen in der Summe;
+          überprüfungsbedürftige Sitzungszeit kann darin enthalten sein. */}
       {isAdmin && gaps.length > 0 ? (
         <View style={styles.section}>
           <SectionHeader
             title={t("admin:timesheet.gapsSectionTitle")}
-            subtitle={t("admin:timesheet.gapsSectionSubtitle")}
+            subtitle={gaps.some((gap) => gap.source === "sessions")
+              ? undefined : t("admin:timesheet.gapsSectionSubtitle")}
           />
           <Card padding={0}>
             {gaps.map((gap, idx) => (
@@ -249,15 +249,17 @@ export default function TimesheetScreen() {
                     </Text>
                   ) : null}
                 </View>
-                <TouchableOpacity
-                  style={styles.gapButton}
-                  onPress={() => openCorrection(gap)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.gapButtonText}>
-                    {t("admin:timesheet.correctTimeButton")}
-                  </Text>
-                </TouchableOpacity>
+                {gap.source !== "sessions" ? (
+                  <TouchableOpacity
+                    style={styles.gapButton}
+                    onPress={() => openCorrection(gap)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.gapButtonText}>
+                      {t("admin:timesheet.correctTimeButton")}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ))}
           </Card>
@@ -329,7 +331,7 @@ export default function TimesheetScreen() {
 
             {data!.entries.map((entry, idx) => (
               <View
-                key={entry.jobId}
+                key={entry.entryId ?? entry.jobId}
                 style={[styles.entryWrap, idx > 0 && styles.rowDivider]}
               >
                 <View style={styles.tableRow}>
@@ -349,6 +351,7 @@ export default function TimesheetScreen() {
                 <Text style={styles.entryMeta} numberOfLines={1}>
                   {entry.customerName}
                   {entry.remark ? ` · ${entry.remark}` : ""}
+                  {entry.reviewRequired ? ` · ⚠ ${t("admin:recurringRules.badgeReview")}` : ""}
                 </Text>
               </View>
             ))}

@@ -11,6 +11,7 @@
     "lint": "expo lint",
     "test:recurring-occurrence": "node scripts/verify-recurring-occurrence-display.mjs",
     "test:timesheet-company": "node --experimental-strip-types scripts/check-timesheet-company-name.mjs",
+    "test:session-accounting": "node --experimental-strip-types --test scripts/check-session-accounting.mjs",
     "test:work-journal": "node --experimental-strip-types --test scripts/check-work-journal.mjs"
   },
   "dependencies": {

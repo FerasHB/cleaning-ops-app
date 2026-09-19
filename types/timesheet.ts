@@ -1,7 +1,7 @@
 // types/timesheet.ts
 // Typen für den Stundenzettel / Arbeitszeitnachweis (PDF-Export).
-// Quelle ist ausschließlich die jobs-Tabelle (abgeschlossene Aufträge) — es gibt
-// keine eigene Timesheet-Tabelle. Aggregation passiert clientseitig.
+// Legacy-Zeit kommt aus Zuweisungs-/Auftragszeitstempeln, Session-Zeit aus
+// geschlossenen work_sessions. Es gibt keine eigene Timesheet-Tabelle.
 
 import type { TimesheetAbsenceSummary, TimesheetNotice } from "@/types/timesheetAbsence";
 
@@ -11,6 +11,10 @@ import type { TimesheetAbsenceSummary, TimesheetNotice } from "@/types/timesheet
  */
 export type TimesheetEntry = {
   jobId: string;
+  /** Session-Tageszeilen brauchen einen stabilen Schlüssel jenseits der Job-ID. */
+  entryId?: string;
+  assignmentId?: string;
+  source?: "legacy" | "sessions";
   /** Lokaler Arbeitstag "YYYY-MM-DD", abgeleitet aus started_at. */
   date: string;
   /** Beginn als lokale Uhrzeit "HH:mm" (started_at). */
@@ -21,6 +25,11 @@ export type TimesheetEntry = {
   durationMinutes: number;
   /** Dauer formatiert als "H:mm". */
   durationLabel: string;
+  /** Nur Session-Modus: Lücken zwischen tatsächlichen Arbeitsintervallen. */
+  interruptionMinutes?: number;
+  interruptionLabel?: string;
+  /** Bekannte Ist-Zeit, die vor einer Abrechnung geprüft werden muss. */
+  reviewRequired?: boolean;
   /** Auftrag/Kunde (customer_name). */
   customerName: string;
   /** Bemerkung: Service ggf. mit Ort (service_name · location_address). */
@@ -28,14 +37,15 @@ export type TimesheetEntry = {
 };
 
 /**
- * Warum eine Zuweisung KEINEN abrechenbaren Eintrag erzeugt.
- * Reine Klassifizierung der vorhandenen Zeitstempel — keine Bewertung.
+ * Warum eine Zuweisung keine saubere, ungeprüfte Abrechnungszeit liefert.
+ * Eine Session-Review-Lücke kann parallel zu einer bekannten Ist-Zeit stehen.
  */
-export type TimesheetGapReason = "no_time" | "start_only" | "end_only";
+export type TimesheetGapReason = "no_time" | "start_only" | "end_only" |
+  "session_missing" | "session_invalid" | "session_review";
 
 /**
- * Eine Zuweisung, die im gewählten Monat KEINEN Stundenzettel-Eintrag ergibt,
- * obwohl der Auftrag abgeschlossen ist (Phase B1).
+ * Eine Legacy-Zuweisung ohne Eintrag oder eine Session-Zuweisung mit
+ * Aufzeichnungslücke beziehungsweise noch ungeprüfter Ist-Zeit.
  *
  * WARUM ES DIESEN TYP GIBT: `mapEntry` verwirft solche Zeilen bewusst (siehe
  * timesheet.service.ts) — der Mitarbeiter verschwindet dadurch komplett aus
@@ -49,22 +59,24 @@ export type TimesheetGapReason = "no_time" | "start_only" | "end_only";
  * oder summiert werden.
  */
 export type TimesheetGap = {
-  /** PK der job_assignments-Zeile — Eingabe für admin_correct_assignment_time. */
+  /** PK der job_assignments-Zeile; nur bei Legacy korrigierbar. */
   assignmentId: string;
+  source?: "legacy" | "sessions";
+  knownDurationMinutes?: number;
   employeeId: string;
   employeeName: string;
   jobId: string;
   customerName: string;
   /** Service ggf. mit Ort — gleiche Bauform wie TimesheetEntry.remark. */
   remark: string;
-  /** Arbeitstag "YYYY-MM-DD", abgeleitet aus der GETEILTEN Startzeit. */
+  /** Berichtstag "YYYY-MM-DD". */
   date: string;
-  /** Aktuell erfasste Eigenzeit (mindestens eine davon ist null). */
+  /** Assignment-Lifecycle-Zeit, nicht Session-Arbeitszeit. */
   employeeStartedAt: string | null;
   employeeCompletedAt: string | null;
   /** Geteilte Auftragszeit — NUR Korrektur-Vorschlag, nie Arbeitszeit. */
-  sharedStartedAt: string;
-  sharedCompletedAt: string;
+  sharedStartedAt: string | null;
+  sharedCompletedAt: string | null;
   reason: TimesheetGapReason;
   /** Lesbare Kurzbeschreibung des Problems (deutsch). */
   reasonLabel: string;

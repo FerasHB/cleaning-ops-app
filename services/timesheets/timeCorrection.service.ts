@@ -74,6 +74,10 @@ function translateRpcError(err: unknown): string {
       ? String((err as { message?: unknown }).message ?? "")
       : "";
 
+  if (raw.includes("Session-aware work requires the reviewed session-recovery correction workflow")) {
+    return "Sitzungszeiten benötigen eine geprüfte Wiederherstellung; diese Zeitkorrektur ist dafür nicht zulässig.";
+  }
+
   const hit = rpcMessageMap().find((entry) => raw.includes(entry.match));
   if (hit) return i18next.t(hit.key);
 

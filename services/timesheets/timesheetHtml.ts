@@ -5,7 +5,7 @@
 
 import type { TimesheetData, TimesheetEntry } from "@/types/timesheet";
 
-// In Version 1 gibt es keine Pausenerfassung — Spalte zeigt fest "0:00".
+// Historische Legacy-Zeilen bleiben unverändert bei "0:00".
 const PAUSE_PLACEHOLDER = "0:00";
 
 // Minimal-Escaping gegen kaputtes HTML durch Kunden-/Service-Texte.
@@ -38,15 +38,21 @@ function todayLabel(): string {
 }
 
 function renderRow(entry: TimesheetEntry): string {
+  const interruption = entry.source === "sessions"
+    ? entry.interruptionLabel ?? PAUSE_PLACEHOLDER
+    : PAUSE_PLACEHOLDER;
+  const remark = entry.reviewRequired
+    ? `${entry.remark} · Prüfung erforderlich`
+    : entry.remark;
   return `
     <tr>
       <td class="day">${formatDayCell(entry.date)}</td>
       <td class="num">${escapeHtml(entry.beginLabel)}</td>
-      <td class="num">${PAUSE_PLACEHOLDER}</td>
+      <td class="num">${escapeHtml(interruption)}</td>
       <td class="num">${escapeHtml(entry.endLabel)}</td>
       <td class="num">${escapeHtml(entry.durationLabel)}</td>
       <td>${escapeHtml(entry.customerName)}</td>
-      <td class="remark">${escapeHtml(entry.remark)}</td>
+      <td class="remark">${escapeHtml(remark)}</td>
     </tr>`;
 }
 
@@ -58,6 +64,9 @@ function renderEmptyRow(): string {
 }
 
 export function buildTimesheetHtml(data: TimesheetData): string {
+  const hasSessionEntries = data.entries.some((entry) => entry.source === "sessions");
+  const sessionGaps = data.needsAttention.filter((gap) => gap.source === "sessions");
+  const hasReview = data.entries.some((entry) => entry.reviewRequired) || sessionGaps.length > 0;
   const rows =
     data.entries.length > 0
       ? data.entries.map(renderRow).join("")
@@ -136,6 +145,14 @@ export function buildTimesheetHtml(data: TimesheetData): string {
     font-weight: 700;
     padding: 8px;
   }
+  .review-warning {
+    border: 1px solid #a55c00;
+    background: #fff7e8;
+    color: #573100;
+    padding: 8px 10px;
+    margin: 0 0 16px 0;
+    font-size: 10px;
+  }
   .summary {
     display: flex;
     justify-content: space-between;
@@ -186,7 +203,7 @@ export function buildTimesheetHtml(data: TimesheetData): string {
       <tr>
         <th>Tag</th>
         <th class="num">Beginn</th>
-        <th class="num">Pause</th>
+        <th class="num">${hasSessionEntries ? "Unterbrechung" : "Pause"}</th>
         <th class="num">Ende</th>
         <th class="num">Dauer</th>
         <th>Auftrag / Kunde</th>
@@ -205,6 +222,8 @@ export function buildTimesheetHtml(data: TimesheetData): string {
     </tfoot>
   </table>
 
+  ${hasReview ? `<div class="review-warning"><strong>Prüfung erforderlich:</strong> Sitzungszeiten oder Zeitlücken sind noch nicht für die Abrechnung freigegeben.${sessionGaps.length ? `<br />${sessionGaps.map((gap) => escapeHtml(`${gap.date} · ${gap.customerName}: ${gap.reasonLabel}`)).join("<br />")}` : ""}</div>` : ""}
+
   <div class="summary">
     <div class="box">
       <div class="k">Summe der Stunden</div>
@@ -221,7 +240,7 @@ export function buildTimesheetHtml(data: TimesheetData): string {
     <div class="sig">Datum / Unterschrift Arbeitgeber</div>
   </div>
 
-  <p class="hint">Automatisch erstellt aus abgeschlossenen Aufträgen.</p>
+  <p class="hint">${hasSessionEntries ? "Automatisch erstellt aus abgeschlossenen Mitarbeiter-Zuweisungen und Aufträgen." : "Automatisch erstellt aus abgeschlossenen Aufträgen."}</p>
 </body>
 </html>`;
 }

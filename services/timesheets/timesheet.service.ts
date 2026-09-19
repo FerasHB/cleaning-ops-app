@@ -1,6 +1,6 @@
 // services/timesheets/timesheet.service.ts
-// Stundenzettel-Operationen: Laden der abgeschlossenen Jobs eines Mitarbeiters
-// für einen Monat sowie PDF-Export (expo-print) + Teilen (expo-sharing).
+// Stundenzettel-Operationen: historische abgeschlossene Jobs und
+// abgeschlossene Mitarbeiter-Zuweisungen mit Sitzungszeit, plus PDF-Export.
 //
 // Quelle ist job_assignments (Phase 2, Worked Time) — keine eigene
 // Timesheet-Tabelle, keine RPC. Lesezugriff ist durch die RLS-Policies
@@ -41,6 +41,13 @@ import { supabase } from "@/lib/supabase";
 import { i18next } from "@/i18n";
 import { buildTimesheetAbsence } from "@/services/timesheets/timesheetAbsence.service";
 import { buildTimesheetHtml } from "@/services/timesheets/timesheetHtml";
+import {
+  accountSessionAssignment,
+  companyMonthBounds,
+  companyDateKey,
+  validCompanyTimeZone,
+  type RecordedSession,
+} from "@/services/timesheets/sessionAccounting";
 import type {
   TimesheetData,
   TimesheetEntry,
@@ -74,6 +81,21 @@ type TimesheetAssignmentRow = {
     location_address: string;
     started_at: string;
     completed_at: string;
+  };
+};
+
+type SessionAssignmentRow = {
+  id: string;
+  employee_started_at: string | null;
+  employee_completed_at: string | null;
+  work_review_required: boolean;
+  j: {
+    id: string;
+    customer_name: string;
+    service_name: string;
+    location_address: string;
+    started_at: string | null;
+    completed_at: string | null;
   };
 };
 
@@ -177,7 +199,7 @@ function mapEntry(row: TimesheetAssignmentRow): TimesheetEntry | null {
 }
 
 // Lesbare Kurzbeschreibung je Lücken-Art, für die Admin-Liste.
-const GAP_LABEL_KEYS: Record<TimesheetGapReason, string> = {
+const GAP_LABEL_KEYS: Record<"no_time" | "start_only" | "end_only", string> = {
   no_time: "admin:timesheet.reasonNoTime",
   start_only: "admin:timesheet.reasonStartOnly",
   end_only: "admin:timesheet.reasonEndOnly",
@@ -216,7 +238,7 @@ function mapGap(
   // Alt-Auftrag → mapEntry liefert den Fallback-Eintrag, keine Lücke.
   if (isLegacyJob(row.j.completed_at)) return null;
 
-  const reason: TimesheetGapReason = hasStart
+  const reason: "no_time" | "start_only" | "end_only" = hasStart
     ? "start_only"
     : hasEnd
       ? "end_only"
@@ -306,8 +328,11 @@ export async function getTimesheet(params: {
   employeeName: string;
   year: number;
   month: number;
+  /** companies.timezone; Europe/Berlin is the established fallback. */
+  companyTimezone?: string | null;
 }): Promise<TimesheetData> {
   const { companyName, employeeId, employeeName, year, month } = params;
+  const companyTimezone = validCompanyTimeZone(params.companyTimezone);
 
   // Lokale Monatsgrenzen → als ISO (UTC) an die Query. So werden Jobs anhand
   // ihres lokalen Start-Zeitpunkts dem richtigen Monat zugeordnet.
@@ -318,6 +343,7 @@ export async function getTimesheet(params: {
     .from("job_assignments")
     .select(`id,employee_started_at,employee_completed_at` + JOB_EMBED)
     .eq("employee_id", employeeId)
+    .eq("time_tracking_mode", "legacy")
     .eq("j.status", "completed")
     .eq("j.job_type", "single")
     .not("j.started_at", "is", null)
@@ -339,7 +365,7 @@ export async function getTimesheet(params: {
   // Sortierung, dieselbe Summe.
   // Client-seitige Sortierung nach der individuellen Zeitquelle —
   // "YYYY-MM-DD" + "HH:mm" ist lexikographisch chronologisch sortierbar.
-  const entries = rows
+  const legacyEntries = rows
     .map((row) => mapEntry(row))
     .filter((entry): entry is TimesheetEntry => entry !== null)
     .sort((a, b) =>
@@ -350,11 +376,92 @@ export async function getTimesheet(params: {
           : 0,
     );
 
-  const needsAttention = rows
+  const legacyGaps = rows
     .map((row) => mapGap(row, employeeId, employeeName))
     .filter((gap): gap is TimesheetGap => gap !== null)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
+  // Session discovery uses actual closed work intervals in the company's
+  // local reporting month. Completion-in-month also finds damaged assignments
+  // with no sessions, so they become gaps instead of silently vanishing.
+  const bounds = companyMonthBounds(year, month, companyTimezone);
+  const [{ data: overlappingSessions, error: overlapError }, { data: completedInMonth, error: completionError }] = await Promise.all([
+    supabase.from("work_sessions").select("job_assignment_id")
+      .eq("employee_id", employeeId).not("ended_at", "is", null)
+      .lt("started_at", new Date(bounds.end).toISOString())
+      .gt("ended_at", new Date(bounds.start).toISOString()),
+    supabase.from("job_assignments").select("id")
+      .eq("employee_id", employeeId).eq("time_tracking_mode", "sessions")
+      .gte("employee_completed_at", new Date(bounds.start).toISOString())
+      .lt("employee_completed_at", new Date(bounds.end).toISOString()),
+  ]);
+  if (overlapError) throw overlapError;
+  if (completionError) throw completionError;
+  const assignmentIds = [...new Set([
+    ...(overlappingSessions ?? []).map((item) => item.job_assignment_id),
+    ...(completedInMonth ?? []).map((item) => item.id),
+  ])];
+  const sessionEntries: TimesheetEntry[] = [];
+  const sessionGaps: TimesheetGap[] = [];
+  if (assignmentIds.length > 0) {
+    const [{ data: assignments, error: assignmentError }, { data: allSessions, error: sessionsError }] = await Promise.all([
+      supabase.from("job_assignments")
+        .select(`id,employee_started_at,employee_completed_at,work_review_required` + JOB_EMBED)
+        .eq("employee_id", employeeId).eq("time_tracking_mode", "sessions")
+        .eq("j.job_type", "single").in("id", assignmentIds),
+      supabase.from("work_sessions").select("id,job_assignment_id,started_at,ended_at")
+        .eq("employee_id", employeeId).in("job_assignment_id", assignmentIds)
+        .order("started_at", { ascending: true }),
+    ]);
+    if (assignmentError) throw assignmentError;
+    if (sessionsError) throw sessionsError;
+    const byAssignment = new Map<string, RecordedSession[]>();
+    for (const session of (allSessions ?? []) as RecordedSession[]) {
+      const list = byAssignment.get(session.job_assignment_id) ?? [];
+      list.push(session);
+      byAssignment.set(session.job_assignment_id, list);
+    }
+    for (const row of (assignments ?? []) as unknown as SessionAssignmentRow[]) {
+      const result = accountSessionAssignment({
+        id: row.id, jobId: row.j.id, customerName: row.j.customer_name,
+        remark: buildRemark(row.j.service_name, row.j.location_address),
+        employeeStartedAt: row.employee_started_at,
+        employeeCompletedAt: row.employee_completed_at,
+        reviewRequired: row.work_review_required,
+      }, byAssignment.get(row.id) ?? [], year, month, companyTimezone);
+      sessionEntries.push(...result.entries);
+      if (result.gap) {
+        const firstSession = byAssignment.get(row.id)?.[0];
+        const reference = firstSession?.started_at ?? row.employee_completed_at ?? row.employee_started_at;
+        const referenceInstant = reference ? Date.parse(reference) : NaN;
+        const candidateDate = Number.isFinite(referenceInstant)
+          ? companyDateKey(referenceInstant, companyTimezone)
+          : `${year}-${String(month).padStart(2, "0")}-01`;
+        const date = candidateDate.startsWith(`${year}-${String(month).padStart(2, "0")}-`)
+          ? candidateDate : `${year}-${String(month).padStart(2, "0")}-01`;
+        const labels = {
+          session_missing: "Keine Sitzung erfasst – Prüfung erforderlich",
+          session_invalid: "Sitzungszeiten unvollständig oder widersprüchlich",
+          session_review: "Sitzungszeit erfasst – Prüfung erforderlich",
+        } as const;
+        sessionGaps.push({
+          source: "sessions", assignmentId: row.id, employeeId, employeeName,
+          jobId: row.j.id, customerName: row.j.customer_name,
+          remark: buildRemark(row.j.service_name, row.j.location_address), date,
+          employeeStartedAt: row.employee_started_at,
+          employeeCompletedAt: row.employee_completed_at,
+          sharedStartedAt: row.j.started_at, sharedCompletedAt: row.j.completed_at,
+          knownDurationMinutes: result.knownDurationMinutes,
+          reason: result.gap, reasonLabel: labels[result.gap],
+        });
+      }
+    }
+  }
+  const entries = [...legacyEntries, ...sessionEntries].sort((a, b) =>
+    a.date + a.beginLabel < b.date + b.beginLabel ? -1 :
+      a.date + a.beginLabel > b.date + b.beginLabel ? 1 : 0);
+  const needsAttention = [...legacyGaps, ...sessionGaps]
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const totalMinutes = entries.reduce((sum, e) => sum + e.durationMinutes, 0);
 
   const monthLabel = monthStart.toLocaleDateString("de-DE", {
@@ -395,7 +502,7 @@ export async function getTimesheet(params: {
     entries,
     totalMinutes,
     totalLabel: formatDurationHm(totalMinutes),
-    jobCount: entries.length,
+    jobCount: new Set(entries.map((entry) => entry.assignmentId ?? entry.jobId)).size,
     needsAttention,
     absenceSummary,
     notices,

@@ -319,7 +319,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function isCorrectableAssignment(assignee: JobAssignee): boolean {
-  if (!assignee.employeeId) return false;
+  if (!assignee.employeeId || assignee.trackingMode === "sessions") return false;
   return UUID_RE.test(assignee.assignmentId);
 }
 
