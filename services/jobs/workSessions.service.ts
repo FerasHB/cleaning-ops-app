@@ -6,6 +6,7 @@ import { fetchAppConfig } from "@/services/appConfig.service";
 import { getCachedAppConfig } from "@/services/offline/appConfig.storage";
 import { completeJob, startJob } from "@/services/jobs/jobs.service";
 import type { Job } from "@/types/job";
+import { beginWorkTiming, markWorkTiming } from "@/utils/workTiming";
 import {
   classifyWorkFailure,
   createWorkJournal,
@@ -53,6 +54,7 @@ export async function sendWorkOperation(operation: WorkOperation): Promise<WorkR
     complete: ["complete_own_job_v2", "completed_at_input"],
   } as const;
   const [name, timestampKey] = rpc[operation.action];
+  markWorkTiming(operation.operationId, "RPC begin");
   const { data, error } = await supabase.rpc(name, {
     operation_id_input: operation.operationId,
     assignment_id_input: operation.assignmentId,
@@ -61,6 +63,7 @@ export async function sendWorkOperation(operation: WorkOperation): Promise<WorkR
     [timestampKey]: operation.actionTimestamp,
   });
   if (error) throw error;
+  markWorkTiming(operation.operationId, "RPC acknowledged");
   return canonicalReceipt(data as Record<string, unknown>);
 }
 
@@ -105,18 +108,27 @@ export async function getEmployeeActiveWorkSession(userId: string): Promise<Acti
 }
 
 export async function refreshActiveWorkSession(userId: string): Promise<ActiveWorkSession | null> {
-  return refreshActiveSnapshot(workJournal, userId, getEmployeeActiveWorkSession,
-    fetchAssignmentWorkSummary);
+  const epoch = await workJournal.getEpoch(userId);
+  const key = `${userId}:${epoch}`;
+  const existing = activeLookups.get(key);
+  if (existing) return existing;
+  const lookup = refreshActiveSnapshot(workJournal, userId, getEmployeeActiveWorkSession,
+    fetchAssignmentWorkSummary, epoch).finally(() => activeLookups.delete(key));
+  activeLookups.set(key, lookup);
+  return lookup;
 }
+
+const activeLookups = new Map<string, Promise<ActiveWorkSession | null>>();
 
 /** Cache actionable assignment revisions without relying on a visible day. */
 export async function cacheWorkSummariesFromJobs(userId: string, jobs: Job[]): Promise<void> {
   const sessionAssignments: string[] = [];
+  const legacySummaries: WorkSummary[] = [];
   for (const job of jobs) for (const assignee of job.assignees) {
     if (assignee.employeeId !== userId || assignee.employeeCompletedAt) continue;
     if (assignee.trackingMode === "sessions") sessionAssignments.push(assignee.assignmentId);
     else if (!assignee.employeeStartedAt && assignee.workRevision != null) {
-      await workJournal.rememberSummary(userId, {
+      legacySummaries.push({
         assignmentId: assignee.assignmentId, trackingMode: "legacy", workRevision: assignee.workRevision,
         assignmentState: "not_started", activeSessionId: null, activeSince: null,
         latestSessionEnd: null, closedSeconds: 0, reviewRequired: assignee.workReviewRequired ?? false,
@@ -124,13 +136,19 @@ export async function cacheWorkSummariesFromJobs(userId: string, jobs: Job[]): P
       });
     }
   }
-  await Promise.allSettled(sessionAssignments.map((id) => getAssignmentWorkSummary(userId, id)));
+  const fetched = await Promise.allSettled(sessionAssignments.map(fetchAssignmentWorkSummary));
+  await workJournal.rememberSummaries(userId, [
+    ...legacySummaries,
+    ...fetched.filter((result): result is PromiseFulfilledResult<WorkSummary> => result.status === "fulfilled")
+      .map((result) => result.value),
+  ]);
 }
 
 /** One entry point for online and offline execution; start/complete preserve legacy routing. */
 export async function executeAssignmentAction(input: {
   userId: string; companyId: string; jobId: string; assignmentId: string;
   action: WorkAction; actionTimestamp?: string; capability?: boolean;
+  tapStartedAt?: number;
 }): Promise<{ route: "legacy"; result: unknown } | { route: "sessions"; operation: WorkOperation }> {
   let summary = await workJournal.getSummary(input.userId, input.assignmentId);
   if (!summary) summary = await getAssignmentWorkSummary(input.userId, input.assignmentId);
@@ -145,13 +163,14 @@ export async function executeAssignmentAction(input: {
     throw new Error("Unsupported legacy action");
   }
   const operation = await workJournal.enqueue(input);
+  beginWorkTiming(operation.operationId, input.action, input.tapStartedAt);
   // Even when online, durable journal transmission is the sole V2 path.
-  const outcome = (await NetInfo.fetch()).isConnected
-    ? await workJournal.sync(input.userId)
-    : { acknowledged: 0, stopped: "transport" as const };
-  if (outcome.acknowledged > 0) {
-    try { await refreshActiveWorkSession(input.userId); } catch { /* journal receipt remains authoritative */ }
+  if ((await NetInfo.fetch()).isConnected) {
+    markWorkTiming(operation.operationId, "sync begin");
+    await workJournal.sync(input.userId);
   }
+  // The acknowledged receipt already updates the journal's global active session.
+  // A network snapshot here would hold the button and pending UI after the RPC.
   const saved = (await workJournal.list(input.userId)).find((item) => item.operationId === operation.operationId);
   if (!saved) throw new Error("Work operation disappeared from journal");
   if (saved.status === "rejected_permanent" || saved.status === "blocked") {
@@ -159,6 +178,7 @@ export async function executeAssignmentAction(input: {
       kind: saved.failureKind ?? "permanent_rejection", operationId: saved.operationId,
     });
   }
+  if (saved.status === "acknowledged") markWorkTiming(saved.operationId, "receipt applied");
   return { route: "sessions", operation: saved };
 }
 

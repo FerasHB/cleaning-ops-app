@@ -13,7 +13,8 @@
     "test:timesheet-company": "node --experimental-strip-types scripts/check-timesheet-company-name.mjs",
     "test:session-accounting": "node --experimental-strip-types --test scripts/check-session-accounting.mjs",
     "test:pause-resume-ui": "node --experimental-strip-types --test scripts/check-pause-resume-ui.mjs",
-    "test:work-journal": "node --experimental-strip-types --test scripts/check-work-journal.mjs"
+    "test:work-journal": "node --experimental-strip-types --test scripts/check-work-journal.mjs",
+    "test:sync-performance": "node --experimental-strip-types --test scripts/check-sync-performance.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

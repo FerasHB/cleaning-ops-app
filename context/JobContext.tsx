@@ -20,9 +20,12 @@ import {
 } from "@/services/comments/comments.service";
 import { dispatchAdminNotifications } from "@/services/notifications/adminNotifications";
 import {
+  applyAcknowledgedWorkOperationToJobs,
   applyPendingActionsToJobs,
   applyPendingWorkOperationsToJobs,
+  preserveNewerWorkJobs,
 } from "@/services/offline/jobs.merge";
+import { createCoalescedRefresh } from "@/utils/coalescedRefresh";
 import {
   cacheWorkSummariesFromJobs,
   executeAssignmentAction,
@@ -42,6 +45,7 @@ import { CreateJobInput, EmployeeOption, Job, JobType } from "@/types/job";
 import { isNetworkError } from "@/utils/networkError";
 import { toUserMessage } from "@/utils/userMessages";
 import { otherActiveJob, runAssignmentActionOnce } from "@/utils/assignmentWorkUi";
+import { markWorkTiming } from "@/utils/workTiming";
 import { confirmDialog } from "@/utils/dialogs";
 import NetInfo from "@react-native-community/netinfo";
 import { AppState } from "react-native";
@@ -246,21 +250,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const [recordedWorkSummaries, setRecordedWorkSummaries] = useState<Record<string, WorkSummary>>({});
   const [workStateOwner, setWorkStateOwner] = useState<string | null>(null);
   const currentUserRef = useRef(userId);
+  const jobsOwnerRef = useRef<string | null>(null);
   const workUiRefreshEpochRef = useRef(0);
-  const workUiJobsRef = useRef(jobs);
   currentUserRef.current = userId;
-  workUiJobsRef.current = jobs;
 
   // Guards gegen doppelte Initialisierung / parallele Syncs
   const didInitialLoadRef = useRef(false);
   const hasHandledFirstNetInfoEventRef = useRef(false);
   const syncInProgressRef = useRef(false);
-  const refreshJobsInProgressRef = useRef(false);
   const sessionActionBusyRef = useRef(new Set<string>());
-  const extraWorkAssignmentIdsRef = useRef(new Set<string>());
   useEffect(() => {
     sessionActionBusyRef.current.clear();
-    extraWorkAssignmentIdsRef.current.clear();
   }, [userId]);
 
   const refreshWorkExecution = useCallback(async () => {
@@ -277,32 +277,20 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   const refreshWorkUi = useCallback(async () => {
     if (!userId || isAdmin) return;
     const refreshEpoch = ++workUiRefreshEpochRef.current;
-    const [operations, active] = await Promise.all([workJournal.list(userId), workJournal.getActive(userId)]);
-    const assignmentIds = [...new Set([
-      ...workUiJobsRef.current.flatMap((job) => job.assignees
-        .filter((assignee) => assignee.employeeId === userId).map((assignee) => assignee.assignmentId)),
-      ...operations.filter((operation) => operation.status !== "acknowledged")
-        .map((operation) => operation.assignmentId),
-      ...(active ? [active.assignmentId] : []),
-      ...extraWorkAssignmentIdsRef.current,
-    ])];
-    const pairs = await Promise.all(assignmentIds.map(async (id) => [id,
-      await workJournal.getSummary(userId, id).catch(() => null),
-      await workJournal.getRecordedSummary(userId, id).catch(() => null)] as const));
+    const snapshot = await workJournal.getUiSnapshot(userId);
     if (currentUserRef.current !== userId || refreshEpoch !== workUiRefreshEpochRef.current) return;
     setWorkStateOwner(userId);
-    setWorkOperations(operations.filter((operation) => operation.status !== "acknowledged"));
-    setActiveWork(active);
-    setWorkSummaries(Object.fromEntries(pairs.filter((item) => item[1]).map(([id, summary]) => [id, summary!])));
-    setRecordedWorkSummaries(Object.fromEntries(pairs.filter((item) => item[2]).map(([id, , summary]) => [id, summary!])));
+    setWorkOperations(snapshot.operations.filter((operation) => operation.status !== "acknowledged"));
+    setActiveWork(snapshot.active);
+    setWorkSummaries(snapshot.summaries);
+    setRecordedWorkSummaries(snapshot.recordedSummaries);
   }, [userId, isAdmin]);
 
   const refreshAssignmentWork = useCallback(async (assignmentId: string) => {
     if (!userId || isAdmin) return;
-    extraWorkAssignmentIdsRef.current.add(assignmentId);
     await getAssignmentWorkSummary(userId, assignmentId);
     await refreshWorkUi();
-  }, [userId, isAdmin, refreshWorkUi, jobs]);
+  }, [userId, isAdmin, refreshWorkUi]);
 
   useEffect(() => {
     if (!userId || isAdmin) {
@@ -376,15 +364,18 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshPendingState, userId]);
 
-  const refreshJobs = useCallback(async () => {
-    if (refreshJobsInProgressRef.current || !userId) {
-      return;
-    }
+  const applyFreshJobs = useCallback((owner: string, incoming: Job[]) => {
+    if (currentUserRef.current !== owner) return;
+    const preserveNewer = jobsOwnerRef.current === owner;
+    jobsOwnerRef.current = owner;
+    setJobs((current) => currentUserRef.current !== owner ? current
+      : preserveNewer ? preserveNewerWorkJobs(incoming, current) : incoming);
+  }, []);
 
-    refreshJobsInProgressRef.current = true;
-
+  const refreshJobs = useMemo(() => createCoalescedRefresh(async () => {
+    if (!userId || currentUserRef.current !== userId) return;
     try {
-      setError(null);
+      if (currentUserRef.current === userId) setError(null);
 
       const online = await isOnline();
 
@@ -413,7 +404,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         let freshUnreadIds: string[] = [];
         try {
           freshUnreadIds = await getUnreadCommentJobIds();
-          setUnreadJobIds(freshUnreadIds);
+          if (currentUserRef.current === userId) setUnreadJobIds(freshUnreadIds);
         } catch (unreadErr) {
           // Netzwerkfehler hier erwartbar (Verbindung verloren) → kein Redbox.
           if (!isNetworkError(unreadErr)) {
@@ -421,7 +412,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        setJobs(mergeUnreadFlags(mergedJobs, freshUnreadIds));
+        applyFreshJobs(userId, mergeUnreadFlags(mergedJobs, freshUnreadIds));
         return;
       }
 
@@ -435,7 +426,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const mergedJobs = applyPendingWorkOperationsToJobs(
         applyPendingActionsToJobs(cachedJobs, pendingActions), await readWorkOperationsSafely(userId));
 
-      setJobs(mergedJobs);
+      applyFreshJobs(userId, mergedJobs);
     } catch (err: any) {
       // Erwartete Offline-/Netzwerkfehler nicht als harten Fehler behandeln:
       // kein console.error (sonst Redbox im Dev), kein setError. Cache laden.
@@ -457,21 +448,20 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           pendingActions,
         ), await readWorkOperationsSafely(userId));
 
-        setJobs(mergedJobs);
+        applyFreshJobs(userId, mergedJobs);
       } catch (cacheErr) {
         console.error("Failed to load cached jobs:", cacheErr);
       }
 
       // Bei Netzwerkfehler keinen Fehler-State setzen — Offline ist erwartbar
       // und der Cache wurde bereits geladen. Nur echte Fehler sichtbar machen.
-      if (!networkError) {
+      if (!networkError && currentUserRef.current === userId) {
         setError(toUserMessage(err, "Jobs konnten nicht geladen werden."));
       }
     } finally {
-      refreshJobsInProgressRef.current = false;
-      await refreshPendingState();
+      if (currentUserRef.current === userId) await refreshPendingState();
     }
-  }, [refreshPendingState, isAdmin, userId]);
+  }), [applyFreshJobs, refreshPendingState, isAdmin, userId]);
 
   const retrySync = useCallback(async () => {
     await runPendingSyncSafely();
@@ -530,12 +520,11 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       setWorkSummaries({});
       setRecordedWorkSummaries({});
       setWorkStateOwner(null);
-      extraWorkAssignmentIdsRef.current.clear();
+      jobsOwnerRef.current = null;
 
       didInitialLoadRef.current = false;
       hasHandledFirstNetInfoEventRef.current = false;
       syncInProgressRef.current = false;
-      refreshJobsInProgressRef.current = false;
       return;
     }
 
@@ -565,8 +554,11 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           getPendingJobActions(userId),
         ]);
         const pending = allPending.filter((a) => a.status === "pending");
-        setJobs(applyPendingWorkOperationsToJobs(
-          applyPendingActionsToJobs(cachedJobs, pending), await readWorkOperationsSafely(userId)));
+        const initialJobs = applyPendingWorkOperationsToJobs(
+          applyPendingActionsToJobs(cachedJobs, pending), await readWorkOperationsSafely(userId));
+        if (currentUserRef.current !== userId) return;
+        jobsOwnerRef.current = userId;
+        setJobs(initialJobs);
         setPendingActions(pending);
         setPendingCount(pending.length);
         setFailedActions(
@@ -808,10 +800,20 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     if (!userId || !job.companyId) throw new Error("Work assignment needs an online refresh before execution");
     const companyId = job.companyId;
     await runAssignmentActionOnce(sessionActionBusyRef.current, assignmentId, async () => {
+      const tapStartedAt = Date.now();
+      let operationId: string | undefined;
       if ((action === "start" || action === "resume") && !await ensureNoOtherActive(job.id)) return;
       try {
-        await executeAssignmentAction({ userId, companyId, jobId: job.id,
-          assignmentId, action, capability: pauseResumeEnabled });
+        const result = await executeAssignmentAction({ userId, companyId, jobId: job.id,
+          assignmentId, action, capability: pauseResumeEnabled, tapStartedAt });
+        if (result.route === "sessions") {
+          operationId = result.operation.operationId;
+          if (currentUserRef.current === userId && result.operation.status === "acknowledged") {
+            setJobs((current) => currentUserRef.current === userId
+              ? applyAcknowledgedWorkOperationToJobs(current, result.operation) : current);
+            markWorkTiming(operationId, "targeted refresh");
+          }
+        }
       } catch (error) {
         if (action === "start" || action === "resume") {
           try {
@@ -824,8 +826,15 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         }
         throw error;
       } finally {
-        await refreshWorkUi();
-        await refreshJobs();
+        try {
+          await refreshWorkUi();
+        } finally {
+          // Keep the button independent of the full list fetch. A concurrent
+          // invalidation is replayed once by the coalesced refresh.
+          void refreshJobs().then(() => {
+            if (operationId) markWorkTiming(operationId, "full refresh completed");
+          }).catch((error) => console.warn("Jobs refresh after work action failed:", error));
+        }
       }
     });
   }, [userId, pauseResumeEnabled, ensureNoOtherActive, showActiveJobBlock, refreshWorkUi, refreshJobs]);

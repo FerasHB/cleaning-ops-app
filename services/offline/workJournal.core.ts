@@ -47,6 +47,12 @@ export type WorkOperation = {
   failureMessage?: string;
   receipt?: WorkReceipt;
 };
+export type WorkJournalSnapshot = {
+  operations: WorkOperation[];
+  active: ActiveWorkSession | null;
+  summaries: Record<string, WorkSummary>;
+  recordedSummaries: Record<string, WorkSummary>;
+};
 export type WorkFailureKind = "transport" | "auth_expired" | "unsupported" | "revision_conflict" | "business_conflict" | "permanent_rejection";
 export type WorkFailure = { kind: WorkFailureKind; message: string };
 
@@ -91,8 +97,9 @@ export async function refreshActiveSnapshot(
   userId: string,
   lookupActive: (userId: string) => Promise<ActiveWorkSession | null>,
   lookupSummary: (assignmentId: string) => Promise<WorkSummary>,
+  knownEpoch?: number,
 ): Promise<ActiveWorkSession | null> {
-  const epoch = await journal.getEpoch(userId);
+  const epoch = knownEpoch ?? await journal.getEpoch(userId);
   const active = await lookupActive(userId);
   if (!await journal.rememberActive(userId, active, epoch)) return journal.getActive(userId);
   if (active) await journal.rememberSummary(userId, await lookupSummary(active.assignmentId));
@@ -108,6 +115,27 @@ type JournalData = {
   active: ActiveWorkSession | null;
 };
 
+function sameSummary(a: WorkSummary, b: WorkSummary): boolean {
+  return a.assignmentId === b.assignmentId && a.trackingMode === b.trackingMode &&
+    a.workRevision === b.workRevision && a.assignmentState === b.assignmentState &&
+    a.activeSessionId === b.activeSessionId && a.activeSince === b.activeSince &&
+    a.latestSessionEnd === b.latestSessionEnd && a.closedSeconds === b.closedSeconds &&
+    a.reviewRequired === b.reviewRequired && a.employeeCompletedAt === b.employeeCompletedAt;
+}
+
+function storeSummary(data: JournalData, summary: WorkSummary): boolean {
+  const previous = data.summaries[summary.assignmentId];
+  if (previous && (summary.workRevision < previous.workRevision || sameSummary(previous, summary))) return false;
+  data.summaries[summary.assignmentId] = summary;
+  return true;
+}
+
+function sameActive(a: ActiveWorkSession | null, b: ActiveWorkSession | null): boolean {
+  return a === b || !!a && !!b && a.sessionId === b.sessionId &&
+    a.assignmentId === b.assignmentId && a.jobId === b.jobId &&
+    a.companyId === b.companyId && a.startedAt === b.startedAt;
+}
+
 function empty(userId: string): JournalData {
   return { version: 1, userId, epoch: 0, nextSequence: 1, operations: [], summaries: {}, active: null };
 }
@@ -118,7 +146,7 @@ function key(userId: string): string {
 
 function project(base: WorkSummary, operations: WorkOperation[]): WorkSummary {
   let result = { ...base };
-  for (const op of operations.sort((a, b) => a.localSequence - b.localSequence)) {
+  for (const op of [...operations].sort((a, b) => a.localSequence - b.localSequence)) {
     if (op.assignmentId !== base.assignmentId || op.status === "acknowledged" || op.status === "rejected_permanent" || op.status === "blocked") continue;
     if (op.expectedRevision < result.workRevision) throw new Error("Work revision requires reconciliation");
     if (op.expectedRevision !== result.workRevision) throw new Error("Work revision requires reconciliation");
@@ -185,22 +213,52 @@ export function createWorkJournal(deps: WorkJournalDependencies) {
   });
   const getRecordedSummary = (userId: string, assignmentId: string) => serialized(async () =>
     (await read(userId)).summaries[assignmentId] ?? null);
+  /** One account-scoped storage read supplies every visible assignment. */
+  const getUiSnapshot = (userId: string): Promise<WorkJournalSnapshot> => serialized(async () => {
+    const data = await read(userId);
+    const byAssignment = new Map<string, WorkOperation[]>();
+    for (const operation of data.operations) {
+      if (operation.status === "acknowledged" || operation.status === "blocked" ||
+        operation.status === "rejected_permanent") continue;
+      const own = byAssignment.get(operation.assignmentId) ?? [];
+      own.push(operation);
+      byAssignment.set(operation.assignmentId, own);
+    }
+    const summaries: Record<string, WorkSummary> = {};
+    for (const [assignmentId, summary] of Object.entries(data.summaries)) {
+      try {
+        summaries[assignmentId] = project(summary, byAssignment.get(assignmentId) ?? []);
+      } catch {
+        // A conflicted assignment must not hide every other job's work state.
+      }
+    }
+    return {
+      operations: data.operations,
+      active: projectActive(data.active, data.operations),
+      summaries,
+      recordedSummaries: data.summaries,
+    };
+  });
   const getActive = (userId: string) => serialized(async () => {
     const data = await read(userId);
     return projectActive(data.active, data.operations);
   });
   const rememberSummary = (userId: string, summary: WorkSummary) => serialized(async () => {
     const data = await read(userId);
-    const previous = data.summaries[summary.assignmentId];
-    if (!previous || summary.workRevision >= previous.workRevision) {
-      data.summaries[summary.assignmentId] = summary;
-      await write(userId, data);
-    }
+    if (storeSummary(data, summary)) await write(userId, data);
     return project(data.summaries[summary.assignmentId], data.operations);
+  });
+  const rememberSummaries = (userId: string, summaries: WorkSummary[]) => serialized(async () => {
+    if (summaries.length === 0) return;
+    const data = await read(userId);
+    let changed = false;
+    for (const summary of summaries) changed = storeSummary(data, summary) || changed;
+    if (changed) await write(userId, data);
   });
   const rememberActive = (userId: string, active: ActiveWorkSession | null, expectedEpoch?: number) => serialized(async () => {
     const data = await read(userId);
     if (expectedEpoch != null && data.epoch !== expectedEpoch) return false;
+    if (sameActive(data.active, active)) return true;
     data.active = active;
     await write(userId, data);
     return true;
@@ -357,6 +415,6 @@ export function createWorkJournal(deps: WorkJournalDependencies) {
     workers.set(userId, worker);
     return worker;
   };
-  return { enqueue, sync, list, getEpoch, getSummary, getRecordedSummary, getActive,
-    rememberSummary, rememberActive, discardFailedLeaf };
+  return { enqueue, sync, list, getEpoch, getSummary, getRecordedSummary, getUiSnapshot, getActive,
+    rememberSummary, rememberSummaries, rememberActive, discardFailedLeaf };
 }

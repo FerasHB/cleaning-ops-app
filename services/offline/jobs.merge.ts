@@ -102,23 +102,78 @@ export function hasPendingActionForJob(
   return pendingActions.some((action) => action.jobId === jobId);
 }
 
-/** Assignment-only optimistic indicator, guarded by the server revision. */
+function applyReceiptToParent(job: Job, operation: WorkOperation): Job {
+  const receipt = operation.receipt!;
+  // The receipt reports parent status, but not parent lifecycle timestamps.
+  // Own assignment timestamps must never be substituted for parent timestamps.
+  if (receipt.jobStatus === "completed") return { ...job, status: "completed" };
+  if (receipt.jobStatus === "in_progress" && job.status === "open") return { ...job, status: "in_progress" };
+  return job;
+}
+
+/** Apply only an acknowledged server result, never a pending local guess. */
+export function applyAcknowledgedWorkOperationToJobs(jobs: Job[], operation: WorkOperation): Job[] {
+  if (operation.status !== "acknowledged" || !operation.receipt) return jobs;
+  return jobs.map((job) => {
+    if (job.id !== operation.jobId) return job;
+    const assignee = job.assignees.find((item) => item.assignmentId === operation.assignmentId);
+    if (assignee && (assignee.workRevision ?? 0) > operation.receipt!.workRevision) return job;
+    const updated = { ...job, assignees: job.assignees.map((item) =>
+      item.assignmentId === operation.assignmentId ? {
+        ...item, trackingMode: "sessions" as const, workRevision: operation.receipt!.workRevision,
+        workReviewRequired: operation.receipt!.reviewRequired,
+        employeeStartedAt: operation.receipt!.employeeStartedAt,
+        employeeCompletedAt: operation.receipt!.employeeCompletedAt,
+        pendingWorkAction: undefined,
+      } : item) };
+    return applyReceiptToParent(updated, operation);
+  });
+}
+
+/** A fetch started before an acknowledgement must not roll that acknowledgement back. */
+export function preserveNewerWorkJobs(incoming: Job[], current: Job[]): Job[] {
+  const currentById = new Map(current.map((job) => [job.id, job]));
+  return incoming.map((job) => {
+    const existing = currentById.get(job.id);
+    if (!existing) return job;
+    const revisions = new Map(existing.assignees.map((assignee) => [assignee.assignmentId, assignee.workRevision ?? 0]));
+    return job.assignees.some((assignee) => (revisions.get(assignee.assignmentId) ?? 0) > (assignee.workRevision ?? 0))
+      ? existing : job;
+  });
+}
+
+/** Overlay receipts only when the server list snapshot predates their revision. */
 export function applyPendingWorkOperationsToJobs(jobs: Job[], operations: WorkOperation[]): Job[] {
+  if (operations.length === 0) return jobs;
   const ordered = [...operations].sort((a, b) => a.localSequence - b.localSequence);
-  return jobs.map((job) => ({
-    ...job,
-    assignees: job.assignees.map((assignee) => {
-      const own = ordered.filter((op) => op.jobId === job.id && op.assignmentId === assignee.assignmentId);
-      const acknowledged = own.filter((op) => op.status === "acknowledged" && op.receipt).at(-1)?.receipt;
-      const canonical = acknowledged && acknowledged.workRevision > (assignee.workRevision ?? 0)
-        ? { ...assignee, trackingMode: "sessions" as const, workRevision: acknowledged.workRevision,
-          workReviewRequired: acknowledged.reviewRequired,
-          employeeStartedAt: acknowledged.employeeStartedAt,
-          employeeCompletedAt: acknowledged.employeeCompletedAt }
+  const byAssignment = new Map<string, WorkOperation[]>();
+  for (const operation of ordered) {
+    const own = byAssignment.get(operation.assignmentId) ?? [];
+    own.push(operation);
+    byAssignment.set(operation.assignmentId, own);
+  }
+  return jobs.map((job) => {
+    if (!job.assignees.some((assignee) => byAssignment.has(assignee.assignmentId))) return job;
+    let parentReceipt: WorkOperation | null = null;
+    const assignees = job.assignees.map((assignee) => {
+      const own = (byAssignment.get(assignee.assignmentId) ?? []).filter((op) => op.jobId === job.id);
+      const acknowledged = own.filter((op) => op.status === "acknowledged" && op.receipt).at(-1);
+      const receipt = acknowledged?.receipt;
+      const newer = !!receipt && receipt.workRevision > (assignee.workRevision ?? 0);
+      if (newer && acknowledged && (!parentReceipt || acknowledged.localSequence > parentReceipt.localSequence)) {
+        parentReceipt = acknowledged;
+      }
+      const canonical = newer && receipt
+        ? { ...assignee, trackingMode: "sessions" as const, workRevision: receipt.workRevision,
+          workReviewRequired: receipt.reviewRequired,
+          employeeStartedAt: receipt.employeeStartedAt,
+          employeeCompletedAt: receipt.employeeCompletedAt }
         : assignee;
       const latest = own.filter((op) => (op.status === "pending" || op.status === "syncing") &&
         op.expectedRevision >= (canonical.workRevision ?? 0)).at(-1);
-      return latest ? { ...canonical, pendingWorkAction: latest.action } : canonical;
-    }),
-  }));
+      return { ...canonical, pendingWorkAction: latest?.action };
+    });
+    const updated = { ...job, assignees };
+    return parentReceipt ? applyReceiptToParent(updated, parentReceipt) : updated;
+  });
 }
