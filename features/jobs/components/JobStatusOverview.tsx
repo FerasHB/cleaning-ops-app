@@ -18,14 +18,14 @@ import { StatusBadge } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job } from "@/types/job";
-import { formatDateTimeLocalized } from "@/utils/date";
+import { formatJobScheduleLocalized } from "@/utils/jobSchedule";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 
 type Props = {
-  job: Pick<Job, "customerName" | "status" | "service" | "scheduledStart">;
+  job: Pick<Job, "customerName" | "status" | "service" | "date" | "startTime" | "scheduledStart">;
 };
 
 export function JobStatusOverview({ job }: Props) {
@@ -33,10 +33,9 @@ export function JobStatusOverview({ job }: Props) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { t } = useTranslation();
 
-  // Kompakte Terminzeile — deckt Einzeltermine UND generierte Occurrences ab
-  // (beide tragen scheduledStart).
+  // Einzeltermine und Occurrences share the same company-local schedule rule.
   const scheduleSummary =
-    formatDateTimeLocalized(job.scheduledStart) ?? t("jobs:detail.noScheduledDate");
+    formatJobScheduleLocalized(job) ?? t("jobs:detail.noScheduledDate");
 
   return (
     <View style={styles.hero}>

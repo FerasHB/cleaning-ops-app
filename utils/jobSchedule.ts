@@ -14,9 +14,11 @@
 import type { Job } from "@/types/job";
 import {
   formatDateISO,
+  formatDateOnlyLocalized,
   isSameLocalDate,
   normalizeTime,
 } from "@/utils/date";
+import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import { formatRecurringDays, isWeekdayInList } from "@/utils/recurrence";
 
 // Vergleicht einen ISO-Zeitstempel mit dem Kalendertag von `ref` (lokal).
@@ -92,6 +94,30 @@ export function isJobToday(job: Job, ref: Date = new Date()): boolean {
  */
 export function getJobDisplayTime(job: Job): string | null {
   return normalizeTime(job.startTime) ?? timeFromISO(job.scheduledStart);
+}
+
+/** Scheduled time is a company-local wall clock. Parse the instant only for
+ * legacy rows missing a canonical date or start time. */
+export function formatJobScheduleLocalized(
+  job: Pick<Job, "date" | "startTime" | "scheduledStart">,
+): string | null {
+  const locale = INTL_LOCALE_TAGS[i18next.language as AppLocale] ?? "de-DE";
+  const canonicalDate = formatDateOnlyLocalized(job.date);
+  const canonicalTime = normalizeTime(job.startTime);
+  const fallback = !canonicalDate || !canonicalTime
+    ? (job.scheduledStart ? new Date(job.scheduledStart) : null)
+    : null;
+  const legacyDate = fallback && !isNaN(fallback.getTime()) ? fallback : null;
+  const date = canonicalDate ?? formatDateOnlyLocalized(formatDateISO(legacyDate));
+  const wallTime = canonicalTime ?? (legacyDate ? timeFromISO(job.scheduledStart) : null);
+  const time = wallTime
+    ? wallTime.split(":").map((part) => new Intl.NumberFormat(locale, {
+        minimumIntegerDigits: 2,
+        useGrouping: false,
+      }).format(Number(part))).join(":")
+    : null;
+  if (date && time) return i18next.t("jobs:comments.dateAt", { date, time });
+  return date ?? time;
 }
 
 /**

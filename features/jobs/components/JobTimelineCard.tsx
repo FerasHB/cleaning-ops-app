@@ -19,7 +19,7 @@ import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { WorkedTimeCard } from "@/features/jobs/components/WorkedTimeCard";
 import type { Job } from "@/types/job";
-import { formatDateTimeLocalized } from "@/utils/date";
+import { formatJobScheduleLocalized } from "@/utils/jobSchedule";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -34,6 +34,8 @@ type Props = {
     | "startedBy"
     | "completedBy"
     | "assignees"
+    | "date"
+    | "startTime"
     | "scheduledStart"
   >;
   /**
@@ -57,7 +59,7 @@ export function JobTimelineCard({ job, showPlaceholder, isAdmin }: Props) {
 
   if (!showPlaceholder) return null;
 
-  const scheduledText = formatDateTimeLocalized(job.scheduledStart);
+  const scheduledText = formatJobScheduleLocalized(job);
 
   return (
     <Card padding={theme.spacing.lg} style={styles.card}>

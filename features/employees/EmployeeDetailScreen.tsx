@@ -27,7 +27,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { resendInvite } from "@/services/employees/resendInvite";
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
-import { formatDateTimeLocalized } from "@/utils/date";
+import { formatDateISO, formatDateTimeLocalized } from "@/utils/date";
 import { getEmployeeStatus } from "@/utils/employeeStatus";
 import { isAssignedTo } from "@/utils/jobAssignees";
 import { useJobStatusLabels } from "@/hooks/useJobStatusLabels";
@@ -160,7 +160,7 @@ export default function EmployeeDetailScreen() {
     () =>
       assignedJobs.filter(
         (j) =>
-          isSameDay(j.scheduledStart, now) ||
+          (j.date ? j.date.slice(0, 10) === formatDateISO(now) : isSameDay(j.scheduledStart, now)) ||
           isSameDay(j.startedAt, now) ||
           isSameDay(j.completedAt, now),
       ).length,

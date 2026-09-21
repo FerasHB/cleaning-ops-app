@@ -235,7 +235,7 @@ select 4, 'Regressionsfall: verschoben statt dupliziert — gleiche id, 20:30, A
 
 insert into _slot_results
 select 5, 'Serie 19:30->20:30: scheduled_start mitgezogen', '20:30:00',
-  coalesce((select to_char(scheduled_start, 'HH24:MI:SS') from public.jobs
+  coalesce((select to_char(scheduled_start at time zone 'Europe/Berlin', 'HH24:MI:SS') from public.jobs
             where parent_job_id='c3000000-0000-0000-0000-000000000001'
               and date = current_date + 2), 'NULL');
 

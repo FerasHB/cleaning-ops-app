@@ -19,14 +19,14 @@ import { Card, InfoRow } from "@/components/ui";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import type { Job } from "@/types/job";
-import { formatDateTimeLocalized, formatDurationLong } from "@/utils/date";
-import { getPlannedEndTime } from "@/utils/jobSchedule";
+import { formatDurationLong } from "@/utils/date";
+import { formatJobScheduleLocalized, getPlannedEndTime } from "@/utils/jobSchedule";
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, View } from "react-native";
 
 type Props = {
-  job: Pick<Job, "scheduledStart" | "startTime" | "plannedDurationMinutes">;
+  job: Pick<Job, "date" | "scheduledStart" | "startTime" | "plannedDurationMinutes">;
 };
 
 export function JobScheduleCard({ job }: Props) {
@@ -46,7 +46,7 @@ export function JobScheduleCard({ job }: Props) {
       <View style={styles.rowDivider} />
       <InfoRow
         label={t("jobs:detail.plannedStart")}
-        value={formatDateTimeLocalized(job.scheduledStart) ?? t("jobs:detail.noScheduledDate")}
+        value={formatJobScheduleLocalized(job) ?? t("jobs:detail.noScheduledDate")}
         icon="calendar-outline"
       />
       {job.plannedDurationMinutes ? (

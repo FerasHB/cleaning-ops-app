@@ -35,7 +35,7 @@ import { deriveAssignmentWorkUi, selectActiveEmployeeJob } from "@/utils/assignm
 import type { AppTheme } from "@/constants/theme";
 import type { Job, JobStatus } from "@/types/job";
 import { isJobStartDateAllowed, isJobToday } from "@/utils/jobSchedule";
-import { formatTimeHHmm } from "@/utils/date";
+import { formatDateISO, formatTimeHHmm } from "@/utils/date";
 import { JOB_STATUS_ORDER } from "@/utils/jobStatus";
 import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
@@ -242,7 +242,7 @@ export default function EmployeeOverviewScreen() {
 
   // Für die Monats-KPIs unten: gibt es überhaupt terminierte (single) Jobs?
   const anyScheduled = useMemo(
-    () => jobs.some((j) => !!j.scheduledStart),
+    () => jobs.some((j) => !!j.date || !!j.scheduledStart),
     [jobs],
   );
 
@@ -335,7 +335,9 @@ export default function EmployeeOverviewScreen() {
   const monthJobs = useMemo(() => {
     if (!anyScheduled) return jobs;
     return jobs.filter(
-      (j) => isSameMonth(j.scheduledStart, now) || isSameMonth(j.completedAt, now),
+      (j) => (j.date
+        ? j.date.slice(0, 7) === formatDateISO(now)?.slice(0, 7)
+        : isSameMonth(j.scheduledStart, now)) || isSameMonth(j.completedAt, now),
     );
   }, [jobs, anyScheduled, now]);
 

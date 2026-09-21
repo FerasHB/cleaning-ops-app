@@ -162,6 +162,19 @@ try {
   const { localDateTimeFrom, formatTimeHHmm, formatDateISO } = await import(
     pathToFileURL(join(out, "js/utils/date.js")).href
   );
+  const { formatDateTimeLocalized } = await import(
+    pathToFileURL(join(out, "js/utils/date.js")).href
+  );
+  const { getJobDisplayTime, formatJobScheduleLocalized } = await import(
+    pathToFileURL(join(out, "js/utils/jobSchedule.js")).href
+  );
+  const { i18next } = await import(pathToFileURL(join(out, "js/i18n/index.js")).href);
+  const resources = Object.fromEntries(["de", "en", "ar", "tr"].map((language) => [
+    language,
+    { jobs: JSON.parse(readFileSync(join(root, "i18n/locales", language, "jobs.json"), "utf8")) },
+  ]));
+  await i18next.init({ lng: "de", fallbackLng: "de", resources, ns: ["jobs"],
+    defaultNS: "jobs", interpolation: { escapeValue: false } });
 
   // ── 1. „Abweichender Termin" ────────────────────────────────────────
   // Regel nach der Serien-Änderung: Mo–Fr um 20:30 (vorher 19:30).
@@ -247,6 +260,44 @@ try {
 
   ok("ohne Uhrzeit wird Mitternacht angenommen", () => {
     assert.equal(formatTimeHHmm(localDateTimeFrom("2026-09-16", null)), "00:00");
+  });
+
+  // Schedule labels use canonical wall-clock fields; lifecycle labels use instants.
+  const summer = { date: "2026-09-21", startTime: "14:30:00",
+    scheduledStart: "2026-09-21T14:30:00Z" }; // historical bad instant
+  const winter = { date: "2026-10-26", startTime: "14:30:00",
+    scheduledStart: "2026-10-26T14:30:00Z" };
+  for (const timezone of ["Europe/Berlin", "UTC", "America/New_York", "Asia/Dubai"]) {
+    process.env.TZ = timezone;
+    for (const [name, job] of [["summer", summer], ["winter", winter]]) {
+      ok(`${name} schedule stays 14:30 on device ${timezone}`, () => {
+        assert.equal(getJobDisplayTime(job), "14:30");
+        assert.match(formatJobScheduleLocalized(job), /14:30/);
+        assert.match(formatJobScheduleLocalized(JSON.parse(JSON.stringify(job))), /14:30/);
+      });
+    }
+  }
+  process.env.TZ = "Europe/Berlin";
+  for (const language of ["de", "en", "tr", "ar"]) {
+    await i18next.changeLanguage(language);
+    ok(`${language} locale preserves scheduled hour for single and occurrence`, () => {
+      const expected = language === "ar" ? "١٤:٣٠" : "14:30";
+      assert.ok(formatJobScheduleLocalized(summer).includes(expected));
+      assert.ok(formatJobScheduleLocalized({ ...winter, parentJobId: "rule" }).includes(expected));
+    });
+  }
+  await i18next.changeLanguage("de");
+  ok("legacy scheduledStart works without canonical fields", () => {
+    assert.match(formatJobScheduleLocalized({ date: null, startTime: null,
+      scheduledStart: "2026-09-21T12:30:00Z" }), /14:30/);
+  });
+  ok("lifecycle timestamp remains a real instant", () => {
+    process.env.TZ = "UTC";
+    const utc = formatDateTimeLocalized("2026-09-21T12:30:00Z");
+    process.env.TZ = "Europe/Berlin";
+    const berlin = formatDateTimeLocalized("2026-09-21T12:30:00Z");
+    assert.match(utc, /12:30/);
+    assert.match(berlin, /14:30/);
   });
 
   console.log(`\nALLE ${passed} FÄLLE PASS`);
