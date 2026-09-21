@@ -19,14 +19,19 @@ export function deriveAssignmentWorkUi(input: {
 }): AssignmentWorkUi {
   const { job, role, userId, capability, summary, operations = [] } = input;
   const own = getOwnAssignee(job, userId);
-  const pending = [...operations].reverse().find((op) => op.assignmentId === own?.assignmentId &&
-    (op.status === "pending" || op.status === "syncing")) ?? null;
+  const ownOperations = operations.filter((op) => op.userId === userId && op.assignmentId === own?.assignmentId);
+  const pending = ownOperations.filter((op) => op.status === "pending" || op.status === "syncing")
+    .sort((a, b) => a.localSequence - b.localSequence).at(-1) ?? null;
+  const needsReconciliation = operations.some((op) => op.userId === userId &&
+    (op.status === "blocked" || op.status === "rejected_permanent"));
+  const hasSessionWork = own?.trackingMode === "sessions" || summary?.trackingMode === "sessions" ||
+    ownOperations.length > 0;
   const sessionMode = capability && !!own &&
-    (own.trackingMode === "sessions" || !own.employeeStartedAt && !own.employeeCompletedAt);
-  if (own?.trackingMode === "sessions" && !capability) {
+    (hasSessionWork || !own.employeeStartedAt && !own.employeeCompletedAt);
+  if (hasSessionWork && !capability) {
     return { mode: "sessions", state: summary?.assignmentState ?? "loading",
       canStart: false, canPause: false, canResume: false, canComplete: false,
-      pending, reviewRequired: !!(summary?.reviewRequired ?? own.workReviewRequired) };
+      pending, reviewRequired: !!(summary?.reviewRequired ?? own?.workReviewRequired) };
   }
   if (!sessionMode) {
     const state = own?.employeeCompletedAt ? "completed" : own?.employeeStartedAt ? "active" : "not_started";
@@ -37,7 +42,16 @@ export function deriveAssignmentWorkUi(input: {
   }
   const state = summary?.assignmentState ??
     (own?.employeeCompletedAt ? "completed" : own?.employeeStartedAt ? "loading" : "not_started");
-  const allowed = canRunJobActions(job, role, userId) && !pending;
+  // Pending work changes the effective state. Require its projected revision;
+  // a stale or missing projection must not expose an old action again.
+  const pendingState = pending?.action === "pause" ? "paused" :
+    pending?.action === "complete" ? "completed" : "active";
+  const pendingSession = pending?.action === "start" || pending?.action === "resume"
+    ? pending.sessionId : null;
+  const hasEffectiveState = !pending || !!summary && summary.trackingMode === "sessions" &&
+    summary.assignmentId === pending.assignmentId && summary.workRevision === pending.expectedRevision + 1 &&
+    summary.assignmentState === pendingState && summary.activeSessionId === pendingSession;
+  const allowed = canRunJobActions(job, role, userId) && !needsReconciliation && hasEffectiveState;
   return { mode: "sessions", state,
     canStart: allowed && state === "not_started" && job.status !== "completed",
     canPause: allowed && state === "active",

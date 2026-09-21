@@ -89,14 +89,33 @@ test("active timer runs from active session; paused and pending Pause timers sto
     now: Date.parse("2026-09-19T12:00:00Z") }), 9000);
 });
 
-test("pending Start, Pause, Resume and Complete disable duplicate controls", () => {
-  for (const action of ["start", "pause", "resume", "complete"]) {
-    const state = action === "start" ? "active" : action === "resume" ? "active" : action === "pause" ? "paused" : "completed";
+test("pending actions show next valid controls without allowing duplicates", () => {
+  const cases = [
+    { action: "start", state: "active", controls: [false, true, false, true] },
+    { action: "pause", state: "paused", controls: [false, false, true, true] },
+    { action: "resume", state: "active", controls: [false, true, false, true] },
+    { action: "complete", state: "completed", controls: [false, false, false, false] },
+  ];
+  for (const { action, state, controls } of cases) {
     const result = derive(job("job-a", "sessions", "2026-09-19T08:00:00Z"), true,
-      summary(state), [operation(action)]);
+      summary(state, { workRevision: 2 }), [operation(action)]);
     assert.equal(result.pending.action, action);
-    assert.equal(result.canStart || result.canPause || result.canResume || result.canComplete, false);
+    assert.deepEqual([result.canStart, result.canPause, result.canResume, result.canComplete], controls);
   }
+});
+
+test("missing effective projection and failed journal actions keep controls closed", () => {
+  const ownJob = job("job-a", "sessions", "2026-09-19T08:00:00Z");
+  const stale = derive(ownJob, true, summary("not_started", { workRevision: 1 }), [operation("start")]);
+  assert.equal(stale.canStart || stale.canPause || stale.canResume || stale.canComplete, false);
+  const wrongState = derive(ownJob, true, summary("active", { workRevision: 2 }), [operation("pause")]);
+  assert.equal(wrongState.canStart || wrongState.canPause || wrongState.canResume || wrongState.canComplete, false);
+  const rejected = derive(ownJob, true, summary("active", { workRevision: 2 }),
+    [operation("pause", "rejected_permanent")]);
+  assert.equal(rejected.canStart || rejected.canPause || rejected.canResume || rejected.canComplete, false);
+  const gated = derive(job(), false, summary("active", { workRevision: 2 }), [operation("start")]);
+  assert.equal(gated.mode, "sessions");
+  assert.equal(gated.canStart || gated.canPause || gated.canResume || gated.canComplete, false);
 });
 
 test("rapid double tap executes one assignment action", async () => {

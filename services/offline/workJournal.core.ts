@@ -150,6 +150,12 @@ function project(base: WorkSummary, operations: WorkOperation[]): WorkSummary {
     if (op.assignmentId !== base.assignmentId || op.status === "acknowledged" || op.status === "rejected_permanent" || op.status === "blocked") continue;
     if (op.expectedRevision < result.workRevision) throw new Error("Work revision requires reconciliation");
     if (op.expectedRevision !== result.workRevision) throw new Error("Work revision requires reconciliation");
+    const sessionStart = result.activeSince ? Date.parse(result.activeSince) : NaN;
+    const sessionEnd = Date.parse(op.actionTimestamp);
+    const closedSeconds = (op.action === "pause" || op.action === "complete") &&
+      Number.isFinite(sessionStart) && Number.isFinite(sessionEnd)
+      ? result.closedSeconds + Math.max(0, (sessionEnd - sessionStart) / 1000)
+      : result.closedSeconds;
     result = {
       ...result,
       trackingMode: "sessions",
@@ -157,6 +163,9 @@ function project(base: WorkSummary, operations: WorkOperation[]): WorkSummary {
       assignmentState: op.action === "pause" ? "paused" : op.action === "complete" ? "completed" : "active",
       activeSessionId: op.action === "start" || op.action === "resume" ? op.sessionId : null,
       activeSince: op.action === "start" || op.action === "resume" ? op.actionTimestamp : null,
+      latestSessionEnd: (op.action === "pause" || op.action === "complete") && Number.isFinite(sessionStart)
+        ? op.actionTimestamp : result.latestSessionEnd,
+      closedSeconds,
       employeeCompletedAt: op.action === "complete" ? op.actionTimestamp : result.employeeCompletedAt,
     };
   }
