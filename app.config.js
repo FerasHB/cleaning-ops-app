@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────
 
 const IS_DEV = process.env.APP_VARIANT === "development";
+const STAGING_UPDATE_URL = "https://u.expo.dev/e746276f-fbd7-49bd-aab6-dc3176e7661a";
 
 module.exports = ({ config }) => ({
   ...config,
@@ -38,6 +39,13 @@ module.exports = ({ config }) => ({
   // deshalb bei beiden Apps identisch. Siehe Hinweis im PR: zum Verbinden
   // notfalls die Dev-Client-App direkt öffnen statt den QR-Code zu scannen.
   scheme: IS_DEV ? "taskopsmanagerdev" : config.scheme,
+
+  // Only the development/Staging variant opts in to EAS Update. Production
+  // keeps its existing native update configuration and runtime unchanged.
+  ...(IS_DEV && {
+    updates: { ...config.updates, url: STAGING_UPDATE_URL },
+    runtimeVersion: { policy: "fingerprint" },
+  }),
 
   ios: {
     ...config.ios,

@@ -18,6 +18,7 @@
     },
     "preview-staging": {
       "distribution": "internal",
+      "channel": "staging",
       "environment": "development",
       "env": {
         "APP_VARIANT": "development"
