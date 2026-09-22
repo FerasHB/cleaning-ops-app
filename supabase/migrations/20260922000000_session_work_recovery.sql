@@ -621,6 +621,7 @@ declare
   v_final_end   timestamptz;
   v_total       numeric;
   v_recorded    numeric;
+  v_correction  numeric;
   v_employee    uuid;
   v_result      jsonb;
 begin
@@ -834,10 +835,25 @@ begin
     raise exception 'An open session must be closed by this review' using errcode = '22023';
   end if;
 
+  -- recorded_seconds counts ONLY what the employee actually recorded. A session
+  -- the admin closed has no employee-recorded end, so it contributes nothing:
+  -- reporting its admin-supplied duration as "recorded" would claim the
+  -- employee clocked out when they never did.
   select max(e.effective_ended_at),
          coalesce(sum(extract(epoch from e.effective_ended_at - e.effective_started_at)),0),
-         coalesce(sum(extract(epoch from e.raw_ended_at - e.raw_started_at)),0)
-    into v_final_end, v_total, v_recorded
+         coalesce(sum(extract(epoch from e.raw_ended_at - e.raw_started_at))
+           filter (where not exists (
+             select 1 from public.session_time_corrections stc
+             where stc.work_session_id = e.session_id
+               and stc.revision_no = 1 and stc.origin = 'admin_closed')),0)
+           ,
+         coalesce(sum(extract(epoch from e.effective_ended_at - e.effective_started_at)
+                      - extract(epoch from e.raw_ended_at - e.raw_started_at))
+           filter (where not exists (
+             select 1 from public.session_time_corrections stc
+             where stc.work_session_id = e.session_id
+               and stc.revision_no = 1 and stc.origin = 'admin_closed')),0)
+    into v_final_end, v_total, v_recorded, v_correction
   from public._effective_sessions(array[assignment_id_input]) e;
 
   -- The completion stamp is DERIVED, never supplied and never now(). Anything
@@ -868,7 +884,10 @@ begin
     'employee_completed_at',v_assignment.employee_completed_at,
     'latest_session_end',v_final_end,
     'recorded_seconds',v_recorded,'effective_seconds',v_total,
-    'correction_seconds',v_total - v_recorded,
+    -- Net change on the sessions the employee actually closed. A session the
+    -- admin closed has no recorded counterpart, so it contributes 0 rather
+    -- than appearing as invented time.
+    'correction_seconds',v_correction,
     'active_session_id',null,'review_required',v_assignment.work_review_required,
     'job_status',v_job.status,'recorded_at',clock_timestamp());
 
@@ -975,7 +994,11 @@ begin
            max(e.effective_ended_at)                                as last_end,
            (array_agg(e.session_id) filter (where e.raw_ended_at is null))[1]    as open_id,
            (array_agg(e.raw_started_at) filter (where e.raw_ended_at is null))[1] as open_started,
-           coalesce(sum(extract(epoch from e.raw_ended_at - e.raw_started_at)),0)             as recorded_seconds,
+           coalesce(sum(extract(epoch from e.raw_ended_at - e.raw_started_at))
+             filter (where not exists (
+               select 1 from public.session_time_corrections stc
+               where stc.work_session_id = e.session_id
+                 and stc.revision_no = 1 and stc.origin = 'admin_closed')),0)                 as recorded_seconds,
            coalesce(sum(extract(epoch from e.effective_ended_at - e.effective_started_at)),0) as effective_seconds
     from public._effective_sessions(array[ja.id]) e
   ) agg on true

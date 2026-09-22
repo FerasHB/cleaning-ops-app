@@ -382,6 +382,11 @@ begin
   perform pg_temp.check('FIXTURE admin_closed effective duration = 8:30',
     (select effective_duration_seconds = 30600 from public.session_time_corrections
       where work_session_id=v_session and revision_no=1));
+  -- The employee recorded NO end here, so nothing may be reported as recorded.
+  perform pg_temp.check('FIXTURE admin_closed reports zero recorded seconds',
+    (v_res->>'recorded_seconds')::numeric = 0, v_res->>'recorded_seconds');
+  perform pg_temp.check('FIXTURE admin_closed reports no correction delta',
+    (v_res->>'correction_seconds')::numeric = 0, v_res->>'correction_seconds');
   perform pg_temp.check('FIXTURE resolved assignment leaves no open session',
     not exists(select 1 from public.work_sessions
                where job_assignment_id=v_assignment and ended_at is null));
