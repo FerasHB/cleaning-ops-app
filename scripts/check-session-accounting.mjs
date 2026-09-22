@@ -234,6 +234,17 @@ function loadTimesheetService(tables) {
     "@/services/timesheets/timesheetAbsence.service": { buildTimesheetAbsence: async () => ({ summary: undefined, notices: [] }) },
     "@/services/timesheets/timesheetHtml": { buildTimesheetHtml },
     "@/services/timesheets/sessionAccounting": awaitlessSessionAccounting,
+    // Der Stundenzettel liest Arbeitszeit seit Migration 20260922000000 NUR
+    // noch über get_effective_work_sessions. Ohne Korrekturzeile ist das
+    // wirksame Intervall identisch mit dem rohen — genau das bildet dieser
+    // Mock ab, damit die Bestandsfälle unverändert geprüft bleiben.
+    "@/services/timesheets/sessionRecovery.service": {
+      getEffectiveWorkSessions: async (assignmentIds) =>
+        (tables.work_sessions ?? [])
+          .filter((session) => assignmentIds.includes(session.job_assignment_id))
+          .map((session) => ({ ...session, reviewed: false })),
+      getSessionCorrectionAudit: async () => [],
+    },
     "@/utils/date": dateUtils,
     "@/utils/jobCorrection": { isLegacyJob: (iso) => Date.parse(iso) < Date.parse("2026-08-12T00:00:00Z") },
     "expo-print": {}, "expo-sharing": {},

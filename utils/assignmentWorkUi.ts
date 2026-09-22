@@ -4,14 +4,14 @@ import { canCompleteOwnAssignment, canRunJobActions, canStartOwnAssignment, getO
 
 export type AssignmentWorkUi = {
   mode: "legacy" | "sessions";
-  state: "not_started" | "active" | "paused" | "completed" | "loading";
+  state: "not_started" | "active" | "paused" | "completed" | "review_pending" | "loading";
   canStart: boolean;
   canPause: boolean;
   canResume: boolean;
   canComplete: boolean;
   pending: WorkOperation | null;
   reviewRequired: boolean;
-  blockReason: "capability_off" | "legacy" | "authorization" | "reconciliation" | "projection" | null;
+  blockReason: "capability_off" | "legacy" | "authorization" | "reconciliation" | "review_pending" | "projection" | null;
 };
 
 export function deriveAssignmentWorkUi(input: {
@@ -53,9 +53,15 @@ export function deriveAssignmentWorkUi(input: {
   const hasEffectiveState = !pending || !!summary && summary.trackingMode === "sessions" &&
     summary.assignmentId === pending.assignmentId && summary.workRevision === pending.expectedRevision + 1 &&
     summary.assignmentState === pendingState && summary.activeSessionId === pendingSession;
-  const allowed = canRunJobActions(job, role, userId) && !needsReconciliation && hasEffectiveState;
+  // review_pending schliesst JEDE Mitarbeiter-Aktion aus. Der Abschluss liegt
+  // beim Administrator; ein erneutes Start/Resume/Complete wuerde serverseitig
+  // ohnehin abgelehnt und darf hier gar nicht erst angeboten werden.
+  const reviewPending = state === "review_pending";
+  const allowed = canRunJobActions(job, role, userId) && !needsReconciliation
+    && hasEffectiveState && !reviewPending;
   const blockReason = !canRunJobActions(job, role, userId) ? "authorization"
-    : needsReconciliation ? "reconciliation" : !hasEffectiveState ? "projection" : null;
+    : needsReconciliation ? "reconciliation" : reviewPending ? "review_pending"
+      : !hasEffectiveState ? "projection" : null;
   return { mode: "sessions", state,
     canStart: allowed && state === "not_started" && job.status !== "completed",
     canPause: allowed && state === "active",

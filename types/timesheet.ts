@@ -30,6 +30,32 @@ export type TimesheetEntry = {
   interruptionLabel?: string;
   /** Bekannte Ist-Zeit, die vor einer Abrechnung geprüft werden muss. */
   reviewRequired?: boolean;
+  /**
+   * Neutraler Marker: eine Admin-Korrektur wirkt auf diese Zeile. Trägt
+   * bewusst KEINEN Grund und KEINEN Akteur und geht deshalb auch an
+   * Mitarbeitende.
+   */
+  reviewed?: boolean;
+  /**
+   * ANZEIGE-METADATEN, NUR ADMIN (Migration 20260922000000).
+   *
+   * Sie werden ERST NACH der Abrechnung angehängt und verändern
+   * `durationMinutes`/`totalMinutes` niemals — `durationMinutes` ist und bleibt
+   * die wirksame Arbeitszeit aus get_effective_work_sessions.
+   *
+   * `recordedMinutes` ist NULL, wenn der Mitarbeiter nie ein Arbeitsende
+   * erfasst hat; "0" würde behaupten, er habe null Stunden gearbeitet.
+   * `correctionMinutes` ist dann ebenfalls NULL — ohne erfasstes Ende gibt es
+   * keine Differenz.
+   *
+   * In einem Mitarbeiter-Stundenzettel sind diese Felder nicht vorhanden. Das
+   * ist strukturell, nicht nur ungerendert: der Admin-Grund erreicht den
+   * Mitarbeiter-PDF-Export dadurch auch bei einem künftigen Render-Fehler nicht.
+   */
+  recordedMinutes?: number | null;
+  correctionMinutes?: number | null;
+  correctionReason?: string;
+  correctionOrigin?: "admin_reduced" | "admin_closed" | "admin_raised";
   /** Auftrag/Kunde (customer_name). */
   customerName: string;
   /** Bemerkung: Service ggf. mit Ort (service_name · location_address). */

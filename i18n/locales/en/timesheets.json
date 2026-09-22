@@ -53,11 +53,65 @@
     "plannedWorkDays_other": "{{count}} planned work days · Planned assignment time {{duration}} h",
     "calendarDays_one": "{{count}} calendar day",
     "calendarDays_other": "{{count}} calendar days"
-  }
-,
+  },
   "sessionGap": {
     "missing": "No session recorded — review required",
     "invalid": "Session times are incomplete or inconsistent",
     "review": "Session time recorded — review required"
+  },
+  "recovery": {
+    "entry": "Review working time",
+    "entrySubtitle": "{{count}} assignments waiting for review",
+    "entrySubtitle_one": "1 assignment waiting for review",
+    "title": "Review working time",
+    "subtitle": "Company-wide, independent of month and employee",
+    "empty": "No assignments are waiting for review.",
+    "emptyTitle": "Everything reviewed",
+    "loadFailed": "The review list could not be loaded.",
+    "stuckSince": "Open for {{hours}} h",
+    "openSession": "No end of work recorded",
+    "recorded": "Recorded: {{time}} h",
+    "recordedMissing": "No end of work recorded",
+    "effective": "Reviewed working time: {{time}} h",
+    "correction": "Correction: {{time}} h",
+    "started": "Start: {{time}}",
+    "sessions": "Recorded intervals",
+    "sessionRow": "{{begin}} to {{end}}",
+    "sessionOpenRow": "{{begin}} — not ended",
+    "auditTitle": "Previous reviews",
+    "auditRow": "Rev. {{revision}} · {{origin}} · {{time}} h",
+    "auditRaised": "Raised afterwards",
+    "reasonLabel": "Reason (required)",
+    "reasonPlaceholder": "Why is this working time confirmed?",
+    "reasonTooShort": "Please enter at least {{count}} characters.",
+    "endLabel": "Actual end of work",
+    "endPlaceholder": "Please enter",
+    "endMissing": "Please enter the actual end of work.",
+    "submitReduce": "Confirm recording and close",
+    "submitClose": "Enter end of work and close",
+    "submitRaise": "Increase reviewed working time",
+    "raiseSection": "Earlier review was too low",
+    "raiseHint": "Use only when an earlier review deducted too much. This increases payroll time.",
+    "raiseToggle": "Increase reviewed working time",
+    "confirmTitle": "Confirm working time",
+    "confirmReduce": "{{effective}} hours are confirmed as working time for {{employee}} instead of the recorded {{recorded}} hours.",
+    "confirmClosed": "{{effective}} hours are confirmed as working time for {{employee}}. The end of work {{end}} was entered by the administrator.",
+    "confirmRaise": "The reviewed working time is increased from {{previous}} to {{effective}} hours. Payroll time rises by {{increase}} hours.",
+    "confirmKeepRaw": "The original recording is kept for traceability.",
+    "confirmLogged": "This review is recorded in the audit trail.",
+    "confirmCta": "Confirm",
+    "submitFailed": "The review could not be saved.",
+    "reason": {
+      "late_pause": "Paused more than 12 hours after the start of work",
+      "late_complete": "Completed more than 12 hours after the start of work",
+      "open_session_expired": "End of work never recorded",
+      "paused_expired": "Paused and no longer closable",
+      "review_required": "Review required"
+    },
+    "origin": {
+      "admin_reduced": "Reduced",
+      "admin_closed": "End of work entered",
+      "admin_raised": "Raised"
+    }
   }
 }

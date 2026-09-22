@@ -7,9 +7,10 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
 
-export function SessionWorkStatus({ state, workedLabel, pendingAction, reviewRequired, latestSessionEnd }: {
+export function SessionWorkStatus({ state, workedLabel, pendingAction, reviewRequired,
+  reviewed = false, latestSessionEnd }: {
   state: WorkAssignmentState | "loading"; workedLabel: string; pendingAction?: WorkAction;
-  reviewRequired: boolean; latestSessionEnd?: string | null;
+  reviewRequired: boolean; reviewed?: boolean; latestSessionEnd?: string | null;
 }) {
   const theme = useAppTheme();
   const { t } = useTranslation();
@@ -28,8 +29,19 @@ export function SessionWorkStatus({ state, workedLabel, pendingAction, reviewReq
     {pendingAction ? <Text style={{ color: theme.colors.onSurfaceVariant }}>
       {t(`jobs:work.pending.${pendingAction}`)} · {t("jobs:work.savedLocally")}
     </Text> : null}
-    {reviewRequired ? <Text style={{ color: theme.colors.statusInProgress }}>
-      {t("jobs:work.reviewRequired")}
+    {/* review_pending ist ein eigener Server-Zustand: der Mitarbeiter kann
+        nichts mehr tun, der Abschluss liegt beim Administrator. */}
+    {state === "review_pending" ? <Text style={{ color: theme.colors.onSurfaceVariant }}>
+      {t("jobs:work.reviewPending")}
     </Text> : null}
+    {/* Neutraler Marker: eine Admin-Korrektur wirkt auf diese Zeit. Ohne Grund,
+        ohne Akteur, ohne Warnfarbe. */}
+    {reviewed ? <Text style={{ color: theme.colors.onSurfaceVariant }}>
+      {t("jobs:work.reviewedByAdmin")}
+    </Text> : null}
+    {reviewRequired && state !== "review_pending"
+      ? <Text style={{ color: theme.colors.statusInProgress }}>
+          {t("jobs:work.reviewRequired")}
+        </Text> : null}
   </Card>;
 }

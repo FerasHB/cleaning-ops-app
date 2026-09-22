@@ -239,15 +239,15 @@
     "fallbackError": "İş tamamlanamadı.",
     "confirmButton": "Tamamla",
     "cancelButton": "Vazgeç"
-  }
-,
+  },
   "work": {
     "state": {
       "not_started": "Başlamadı",
       "active": "Aktif",
       "paused": "Duraklatıldı",
       "completed": "Tamamlandı",
-      "loading": "Yükleniyor"
+      "loading": "Yükleniyor",
+      "review_pending": "Yönetici incelemesi"
     },
     "pause": "Duraklat",
     "resume": "Devam et",
@@ -290,6 +290,8 @@
     "activeElsewhere": "Aktif işin bugünkü listenin dışında.",
     "forceStateUnavailable": "Oturum durumu yüklenene kadar yönetici tamamlaması kullanılamaz. Lütfen yenile.",
     "blockedWaiting": "{{job}} için {{action}} önceki bir yerel işlemi bekliyor.",
-    "unknownJob": "Güncel listenin dışındaki iş"
+    "unknownJob": "Güncel listenin dışındaki iş",
+    "reviewPending": "Tamamlama yönetici tarafından inceleniyor",
+    "reviewedByAdmin": "Çalışma süresi yönetici tarafından incelendi"
   }
 }

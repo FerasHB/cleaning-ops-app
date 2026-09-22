@@ -53,11 +53,65 @@
     "plannedWorkDays_other": "{{count}} planlanmış çalışma günü · Planlanan görev süresi {{duration}} sa",
     "calendarDays_one": "{{count}} takvim günü",
     "calendarDays_other": "{{count}} takvim günü"
-  }
-,
+  },
   "sessionGap": {
     "missing": "Oturum kaydı yok — inceleme gerekiyor",
     "invalid": "Oturum süreleri eksik veya tutarsız",
     "review": "Oturum süresi kaydedildi — inceleme gerekiyor"
+  },
+  "recovery": {
+    "entry": "Çalışma süresini incele",
+    "entrySubtitle": "{{count}} görev inceleme bekliyor",
+    "entrySubtitle_one": "1 görev inceleme bekliyor",
+    "title": "Çalışma süresini incele",
+    "subtitle": "Şirket genelinde, aydan ve çalışandan bağımsız",
+    "empty": "İnceleme bekleyen görev yok.",
+    "emptyTitle": "Her şey incelendi",
+    "loadFailed": "İnceleme listesi yüklenemedi.",
+    "stuckSince": "{{hours}} saattir açık",
+    "openSession": "Çalışma bitişi kaydedilmedi",
+    "recorded": "Kaydedilen: {{time}} saat",
+    "recordedMissing": "Çalışma bitişi kaydedilmedi",
+    "effective": "İncelenen çalışma süresi: {{time}} saat",
+    "correction": "Düzeltme: {{time}} saat",
+    "started": "Başlangıç: {{time}}",
+    "sessions": "Kaydedilen aralıklar",
+    "sessionRow": "{{begin}} - {{end}}",
+    "sessionOpenRow": "{{begin}} — bitirilmedi",
+    "auditTitle": "Önceki incelemeler",
+    "auditRow": "Rev. {{revision}} · {{origin}} · {{time}} saat",
+    "auditRaised": "Sonradan artırıldı",
+    "reasonLabel": "Gerekçe (zorunlu)",
+    "reasonPlaceholder": "Bu çalışma süresi neden onaylanıyor?",
+    "reasonTooShort": "Lütfen en az {{count}} karakter girin.",
+    "endLabel": "Gerçek çalışma bitişi",
+    "endPlaceholder": "Lütfen girin",
+    "endMissing": "Lütfen gerçek çalışma bitişini girin.",
+    "submitReduce": "Kaydı onayla ve kapat",
+    "submitClose": "Çalışma bitişini gir ve kapat",
+    "submitRaise": "İncelenen çalışma süresini artır",
+    "raiseSection": "Önceki inceleme çok düşüktü",
+    "raiseHint": "Yalnızca önceki bir inceleme fazla düştüyse kullanın. Bu, bordro süresini artırır.",
+    "raiseToggle": "İncelenen çalışma süresini artır",
+    "confirmTitle": "Çalışma süresini onayla",
+    "confirmReduce": "{{employee}} için kaydedilen {{recorded}} saat yerine {{effective}} saat çalışma süresi olarak onaylanır.",
+    "confirmClosed": "{{employee}} için {{effective}} saat çalışma süresi olarak onaylanır. Çalışma bitişi {{end}} yönetici tarafından girildi.",
+    "confirmRaise": "İncelenen çalışma süresi {{previous}} saatten {{effective}} saate çıkarılır. Bordro süresi {{increase}} saat artar.",
+    "confirmKeepRaw": "Orijinal kayıt izlenebilirlik için korunur.",
+    "confirmLogged": "Bu inceleme denetim kaydına yazılır.",
+    "confirmCta": "Onayla",
+    "submitFailed": "İnceleme kaydedilemedi.",
+    "reason": {
+      "late_pause": "Çalışma başlangıcından 12 saatten fazla sonra duraklatıldı",
+      "late_complete": "Çalışma başlangıcından 12 saatten fazla sonra tamamlandı",
+      "open_session_expired": "Çalışma bitişi hiç kaydedilmedi",
+      "paused_expired": "Duraklatıldı ve artık kapatılamıyor",
+      "review_required": "İnceleme gerekli"
+    },
+    "origin": {
+      "admin_reduced": "Azaltıldı",
+      "admin_closed": "Çalışma bitişi girildi",
+      "admin_raised": "Artırıldı"
+    }
   }
 }

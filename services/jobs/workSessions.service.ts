@@ -30,6 +30,9 @@ function canonicalSummary(value: Record<string, unknown>): WorkSummary {
     latestSessionEnd: value.latest_session_end as string | null,
     closedSeconds: Number(value.closed_seconds),
     reviewRequired: Boolean(value.review_required),
+    // Neutraler Marker: es existiert mindestens eine Korrektur zu dieser
+    // Zuweisung. Traegt bewusst KEINEN Grund und KEINEN Akteur.
+    reviewed: Boolean(value.reviewed),
     employeeCompletedAt: value.employee_completed_at as string | null,
   };
 }

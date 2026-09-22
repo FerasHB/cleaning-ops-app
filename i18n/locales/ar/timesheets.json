@@ -65,11 +65,65 @@
     "calendarDays_few": "{{count}} أيام تقويمية",
     "calendarDays_many": "{{count}} يومًا تقويميًا",
     "calendarDays_other": "{{count}} يوم تقويمي"
-  }
-,
+  },
   "sessionGap": {
     "missing": "لم تُسجّل جلسة — المراجعة مطلوبة",
     "invalid": "أوقات الجلسات غير مكتملة أو متعارضة",
     "review": "سُجّل وقت الجلسة — المراجعة مطلوبة"
+  },
+  "recovery": {
+    "entry": "مراجعة وقت العمل",
+    "entrySubtitle": "{{count}} مهام بانتظار المراجعة",
+    "entrySubtitle_one": "مهمة واحدة بانتظار المراجعة",
+    "title": "مراجعة وقت العمل",
+    "subtitle": "على مستوى الشركة، بغض النظر عن الشهر أو الموظف",
+    "empty": "لا توجد مهام بانتظار المراجعة.",
+    "emptyTitle": "تمت مراجعة كل شيء",
+    "loadFailed": "تعذر تحميل قائمة المراجعة.",
+    "stuckSince": "مفتوحة منذ {{hours}} ساعة",
+    "openSession": "لم يتم تسجيل نهاية العمل",
+    "recorded": "المسجل: {{time}} ساعة",
+    "recordedMissing": "لم يتم تسجيل نهاية العمل",
+    "effective": "وقت العمل بعد المراجعة: {{time}} ساعة",
+    "correction": "التصحيح: {{time}} ساعة",
+    "started": "البداية: {{time}}",
+    "sessions": "الفترات المسجلة",
+    "sessionRow": "{{begin}} إلى {{end}}",
+    "sessionOpenRow": "{{begin}} — لم تنته",
+    "auditTitle": "المراجعات السابقة",
+    "auditRow": "مراجعة {{revision}} · {{origin}} · {{time}} ساعة",
+    "auditRaised": "تمت زيادته لاحقًا",
+    "reasonLabel": "السبب (مطلوب)",
+    "reasonPlaceholder": "لماذا يتم تأكيد وقت العمل هذا؟",
+    "reasonTooShort": "يرجى إدخال {{count}} حرفًا على الأقل.",
+    "endLabel": "نهاية العمل الفعلية",
+    "endPlaceholder": "يرجى الإدخال",
+    "endMissing": "يرجى إدخال نهاية العمل الفعلية.",
+    "submitReduce": "تأكيد التسجيل والإغلاق",
+    "submitClose": "إدخال نهاية العمل والإغلاق",
+    "submitRaise": "زيادة وقت العمل بعد المراجعة",
+    "raiseSection": "المراجعة السابقة كانت منخفضة جدًا",
+    "raiseHint": "استخدمه فقط إذا خصمت مراجعة سابقة أكثر من اللازم. هذا يزيد وقت الأجر.",
+    "raiseToggle": "زيادة وقت العمل بعد المراجعة",
+    "confirmTitle": "تأكيد وقت العمل",
+    "confirmReduce": "سيتم تأكيد {{effective}} ساعة كوقت عمل لـ {{employee}} بدلاً من {{recorded}} ساعة المسجلة.",
+    "confirmClosed": "سيتم تأكيد {{effective}} ساعة كوقت عمل لـ {{employee}}. نهاية العمل {{end}} أدخلها المسؤول.",
+    "confirmRaise": "سيتم رفع وقت العمل بعد المراجعة من {{previous}} إلى {{effective}} ساعة. يزداد وقت الأجر بمقدار {{increase}} ساعة.",
+    "confirmKeepRaw": "يبقى التسجيل الأصلي محفوظًا لإمكانية التتبع.",
+    "confirmLogged": "يتم تسجيل هذه المراجعة في سجل التدقيق.",
+    "confirmCta": "تأكيد",
+    "submitFailed": "تعذر حفظ المراجعة.",
+    "reason": {
+      "late_pause": "توقف مؤقت بعد أكثر من 12 ساعة من بدء العمل",
+      "late_complete": "إنهاء بعد أكثر من 12 ساعة من بدء العمل",
+      "open_session_expired": "لم يتم تسجيل نهاية العمل أبدًا",
+      "paused_expired": "متوقف مؤقتًا ولا يمكن إنهاؤه",
+      "review_required": "المراجعة مطلوبة"
+    },
+    "origin": {
+      "admin_reduced": "تم تخفيضه",
+      "admin_closed": "تم إدخال نهاية العمل",
+      "admin_raised": "تمت زيادته"
+    }
   }
 }

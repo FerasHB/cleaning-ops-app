@@ -239,15 +239,15 @@
     "fallbackError": "Der Auftrag konnte nicht abgeschlossen werden.",
     "confirmButton": "Abschließen",
     "cancelButton": "Abbrechen"
-  }
-,
+  },
   "work": {
     "state": {
       "not_started": "Nicht begonnen",
       "active": "Aktiv",
       "paused": "Pausiert",
       "completed": "Abgeschlossen",
-      "loading": "Wird geladen"
+      "loading": "Wird geladen",
+      "review_pending": "Prüfung durch Administrator"
     },
     "pause": "Pausieren",
     "resume": "Fortsetzen",
@@ -290,6 +290,8 @@
     "activeElsewhere": "Dein aktiver Auftrag liegt außerhalb der heutigen Liste.",
     "forceStateUnavailable": "Zwangsabschluss nicht verfügbar, bis der Sitzungsstand geladen wurde. Bitte aktualisieren.",
     "blockedWaiting": "{{action}} für {{job}} wartet auf eine frühere lokale Aktion.",
-    "unknownJob": "Auftrag außerhalb der aktuellen Liste"
+    "unknownJob": "Auftrag außerhalb der aktuellen Liste",
+    "reviewPending": "Abschluss wird vom Administrator geprüft",
+    "reviewedByAdmin": "Arbeitszeit vom Administrator geprüft"
   }
 }

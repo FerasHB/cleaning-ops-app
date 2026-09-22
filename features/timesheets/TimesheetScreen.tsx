@@ -35,6 +35,7 @@ import { useIsRTL } from "@/hooks/useIsRTL";
 import type { TimesheetGap } from "@/types/timesheet";
 import { i18next, INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -47,6 +48,17 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+/** "H:mm" aus Minuten — reine Anzeige, nie Teil einer Summenbildung. */
+function formatMinutesLabel(minutes: number): string {
+  const safe = Math.max(0, Math.round(minutes));
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function formatSignedMinutesLabel(minutes: number): string {
+  const sign = minutes < 0 ? "-" : minutes > 0 ? "+" : "";
+  return `${sign}${formatMinutesLabel(Math.abs(minutes))}`;
+}
 
 export default function TimesheetScreen() {
   const theme = useAppTheme();
@@ -122,6 +134,43 @@ export default function TimesheetScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+      {/* ── Firmenweite Prüfliste (nur Admin) ──
+          Bewusst ein eigener Einstieg: die Lückenliste weiter unten ist an
+          Mitarbeiter UND Monat gebunden und kann hängende Arbeit deshalb nicht
+          zuverlässig zeigen. */}
+      {isAdmin ? (
+        <View style={styles.section}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={t("timesheets:recovery.entry")}
+            onPress={() => router.push("/timesheets/recovery")}
+          >
+            <Card>
+              <View style={styles.recoveryRow}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={20}
+                  color={theme.colors.statusInProgress}
+                />
+                <View style={styles.recoveryText}>
+                  <Text style={styles.recoveryTitle}>
+                    {t("timesheets:recovery.entry")}
+                  </Text>
+                  <Text style={styles.recoverySubtitle}>
+                    {t("timesheets:recovery.subtitle")}
+                  </Text>
+                </View>
+                <Ionicons
+                  name={isRTL ? "chevron-back" : "chevron-forward"}
+                  size={18}
+                  color={theme.colors.onSurfaceVariant}
+                />
+              </View>
+            </Card>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {/* ── Mitarbeiter wählen (nur Admin) ──
           In der Eigen-Sicht gibt es nichts zu wählen: der Stundenzettel ist
           fest an die angemeldete Person gebunden. */}
@@ -353,6 +402,34 @@ export default function TimesheetScreen() {
                   {entry.remark ? ` · ${entry.remark}` : ""}
                   {entry.reviewRequired ? ` · ⚠ ${t("jobs:work.reviewRequired")}` : ""}
                 </Text>
+                {/* NEUTRALER Marker — auch für Mitarbeitende. Er nennt weder
+                    einen Grund noch einen Akteur, keine Warnfarbe. */}
+                {entry.reviewed ? (
+                  <Text style={styles.entryMeta} numberOfLines={1}>
+                    {t("jobs:work.reviewedByAdmin")}
+                  </Text>
+                ) : null}
+                {/* Prüf-Metadaten existieren NUR im Admin-Stundenzettel:
+                    getTimesheet holt die Kette ausschließlich mit includeAudit,
+                    ein Mitarbeiter-Datensatz trägt diese Felder gar nicht. */}
+                {isAdmin && entry.correctionReason ? (
+                  <Text style={styles.entryMeta}>
+                    {entry.recordedMinutes === null || entry.recordedMinutes === undefined
+                      ? t("timesheets:recovery.recordedMissing")
+                      : t("timesheets:recovery.recorded", {
+                          time: formatMinutesLabel(entry.recordedMinutes),
+                        })}
+                    {` · ${t("timesheets:recovery.effective", { time: entry.durationLabel })}`}
+                    {entry.correctionMinutes !== null && entry.correctionMinutes !== undefined
+                      ? ` · ${t("timesheets:recovery.correction", {
+                          time: formatSignedMinutesLabel(entry.correctionMinutes),
+                        })}`
+                      : ""}
+                    {entry.correctionOrigin === "admin_raised"
+                      ? ` · ${t("timesheets:recovery.auditRaised")}` : ""}
+                    {` · ${entry.correctionReason}`}
+                  </Text>
+                ) : null}
               </View>
             ))}
 
@@ -415,6 +492,23 @@ function createStyles(theme: AppTheme, isRTL: boolean) {
       flexGrow: 1,
       paddingHorizontal: theme.spacing.gutter,
       paddingBottom: 32,
+    },
+    recoveryRow: {
+      flexDirection: isRTL ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+    },
+    recoveryText: { flex: 1 },
+    recoveryTitle: {
+      fontFamily: theme.typography.family.medium,
+      fontSize: theme.typography.size.md,
+      color: theme.colors.onSurface,
+      textAlign: isRTL ? "right" : "left",
+    },
+    recoverySubtitle: {
+      fontSize: theme.typography.size.sm,
+      color: theme.colors.onSurfaceVariant,
+      textAlign: isRTL ? "right" : "left",
     },
     section: {
       marginTop: theme.spacing.lg,

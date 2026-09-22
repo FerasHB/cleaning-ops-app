@@ -42,6 +42,10 @@ import { i18next } from "@/i18n";
 import { buildTimesheetAbsence } from "@/services/timesheets/timesheetAbsence.service";
 import { buildTimesheetHtml } from "@/services/timesheets/timesheetHtml";
 import {
+  getEffectiveWorkSessions,
+  getSessionCorrectionAudit,
+} from "@/services/timesheets/sessionRecovery.service";
+import {
   accountSessionAssignment,
   companyMonthBounds,
   companyDateKey,
@@ -330,6 +334,13 @@ export async function getTimesheet(params: {
   month: number;
   /** companies.timezone; Europe/Berlin is the established fallback. */
   companyTimezone?: string | null;
+  /**
+   * NUR fuer Admins setzen. Holt die Korrektur-Prüfkette und haengt sie NACH
+   * der Abrechnung an die fertigen Zeilen. Bleibt der Wert false, enthaelt
+   * TimesheetData den Admin-Grund gar nicht erst — ein Mitarbeiter-PDF kann
+   * ihn dadurch auch bei einem Render-Fehler nicht ausgeben.
+   */
+  includeAudit?: boolean;
 }): Promise<TimesheetData> {
   const { companyName, employeeId, employeeName, year, month } = params;
   const companyTimezone = validCompanyTimeZone(params.companyTimezone);
@@ -409,12 +420,19 @@ export async function getTimesheet(params: {
         .select(`id,employee_started_at,employee_completed_at,work_review_required` + JOB_EMBED)
         .eq("employee_id", employeeId).eq("time_tracking_mode", "sessions")
         .eq("j.job_type", "single").in("id", assignmentIds),
-      supabase.from("work_sessions").select("id,job_assignment_id,started_at,ended_at")
-        .eq("employee_id", employeeId).in("job_assignment_id", assignmentIds)
-        .order("started_at", { ascending: true }),
+      // DIE EINZIGE ABRECHNUNGSQUELLE (Migration 20260922000000). Der frühere
+      // direkte work_sessions-Lesezugriff lieferte das ROHE Intervall — eine
+      // vergessene Fertigstellung wäre damit als 26-Stunden-Arbeitszeit in den
+      // Stundenzettel gelaufen. Admin und Mitarbeiter rufen jetzt dieselbe RPC
+      // auf, deshalb können beide Summen nicht auseinanderlaufen.
+      getEffectiveWorkSessions(assignmentIds)
+        .then((rows) => ({ data: rows, error: null }))
+        .catch((error) => ({ data: null, error })),
     ]);
     if (assignmentError) throw assignmentError;
     if (sessionsError) throw sessionsError;
+    const reviewedSessions = new Set(
+      (allSessions ?? []).filter((session) => session.reviewed).map((session) => session.id));
     const byAssignment = new Map<string, RecordedSession[]>();
     for (const session of (allSessions ?? []) as RecordedSession[]) {
       const list = byAssignment.get(session.job_assignment_id) ?? [];
@@ -429,7 +447,12 @@ export async function getTimesheet(params: {
         employeeCompletedAt: row.employee_completed_at,
         reviewRequired: row.work_review_required,
       }, byAssignment.get(row.id) ?? [], year, month, companyTimezone);
-      sessionEntries.push(...result.entries);
+      // Der Marker ist neutral (nur "geprüft"), trägt keinen Grund und keinen
+      // Akteur und darf deshalb auch an Mitarbeitende gehen.
+      const sessionsOfRow = byAssignment.get(row.id) ?? [];
+      const reviewed = sessionsOfRow.some((session) => reviewedSessions.has(session.id));
+      sessionEntries.push(...result.entries.map((entry) => reviewed
+        ? { ...entry, reviewed: true } : entry));
       if (result.gap) {
         const firstSession = byAssignment.get(row.id)?.[0];
         const reference = firstSession?.started_at ?? row.employee_completed_at ?? row.employee_started_at;
@@ -457,6 +480,38 @@ export async function getTimesheet(params: {
       }
     }
   }
+  // NACH der Abrechnung: reine Anzeige-Metadaten. Sie fassen durationMinutes
+  // und totalMinutes nicht an — die Zahlen stehen zu diesem Zeitpunkt fest.
+  if (params.includeAudit && sessionEntries.length > 0) {
+    const chain = await getSessionCorrectionAudit(
+      [...new Set(sessionEntries.map((entry) => entry.assignmentId!).filter(Boolean))]);
+    const byAssignment = new Map<string, typeof chain>();
+    for (const item of chain) {
+      const list = byAssignment.get(item.assignmentId) ?? [];
+      list.push(item);
+      byAssignment.set(item.assignmentId, list);
+    }
+    for (const entry of sessionEntries) {
+      const items = byAssignment.get(entry.assignmentId ?? "");
+      if (!items || items.length === 0) continue;
+      // Aktive Korrektur je Sitzung = hoechste Revision (append-only Kette).
+      const active = [...items.reduce((map, item) => {
+        const current = map.get(item.workSessionId);
+        if (!current || item.revisionNo > current.revisionNo) map.set(item.workSessionId, item);
+        return map;
+      }, new Map<string, (typeof items)[number]>()).values()];
+      const recorded = active.reduce<number | null>((sum, item) =>
+        item.rawDurationSeconds === null || sum === null ? null : sum + item.rawDurationSeconds, 0);
+      const effective = active.reduce((sum, item) => sum + item.effectiveDurationSeconds, 0);
+      const latest = active.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+      entry.recordedMinutes = recorded === null ? null : Math.round(recorded / 60);
+      entry.correctionMinutes = recorded === null ? null
+        : Math.round((effective - recorded) / 60);
+      entry.correctionReason = latest?.reason;
+      entry.correctionOrigin = latest?.origin;
+    }
+  }
+
   const entries = [...legacyEntries, ...sessionEntries].sort((a, b) =>
     a.date + a.beginLabel < b.date + b.beginLabel ? -1 :
       a.date + a.beginLabel > b.date + b.beginLabel ? 1 : 0);

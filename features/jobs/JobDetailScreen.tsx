@@ -570,6 +570,7 @@ export default function JobDetailScreen() {
         {workUi?.mode === "sessions" ? (
           <SessionWorkStatus state={workUi.state} workedLabel={workedLabel}
             pendingAction={workUi.pending?.action} reviewRequired={workUi.reviewRequired}
+            reviewed={ownSummary?.reviewed ?? false}
             latestSessionEnd={workUi.pending?.action === "pause"
               ? workUi.pending.actionTimestamp : ownRecorded?.latestSessionEnd} />
         ) : null}

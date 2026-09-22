@@ -279,15 +279,15 @@
     "fallbackError": "تعذر إنهاء الطلب.",
     "confirmButton": "إنهاء",
     "cancelButton": "إلغاء"
-  }
-,
+  },
   "work": {
     "state": {
       "not_started": "لم يبدأ",
       "active": "نشط",
       "paused": "متوقف مؤقتًا",
       "completed": "مكتمل",
-      "loading": "جارٍ التحميل"
+      "loading": "جارٍ التحميل",
+      "review_pending": "قيد مراجعة المسؤول"
     },
     "pause": "إيقاف مؤقت",
     "resume": "استئناف",
@@ -330,6 +330,8 @@
     "activeElsewhere": "عملك النشط خارج قائمة اليوم.",
     "forceStateUnavailable": "لا يتوفر الإنهاء الإداري حتى يتم تحميل حالة الجلسة. يرجى التحديث.",
     "blockedWaiting": "ينتظر إجراء {{action}} للعمل {{job}} إجراءً محليًا سابقًا.",
-    "unknownJob": "عمل خارج القائمة الحالية"
+    "unknownJob": "عمل خارج القائمة الحالية",
+    "reviewPending": "يراجع المسؤول إنهاء المهمة",
+    "reviewedByAdmin": "تمت مراجعة وقت العمل من قبل المسؤول"
   }
 }

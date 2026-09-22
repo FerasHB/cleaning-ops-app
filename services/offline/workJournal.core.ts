@@ -1,7 +1,11 @@
 /** Durable, account-scoped session operation journal. No React Native dependencies. */
 export type WorkAction = "start" | "pause" | "resume" | "complete";
 export type WorkOperationStatus = "pending" | "syncing" | "acknowledged" | "blocked" | "rejected_permanent";
-export type WorkAssignmentState = "not_started" | "active" | "paused" | "completed";
+// review_pending ist ein SERVER-Zustand: eine verspätete Fertigstellung wird
+// nicht mehr abgelehnt, sondern committet eine dauerhafte Prüfübergabe
+// (Migration 20260922000000). Der Mitarbeiter kann die Zuweisung weder
+// fortsetzen noch abschließen; nur admin_review_session_assignment löst sie.
+export type WorkAssignmentState = "not_started" | "active" | "paused" | "completed" | "review_pending";
 export type WorkSummary = {
   assignmentId: string;
   trackingMode: "legacy" | "sessions";
@@ -12,6 +16,8 @@ export type WorkSummary = {
   latestSessionEnd: string | null;
   closedSeconds: number;
   reviewRequired: boolean;
+  /** Eine Admin-Korrektur existiert. Neutral: kein Grund, kein Akteur. */
+  reviewed?: boolean;
   employeeCompletedAt: string | null;
 };
 export type WorkReceipt = Omit<WorkSummary, "trackingMode"> & {

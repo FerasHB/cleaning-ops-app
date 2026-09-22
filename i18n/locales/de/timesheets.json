@@ -53,11 +53,65 @@
     "plannedWorkDays_other": "{{count}} geplante Einsatztage · Geplante Einsatzzeit {{duration}} h",
     "calendarDays_one": "{{count}} Kalendertag",
     "calendarDays_other": "{{count}} Kalendertage"
-  }
-,
+  },
   "sessionGap": {
     "missing": "Keine Sitzung erfasst – Prüfung erforderlich",
     "invalid": "Sitzungszeiten unvollständig oder widersprüchlich",
     "review": "Sitzungszeit erfasst – Prüfung erforderlich"
+  },
+  "recovery": {
+    "entry": "Arbeitszeit prüfen",
+    "entrySubtitle": "{{count}} Einsätze warten auf eine Prüfung",
+    "entrySubtitle_one": "1 Einsatz wartet auf eine Prüfung",
+    "title": "Arbeitszeit prüfen",
+    "subtitle": "Firmenweit, unabhängig von Monat und Mitarbeiter",
+    "empty": "Keine Einsätze warten auf eine Prüfung.",
+    "emptyTitle": "Alles geprüft",
+    "loadFailed": "Die Prüfliste konnte nicht geladen werden.",
+    "stuckSince": "Seit {{hours}} h offen",
+    "openSession": "Arbeitsende nicht erfasst",
+    "recorded": "Aufgezeichnet: {{time}} h",
+    "recordedMissing": "Arbeitsende nicht erfasst",
+    "effective": "Geprüfte Arbeitszeit: {{time}} h",
+    "correction": "Korrektur: {{time}} h",
+    "started": "Beginn: {{time}}",
+    "sessions": "Erfasste Abschnitte",
+    "sessionRow": "{{begin}} bis {{end}}",
+    "sessionOpenRow": "{{begin}} — nicht beendet",
+    "auditTitle": "Bisherige Prüfungen",
+    "auditRow": "Rev. {{revision}} · {{origin}} · {{time}} h",
+    "auditRaised": "Nachträglich erhöht",
+    "reasonLabel": "Grund (Pflicht)",
+    "reasonPlaceholder": "Warum wird diese Arbeitszeit so bestätigt?",
+    "reasonTooShort": "Bitte mindestens {{count}} Zeichen angeben.",
+    "endLabel": "Tatsächliches Arbeitsende",
+    "endPlaceholder": "Bitte eintragen",
+    "endMissing": "Bitte trage das tatsächliche Arbeitsende ein.",
+    "submitReduce": "Aufzeichnung bestätigen und abschließen",
+    "submitClose": "Arbeitsende eintragen und abschließen",
+    "submitRaise": "Geprüfte Arbeitszeit erhöhen",
+    "raiseSection": "Frühere Prüfung war zu niedrig",
+    "raiseHint": "Nur verwenden, wenn eine frühere Prüfung zu viel abgezogen hat. Die Abrechnungszeit wird dadurch erhöht.",
+    "raiseToggle": "Geprüfte Arbeitszeit erhöhen",
+    "confirmTitle": "Arbeitszeit bestätigen",
+    "confirmReduce": "Für {{employee}} werden {{effective}} Stunden als Arbeitszeit bestätigt statt der aufgezeichneten {{recorded}} Stunden.",
+    "confirmClosed": "Für {{employee}} werden {{effective}} Stunden als Arbeitszeit bestätigt. Das Arbeitsende {{end}} wurde vom Administrator eingetragen.",
+    "confirmRaise": "Die geprüfte Arbeitszeit wird von {{previous}} auf {{effective}} Stunden erhöht. Die Abrechnungszeit steigt um {{increase}} Stunden.",
+    "confirmKeepRaw": "Die ursprüngliche Aufzeichnung bleibt zur Nachvollziehbarkeit erhalten.",
+    "confirmLogged": "Diese Prüfung wird protokolliert.",
+    "confirmCta": "Bestätigen",
+    "submitFailed": "Die Prüfung konnte nicht gespeichert werden.",
+    "reason": {
+      "late_pause": "Pause mehr als 12 Stunden nach Arbeitsbeginn",
+      "late_complete": "Abschluss mehr als 12 Stunden nach Arbeitsbeginn",
+      "open_session_expired": "Arbeitsende nie erfasst",
+      "paused_expired": "Pausiert und nicht mehr abschließbar",
+      "review_required": "Prüfung erforderlich"
+    },
+    "origin": {
+      "admin_reduced": "Gekürzt",
+      "admin_closed": "Arbeitsende eingetragen",
+      "admin_raised": "Erhöht"
+    }
   }
 }

@@ -239,15 +239,15 @@
     "fallbackError": "The job could not be completed.",
     "confirmButton": "Complete",
     "cancelButton": "Cancel"
-  }
-,
+  },
   "work": {
     "state": {
       "not_started": "Not started",
       "active": "Active",
       "paused": "Paused",
       "completed": "Completed",
-      "loading": "Loading"
+      "loading": "Loading",
+      "review_pending": "Administrator review"
     },
     "pause": "Pause",
     "resume": "Resume",
@@ -290,6 +290,8 @@
     "activeElsewhere": "Your active job is outside today’s list.",
     "forceStateUnavailable": "Force complete is unavailable until the session state loads. Please refresh.",
     "blockedWaiting": "{{action}} for {{job}} is waiting for an earlier local action.",
-    "unknownJob": "Job outside the current list"
+    "unknownJob": "Job outside the current list",
+    "reviewPending": "Completion is being reviewed by an administrator",
+    "reviewedByAdmin": "Working time reviewed by an administrator"
   }
 }

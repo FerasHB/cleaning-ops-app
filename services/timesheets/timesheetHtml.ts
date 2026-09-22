@@ -37,13 +37,53 @@ function todayLabel(): string {
   return `${dd}.${mm}.${now.getFullYear()}`;
 }
 
+/**
+ * Admin-Prüfvermerk, IMMER DEUTSCH — unabhängig von der App-Sprache, wie jeder
+ * andere Text in diesem Export.
+ *
+ * Nur ein Admin-Export trägt diese Felder überhaupt (getTimesheet holt die
+ * Prüfkette ausschließlich mit includeAudit). Ein Mitarbeiter-Export kann den
+ * Grund deshalb auch dann nicht ausgeben, wenn diese Funktion sich irrt.
+ */
+function correctionRemark(entry: TimesheetEntry): string | null {
+  const hasAudit = entry.correctionReason !== undefined ||
+    entry.recordedMinutes !== undefined;
+  if (!hasAudit) return null;
+  const parts: string[] = [];
+  if (entry.recordedMinutes === null || entry.recordedMinutes === undefined) {
+    // "Aufgezeichnet: 0:00 h" wäre irreführend: der Mitarbeiter hat nicht null
+    // Stunden gearbeitet, er hat kein Arbeitsende erfasst.
+    parts.push("Arbeitsende ursprünglich nicht erfasst.");
+  } else {
+    parts.push(`Aufgezeichnet: ${formatMinutes(entry.recordedMinutes)} h`);
+  }
+  parts.push(`Geprüfte Arbeitszeit: ${entry.durationLabel} h`);
+  if (entry.correctionMinutes !== null && entry.correctionMinutes !== undefined) {
+    const sign = entry.correctionMinutes < 0 ? "-" : entry.correctionMinutes > 0 ? "+" : "";
+    parts.push(`Korrektur: ${sign}${formatMinutes(Math.abs(entry.correctionMinutes))} h`);
+  }
+  if (entry.correctionOrigin === "admin_raised") {
+    parts.push("Die geprüfte Arbeitszeit wurde nachträglich erhöht.");
+  }
+  if (entry.correctionReason) parts.push(`Grund: ${entry.correctionReason}`);
+  return parts.join(" · ");
+}
+
+function formatMinutes(minutes: number): string {
+  const safe = Math.max(0, Math.round(minutes));
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
 function renderRow(entry: TimesheetEntry): string {
   const interruption = entry.source === "sessions"
     ? entry.interruptionLabel ?? PAUSE_PLACEHOLDER
     : PAUSE_PLACEHOLDER;
-  const remark = entry.reviewRequired
-    ? `${entry.remark} · Prüfung erforderlich`
-    : entry.remark;
+  const correction = correctionRemark(entry);
+  const remark = [
+    entry.remark,
+    entry.reviewRequired ? "Prüfung erforderlich" : null,
+    correction,
+  ].filter(Boolean).join(" · ");
   return `
     <tr>
       <td class="day">${formatDayCell(entry.date)}</td>
