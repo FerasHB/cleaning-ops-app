@@ -68,8 +68,7 @@
     "empty": "Keine Einsätze warten auf eine Prüfung.",
     "emptyTitle": "Alles geprüft",
     "loadFailed": "Die Prüfliste konnte nicht geladen werden.",
-    "stuckSince": "Seit {{hours}} h offen",
-    "openSession": "Arbeitsende nicht erfasst",
+    "stuckSince": "Seit {{duration}} h offen",
     "recorded": "Aufgezeichnet: {{time}} h",
     "recordedMissing": "Arbeitsende nicht erfasst",
     "effective": "Geprüfte Arbeitszeit: {{time}} h",
@@ -104,7 +103,7 @@
     "reason": {
       "late_pause": "Pause mehr als 12 Stunden nach Arbeitsbeginn",
       "late_complete": "Abschluss mehr als 12 Stunden nach Arbeitsbeginn",
-      "open_session_expired": "Arbeitsende nie erfasst",
+      "open_session_expired": "Zeitfenster abgelaufen – Mitarbeiter kann nicht mehr abschließen",
       "paused_expired": "Pausiert und nicht mehr abschließbar",
       "review_required": "Prüfung erforderlich"
     },
@@ -112,6 +111,7 @@
       "admin_reduced": "Gekürzt",
       "admin_closed": "Arbeitsende eingetragen",
       "admin_raised": "Erhöht"
-    }
+    },
+    "effectiveUnknown": "Geprüfte Arbeitszeit: noch nicht festgelegt"
   }
 }

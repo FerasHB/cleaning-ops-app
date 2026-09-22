@@ -113,11 +113,36 @@ export function reasonCodeKey(code: string): string {
   return `timesheets:recovery.reason.${known.includes(code) ? code : "review_required"}`;
 }
 
-/** Ganze Stunden seit `stuckSince`; die Warteschlange sortiert nach Alter. */
-export function stuckHours(stuckSince: string | null, now: number): number {
-  const since = stuckSince ? Date.parse(stuckSince) : NaN;
+/**
+ * Wie lange ist dieser Einsatz schon ungelöst?
+ *
+ * ANKER IST `employee_started_at`, NICHT `stuck_since`.
+ * `stuck_since` ist `employee_started_at + 12 Stunden` — der Zeitpunkt, ab dem
+ * der Mitarbeiter nicht mehr selbst abschließen kann. Gerechnet ab diesem
+ * Wert zeigte die Karte für einen 12h16m alten Einsatz "Seit 0 h offen": seit
+ * dem Ablauf waren tatsächlich erst 16 Minuten vergangen. Die Beschriftung
+ * verspricht aber das Alter der Arbeit, und das beginnt beim Arbeitsbeginn.
+ *
+ * Reine Epochen-Arithmetik über UTC-Zeitstempel: kein Kalendertag, keine
+ * lokale Zeitzone, kein Mitternachtssprung. Die Geräte-Zeitzone kann das
+ * Ergebnis deshalb nicht verfälschen.
+ */
+export function unresolvedSeconds(employeeStartedAt: string | null, now: number): number {
+  const since = employeeStartedAt ? Date.parse(employeeStartedAt) : NaN;
   if (!Number.isFinite(since)) return 0;
-  return Math.max(0, Math.floor((now - since) / 3_600_000));
+  return Math.max(0, Math.round((now - since) / 1000));
+}
+
+/**
+ * Steht die geprüfte Arbeitszeit überhaupt schon fest?
+ *
+ * Solange eine Sitzung offen ist, hat sie kein wirksames Ende; der Server
+ * summiert sie deshalb wahrheitsgemäß mit 0 Sekunden. "Geprüfte Arbeitszeit:
+ * 0:00 h" wäre daraus aber die Behauptung, die Prüfung habe null Stunden
+ * ergeben — dabei hat noch gar keine Prüfung stattgefunden.
+ */
+export function hasReviewedDuration(item: Pick<RecoveryQueueItem, "openSessionId">): boolean {
+  return item.openSessionId === null;
 }
 
 /** Aktive Korrektur je Sitzung = höchste Revision. Append-only Kette. */

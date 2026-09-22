@@ -18,8 +18,9 @@ import { formatDateTimeLocalized } from "@/utils/date";
 import {
   formatSeconds,
   hasRecordedEnd,
+  hasReviewedDuration,
   reasonCodeKey,
-  stuckHours,
+  unresolvedSeconds,
 } from "@/utils/sessionRecoveryUi";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
@@ -68,8 +69,12 @@ export default function RecoveryQueueScreen() {
               <Card>
                 <View style={styles.row}>
                   <Text style={styles.employee}>{item.employeeName}</Text>
+                  {/* Alter der ungelösten Arbeit, gerechnet ab Arbeitsbeginn.
+                      Als "H:mm", damit die ersten Minuten nicht als "0 h"
+                      erscheinen. */}
                   <Text style={styles.stuck}>{t("timesheets:recovery.stuckSince",
-                    { hours: stuckHours(item.stuckSince, now) })}</Text>
+                    { duration: formatSeconds(
+                        unresolvedSeconds(item.employeeStartedAt, now)) })}</Text>
                 </View>
                 <Text style={styles.meta}>{item.customerName}
                   {item.serviceName ? ` · ${item.serviceName}` : ""}</Text>
@@ -80,15 +85,20 @@ export default function RecoveryQueueScreen() {
                   ? t("timesheets:recovery.recorded",
                       { time: formatSeconds(item.recordedSeconds) })
                   : t("timesheets:recovery.recordedMissing")}</Text>
-                <Text style={styles.meta}>{t("timesheets:recovery.effective",
-                  { time: formatSeconds(item.effectiveSeconds) })}</Text>
+                {/* Vor der Prüfung gibt es keine geprüfte Arbeitszeit. 0:00
+                    hier zu zeigen wäre ein Ergebnis, das niemand ermittelt hat. */}
+                <Text style={styles.meta}>{hasReviewedDuration(item)
+                  ? t("timesheets:recovery.effective",
+                      { time: formatSeconds(item.effectiveSeconds) })
+                  : t("timesheets:recovery.effectiveUnknown")}</Text>
                 <View style={styles.row}>
                   <Ionicons name="alert-circle-outline" size={16}
                     color={theme.colors.statusInProgress} />
                   <Text style={styles.reason}>{t(reasonCodeKey(item.reasonCode))}</Text>
                 </View>
-                {item.openSessionId ? <Text style={styles.open}>
-                  {t("timesheets:recovery.openSession")}</Text> : null}
+                {/* Kein dritter Hinweis auf dasselbe: die Zeile darüber sagt
+                    bereits "Arbeitsende nicht erfasst", der Grund nennt das
+                    abgelaufene Zeitfenster. */}
               </Card>
             </TouchableOpacity>;
           })}
@@ -126,10 +136,6 @@ function createStyles(theme: AppTheme, isRTL: boolean) {
     },
     reason: {
       flex: 1, fontSize: theme.typography.size.sm, color: theme.colors.statusInProgress,
-      textAlign: isRTL ? "right" : "left",
-    },
-    open: {
-      fontSize: theme.typography.size.sm, color: theme.colors.error,
       textAlign: isRTL ? "right" : "left",
     },
   });

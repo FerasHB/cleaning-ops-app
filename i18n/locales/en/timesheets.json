@@ -68,8 +68,7 @@
     "empty": "No assignments are waiting for review.",
     "emptyTitle": "Everything reviewed",
     "loadFailed": "The review list could not be loaded.",
-    "stuckSince": "Open for {{hours}} h",
-    "openSession": "No end of work recorded",
+    "stuckSince": "Open for {{duration}} h",
     "recorded": "Recorded: {{time}} h",
     "recordedMissing": "No end of work recorded",
     "effective": "Reviewed working time: {{time}} h",
@@ -104,7 +103,7 @@
     "reason": {
       "late_pause": "Paused more than 12 hours after the start of work",
       "late_complete": "Completed more than 12 hours after the start of work",
-      "open_session_expired": "End of work never recorded",
+      "open_session_expired": "Lifecycle window expired – the employee can no longer close it",
       "paused_expired": "Paused and no longer closable",
       "review_required": "Review required"
     },
@@ -112,6 +111,7 @@
       "admin_reduced": "Reduced",
       "admin_closed": "End of work entered",
       "admin_raised": "Raised"
-    }
+    },
+    "effectiveUnknown": "Reviewed working time: not yet determined"
   }
 }

@@ -68,8 +68,7 @@
     "empty": "İnceleme bekleyen görev yok.",
     "emptyTitle": "Her şey incelendi",
     "loadFailed": "İnceleme listesi yüklenemedi.",
-    "stuckSince": "{{hours}} saattir açık",
-    "openSession": "Çalışma bitişi kaydedilmedi",
+    "stuckSince": "{{duration}} saattir açık",
     "recorded": "Kaydedilen: {{time}} saat",
     "recordedMissing": "Çalışma bitişi kaydedilmedi",
     "effective": "İncelenen çalışma süresi: {{time}} saat",
@@ -104,7 +103,7 @@
     "reason": {
       "late_pause": "Çalışma başlangıcından 12 saatten fazla sonra duraklatıldı",
       "late_complete": "Çalışma başlangıcından 12 saatten fazla sonra tamamlandı",
-      "open_session_expired": "Çalışma bitişi hiç kaydedilmedi",
+      "open_session_expired": "Süre penceresi doldu – çalışan artık kapatamıyor",
       "paused_expired": "Duraklatıldı ve artık kapatılamıyor",
       "review_required": "İnceleme gerekli"
     },
@@ -112,6 +111,7 @@
       "admin_reduced": "Azaltıldı",
       "admin_closed": "Çalışma bitişi girildi",
       "admin_raised": "Artırıldı"
-    }
+    },
+    "effectiveUnknown": "İncelenen çalışma süresi: henüz belirlenmedi"
   }
 }

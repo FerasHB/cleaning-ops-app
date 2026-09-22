@@ -29,7 +29,8 @@ import {
   formatSignedSeconds,
   hasRecordedEnd,
   reasonCodeKey,
-  stuckHours,
+  hasReviewedDuration,
+  unresolvedSeconds,
   activeCorrection,
   wasRaised,
   RAISE_REASON_MIN,
@@ -221,10 +222,98 @@ test("queue reason codes map to human text in every language, never the enum", (
   assert.equal(reasonCodeKey("something_new"), "timesheets:recovery.reason.review_required");
 });
 
-test("stuck age is whole hours since the lifecycle window closed", () => {
-  const now = Date.parse("2026-03-03T12:00:00.000Z");
-  assert.equal(stuckHours("2026-03-03T09:30:00.000Z", now), 2);
-  assert.equal(stuckHours(null, now), 0);
+test("unresolved age is measured from the start of work, not from the expiry", () => {
+  // Der Fehler vom Geraet: gerechnet ab stuck_since (= Start + 12 h) war ein
+  // 12h16m alter Einsatz erst 16 Minuten "offen" und wurde auf 0 h abgerundet.
+  const start = "2026-09-22T10:08:29.418Z";
+  const stuckSince = "2026-09-22T22:08:29.418Z";   // = start + 12 h
+  const now = Date.parse("2026-09-22T22:24:00.000Z"); // 00:24 Ortszeit Berlin
+  const seconds = unresolvedSeconds(start, now);
+  assert.equal(Math.floor(seconds / 3600), 12);
+  assert.equal(formatSeconds(seconds), "12:15");
+  // Der alte Anker liefert unter einer Stunde und waere wieder "0 h".
+  assert.ok(Math.floor((now - Date.parse(stuckSince)) / 3_600_000) === 0);
+  assert.equal(unresolvedSeconds(null, now), 0);
+});
+
+test("the unresolved age does not reset at midnight", () => {
+  // Kein Kalendertag-Vergleich: reine Epochen-Differenz. Eine Minute vor und
+  // eine Minute nach Mitternacht duerfen sich nur um eine Minute unterscheiden.
+  const start = "2026-09-22T10:08:29.418Z";
+  const beforeMidnight = Date.parse("2026-09-22T21:59:00.000Z"); // 23:59 Berlin
+  const afterMidnight = Date.parse("2026-09-22T22:01:00.000Z");  // 00:01 Berlin
+  const before = unresolvedSeconds(start, beforeMidnight);
+  const after = unresolvedSeconds(start, afterMidnight);
+  assert.equal(after - before, 120);
+  assert.ok(after > 11 * 3600);
+  assert.equal(formatSeconds(before), "11:50");
+  assert.equal(formatSeconds(after), "11:52");
+});
+
+test("the device timezone cannot corrupt the unresolved age", () => {
+  // Date.parse liest den UTC-Zeitstempel, Date.now() ist epochenbasiert.
+  // Dieselbe Rechnung unter jeder Geraete-Zeitzone.
+  const start = "2026-09-22T10:08:29.418Z";
+  const now = Date.parse("2026-09-22T22:24:00.000Z");
+  const expected = unresolvedSeconds(start, now);
+  for (const zone of ["UTC", "Europe/Berlin", "America/Los_Angeles", "Asia/Tokyo"]) {
+    process.env.TZ = zone;
+    assert.equal(unresolvedSeconds(start, now), expected, `drifted under ${zone}`);
+  }
+  process.env.TZ = "UTC";
+  assert.equal(Math.floor(expected / 3600), 12);
+});
+
+test("minutes under one hour are visible instead of collapsing to zero", () => {
+  const start = "2026-09-22T22:00:00.000Z";
+  const now = Date.parse("2026-09-22T22:16:00.000Z");
+  assert.equal(formatSeconds(unresolvedSeconds(start, now)), "0:16");
+});
+
+test("an open session shows no reviewed working time before the admin acts", () => {
+  // Der Server summiert eine offene Sitzung wahrheitsgemaess mit 0 Sekunden.
+  // "Gepruefte Arbeitszeit: 0:00" waere daraus ein Pruefergebnis, das niemand
+  // ermittelt hat.
+  assert.equal(hasReviewedDuration({ openSessionId: "session-a" }), false);
+  assert.equal(hasReviewedDuration({ openSessionId: null }), true);
+  for (const bundle of [de, en, ar, tr]) {
+    assert.ok(bundle.recovery.effectiveUnknown.length > 0);
+    assert.ok(!bundle.recovery.effectiveUnknown.includes("0:00"));
+  }
+  const screen = readFileSync(
+    new URL("../features/timesheets/RecoveryQueueScreen.tsx", import.meta.url), "utf8");
+  const compact = screen.replace(/\s+/g, " ");
+  assert.ok(compact.includes(
+    'hasReviewedDuration(item) ? t("timesheets:recovery.effective"'));
+  assert.ok(compact.includes('t("timesheets:recovery.effectiveUnknown")'));
+});
+
+test("the queue card never states a recorded or reviewed zero", () => {
+  const screen = readFileSync(
+    new URL("../features/timesheets/RecoveryQueueScreen.tsx", import.meta.url), "utf8");
+  // Die Aufzeichnungszeile haengt an hasRecordedEnd, die Pruefzeile an
+  // hasReviewedDuration. Ohne beide gibt es keinen 0:00-Pfad.
+  assert.match(screen, /hasRecordedEnd\(item\)/);
+  assert.match(screen, /recordedMissing/);
+  for (const bundle of [de, en, ar, tr]) {
+    assert.ok(!bundle.recovery.recorded.includes("0:00"));
+    assert.ok(!bundle.recovery.recordedMissing.includes("0:00"));
+  }
+});
+
+test("the card states each fact once", () => {
+  // Vorher stand dreimal dasselbe auf der Karte: die Aufzeichnungszeile, der
+  // Grund und eine eigene Offen-Zeile trugen denselben Satz.
+  const screen = readFileSync(
+    new URL("../features/timesheets/RecoveryQueueScreen.tsx", import.meta.url), "utf8");
+  assert.ok(!/recovery\.openSession"/.test(screen));
+  for (const bundle of [de, en, ar, tr]) {
+    assert.equal(bundle.recovery.openSession, undefined);
+    // Der Grund nennt jetzt das abgelaufene Zeitfenster, nicht noch einmal
+    // das fehlende Arbeitsende.
+    assert.notEqual(bundle.recovery.reason.open_session_expired,
+      bundle.recovery.recordedMissing);
+  }
 });
 
 test("the active correction is the highest revision and a raise is visible", () => {
