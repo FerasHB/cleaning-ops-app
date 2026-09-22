@@ -430,9 +430,20 @@ begin
   perform pg_temp.check('resume beyond original 12 hours rejected',
     not pg_temp.try_work(e2,'resume','b4000000-0000-0000-0000-000000000034',overdue,2,
       'b5000000-0000-0000-0000-000000000034',now()));
-  perform pg_temp.check('overdue completion requires review',
-    not pg_temp.try_work(e2,'complete','b4000000-0000-0000-0000-000000000035',overdue,2,
-      null,now()));
+  -- 20260922000000 changed this contract on purpose. The overdue completion
+  -- used to RAISE, which rolled back the very review flag that makes the case
+  -- discoverable. It now commits a durable review hand-off instead: the
+  -- assignment stays unresolved, keeps the flag and waits for
+  -- admin_review_session_assignment.
+  r:=pg_temp.call_work(e2,'complete','b4000000-0000-0000-0000-000000000035',overdue,2,
+      null,now());
+  perform pg_temp.check('overdue completion commits a durable review hand-off',
+    r->>'assignment_state'='review_pending'
+    and (r->>'review_required')::boolean
+    and r->>'employee_completed_at' is null);
+  perform pg_temp.check('overdue completion never completes the parent job',
+    (select status='in_progress' from public.jobs
+      where id='b3000000-0000-0000-0000-000000000009'));
   perform pg_temp.check('overdue stop frees global employee slot',
     not exists(select 1 from public.work_sessions
       where employee_id=e2 and ended_at is null));
