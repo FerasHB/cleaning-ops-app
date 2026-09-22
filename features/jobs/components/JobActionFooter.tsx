@@ -102,9 +102,9 @@ export function JobActionFooter({
     showForceComplete ||
     !!startBlockedReason;
   React.useEffect(() => {
-    markFooterWorkTiming({ jobId, shown: hasContent, pause: canPause,
+    markFooterWorkTiming({ jobId, shown: hasContent, start: canStart, pause: canPause,
       resume: canResume, complete: canComplete, submitting });
-  }, [jobId, hasContent, canPause, canResume, canComplete, submitting]);
+  }, [jobId, hasContent, canStart, canPause, canResume, canComplete, submitting]);
   if (!hasContent) {
     return null;
   }

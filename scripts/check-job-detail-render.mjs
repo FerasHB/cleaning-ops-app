@@ -3,14 +3,15 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { shouldEnableWorkTiming } from "../utils/workTimingGate.ts";
+import { canReloadStagingUpdate, shouldEnableWorkTiming } from "../utils/workTimingGate.ts";
 
 const react = {
   Fragment: "Fragment",
   createElement: (type, props, ...children) => ({ type, props: { ...props,
     children: children.length === 1 ? children[0] : children } }),
   useMemo: (fn) => fn(), useCallback: (fn) => fn, useEffect: () => {},
-  useRef: (value) => ({ current: value }), useState: (value) => [value, () => {}],
+  useRef: (value) => ({ current: value }),
+  useState: (value) => [typeof value === "function" ? value() : value, () => {}],
 };
 const theme = new Proxy({ isDark: true }, { get: (object, key) => object[key] ??
   new Proxy({}, { get: () => 8 }) });
@@ -38,7 +39,9 @@ function load(relativePath, imports) {
     if (name in imports) return imports[name];
     if (name.startsWith("@/features/")) return namedComponents;
     throw Error(`Unexpected import ${name}`);
-  }, Date, Math, String, Set }, { filename: relativePath });
+  }, Date, Math, String, Set, __DEV__: false,
+  process: { env: { EXPO_PUBLIC_SUPABASE_URL: "https://staging.example" } } },
+  { filename: relativePath });
   return exports;
 }
 
@@ -50,6 +53,24 @@ const assignees = load("../utils/jobAssignees.ts", {
 common["@/utils/jobAssignees"] = assignees;
 const ui = load("../utils/assignmentWorkUi.ts", common);
 const footer = load("../features/jobs/components/JobActionFooter.tsx", common);
+let badgeBackend = "STAGING";
+const badge = load("../components/ui/BackendEnvironmentBadge.tsx", {
+  ...common,
+  "@/context/JobContext": { useJobs: () => ({ workOperations: [], pendingActions: [], isSyncing: false }) },
+  "@/utils/backendEnvironment": {
+    deriveBackendEnvironmentLabel: () => badgeBackend,
+    shouldShowBackendEnvironmentIndicator: (label) => label !== "PROD",
+  },
+  "@/utils/workTimingGate": { shouldEnableWorkTiming, canReloadStagingUpdate },
+  "@/utils/workTiming": { getWorkTimingTrace: () => "", getWorkUiDiagnostic: () => null,
+    subscribeWorkTiming: () => () => {} },
+  "expo-application": { nativeApplicationVersion: "1.0.0", nativeBuildVersion: "1" },
+  "expo-constants": { __esModule: true, default: { expoConfig: { name: "TaskOps Manager Dev" } } },
+  "expo-updates": { updateId: "update-a", runtimeVersion: "runtime-a", channel: "staging",
+    isEmbeddedLaunch: false, checkForUpdateAsync: async () => ({ isAvailable: false }),
+    fetchUpdateAsync: async () => ({ isNew: false, isRollBackToEmbedded: false }),
+    reloadAsync: async () => {} },
+});
 let fixture;
 const screen = load("../features/jobs/JobDetailScreen.tsx", {
   ...common,
@@ -138,7 +159,24 @@ test("online session controls still render without pending work", () => {
 });
 test("Production builds exclude work timing diagnostics", () => {
   assert.equal(shouldEnableWorkTiming(false, "PROD", "TaskOps Manager"), false);
-  assert.equal(shouldEnableWorkTiming(false, "STAGING", "TaskOps Manager"), false);
+  assert.equal(shouldEnableWorkTiming(false, "STAGING", "TaskOps Manager"), true);
   assert.equal(shouldEnableWorkTiming(false, "STAGING", "TaskOps Manager Dev"), true);
-  assert.equal(shouldEnableWorkTiming(true, "PROD", "TaskOps Manager"), true);
+  assert.equal(shouldEnableWorkTiming(true, "PROD", "TaskOps Manager"), false);
+  badgeBackend = "STAGING";
+  const stagingBadge = badge.BackendEnvironmentBadge();
+  const stagingPressable = find(stagingBadge, "Pressable");
+  assert.equal(typeof stagingPressable?.props.onPress, "function");
+  assert.equal(stagingPressable?.props.onLongPress, undefined);
+  badgeBackend = "PROD";
+  assert.equal(badge.BackendEnvironmentBadge(), null);
+});
+test("downloaded update reload stays blocked until local work is synchronized", () => {
+  assert.equal(canReloadStagingUpdate({ workOperationCount: 1,
+    pendingActionCount: 0, isSyncing: false }), false);
+  assert.equal(canReloadStagingUpdate({ workOperationCount: 0,
+    pendingActionCount: 1, isSyncing: false }), false);
+  assert.equal(canReloadStagingUpdate({ workOperationCount: 0,
+    pendingActionCount: 0, isSyncing: true }), false);
+  assert.equal(canReloadStagingUpdate({ workOperationCount: 0,
+    pendingActionCount: 0, isSyncing: false }), true);
 });

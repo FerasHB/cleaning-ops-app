@@ -123,6 +123,7 @@ export default function JobDetailScreen() {
     loading,
     online,
     pendingActions,
+    isSyncing,
     markJobCommentsAsRead,
     refreshJobs,
   } = useJobs();
@@ -209,9 +210,10 @@ export default function JobDetailScreen() {
     if (!job) return;
     markVisibleWorkTiming({ jobId: job.id, state: workUi?.state ?? "none",
       parent: job.status, pending: workUi?.pending?.action ?? "none",
+      start: workUi?.canStart ?? false,
       pause: workUi?.canPause ?? false, resume: workUi?.canResume ?? false,
       complete: workUi?.canComplete ?? false, reason: workUi?.blockReason ?? "none",
-      online, submitting, capability: pauseResumeEnabled, role: role ?? "none",
+      online, submitting, syncing: isSyncing, capability: pauseResumeEnabled, role: role ?? "none",
       summaryMode: ownSummary?.trackingMode ?? "none", ownMode: ownAssignment?.trackingMode ?? "none",
       revision: ownSummary?.workRevision ?? null,
       expectedRevision: workUi?.pending ? workUi.pending.expectedRevision + 1 : null,
@@ -220,7 +222,7 @@ export default function JobDetailScreen() {
         (["start", "resume"].includes(workUi.pending.action) ? workUi.pending.sessionId : null) });
   }, [job?.id, job?.status, workUi?.state, workUi?.pending?.action, workUi?.canPause,
     workUi?.canResume, workUi?.canComplete, workUi?.blockReason, online, submitting,
-    pauseResumeEnabled, role, ownSummary, ownAssignment]);
+    pauseResumeEnabled, role, ownSummary, ownAssignment, workUi?.canStart, isSyncing]);
 
   const isAdmin = role === "admin";
   const jobId = job?.id;

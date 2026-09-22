@@ -253,6 +253,7 @@ function RootNavigator() {
           <Stack.Screen name="profile/edit" />
         </Stack.Protected>
       </Stack>
+      <BackendEnvironmentBadge />
     </JobProvider>
   );
 }
@@ -404,10 +405,6 @@ export default function RootLayout() {
         <AuthProvider>
           <SplashGate>
             <RootNavigator />
-            {/* Rein beobachtend, kein Effekt auf Routing/Auth — siehe
-                components/ui/BackendEnvironmentBadge.tsx. Rendert null in
-                jedem echten Produktions-Release. */}
-            <BackendEnvironmentBadge />
           </SplashGate>
         </AuthProvider>
       </AuthLinkUrlProvider>
