@@ -811,7 +811,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
           if (currentUserRef.current === userId && result.operation.status === "acknowledged") {
             setJobs((current) => currentUserRef.current === userId
               ? applyAcknowledgedWorkOperationToJobs(current, result.operation) : current);
-            markWorkTiming(operationId, "targeted refresh");
+            markWorkTiming(operationId, "targeted local update");
           }
         }
       } catch (error) {
@@ -827,13 +827,19 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         throw error;
       } finally {
         try {
+          if (operationId) markWorkTiming(operationId, "work snapshot begin");
           await refreshWorkUi();
+          if (operationId) markWorkTiming(operationId, "work snapshot end");
         } finally {
           // Keep the button independent of the full list fetch. A concurrent
           // invalidation is replayed once by the coalesced refresh.
+          if (operationId) markWorkTiming(operationId, "full refresh begin");
           void refreshJobs().then(() => {
-            if (operationId) markWorkTiming(operationId, "full refresh completed");
-          }).catch((error) => console.warn("Jobs refresh after work action failed:", error));
+            if (operationId) markWorkTiming(operationId, "full refresh end");
+          }).catch((error) => {
+            if (operationId) markWorkTiming(operationId, "full refresh error");
+            console.warn("Jobs refresh after work action failed:", error);
+          });
         }
       }
     });

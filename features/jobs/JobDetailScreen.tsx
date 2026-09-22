@@ -78,6 +78,7 @@ import {
 } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
+import { markVisibleWorkTiming } from "@/utils/workTiming";
 import { useTranslation } from "react-i18next";
 import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 
@@ -202,6 +203,24 @@ export default function JobDetailScreen() {
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const [actionError, setActionError] = useState("");
+
+  // Runs after Job Detail commits a new effective state and action decision.
+  useEffect(() => {
+    if (!job) return;
+    markVisibleWorkTiming({ jobId: job.id, state: workUi?.state ?? "none",
+      parent: job.status, pending: workUi?.pending?.action ?? "none",
+      pause: workUi?.canPause ?? false, resume: workUi?.canResume ?? false,
+      complete: workUi?.canComplete ?? false, reason: workUi?.blockReason ?? "none",
+      online, submitting, capability: pauseResumeEnabled, role: role ?? "none",
+      summaryMode: ownSummary?.trackingMode ?? "none", ownMode: ownAssignment?.trackingMode ?? "none",
+      revision: ownSummary?.workRevision ?? null,
+      expectedRevision: workUi?.pending ? workUi.pending.expectedRevision + 1 : null,
+      summaryAssignmentMatches: !!workUi?.pending && ownSummary?.assignmentId === workUi.pending.assignmentId,
+      sessionMatches: !!workUi?.pending && ownSummary?.activeSessionId ===
+        (["start", "resume"].includes(workUi.pending.action) ? workUi.pending.sessionId : null) });
+  }, [job?.id, job?.status, workUi?.state, workUi?.pending?.action, workUi?.canPause,
+    workUi?.canResume, workUi?.canComplete, workUi?.blockReason, online, submitting,
+    pauseResumeEnabled, role, ownSummary, ownAssignment]);
 
   const isAdmin = role === "admin";
   const jobId = job?.id;
@@ -589,6 +608,7 @@ export default function JobDetailScreen() {
           liegt nie unter ihr. Der Scroll-Bereich wird entsprechend kürzer, die
           Leiste überdeckt also auch keine Kommentare. */}
       <JobActionFooter
+        jobId={job.id}
         canStart={canStart}
         canComplete={canComplete}
         canPause={workUi?.canPause ?? false}

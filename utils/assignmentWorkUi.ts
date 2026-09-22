@@ -11,6 +11,7 @@ export type AssignmentWorkUi = {
   canComplete: boolean;
   pending: WorkOperation | null;
   reviewRequired: boolean;
+  blockReason: "capability_off" | "legacy" | "authorization" | "reconciliation" | "projection" | null;
 };
 
 export function deriveAssignmentWorkUi(input: {
@@ -31,14 +32,15 @@ export function deriveAssignmentWorkUi(input: {
   if (hasSessionWork && !capability) {
     return { mode: "sessions", state: summary?.assignmentState ?? "loading",
       canStart: false, canPause: false, canResume: false, canComplete: false,
-      pending, reviewRequired: !!(summary?.reviewRequired ?? own?.workReviewRequired) };
+      pending, reviewRequired: !!(summary?.reviewRequired ?? own?.workReviewRequired),
+      blockReason: "capability_off" };
   }
   if (!sessionMode) {
     const state = own?.employeeCompletedAt ? "completed" : own?.employeeStartedAt ? "active" : "not_started";
     return { mode: "legacy", state,
       canStart: canStartOwnAssignment(job, role, userId), canPause: false, canResume: false,
       canComplete: canCompleteOwnAssignment(job, role, userId), pending: null,
-      reviewRequired: false };
+      reviewRequired: false, blockReason: "legacy" };
   }
   const state = summary?.assignmentState ??
     (own?.employeeCompletedAt ? "completed" : own?.employeeStartedAt ? "loading" : "not_started");
@@ -52,12 +54,14 @@ export function deriveAssignmentWorkUi(input: {
     summary.assignmentId === pending.assignmentId && summary.workRevision === pending.expectedRevision + 1 &&
     summary.assignmentState === pendingState && summary.activeSessionId === pendingSession;
   const allowed = canRunJobActions(job, role, userId) && !needsReconciliation && hasEffectiveState;
+  const blockReason = !canRunJobActions(job, role, userId) ? "authorization"
+    : needsReconciliation ? "reconciliation" : !hasEffectiveState ? "projection" : null;
   return { mode: "sessions", state,
     canStart: allowed && state === "not_started" && job.status !== "completed",
     canPause: allowed && state === "active",
     canResume: allowed && state === "paused",
     canComplete: allowed && (state === "active" || state === "paused"),
-    pending, reviewRequired: !!(summary?.reviewRequired ?? own?.workReviewRequired) };
+    pending, reviewRequired: !!(summary?.reviewRequired ?? own?.workReviewRequired), blockReason };
 }
 
 export function displayedWorkSeconds(input: {

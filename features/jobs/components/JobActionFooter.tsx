@@ -27,8 +27,10 @@ import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { WorkAction } from "@/services/offline/workJournal.core";
+import { markFooterWorkTiming } from "@/utils/workTiming";
 
 type Props = {
+  jobId: string;
   canStart: boolean;
   canComplete: boolean;
   canPause?: boolean;
@@ -62,6 +64,7 @@ type Props = {
 };
 
 export function JobActionFooter({
+  jobId,
   canStart,
   canComplete,
   canPause = false,
@@ -98,6 +101,10 @@ export function JobActionFooter({
     waitingOnOthers ||
     showForceComplete ||
     !!startBlockedReason;
+  React.useEffect(() => {
+    markFooterWorkTiming({ jobId, shown: hasContent, pause: canPause,
+      resume: canResume, complete: canComplete, submitting });
+  }, [jobId, hasContent, canPause, canResume, canComplete, submitting]);
   if (!hasContent) {
     return null;
   }

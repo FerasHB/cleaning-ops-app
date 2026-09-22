@@ -54,17 +54,24 @@ export async function sendWorkOperation(operation: WorkOperation): Promise<WorkR
     complete: ["complete_own_job_v2", "completed_at_input"],
   } as const;
   const [name, timestampKey] = rpc[operation.action];
+  // Replayed offline operations reach this path without executeAssignmentAction.
+  markWorkTiming(operation.operationId, "sync begin");
   markWorkTiming(operation.operationId, "RPC begin");
-  const { data, error } = await supabase.rpc(name, {
-    operation_id_input: operation.operationId,
-    assignment_id_input: operation.assignmentId,
-    expected_revision_input: operation.expectedRevision,
-    session_id_input: operation.sessionId,
-    [timestampKey]: operation.actionTimestamp,
-  });
-  if (error) throw error;
-  markWorkTiming(operation.operationId, "RPC acknowledged");
-  return canonicalReceipt(data as Record<string, unknown>);
+  try {
+    const { data, error } = await supabase.rpc(name, {
+      operation_id_input: operation.operationId,
+      assignment_id_input: operation.assignmentId,
+      expected_revision_input: operation.expectedRevision,
+      session_id_input: operation.sessionId,
+      [timestampKey]: operation.actionTimestamp,
+    });
+    if (error) throw error;
+    markWorkTiming(operation.operationId, "RPC acknowledged");
+    return canonicalReceipt(data as Record<string, unknown>);
+  } catch (error) {
+    markWorkTiming(operation.operationId, "RPC error");
+    throw error;
+  }
 }
 
 export const workJournal = createWorkJournal({
@@ -163,7 +170,7 @@ export async function executeAssignmentAction(input: {
     throw new Error("Unsupported legacy action");
   }
   const operation = await workJournal.enqueue(input);
-  beginWorkTiming(operation.operationId, input.action, input.tapStartedAt);
+  beginWorkTiming(operation.operationId, input.action, input.tapStartedAt, input.jobId);
   // Even when online, durable journal transmission is the sole V2 path.
   if ((await NetInfo.fetch()).isConnected) {
     markWorkTiming(operation.operationId, "sync begin");
