@@ -540,13 +540,22 @@ begin
   perform pg_temp.check('cross-company admin is refused without leaking existence',
     v_msg like '%not found or not accessible%', v_msg);
 
+  -- 20260923000000 hat diesen Vertrag bewusst geaendert: der exportierte
+  -- Stundenzettel muss fuer Admin und Mitarbeiter inhaltsgleich sein, also
+  -- liest der Mitarbeiter die Pruefkette der EIGENEN Zuweisung jetzt selbst.
+  -- Der Umfang bleibt eng — siehe die beiden folgenden Pruefungen und
+  -- supabase/tests/correction_audit_for_own_employee.test.sql.
   perform pg_temp.act_as(v_employee);
   execute 'set local role authenticated';
-  v_msg := pg_temp.fails('select 1 from public.get_session_correction_audit(array['
-    || quote_literal(v_assignment) || '::uuid])');
+  perform pg_temp.check('employee reads the audit chain of the own assignment',
+    (select count(*) >= 1 from public.get_session_correction_audit(array[v_assignment])));
   execute 'reset role';
-  perform pg_temp.check('employee cannot call get_session_correction_audit',
-    v_msg like '%Only admins%', v_msg);
+
+  perform pg_temp.act_as('e1000000-0000-0000-0000-0000000000a2');
+  execute 'set local role authenticated';
+  perform pg_temp.check('employee reads no audit chain of a co-worker assignment',
+    (select count(*) = 0 from public.get_session_correction_audit(array[v_assignment])));
+  execute 'reset role';
 
   perform pg_temp.act_as(v_employee);
   execute 'set local role authenticated';

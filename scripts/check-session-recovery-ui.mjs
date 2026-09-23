@@ -401,19 +401,55 @@ test("a raised revision is visible in the German PDF", () => {
   assert.ok(html.includes("Die geprüfte Arbeitszeit wurde nachträglich erhöht."));
 });
 
-test("an employee PDF cannot contain the admin reason or actor", () => {
-  // Strukturell: ein Mitarbeiter-Datensatz traegt die Audit-Felder gar nicht,
-  // weil getTimesheet die Pruefkette nur mit includeAudit holt.
-  const html = buildTimesheetHtml(sheetData([{ ...baseEntry, reviewed: true }]));
-  assert.ok(!html.includes("Grund:"));
-  assert.ok(!html.includes("Aufgezeichnet"));
-  assert.ok(!html.includes("Korrektur"));
-  const service = readFileSync(
-    new URL("../services/timesheets/timesheet.service.ts", import.meta.url), "utf8");
-  assert.match(service, /params\.includeAudit && sessionEntries\.length > 0/);
+test("the exported PDF is byte-identical for admin and employee", () => {
+  // PRODUKT-ANFORDERUNG: der Stundenzettel-Export ist inhaltsgleich. Frueher
+  // liess ein includeAudit-Flag die Pruefkette nur in den Admin-Export
+  // fliessen; der Mitarbeiter-Export verschwieg Grund, Aufgezeichnet und
+  // Korrektur. buildTimesheetHtml ist eine reine Funktion von TimesheetData,
+  // also entscheidet allein die Gleichheit der Daten — und die stellt jetzt
+  // der einheitliche Datenpfad sicher.
+  const corrected = { ...baseEntry,
+    recordedMinutes: 1560, correctionMinutes: -1050,
+    correctionReason: "Mitarbeiter hat vergessen, den Auftrag zu beenden.",
+    correctionOrigin: "admin_reduced" };
+  const asAdmin = buildTimesheetHtml(sheetData([corrected]));
+  const asEmployee = buildTimesheetHtml(sheetData([corrected]));
+  assert.equal(asAdmin, asEmployee);
+  // Und der gemeinsame Export traegt den vollen Pruefvermerk.
+  for (const html of [asAdmin, asEmployee]) {
+    assert.ok(html.includes("Aufgezeichnet: 26:00 h"));
+    assert.ok(html.includes("Geprüfte Arbeitszeit: 8:30 h"));
+    assert.ok(html.includes("Korrektur: -17:30 h"));
+    assert.ok(html.includes("Grund: Mitarbeiter hat vergessen"));
+  }
+});
+
+test("the admin-closed wording is identical in both exports too", () => {
+  const closed = { ...baseEntry,
+    recordedMinutes: null, correctionMinutes: null,
+    correctionReason: "Mitarbeiter hat nie beendet.", correctionOrigin: "admin_closed" };
+  const asAdmin = buildTimesheetHtml(sheetData([closed]));
+  const asEmployee = buildTimesheetHtml(sheetData([closed]));
+  assert.equal(asAdmin, asEmployee);
+  assert.ok(asEmployee.includes("Arbeitsende ursprünglich nicht erfasst."));
+  assert.ok(!asEmployee.includes("Aufgezeichnet: 0:00 h"));
+});
+
+test("the timesheet data path has no role branch left", () => {
+  // Ein rollenabhaengiges Flag im Client koennte die beiden Exporte wieder
+  // auseinanderlaufen lassen. Den Umfang entscheidet ausschliesslich der
+  // Server (Admin: ganze Firma, Mitarbeiter: eigene Zuweisung).
+  const stripComments = (source) => source.split("\n")
+    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+    .join("\n");
+  const service = stripComments(readFileSync(
+    new URL("../services/timesheets/timesheet.service.ts", import.meta.url), "utf8"));
+  assert.ok(!/includeAudit/.test(service));
+  assert.match(service, /if \(sessionEntries\.length > 0\) \{/);
   const hook = readFileSync(
     new URL("../features/timesheets/hooks/useTimesheet.ts", import.meta.url), "utf8");
-  assert.match(hook, /includeAudit: isAdminView/);
+  assert.ok(!/includeAudit/.test(hook));
+  assert.ok(!/isAdminView/.test(hook));
 });
 
 test("the timesheet reads payroll only through the effective RPC", () => {

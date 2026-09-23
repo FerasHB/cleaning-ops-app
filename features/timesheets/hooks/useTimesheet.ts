@@ -85,9 +85,6 @@ export function useTimesheet(
   // Stundenzettel endlos neu laden.
   const selfId = selfEmployee?.id ?? null;
   const selfName = selfEmployee?.fullName ?? null;
-  // Der Screen bindet die Eigen-Sicht fest an die angemeldete Person; ohne
-  // selfEmployee ist es die Admin-Sicht mit freier Mitarbeiterwahl.
-  const isAdminView = selfId === null;
 
   useEffect(() => {
     if (selfId) setSelectedEmployeeId(selfId);
@@ -188,9 +185,6 @@ export function useTimesheet(
       year: monthDate.getFullYear(),
       month: monthDate.getMonth() + 1,
       companyTimezone: company?.timezone,
-      // Nur der Admin-Pfad holt die Prüfkette. In der Eigen-Sicht fehlen die
-      // Audit-Felder dadurch strukturell, nicht nur optisch.
-      includeAudit: isAdminView,
     })
       .then((result) => {
         if (!cancelled) setData(result);

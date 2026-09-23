@@ -334,13 +334,6 @@ export async function getTimesheet(params: {
   month: number;
   /** companies.timezone; Europe/Berlin is the established fallback. */
   companyTimezone?: string | null;
-  /**
-   * NUR fuer Admins setzen. Holt die Korrektur-Prüfkette und haengt sie NACH
-   * der Abrechnung an die fertigen Zeilen. Bleibt der Wert false, enthaelt
-   * TimesheetData den Admin-Grund gar nicht erst — ein Mitarbeiter-PDF kann
-   * ihn dadurch auch bei einem Render-Fehler nicht ausgeben.
-   */
-  includeAudit?: boolean;
 }): Promise<TimesheetData> {
   const { companyName, employeeId, employeeName, year, month } = params;
   const companyTimezone = validCompanyTimeZone(params.companyTimezone);
@@ -482,7 +475,14 @@ export async function getTimesheet(params: {
   }
   // NACH der Abrechnung: reine Anzeige-Metadaten. Sie fassen durationMinutes
   // und totalMinutes nicht an — die Zahlen stehen zu diesem Zeitpunkt fest.
-  if (params.includeAudit && sessionEntries.length > 0) {
+  //
+  // KEINE ROLLENVERZWEIGUNG (20260923000000): der exportierte Stundenzettel
+  // muss fuer Admin und Mitarbeiter inhaltsgleich sein. Beide Rollen holen
+  // deshalb dieselbe Pruefkette ueber dieselbe RPC; der Server entscheidet den
+  // Umfang (Admin: ganze Firma, Mitarbeiter: eigene Zuweisung). Ein
+  // client-seitiges includeAudit-Flag gab es hier frueher — es konnte die
+  // beiden Exporte auseinanderlaufen lassen und ist bewusst entfernt.
+  if (sessionEntries.length > 0) {
     const chain = await getSessionCorrectionAudit(
       [...new Set(sessionEntries.map((entry) => entry.assignmentId!).filter(Boolean))]);
     const byAssignment = new Map<string, typeof chain>();
