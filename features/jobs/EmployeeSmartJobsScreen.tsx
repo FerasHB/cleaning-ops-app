@@ -68,7 +68,7 @@ import {
 } from "@/utils/jobsQueue";
 import { toUserMessage } from "@/utils/userMessages";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -142,7 +142,15 @@ export default function EmployeeSmartJobsScreen() {
     refreshJobs,
   } = useJobs();
 
-  const [filter, setFilter] = useState<JobStatusFilter>("all");
+  // Filter lebt im Route-Param `status` (nicht in useState): der Tab bleibt
+  // gemountet, so kann ein Sprung von außen (Monats-KPIs der Übersicht) den
+  // zuletzt gewählten Chip jederzeit überschreiben.
+  const { status } = useLocalSearchParams<{ status?: string }>();
+  const filter: JobStatusFilter =
+    status && (JOB_STATUS_ORDER as readonly string[]).includes(status)
+      ? (status as JobStatusFilter)
+      : "all";
+  const setFilter = (next: JobStatusFilter) => router.setParams({ status: next });
   const [showAllOverdue, setShowAllOverdue] = useState(false);
 
   // ── Pull-to-Refresh (gleiches Muster wie Übersicht/Kalender) ──
