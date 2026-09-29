@@ -23,6 +23,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useTranslation } from "react-i18next";
 
@@ -74,7 +75,7 @@ export function VacationDeductionSheet({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView style={styles.backdrop} behavior="padding">
         <View style={styles.sheet}>
           <Text style={styles.title}>
             {t("admin:absenceAdmin.deductionSheetTitle")}
@@ -119,7 +120,7 @@ export function VacationDeductionSheet({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

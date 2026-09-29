@@ -16,7 +16,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   RefreshControl,
   StatusBar,
   StyleSheet,
@@ -294,7 +293,7 @@ export default function EmployeesScreen() {
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior="padding"
         >
           <View style={styles.modalCard}>
             {/* Drag-Handle (visuelles Detail) */}
