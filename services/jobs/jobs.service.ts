@@ -763,7 +763,9 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
     );
   }
 
-  // Bei Recurring Jobs: konkrete Einzel-Termine für die nächsten 8 Wochen erzeugen.
+  // Bei Recurring Jobs: konkrete Einzel-Termine erzeugen (Regel-Ende bzw.
+  // +3 Monate; danach hält der Cron-Worker extend_recurring_horizons den
+  // Horizont rollierend auf 90 Tage — Migration 20261012000000).
   // Fehler hier brechen den Job-Create nicht ab — der Parent existiert bereits
   // UND ist bereits korrekt zugewiesen (s.o.).
   if (__DEV__) {

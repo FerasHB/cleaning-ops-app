@@ -636,13 +636,21 @@ end $$;
 -- CASE 31: der redundante inherit-Aufruf ist entfernt (Follow-up 4)
 --   update_job_occurrences ruft inherit NICHT mehr direkt auf; der
 --   Abgleich laeuft ausschliesslich ueber generate_job_occurrences.
+--   Seit 20261012000000 delegiert generate an den internen Kern
+--   _materialize_recurring_occurrences, der inherit aufruft — "generate
+--   ruft inherit" heisst daher: generate selbst ODER ueber den Kern.
 do $$
-declare v text; src_upd text; src_gen text;
+declare v text; src_upd text; src_gen text; src_core text;
 begin
   select pg_get_functiondef('public.update_job_occurrences(uuid)'::regprocedure)   into src_upd;
   select pg_get_functiondef('public.generate_job_occurrences(uuid)'::regprocedure) into src_gen;
+  select pg_get_functiondef('public._materialize_recurring_occurrences(uuid,date)'::regprocedure) into src_core;
   v := 'update_ruft_inherit='||(position('perform public.inherit_occurrence_assignments' in src_upd) > 0)::text
-     ||'/generate_ruft_inherit='||(position('perform public.inherit_occurrence_assignments' in src_gen) > 0)::text;
+     ||'/generate_ruft_inherit='||(
+          position('perform public.inherit_occurrence_assignments' in src_gen) > 0
+          or (position('public._materialize_recurring_occurrences(' in src_gen) > 0
+              and position('perform public.inherit_occurrence_assignments' in src_core) > 0)
+        )::text;
   insert into _oi values (31,'Kein doppelter Mengenabgleich mehr: nur generate ruft inherit',
     'update_ruft_inherit=false/generate_ruft_inherit=true',v);
   raise notice 'CASE 31 -> %', v;
