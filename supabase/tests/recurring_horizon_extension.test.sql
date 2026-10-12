@@ -236,7 +236,7 @@ begin
   select 'due_ge_3='||((r->>'rules_due')::int >= 3)::text
        ||'/due_eq_extended='||((r->>'rules_due') = (r->>'rules_extended'))::text
        ||'/errors='||(r->>'errors')
-       ||'/protokolliert='||(select count(*) from public.recurring_horizon_runs where not skipped_concurrent)::text
+       ||'/protokolliert='||(select count(*) from public.recurring_horizon_runs where not skipped_concurrent and started_at >= now())::text
        ||'/health_needs_ext='||(select count(*) from public.recurring_horizon_health
                                 where company_id='f1000000-0000-0000-0000-000000000001' and needs_extension)
        ||'/health_critical='||(select count(*) from public.recurring_horizon_health
