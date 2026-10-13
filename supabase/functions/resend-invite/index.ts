@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
 
     const { data: adminProfile, error: profileError } = await adminClient
       .from("profiles")
-      .select("id, role, company_id")
+      .select("id, role, company_id, is_active")
       .eq("id", user.id)
       .single();
 
@@ -88,6 +88,16 @@ Deno.serve(async (req) => {
     if (adminProfile.role !== "admin") {
       return Response.json(
         { error: "Nur Admins dürfen Einladungen erneut senden." },
+        { status: 403, headers: corsHeaders },
+      );
+    }
+
+    // Deaktivierte Admins dürfen keine Einladungen mehr auslösen — gleiche
+    // Grenze wie in create-employee/index.ts (diese Function läuft mit dem
+    // Service-Role-Client und umgeht RLS, daher hier explizit geprüft).
+    if (!adminProfile.is_active) {
+      return Response.json(
+        { error: "Admin-Konto ist deaktiviert." },
         { status: 403, headers: corsHeaders },
       );
     }
