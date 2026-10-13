@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
 
     const { data: adminProfile, error: profileError } = await adminClient
       .from("profiles")
-      .select("id, role, company_id")
+      .select("id, role, company_id, is_active")
       .eq("id", user.id)
       .single();
 
@@ -176,6 +176,18 @@ Deno.serve(async (req) => {
     if (adminProfile.role !== "admin") {
       return Response.json(
         { error: "Nur Admins dürfen Mitarbeiter erstellen." },
+        { status: 403, headers: corsHeaders },
+      );
+    }
+
+    // Deaktivierte Admins dürfen keine Mitarbeiter mehr einladen — dieselbe
+    // Grenze, die current_user_role()/current_user_company_id() für alle
+    // RLS-gestützten Zugriffe bereits erzwingen (siehe lib/schema.sql). Diese
+    // Function läuft mit dem Service-Role-Client und umgeht RLS deshalb
+    // explizit selbst prüfen.
+    if (!adminProfile.is_active) {
+      return Response.json(
+        { error: "Admin-Konto ist deaktiviert." },
         { status: 403, headers: corsHeaders },
       );
     }
