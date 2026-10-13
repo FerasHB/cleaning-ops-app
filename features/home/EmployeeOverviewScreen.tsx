@@ -37,6 +37,7 @@ import type { Job, JobStatus } from "@/types/job";
 import { isJobStartDateAllowed, isJobToday } from "@/utils/jobSchedule";
 import { formatDateISO, formatTimeHHmm } from "@/utils/date";
 import { JOB_STATUS_ORDER } from "@/utils/jobStatus";
+import type { JobStatusFilter } from "@/utils/jobsQueue";
 import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import { confirmCompleteJob } from "@/utils/jobDialogs";
 import { toUserMessage } from "@/utils/userMessages";
@@ -93,6 +94,12 @@ function isSameMonth(iso: string | null | undefined, ref: Date): boolean {
 // Konvention wie getJobDisplayTime/JobCard).
 function formatTime(iso: string | null | undefined): string | null {
   return formatTimeHHmm(parse(iso));
+}
+
+// Jobs-Tab mit vorgewähltem Status-Filter öffnen. Immer explizit übergeben —
+// der Filter lebt im Route-Param, sonst bliebe ein alter Wert stehen.
+function openJobs(status: JobStatusFilter) {
+  router.push({ pathname: "/(employee-tabs)/jobs", params: { status } });
 }
 
 export default function EmployeeOverviewScreen() {
@@ -430,7 +437,7 @@ export default function EmployeeOverviewScreen() {
               value={todayTotal}
               icon="briefcase-outline"
               accentColor={theme.colors.primary}
-              onPress={() => router.push("/(employee-tabs)/jobs")}
+              onPress={() => openJobs("all")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -439,7 +446,7 @@ export default function EmployeeOverviewScreen() {
               value={todayOpen}
               icon="folder-open-outline"
               accentColor={theme.colors.statusOpen}
-              onPress={() => router.push("/(employee-tabs)/jobs")}
+              onPress={() => openJobs("all")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -448,7 +455,7 @@ export default function EmployeeOverviewScreen() {
               value={todayInProgress}
               icon="time-outline"
               accentColor={theme.colors.statusInProgress}
-              onPress={() => router.push("/(employee-tabs)/jobs")}
+              onPress={() => openJobs("all")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -457,7 +464,7 @@ export default function EmployeeOverviewScreen() {
               value={todayCompleted}
               icon="checkmark-done-outline"
               accentColor={theme.colors.statusCompleted}
-              onPress={() => router.push("/(employee-tabs)/jobs")}
+              onPress={() => openJobs("all")}
             />
           </View>
         </View>
@@ -716,7 +723,7 @@ export default function EmployeeOverviewScreen() {
               <TouchableOpacity
                 style={styles.showAllButton}
                 activeOpacity={0.8}
-                onPress={() => router.push("/(employee-tabs)/jobs")}
+                onPress={() => openJobs("all")}
                 accessibilityRole="button"
               >
                 <Text style={styles.showAllText}>
@@ -746,7 +753,7 @@ export default function EmployeeOverviewScreen() {
               value={monthCompleted}
               icon="checkmark-done-outline"
               accentColor={theme.colors.statusCompleted}
-              onPress={() => router.push("/(employee-tabs)/jobs")}
+              onPress={() => openJobs("completed")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -755,7 +762,7 @@ export default function EmployeeOverviewScreen() {
               value={monthInProgress}
               icon="time-outline"
               accentColor={theme.colors.statusInProgress}
-              onPress={() => router.push("/(employee-tabs)/jobs")}
+              onPress={() => openJobs("in_progress")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -764,7 +771,7 @@ export default function EmployeeOverviewScreen() {
               value={monthOpen}
               icon="folder-open-outline"
               accentColor={theme.colors.statusOpen}
-              onPress={() => router.push("/(employee-tabs)/jobs")}
+              onPress={() => openJobs("open")}
             />
           </View>
           <View style={styles.kpiItem}>
@@ -773,7 +780,7 @@ export default function EmployeeOverviewScreen() {
               value={monthTotal}
               icon="albums-outline"
               accentColor={theme.colors.primary}
-              onPress={() => router.push("/(employee-tabs)/jobs")}
+              onPress={() => openJobs("all")}
             />
           </View>
         </View>
