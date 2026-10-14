@@ -44,6 +44,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -280,7 +281,7 @@ export default function AdminVacationAccountScreen() {
       </ScrollView>
 
       <Modal visible={adjustOpen} transparent animationType="fade">
-        <View style={styles.backdrop}>
+        <KeyboardAvoidingView style={styles.backdrop} behavior="padding">
           <View style={styles.sheet}>
             <Text style={styles.cardTitle}>
               {t("admin:vacationAccount.adjustSheetTitle")}
@@ -318,7 +319,7 @@ export default function AdminVacationAccountScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

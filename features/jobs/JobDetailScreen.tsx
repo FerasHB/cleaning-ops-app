@@ -72,10 +72,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import type { AppTheme } from "@/constants/theme";
 import { toUserMessage } from "@/utils/userMessages";
 import { markVisibleWorkTiming } from "@/utils/workTiming";
@@ -90,11 +87,6 @@ export default function JobDetailScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { t, i18n } = useTranslation();
   const localeTag = INTL_LOCALE_TAGS[i18n.language as AppLocale] ?? "de-DE";
-
-  // Offset für KeyboardAvoidingView: oberer Safe-Area-Inset + Header-Höhe,
-  // damit das Input-Feld beim Öffnen der Tastatur sichtbar bleibt (kein Overlap).
-  const insets = useSafeAreaInsets();
-  const keyboardOffset = insets.top + theme.spacing.tapTarget;
 
   // Ref auf die ScrollView, um beim Fokus des Kommentarfelds ans Ende zu
   // scrollen (Eingabe + Senden über der Tastatur sichtbar halten).
@@ -502,8 +494,10 @@ export default function JobDetailScreen() {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={keyboardOffset}
+        // Kein keyboardVerticalOffset: KAV misst seinen Rahmen relativ zur
+        // SafeAreaView (beginnt am Bildschirmrand), Header + Inset sind darin
+        // schon enthalten — ein Offset zählte sie doppelt (Lücke über der Tastatur).
+        behavior="padding"
       >
       <ScrollView
         ref={scrollRef}

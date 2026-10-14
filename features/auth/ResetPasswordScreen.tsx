@@ -20,7 +20,6 @@ import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -327,7 +326,7 @@ export default function ResetPasswordScreen() {
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior="padding"
       >
         <ScrollView
           contentContainerStyle={styles.scroll}

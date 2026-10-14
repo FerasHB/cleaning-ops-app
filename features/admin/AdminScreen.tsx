@@ -17,7 +17,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   KeyboardAvoidingView,
-  Platform,
   StatusBar,
   StyleSheet,
   Text,
@@ -258,7 +257,7 @@ export default function AdminScreen() {
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior="padding"
       >
         <AppHeader
           title={t("admin:jobForm.createTitle")}

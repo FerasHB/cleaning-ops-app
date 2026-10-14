@@ -13,7 +13,6 @@ import { useTranslation } from "react-i18next";
 import {
   Animated,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -100,7 +99,7 @@ export default function LoginScreen() {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior="padding"
       >
         <ScrollView
           contentContainerStyle={styles.scroll}

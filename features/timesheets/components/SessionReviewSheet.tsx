@@ -37,7 +37,6 @@ import { useTranslation } from "react-i18next";
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -124,7 +123,7 @@ export function SessionReviewSheet({
 
   return <Modal visible transparent animationType="slide" onRequestClose={onCancel}>
     <KeyboardAvoidingView style={styles.backdrop}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      behavior="padding">
       <View style={styles.sheet}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>{t("timesheets:recovery.title")}</Text>

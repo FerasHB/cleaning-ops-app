@@ -33,7 +33,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -185,7 +184,7 @@ export default function EmployeeEmploymentScreen() {
       <AppHeader title={t("admin:employment.title")} onBack={() => router.back()} />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior="padding"
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {error ? <ErrorBanner message={error} /> : null}

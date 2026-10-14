@@ -38,6 +38,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -168,6 +169,7 @@ export default function AdminAuReviewScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <AppHeader title={t("admin:auReview.headerTitle")} onBack={() => router.back()} />
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
       <ScrollView contentContainerStyle={styles.content}>
         {error ? <ErrorBanner message={error} /> : null}
         {loading ? <ActivityIndicator color={theme.colors.primary} /> : null}
@@ -299,6 +301,7 @@ export default function AdminAuReviewScreen() {
           </>
         ) : null}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -306,6 +309,7 @@ export default function AdminAuReviewScreen() {
 function createStyles(theme: AppTheme) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
+    flex: { flex: 1 },
     content: { padding: theme.spacing.lg, gap: theme.spacing.sm },
     card: {
       backgroundColor: theme.colors.surface,

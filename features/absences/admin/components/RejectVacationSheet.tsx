@@ -20,7 +20,6 @@ import React, { useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -69,7 +68,7 @@ export function RejectVacationSheet({
     >
       <Pressable style={styles.backdrop} onPress={handleClose}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={styles.kav}
         >
           <Pressable style={styles.sheet} onPress={() => {}}>

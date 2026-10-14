@@ -26,7 +26,6 @@ import { useTranslation } from "react-i18next";
 import {
   KeyboardAvoidingView,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -98,7 +97,7 @@ export function ForceCompleteSheet({
     >
       <View style={styles.backdrop}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior="padding"
           style={styles.centerWrap}
         >
           <Card padding={theme.spacing.lg} style={styles.card}>

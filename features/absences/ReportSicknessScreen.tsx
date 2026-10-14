@@ -17,7 +17,6 @@ import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -80,7 +79,7 @@ export default function ReportSicknessScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior="padding"
       >
         <AppHeader title={t("absences:reportSickness.title")} showBack />
 

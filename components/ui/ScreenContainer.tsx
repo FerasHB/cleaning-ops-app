@@ -9,7 +9,6 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import React, { useMemo } from "react";
 import {
   KeyboardAvoidingView,
-  Platform,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -83,7 +82,7 @@ export function ScreenContainer({
   const wrapped = avoidKeyboard ? (
     <KeyboardAvoidingView
       style={styles.flex}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior="padding"
     >
       {content}
     </KeyboardAvoidingView>
