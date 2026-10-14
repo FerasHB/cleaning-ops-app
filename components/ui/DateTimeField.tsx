@@ -173,7 +173,11 @@ export function DateTimeField({
   };
 
   const handlePickerConfirm = () => {
-    onChange(tempDate);
+    // Sekunden/Millisekunden des Startwerts (new Date()) verwerfen — wie der
+    // Android-Pfad oben. Der Picker wählt nur Minuten.
+    const confirmed = new Date(tempDate);
+    confirmed.setSeconds(0, 0);
+    onChange(confirmed);
     setShowPickerModal(false);
   };
 
