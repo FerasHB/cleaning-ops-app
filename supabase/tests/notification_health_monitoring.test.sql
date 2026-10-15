@@ -32,6 +32,7 @@ create temporary table _r (case_no text, beschreibung text, erwartet text, ergeb
 delete from public.notification_outbox;          -- kaskadiert auf notification_deliveries
 delete from public.notification_deliveries;
 delete from public.notification_health_checks;
+delete from public.notification_receipt_poll_requests;  -- F2 (20261018000000)
 delete from vault.secrets where name = 'monitoring_alert_url';
 update public.profiles
    set expo_push_token = 'ExponentPushToken[hc' || left(md5(id::text), 12) || ']'
@@ -86,6 +87,15 @@ begin
           p_code is null, (select t from _t) - p_ago);
   return v_id;
 end $$;
+-- F2: synthetische Receipt-Poller-Antwort (H15 gesund halten, aus H5 ausgeschlossen).
+create function pg_temp.poller_ok(p_ago interval) returns void language plpgsql as $$
+declare v_id bigint := nextval('pg_temp.http_id');
+begin
+  insert into net._http_response (id, status_code, content, timed_out, created)
+  values (v_id, 200, '{"mode":"receipts","claimed":0}', false, (select t from _t) - p_ago);
+  insert into public.notification_receipt_poll_requests (request_id, requested_at)
+  values (v_id, (select t from _t) - p_ago);
+end $$;
 create function pg_temp.reset_http() returns void language sql as $$
   delete from net._http_response where created > now() + interval '1 hour';
 $$;
@@ -120,16 +130,17 @@ $$;
 -- Gesunder Grundzustand: Dispatcher-200 und Sweeper-Lauf vor 30 s.
 select pg_temp.http(200, '30 seconds');
 select pg_temp.cron_ok('30 seconds');
+select pg_temp.poller_ok('30 seconds');
 
 -- =========================================================
 -- 0 — Grundzustand
 -- =========================================================
-select pg_temp.r('00', 'Grundzustand: alle 13 Prüfungen ok, Gesamt ok', '13|ok',
+select pg_temp.r('00', 'Grundzustand: alle 19 Prüfungen ok (H1–H15), Gesamt ok', '19|ok',
   (select count(*) filter (where level = 'ok') || '|' || pg_temp.overall()
      from public.notification_health((select t from _t))));
 select pg_temp.r('00b', 'Prüfschlüssel vollständig',
-  'h1_pending_oldest,h1_pending_overdue,h2_missing_token_expired,h2_missing_token_waiting,h3_device_not_registered,h3_other_failures,h4_processing_stuck,h5_dispatcher_http,h6_sweeper_cron,h7_outbox_unfanned,h8_admins_without_token,h8_employees_without_token,h9_possible_duplicates',
-  (select string_agg(check_key, ',' order by check_key) from public.notification_health((select t from _t))));
+  'h10_receipt_backlog,h11_receipt_unavailable,h12_receipt_device_not_registered,h13_push_credentials,h14_receipt_other_errors,h15_receipt_poller,h1_pending_oldest,h1_pending_overdue,h2_missing_token_expired,h2_missing_token_waiting,h3_device_not_registered,h3_other_failures,h4_processing_stuck,h5_dispatcher_http,h6_sweeper_cron,h7_outbox_unfanned,h8_admins_without_token,h8_employees_without_token,h9_possible_duplicates',
+  (select string_agg(check_key, ',' order by check_key collate "C") from public.notification_health((select t from _t))));
 
 -- =========================================================
 -- H1 — pending: überfällig / ältestes
@@ -240,6 +251,7 @@ select pg_temp.r('H5f', 'nur Heartbeat-200 frisch, Dispatcher-200 vor 11 min ⇒
 delete from public.notification_health_checks;
 select pg_temp.reset_http();
 select pg_temp.http(200, '30 seconds');
+select pg_temp.poller_ok('30 seconds');
 
 -- =========================================================
 -- H6 — Sweeper-Cron (über p_as_of, ohne echten Cron anzuhalten)
