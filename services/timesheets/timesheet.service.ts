@@ -49,6 +49,7 @@ import {
   accountSessionAssignment,
   companyMonthBounds,
   companyDateKey,
+  companyTimeLabel,
   validCompanyTimeZone,
   type RecordedSession,
 } from "@/services/timesheets/sessionAccounting";
@@ -62,7 +63,6 @@ import {
   diffInMinutes,
   formatDateISO,
   formatDurationHm,
-  formatTimeHHmm,
 } from "@/utils/date";
 import { isLegacyJob } from "@/utils/jobCorrection";
 import * as Print from "expo-print";
@@ -83,9 +83,18 @@ type TimesheetAssignmentRow = {
     customer_name: string;
     service_name: string;
     location_address: string;
-    started_at: string;
-    completed_at: string;
+    // Nullable: Zeilen mit vollständigem EIGENEM Zeitpaar werden auch an
+    // noch laufenden Aufträgen geladen (siehe getTimesheet, C1-Fix) — dort
+    // ist die geteilte Uhr (completed_at) noch leer.
+    started_at: string | null;
+    completed_at: string | null;
   };
+};
+
+// Nur für die Fallback-/Lücken-Abfrage: dort filtert der Server auf
+// abgeschlossene Aufträge mit vollständiger geteilter Uhr.
+type CompletedLegacyRow = TimesheetAssignmentRow & {
+  j: TimesheetAssignmentRow["j"] & { started_at: string; completed_at: string };
 };
 
 type SessionAssignmentRow = {
@@ -169,9 +178,10 @@ function buildRemark(service: string | null, location: string | null): string {
 //      Datenloch — die geteilte Dauer eines Kollegen darf ihm nicht
 //      stillschweigend als eigene bezahlte Arbeitszeit gutgeschrieben werden.
 //
-// Der Arbeitstag wird lokal aus dem jeweils verwendeten Start abgeleitet
-// (timestamptz ist UTC).
-function mapEntry(row: TimesheetAssignmentRow): TimesheetEntry | null {
+// Arbeitstag und Uhrzeiten werden in der FIRMEN-Zeitzone aus dem jeweils
+// verwendeten Start/Ende abgeleitet (timestamptz ist UTC) — dieselben Helfer
+// wie im Sitzungspfad, damit das Ergebnis nicht von der Geräte-Zeitzone abhängt.
+function mapEntry(row: TimesheetAssignmentRow, timeZone: string): TimesheetEntry | null {
   const hasOwnTimes = !!row.employee_started_at && !!row.employee_completed_at;
 
   let startIso: string;
@@ -180,21 +190,23 @@ function mapEntry(row: TimesheetAssignmentRow): TimesheetEntry | null {
   if (hasOwnTimes) {
     startIso = row.employee_started_at!;
     endIso = row.employee_completed_at!;
-  } else if (isLegacyJob(row.j.completed_at)) {
+  } else if (row.j.started_at && row.j.completed_at && isLegacyJob(row.j.completed_at)) {
     startIso = row.j.started_at;
     endIso = row.j.completed_at;
   } else {
     return null;
   }
 
-  const startedAt = new Date(startIso);
+  const startInstant = Date.parse(startIso);
+  const endInstant = Date.parse(endIso);
   const durationMinutes = diffInMinutes(startIso, endIso);
 
   return {
     jobId: row.j.id,
-    date: formatDateISO(startedAt) ?? startIso.slice(0, 10),
-    beginLabel: formatTimeHHmm(startedAt) ?? "--:--",
-    endLabel: formatTimeHHmm(new Date(endIso)) ?? "--:--",
+    date: Number.isFinite(startInstant)
+      ? companyDateKey(startInstant, timeZone) : startIso.slice(0, 10),
+    beginLabel: Number.isFinite(startInstant) ? companyTimeLabel(startInstant, timeZone) : "--:--",
+    endLabel: Number.isFinite(endInstant) ? companyTimeLabel(endInstant, timeZone) : "--:--",
     durationMinutes,
     durationLabel: formatDurationHm(durationMinutes),
     customerName: row.j.customer_name,
@@ -230,9 +242,10 @@ const GAP_LABEL_KEYS: Record<"no_time" | "start_only" | "end_only", string> = {
  * verhindert Regel 3.
  */
 function mapGap(
-  row: TimesheetAssignmentRow,
+  row: CompletedLegacyRow,
   employeeId: string,
   employeeName: string,
+  timeZone: string,
 ): TimesheetGap | null {
   const hasStart = !!row.employee_started_at;
   const hasEnd = !!row.employee_completed_at;
@@ -248,7 +261,7 @@ function mapGap(
       ? "end_only"
       : "no_time";
 
-  const startedAt = new Date(row.j.started_at);
+  const startInstant = Date.parse(row.j.started_at);
 
   return {
     assignmentId: row.id,
@@ -257,7 +270,8 @@ function mapGap(
     jobId: row.j.id,
     customerName: row.j.customer_name,
     remark: buildRemark(row.j.service_name, row.j.location_address),
-    date: formatDateISO(startedAt) ?? row.j.started_at.slice(0, 10),
+    date: Number.isFinite(startInstant)
+      ? companyDateKey(startInstant, timeZone) : row.j.started_at.slice(0, 10),
     employeeStartedAt: row.employee_started_at,
     employeeCompletedAt: row.employee_completed_at,
     sharedStartedAt: row.j.started_at,
@@ -275,20 +289,13 @@ function mapGap(
  *  - job_assignments.employee_id = der gewählte Mitarbeiter — indiziert über
  *    idx_job_assignments_employee (employee_id, job_id), Migration
  *    20260725000000. Kein neuer Index nötig.
- *  - j.status = 'completed'
  *  - j.job_type = 'single' (schließt Recurring-Parent-Regeln aus; konkrete
  *    Occurrences sind selbst 'single')
- *  - j.started_at / j.completed_at vorhanden
- *  - Arbeitstag (j.started_at, lokal) im gewählten Monat — bewusst weiterhin
- *    über die GETEILTE Job-Uhr eingegrenzt, nicht über employee_started_at:
- *    ein Datumsbereich über zwei mögliche Spalten (eigene ODER geteilte Zeit)
- *    ließe sich nicht als einzelner Index-Scan ausdrücken, und j.started_at
- *    ist für jeden Eintrag in diesem Filter ohnehin vorhanden (siehe oben).
- *    In der ganz seltenen Randlage, in der ein Mitarbeiter über Mitternacht
- *    hinweg arbeitet, kann der individuelle Kalendertag (unten aus
- *    employee_started_at abgeleitet) dadurch theoretisch einen Tag vom
- *    Monatsfilter abweichen — für ein Reinigungs-Business ohne Nachtschicht-
- *    Betrieb kein relevanter Fall.
+ *  - Legacy, eigenes vollständiges Zeitpaar: eigener Start im gewählten
+ *    Monat der FIRMEN-Zeitzone, unabhängig vom Auftragsstatus (C1-Fix).
+ *  - Legacy ohne eigenes Paar: j.status = 'completed', geteilte Uhr
+ *    vollständig, j.started_at im Firmen-Monat (Fallback bzw. Lücke).
+ *  - Sitzungen: siehe unten (Firmen-Monat, wirksame Sitzungen).
  *
  * DAUER PRO ZEILE (Phase 2, Worked Time, siehe mapEntry + PHASE1_CUTOFF_ISO):
  * individuelle Zeit (employee_started_at/employee_completed_at), wenn BEIDE
@@ -338,28 +345,68 @@ export async function getTimesheet(params: {
   const { companyName, employeeId, employeeName, year, month } = params;
   const companyTimezone = validCompanyTimeZone(params.companyTimezone);
 
-  // Lokale Monatsgrenzen → als ISO (UTC) an die Query. So werden Jobs anhand
-  // ihres lokalen Start-Zeitpunkts dem richtigen Monat zugeordnet.
+  // Monatsgrenzen in der FIRMEN-Zeitzone (dieselben wie im Sitzungspfad
+  // unten) — vorher Geräte-Zeitzone: ein Gerät in UTC oder UTC+3 konnte
+  // denselben Alt-Eintrag einem anderen Tag (Randfall: Monat) zuordnen.
+  // `monthStart` bleibt nur als Kalenderdatum für Label/Abwesenheits-Keys:
+  // lokal konstruiert und lokal formatiert, also geräteunabhängig.
   const monthStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
-  const nextMonthStart = new Date(year, month, 1, 0, 0, 0, 0);
+  const bounds = companyMonthBounds(year, month, companyTimezone);
+  const boundsStartIso = new Date(bounds.start).toISOString();
+  const boundsEndIso = new Date(bounds.end).toISOString();
 
-  const { data, error } = await supabase
-    .from("job_assignments")
-    .select(`id,employee_started_at,employee_completed_at` + JOB_EMBED)
-    .eq("employee_id", employeeId)
-    .eq("time_tracking_mode", "legacy")
-    .eq("j.status", "completed")
-    .eq("j.job_type", "single")
-    .not("j.started_at", "is", null)
-    .not("j.completed_at", "is", null)
-    .gte("j.started_at", monthStart.toISOString())
-    .lt("j.started_at", nextMonthStart.toISOString());
+  // ZWEI Abfragen für Legacy-Zuweisungen (C1-Fix):
+  //
+  //  1. EIGENES vollständiges Zeitpaar — unabhängig vom Auftragsstatus. Ein
+  //     Mitarbeiter, der selbst gestartet UND abgeschlossen hat, hat diese
+  //     Zeit gearbeitet, auch wenn der Auftrag wegen eines nie gestarteten
+  //     Kollegen noch `in_progress` steht (maybe_complete_job wartet auf
+  //     alle lebenden Zuweisungen). Vorher verlangte die Abfrage
+  //     j.status='completed' und ließ solche Zeiten STILL fallen (kein
+  //     Eintrag, kein Hinweis). Monatszuordnung über den EIGENEN Start —
+  //     derselbe Wert, aus dem mapEntry das Datum ableitet.
+  //  2. Zeilen OHNE eigenes Paar an abgeschlossenen Aufträgen — unverändert
+  //     über die geteilte Uhr eingegrenzt: liefert den Vor-Phase-1-Fallback
+  //     bzw. die Korrektur-Hinweise (mapGap). Zeilen MIT eigenem Paar werden
+  //     hier verworfen, sie gehören ausschließlich Abfrage 1 — so kann
+  //     derselbe Auftrag nie doppelt oder in zwei Monaten erscheinen.
+  const [{ data: ownData, error: ownError }, { data, error }] = await Promise.all([
+    supabase
+      .from("job_assignments")
+      .select(`id,employee_started_at,employee_completed_at` + JOB_EMBED)
+      .eq("employee_id", employeeId)
+      .eq("time_tracking_mode", "legacy")
+      .eq("j.job_type", "single")
+      .not("employee_started_at", "is", null)
+      .not("employee_completed_at", "is", null)
+      .gte("employee_started_at", boundsStartIso)
+      .lt("employee_started_at", boundsEndIso),
+    supabase
+      .from("job_assignments")
+      .select(`id,employee_started_at,employee_completed_at` + JOB_EMBED)
+      .eq("employee_id", employeeId)
+      .eq("time_tracking_mode", "legacy")
+      .eq("j.status", "completed")
+      .eq("j.job_type", "single")
+      .not("j.started_at", "is", null)
+      .not("j.completed_at", "is", null)
+      .gte("j.started_at", boundsStartIso)
+      .lt("j.started_at", boundsEndIso),
+  ]);
 
+  if (ownError) {
+    throw ownError;
+  }
   if (error) {
     throw error;
   }
 
-  const rows = (data ?? []) as unknown as TimesheetAssignmentRow[];
+  const hasOwnPair = (row: TimesheetAssignmentRow) =>
+    !!row.employee_started_at && !!row.employee_completed_at;
+  const ownRows = (ownData ?? []) as unknown as TimesheetAssignmentRow[];
+  const sharedClockRows = ((data ?? []) as unknown as CompletedLegacyRow[])
+    .filter((row) => !hasOwnPair(row));
+  const rows: TimesheetAssignmentRow[] = [...ownRows, ...sharedClockRows];
 
   // mapEntry liefert null für Zeilen ohne belastbare Dauer (Regel 3, siehe
   // oben) — diese werden weiterhin NICHT als 0:00-Zeile gezeigt. Neu (Phase B1):
@@ -370,7 +417,7 @@ export async function getTimesheet(params: {
   // Client-seitige Sortierung nach der individuellen Zeitquelle —
   // "YYYY-MM-DD" + "HH:mm" ist lexikographisch chronologisch sortierbar.
   const legacyEntries = rows
-    .map((row) => mapEntry(row))
+    .map((row) => mapEntry(row, companyTimezone))
     .filter((entry): entry is TimesheetEntry => entry !== null)
     .sort((a, b) =>
       a.date + a.beginLabel < b.date + b.beginLabel
@@ -380,15 +427,16 @@ export async function getTimesheet(params: {
           : 0,
     );
 
-  const legacyGaps = rows
-    .map((row) => mapGap(row, employeeId, employeeName))
+  // Hinweise nur aus abgeschlossenen Aufträgen (Abfrage 2) — an laufenden
+  // Aufträgen ist ein fehlendes Ende der Normalzustand, keine Lücke.
+  const legacyGaps = sharedClockRows
+    .map((row) => mapGap(row, employeeId, employeeName, companyTimezone))
     .filter((gap): gap is TimesheetGap => gap !== null)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
   // Session discovery uses actual closed work intervals in the company's
   // local reporting month. Completion-in-month also finds damaged assignments
   // with no sessions, so they become gaps instead of silently vanishing.
-  const bounds = companyMonthBounds(year, month, companyTimezone);
   const [{ data: overlappingSessions, error: overlapError }, { data: completedInMonth, error: completionError }] = await Promise.all([
     supabase.from("work_sessions").select("job_assignment_id")
       .eq("employee_id", employeeId).not("ended_at", "is", null)

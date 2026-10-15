@@ -48,7 +48,7 @@ export function companyDateKey(instant: number, timeZone: string): string {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-function companyTimeLabel(instant: number, timeZone: string): string {
+export function companyTimeLabel(instant: number, timeZone: string): string {
   const parts = partsAt(instant, timeZone);
   return `${parts.hour}:${parts.minute}`;
 }
@@ -134,9 +134,18 @@ export function accountSessionAssignment(
   let previousEnd = -Infinity;
   let valid = true;
   let knownMs = 0;
-  for (const session of ordered) {
+  for (let index = 0; index < ordered.length; index++) {
+    const session = ordered[index];
     const start = Date.parse(session.started_at);
     const end = session.ended_at ? Date.parse(session.ended_at) : NaN;
+    // Laufende Arbeit (Start → Pause → Fortsetzen, letzte Sitzung noch offen)
+    // ist kein Widerspruch, solange die Zuweisung nicht abgeschlossen ist: die
+    // offene Sitzung zählt weder zur Summe noch macht sie die Zeile ungültig.
+    // Eine offene Sitzung an einer ABGESCHLOSSENEN Zuweisung bleibt ungültig.
+    if (!session.ended_at && index === ordered.length - 1 && !assignment.employeeCompletedAt &&
+      session.job_assignment_id === assignment.id && Number.isFinite(start) && start >= previousEnd) {
+      continue;
+    }
     if (session.job_assignment_id !== assignment.id || !Number.isFinite(start) || !Number.isFinite(end) ||
       end <= start || start < previousEnd) {
       valid = false;
@@ -190,7 +199,11 @@ export function accountSessionAssignment(
   const workedMinutesByDay = roundedMinutesByDay(byDay, "workedMs");
   const interruptedMinutesByDay = roundedMinutesByDay(byDay, "interruptedMs");
   const entries: TimesheetEntry[] = [...byDay.entries()]
-    .filter(([date, day]) => date.startsWith(prefix) && day.workedMs > 0)
+    // Nach dem Runden: ein Tagesanteil von wenigen Sekunden (z. B. Ende kurz
+    // nach Mitternacht am Monatsersten) ergibt 0 Minuten und erzeugt keine
+    // eigene Zeile — sonst zählte er im Folgemonat als zusätzlicher Auftrag.
+    .filter(([date, day]) => date.startsWith(prefix) && day.workedMs > 0 &&
+      workedMinutesByDay.get(date)! > 0)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, day]) => {
       const durationMinutes = workedMinutesByDay.get(date)!;
