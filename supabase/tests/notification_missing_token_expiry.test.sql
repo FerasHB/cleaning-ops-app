@@ -280,7 +280,7 @@ insert into _r values ('9c','Grants: claim/complete nur service_role, update_my_
   'false|false|true|true',
   concat_ws('|',
     has_function_privilege('authenticated','public.claim_notification_deliveries(uuid,int,int)','execute')::text,
-    has_function_privilege('authenticated','public.complete_notification_delivery(uuid,text,text,int)','execute')::text,
+    has_function_privilege('authenticated','public.complete_notification_delivery(uuid,text,text,int,text,bytea)','execute')::text,
     has_function_privilege('authenticated','public.update_my_push_token(text,integer,text)','execute')::text,
     has_function_privilege('service_role','public.claim_notification_deliveries(uuid,int,int)','execute')::text));
 
