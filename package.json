@@ -9,6 +9,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "ota:production": "env -u APP_VARIANT TASKOPS_ENV_GUARD=1 eas update --channel production --environment production",
+    "ota:staging": "env APP_VARIANT=development TASKOPS_ENV_GUARD=1 eas update --channel staging --environment development",
     "test:recurring-occurrence": "node scripts/verify-recurring-occurrence-display.mjs",
     "test:timesheet-company": "node --experimental-strip-types scripts/check-timesheet-company-name.mjs",
     "test:session-accounting": "node --experimental-strip-types --test scripts/check-session-accounting.mjs",

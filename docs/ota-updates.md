@@ -15,37 +15,55 @@ die **Fingerprint-Runtime** (Bundle-ID/Schema/Name unterscheiden sich, daher
 andere Runtime). Ein Update erreicht nur Builds mit exakt gleichem Kanal UND
 gleicher Runtime.
 
-## Produktions-Update veröffentlichen — Pflichtbefehl
+## Updates veröffentlichen — nur über die npm-Skripte
 
 ```bash
-eas update --channel production --environment production --message "..."
+# 1. Immer zuerst Staging
+npm run ota:staging -- --message "..."
+
+# 2. Danach Produktion — nur von sauberem, aktuellem main
+npm run ota:production -- --message "..."
 ```
 
-- **Nie ohne `--environment production` veröffentlichen.** Nur mit dem Flag
-  lädt eas-cli die Variablen der EAS-Umgebung `production` und setzt
-  `EXPO_NO_DOTENV=1` — lokale `.env`/`.env.local` werden dann ignoriert.
+Die Skripte (`package.json`) setzen alles Nötige selbst:
+
+| Skript | `APP_VARIANT` | Kanal | EAS-Umgebung | Backend |
+|---|---|---|---|---|
+| `ota:production` | entfernt (`env -u`) | `production` | `production` | Produktion |
+| `ota:staging` | `development` | `staging` | `development` | Staging |
+
+Weitere `eas update`-Argumente nach `--` anhängen (z. B.
+`--platform ios`, `--rollout-percentage 10`). Rücknahme über
+`eas update:rollback`.
+
+Warum keine rohen `eas update`-Befehle:
+
+- Nur mit `--environment` lädt eas-cli die Variablen der EAS-Umgebung und
+  setzt `EXPO_NO_DOTENV=1` — lokale `.env`/`.env.local` werden ignoriert.
   Ohne das Flag liest der Export die lokalen Dateien, und `.env.local` zeigt
-  lokal auf **Staging**: das Produktions-Update würde gegen die
-  Staging-Datenbank laufen.
-- `APP_VARIANT` darf in der Shell **nicht** gesetzt sein (sonst entsteht ein
-  Update mit Staging-Identität und anderer Runtime, das kein
-  Produktions-Build annimmt).
-- Nur von einem sauberen, aktuellen `main` veröffentlichen.
-- **Zuerst auf Staging testen** (`APP_VARIANT` ist keine EAS-Variable, es kommt
-  aus der Shell):
-  `APP_VARIANT=development eas update --channel staging --environment development --message "..."`,
-  dann auf einem `preview-staging`-Gerät prüfen.
-- Optional schrittweise ausrollen (`--rollout-percentage`), Rücknahme über
-  `eas update:rollback`.
+  lokal auf **Staging**: ein Produktions-Update liefe gegen die
+  Staging-Datenbank.
+- `APP_VARIANT` ist keine EAS-Variable, sie kommt aus der Shell. Bleibt sie
+  beim Produktions-Publish versehentlich `development`, entsteht ein Update mit
+  Staging-Identität.
+- Beide Skripte setzen `TASKOPS_ENV_GUARD=1`: `app.config.js` bricht dann ab,
+  wenn Variante und Supabase-Projekt nicht zusammenpassen (Produktion ⇒ nie
+  Staging, Staging ⇒ nie Produktion). Derselbe Guard greift automatisch in
+  jedem EAS-Build (`EAS_BUILD=true`). Lokale Entwicklung ist nicht betroffen.
 
 ## Was per OTA geht — und was nicht
 
 OTA nur für kompatible JS-/TS-/Asset-Änderungen. **Neuer nativer Build nötig**
 bei: Expo-SDK-/React-Native-Upgrade, neuem/aktualisiertem nativen Modul,
 Config-Plugins, Berechtigungen/`infoPlist`, Icon/Splash, Schema/Bundle-ID,
-`google-services.json` — und bei **jeder Änderung an `eas.json`** (die Datei
-geht in den Fingerprint ein und ändert die Runtime aller Varianten).
-Weicht der Fingerprint ab, erreicht ein Update keinen bestehenden Build.
+`google-services.json`.
+
+**Fingerprint beachten:** Die Runtime wird aus nativen Eingaben berechnet —
+dazu gehören hier auch `eas.json` und die `scripts` in `package.json`. Jede
+Änderung daran ergibt eine neue Runtime für alle Varianten. Weicht der
+Fingerprint ab, erreicht ein Update keinen bestehenden Build; dann ist ein
+neuer nativer Build nötig. `eas update` warnt, wenn es für die berechnete
+Runtime keinen passenden Build gibt — diese Warnung nie ignorieren.
 
 Zusätzlich beachten:
 
@@ -63,3 +81,7 @@ Zusätzlich beachten:
   gebaut. Das lässt sich nachträglich nicht ändern.
 - Erst der nächste Produktions-Build mit dieser Konfiguration (1.0.1) und
   spätere Builds mit identischem Fingerprint empfangen Updates.
+- Die bestehenden Staging-Builds (`preview-staging`, Stand Oktober 2026)
+  haben noch die alte Runtime. Updates, die mit dieser Konfiguration
+  veröffentlicht werden, erreichen sie **nicht** — vor dem nächsten
+  Staging-OTA-Test einen neuen `preview-staging`-Build erstellen.

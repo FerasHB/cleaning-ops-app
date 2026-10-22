@@ -24,7 +24,41 @@
 const IS_DEV = process.env.APP_VARIANT === "development";
 const EAS_UPDATE_URL = "https://u.expo.dev/e746276f-fbd7-49bd-aab6-dc3176e7661a";
 
-module.exports = ({ config }) => ({
+// Supabase-Projekt-Refs (öffentlich, stehen ohnehin in jeder App-URL).
+const PRODUCTION_SUPABASE_REF = "ivzsbspopudqgobunsdv";
+const STAGING_SUPABASE_REF = "legzogskvcmicdgowyax";
+
+// Umgebungs-Guard: Variante und Backend müssen zusammenpassen (Regel aus
+// CLAUDE.md: Dev-Schema ⇒ Staging, Produktion ⇒ Produktions-Backend). Greift
+// nur im EAS-Build (EAS_BUILD=true) und in den OTA-Skripten
+// (TASKOPS_ENV_GUARD=1, package.json ota:*) — lokale Entwicklung bleibt
+// unberührt, dort überschreibt .env.local bewusst auf Staging. Ein
+// unbekanntes oder fehlendes Backend wird hier nicht bewertet.
+function assertBackendMatchesVariant() {
+  const active =
+    process.env.EAS_BUILD === "true" || process.env.TASKOPS_ENV_GUARD === "1";
+  if (!active) return;
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+  const forbiddenRef = IS_DEV ? PRODUCTION_SUPABASE_REF : STAGING_SUPABASE_REF;
+  if (url.includes(forbiddenRef)) {
+    throw new Error(
+      IS_DEV
+        ? "[env-guard] Development-/Staging-Variante (APP_VARIANT=development) " +
+          "zeigt auf das PRODUKTIONS-Supabase-Projekt. Abbruch — Dev-Schema-Builds " +
+          "und Staging-Updates müssen gegen Staging laufen (EAS-Umgebung development)."
+        : "[env-guard] Produktions-Variante (APP_VARIANT nicht gesetzt) zeigt auf das " +
+          "STAGING-Supabase-Projekt. Abbruch — Produktions-Builds/-Updates nur mit " +
+          "EAS-Umgebung production (--environment production, ohne .env.local)."
+    );
+  }
+}
+
+module.exports = ({ config }) => {
+  assertBackendMatchesVariant();
+  return buildConfig(config);
+};
+
+const buildConfig = (config) => ({
   ...config,
 
   // Klar unterscheidbar im Homescreen und im App-Switcher.
