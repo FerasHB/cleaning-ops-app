@@ -58,12 +58,27 @@ bei: Expo-SDK-/React-Native-Upgrade, neuem/aktualisiertem nativen Modul,
 Config-Plugins, Berechtigungen/`infoPlist`, Icon/Splash, Schema/Bundle-ID,
 `google-services.json`.
 
-**Fingerprint beachten:** Die Runtime wird aus nativen Eingaben berechnet —
-dazu gehören hier auch `eas.json` und die `scripts` in `package.json`. Jede
-Änderung daran ergibt eine neue Runtime für alle Varianten. Weicht der
-Fingerprint ab, erreicht ein Update keinen bestehenden Build; dann ist ein
-neuer nativer Build nötig. `eas update` warnt, wenn es für die berechnete
-Runtime keinen passenden Build gibt — diese Warnung nie ignorieren.
+**Fingerprint beachten:** Die Runtime wird aus den nativen Eingaben
+berechnet. `fingerprint.config.js` nimmt genau zwei Dinge bewusst heraus:
+
+- **`package.json`-`scripts`** (`SourceSkips.PackageJsonScriptsAll`) — reine
+  Skript-Änderungen brauchen **keine** neue Runtime. Abhängigkeiten und alle
+  anderen `package.json`-Felder zählen weiter.
+- **`eas.json` → `build.<profil>.channel`** — reine Kanal-Änderungen brauchen
+  **keine** neue Runtime. Der Rest von `eas.json` (z. B. `env`,
+  `environment`, `buildConfiguration`, `gradleCommand`, `buildType`) bleibt im
+  Fingerprint, weil er die native Ausgabe beeinflussen kann.
+
+Alle anderen nativen Änderungen (siehe oben, inkl. `app.json`/`app.config.js`
+und nicht-Kanal-Felder in `eas.json`) ergeben weiterhin eine neue Runtime →
+neuer nativer Build. Weicht der Fingerprint ab, erreicht ein Update keinen
+bestehenden Build. `eas update` warnt, wenn es für die berechnete Runtime
+keinen passenden Build gibt — diese Warnung nie ignorieren.
+
+**`fingerprint.config.js` nicht leichtfertig lockern.** Jede weitere
+Ausnahme kann ein JS-Bundle auf eine inkompatible Binary schicken (Absturz
+beim Start). Eine Änderung an der Datei ändert selbst die Runtime aller
+Varianten — also nur zusammen mit einem neuen nativen Build.
 
 Zusätzlich beachten:
 
