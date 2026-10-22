@@ -17,12 +17,12 @@
 // Die Variante wird AUSSCHLIESSLICH über APP_VARIANT gesteuert, gesetzt im
 // EAS-Build-Profil "development" (eas.json) und in `npm start` (damit auch
 // das Metro-Manifest des Dev-Clients die Variante kennt). Ohne die Variable
-// bleibt alles exakt wie bisher — preview und production sind damit
-// unverändert.
+// gelten Produktions-Identität und -Schema (preview und production).
+// EAS Update ist für beide Varianten aktiv, siehe unten.
 // ─────────────────────────────────────────────────────────────────
 
 const IS_DEV = process.env.APP_VARIANT === "development";
-const STAGING_UPDATE_URL = "https://u.expo.dev/e746276f-fbd7-49bd-aab6-dc3176e7661a";
+const EAS_UPDATE_URL = "https://u.expo.dev/e746276f-fbd7-49bd-aab6-dc3176e7661a";
 
 module.exports = ({ config }) => ({
   ...config,
@@ -40,12 +40,14 @@ module.exports = ({ config }) => ({
   // notfalls die Dev-Client-App direkt öffnen statt den QR-Code zu scannen.
   scheme: IS_DEV ? "taskopsmanagerdev" : config.scheme,
 
-  // Only the development/Staging variant opts in to EAS Update. Production
-  // keeps its existing native update configuration and runtime unchanged.
-  ...(IS_DEV && {
-    updates: { ...config.updates, url: STAGING_UPDATE_URL },
-    runtimeVersion: { policy: "fingerprint" },
-  }),
+  // EAS Update für BEIDE Varianten (gleiches EAS-Projekt, gleiche URL).
+  // Getrennt werden Staging und Produktion über den Build-Kanal (eas.json:
+  // preview-staging → "staging", production → "production") und über die
+  // Fingerprint-Runtime (Bundle-ID/Schema/Name unterscheiden sich → andere
+  // Runtime). Produktions-OTA nur mit `--environment production`
+  // veröffentlichen — siehe docs/ota-updates.md.
+  updates: { ...config.updates, url: EAS_UPDATE_URL },
+  runtimeVersion: { policy: "fingerprint" },
 
   ios: {
     ...config.ios,
