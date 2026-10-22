@@ -437,6 +437,12 @@ verify_jwt = false
 import_map = "./functions/dispatch-notifications/deno.json"
 entrypoint = "./functions/dispatch-notifications/index.ts"
 
+[functions.poll-push-receipts]
+enabled = true
+verify_jwt = false
+import_map = "./functions/poll-push-receipts/deno.json"
+entrypoint = "./functions/poll-push-receipts/index.ts"
+
 [functions.delete-account]
 enabled = true
 verify_jwt = false

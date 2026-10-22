@@ -480,6 +480,9 @@ export async function handleRequest(req: Request): Promise<Response> {
       }
 
       // Jedes Ticket EINZELN auswerten.
+      // SHA-256 genau des Tokens, an den gesendet wurde (kein Klartext in der DB).
+      const tokenHashes = await Promise.all(sendable.map((d) => sha256Hex(d.expo_push_token ?? "")));
+
       for (let i = 0; i < sendable.length; i++) {
         const d = sendable[i];
         const ticket = tickets[i];
@@ -491,7 +494,13 @@ export async function handleRequest(req: Request): Promise<Response> {
         }
 
         if (ticket.status === "ok") {
-          await markDelivery(adminClient, d.delivery_id, "sent");
+          // F2: Ticket-ID + SHA-256 des verwendeten Tokens für die spätere
+          // Receipt-Prüfung (poll-push-receipts). Ohne Ticket-ID bleibt die
+          // Zeile wie bisher ohne Receipt-Zustand.
+          await markDelivery(adminClient, d.delivery_id, "sent", undefined, {
+            ticketId: typeof ticket.id === "string" ? ticket.id : null,
+            tokenSha256Hex: tokenHashes[i],
+          });
           sent++;
           continue;
         }
@@ -499,12 +508,9 @@ export async function handleRequest(req: Request): Promise<Response> {
         // status === 'error'
         const reason = ticket.details?.error ?? ticket.message ?? "unknown";
         if (ticket.details?.error === "DeviceNotRegistered") {
-          // Token säubern (kein erneuter Versuch an dieses Gerät).
-          try {
-            await adminClient.from("profiles").update({ expo_push_token: null }).eq("id", d.recipient_id);
-          } catch {
-            // best effort
-          }
+          // Token säubern — NUR wenn noch derselbe Token hinterlegt ist
+          // (F2): ein inzwischen neu registrierter Token bleibt erhalten.
+          await clearPushTokenIfMatches(adminClient, d.recipient_id, tokenHashes[i]);
           await markDelivery(adminClient, d.delivery_id, "permanent_fail", reason);
           failed++;
         } else {
@@ -532,19 +538,72 @@ if (import.meta.main) {
 
 // Ruft die Zustands-RPC auf und gibt den resultierenden Status zurück
 // ('sent' | 'failed' | 'pending'). Fehler hier dürfen den Lauf nicht abbrechen.
+// SHA-256 (Hex) eines Tokens — identisch zu extensions.digest(token, 'sha256')
+// in Postgres (UTF-8-Bytes).
+export async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// bytea-Literal für PostgREST-RPC-Parameter.
+export function byteaHex(hex: string): string {
+  return `\\x${hex}`;
+}
+
+type ReceiptMeta = { ticketId: string | null; tokenSha256Hex: string };
+
+// Parameter für complete_notification_delivery. Receipt-Felder NUR bei 'sent'
+// mit Ticket-ID — alle anderen Aufrufe bleiben byte-identisch zum Vorstand.
+export function completeDeliveryParams(
+  deliveryId: string,
+  outcome: "sent" | "retry" | "permanent_fail" | "missing_token",
+  error?: string,
+  receipt?: ReceiptMeta,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {
+    delivery_id_input: deliveryId,
+    outcome,
+    error_input: error ?? null,
+    max_attempts: MAX_ATTEMPTS,
+  };
+  if (outcome === "sent" && receipt?.ticketId && receipt.tokenSha256Hex) {
+    params.expo_ticket_id_input = receipt.ticketId;
+    params.push_token_sha256_input = byteaHex(receipt.tokenSha256Hex);
+  }
+  return params;
+}
+
+async function clearPushTokenIfMatches(
+  adminClient: SupabaseClient,
+  recipientId: string,
+  tokenSha256Hex: string,
+): Promise<void> {
+  try {
+    const { error } = await adminClient.rpc("clear_push_token_if_matches", {
+      p_recipient_id: recipientId,
+      p_token_sha256: byteaHex(tokenSha256Hex),
+    });
+    if (error) {
+      console.error("[dispatch] clear_push_token_if_matches failed", recipientId, error.message);
+    }
+  } catch (err) {
+    // best effort — darf den Versandpfad nie abbrechen
+    console.error("[dispatch] clear_push_token_if_matches threw", recipientId, err);
+  }
+}
+
 async function markDelivery(
   adminClient: SupabaseClient,
   deliveryId: string,
   outcome: "sent" | "retry" | "permanent_fail" | "missing_token",
   error?: string,
+  receipt?: ReceiptMeta,
 ): Promise<string | null> {
   try {
-    const { data, error: rpcError } = await adminClient.rpc("complete_notification_delivery", {
-      delivery_id_input: deliveryId,
-      outcome,
-      error_input: error ?? null,
-      max_attempts: MAX_ATTEMPTS,
-    });
+    const { data, error: rpcError } = await adminClient.rpc(
+      "complete_notification_delivery",
+      completeDeliveryParams(deliveryId, outcome, error, receipt),
+    );
     if (rpcError) {
       console.error("[dispatch] complete_notification_delivery failed", deliveryId, rpcError.message);
       return null;
