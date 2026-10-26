@@ -47,14 +47,37 @@ selbst (`verify_jwt = false` in `config.toml`) und akzeptiert **keine** User-ID
 aus dem Request-Body — gelöscht wird ausschließlich die Identität aus der
 Session (`getUser()`).
 
-## Schutz „letzter Admin"
+## Letzter Admin: Konto + Firma löschen (Migration `20261026000000`)
 
-Ist der Aufrufer der **einzige aktive Admin** seiner Firma, wird die Löschung mit
-HTTP 409 / `code: "last_admin"` abgelehnt (die App zeigt einen erklärenden
-Hinweis). Er muss zuerst die Firma auflösen bzw. einen weiteren aktiven Admin
-haben. Existiert ein weiterer aktiver Admin, wird nur das anfragende Konto
-gelöscht; die Firma bleibt unberührt. Mitarbeiter (`role = 'employee'`) können
-sich jederzeit selbst löschen.
+Ist der Aufrufer der **einzige aktive Admin** seiner Firma, gibt es zwei Fälle:
+
+- **Ohne Bestätigung** (alter Client oder Body `{}`): HTTP 409 / `code: "last_admin"`,
+  es wird **nichts** gelöscht. Die Meldung verweist auf die aktuelle App-Version.
+- **Mit Bestätigung** `{ "confirmCompanyDeletion": true, "confirmCompanyId": "<eigene Firma>" }`
+  (die App sendet das erst nach zwei Pflicht-Checkboxen + Dialog mit Firmennamen):
+  die Function ruft `public.purge_company_for_last_admin(p_caller, p_confirm_company_id)`
+  (nur `service_role`) mit der **Session-Identität** auf. Die RPC prüft erneut
+  Rolle, `is_active`, Firma == Bestätigung (`company_mismatch` sonst) und
+  „wirklich letzter Admin" (`not_last_admin` sonst) und löscht in **einer**
+  Transaktion: Arbeitszeit (Sessions/Korrekturen/Receipts), Aufträge mit allen
+  Kindern, Abwesenheiten/AU-Nachweise/Urlaub, Outbox/Deliveries, die Firma und
+  **alle Konten der Firma** (`auth.users` → `profiles`). Danach entfernt die
+  Function die Storage-Dateien (`job-photos/<company_id>/…`, gemeldete Pfade +
+  Präfix-Listing). Antwort: `{ success, companyDeleted: true, storageCleanup: "ok" | "partial" }`.
+  `partial` heißt: DB ist gelöscht, Dateireste im Bucket → Log
+  `delete-account: storage cleanup incomplete` mit `companyId`, manuell nachräumen.
+
+Existiert ein weiterer aktiver Admin, wird nur das anfragende Konto gelöscht;
+die Firma bleibt unberührt. Mitarbeiter (`role = 'employee'`) können sich
+jederzeit selbst löschen.
+
+Namens-Snapshots: `job_assignments.employee_name_snapshot` und
+`employee_absences.employee_name_snapshot` bleiben beim normalen Löschpfad
+**bewusst** als Arbeitszeit-/Abwesenheitsnachweis erhalten
+(Aufzeichnungspflicht Gebäudereinigung); `notification_outbox.employee_name`
+wird per Trigger durch „Gelöschtes Konto" ersetzt. Die Lösch-UI sagt das so.
+
+### Normaler Pfad: Last-Admin-Reservierung
 
 Die Prüfung läuft **atomar** über die RPC `public.prepare_self_account_deletion()`
 (siehe `supabase/migrations/20260723000001_account_deletion_reservation_tokens.sql`)
