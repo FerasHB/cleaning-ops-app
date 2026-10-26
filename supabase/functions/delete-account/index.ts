@@ -30,9 +30,11 @@ const corsHeaders = {
 //
 // Letzter Admin (Store-Compliance, Migration 20261026000000): Ist der
 // Aufrufer der EINZIGE aktive Admin seiner Firma, löscht er mit seinem Konto
-// die Firma, die Firmendaten und alle Mitarbeiterkonten. Bestimmte
-// Arbeitszeit-/Beschäftigungsnachweise archiviert die RPC vorher minimal und
-// gesperrt in compliance_retention_records (Migration 20261027000000). Das passiert nur,
+// die Firma, alle Firmendaten und alle Mitarbeiterkonten. Es bleibt KEIN
+// Archiv bei NovaFlow (Migration 20261028000000): die App bietet vorher den
+// Arbeitszeit-Export (RPC get_company_worktime_export) an und lässt den Admin
+// bestätigen, dass er für seine Aufbewahrungspflichten selbst verantwortlich
+// ist. Das passiert nur,
 // wenn der Client es ausdrücklich bestätigt ({ confirmCompanyDeletion: true,
 // confirmCompanyId }) — ohne Bestätigung antwortet die Function weiterhin mit
 // 409 / last_admin. Die Firmen-ID im Body ist NUR eine Bestätigung: die RPC
@@ -323,10 +325,8 @@ Deno.serve(async (req) => {
         console.error("delete-account: storage cleanup incomplete", { companyId });
       }
 
-      const retainedRecordCount = Number(purge?.retained_record_count ?? 0);
-
       return Response.json(
-        { success: true, companyDeleted: true, storageCleanup, retainedRecordCount },
+        { success: true, companyDeleted: true, storageCleanup },
         { headers: corsHeaders },
       );
     }

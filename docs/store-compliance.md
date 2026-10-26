@@ -39,78 +39,78 @@ nicht am Backend.
 - Weg ohne App (z. B. E-Mail an die Support-Adresse) mit Bearbeitungsfrist.
 - Was gelöscht wird, was wie lange bleibt (Tabelle unten).
 
-## Verhalten der Kontolöschung
+## Verhalten der Kontolöschung (erster öffentlicher Release: Export → Bestätigen → Löschen)
 
 | Fall | Ergebnis |
 |---|---|
-| Mitarbeiter / Admin mit weiterem aktiven Admin | Login-Konto und Profil (Name, E-Mail, Telefon, Push-Token, Sprache) werden gelöscht. Die Firma besteht weiter; Aufträge, Kommentare, Fotos und Arbeitszeit-/Abwesenheitseinträge bleiben bei der Firma, die Verknüpfung zum Konto wird entfernt (`SET NULL`). In Zuweisungen/Abwesenheiten bleibt der Namens-Snapshot als Referenz der Firmen-Nachweise (siehe Annahmen unten). Der Name in `notification_outbox` wird durch „Gelöschtes Konto“ ersetzt. |
-| Letzter aktiver Admin (nach doppelter Bestätigung) | Login-Konten **aller** Firmenmitglieder, Profile, Firma, Aufträge, Kommentare, Fotos (inkl. Storage-Dateien), Benachrichtigungen und alle übrigen Firmendaten werden gelöscht; niemand hat danach Zugriff. Vorher werden minimale Arbeitszeit-/Beschäftigungsnachweise in das gesperrte Archiv `compliance_retention_records` kopiert (siehe unten). |
+| Mitarbeiter / Admin mit weiterem aktiven Admin | Login-Konto und Profil (Name, E-Mail, Telefon, Push-Token, Sprache) werden gelöscht. Die Firma (Arbeitgeber) besteht weiter; Aufträge, Kommentare, Fotos und Arbeitszeit-/Abwesenheitseinträge bleiben bei der Firma, die Verknüpfung zum Konto wird entfernt (`SET NULL`). In Zuweisungen/Abwesenheiten bleibt der Namens-Snapshot als Referenz der Firmen-Unterlagen (siehe Annahmen). Der Name in `notification_outbox` wird durch „Gelöschtes Konto“ ersetzt. |
+| Letzter aktiver Admin | 1. App erklärt: Konto **und** Firma samt Firmendaten werden dauerhaft gelöscht. 2. Neutraler Hinweis: für den Arbeitgeber können gesetzliche Aufbewahrungspflichten für Beschäftigungs-/Arbeitszeitunterlagen gelten. 3. Angebot **„Arbeitszeitnachweise herunterladen“** (PDF, zusätzlich CSV). 4. Drei Pflicht-Checkboxen (Konto, Firma, „Ich habe verstanden, dass ich für gesetzliche Aufbewahrungspflichten meiner Unternehmensunterlagen selbst verantwortlich bin.“) + Bestätigungsdialog mit Firmennamen (warnt zusätzlich, falls nicht exportiert). 5. Löschung: Login-Konten **aller** Firmenmitglieder, Profile, Firma, Aufträge, Zuweisungen, Arbeitssitzungen, Korrekturen, Abwesenheiten, Urlaubsdaten, Kommentare, Fotos (inkl. Storage), Benachrichtigungen, Einladungen/Tokens — eine DB-Transaktion + Storage-Aufräumen. |
+
+**NovaFlow behält nach der Firmenlöschung kein separates Beschäftigungs-/
+Arbeitszeitarchiv.** Das zwischenzeitlich gebaute Archiv
+(`compliance_retention_records`, Migration `20261027000000`) ist durch
+`20261028000000` ersetzt: die Purge-Funktion archiviert nicht mehr, Tabelle und
+Archiv-Funktionen werden entfernt (nur wenn leer). Das Design bleibt in der
+Git-Historie für eine spätere rechtliche Prüfung erhalten.
+
+### Arbeitszeit-Export (`get_company_worktime_export`, Migration `20261028000000`)
+
+- Aufruf nur durch **aktive Admins**, nur für die **eigene Firma** (aus dem
+  Profil, kein Parameter). Mitarbeiter, inaktive/gelöschte Konten und anon
+  werden abgelehnt.
+- Die Dateien entstehen **auf dem Gerät** (Cache), werden über den
+  Teilen-Dialog gespeichert/gesendet und danach gelöscht. Es wird keine
+  Exportdatei auf einem Server abgelegt.
+- Formate: **PDF** (lesbar, je Mitarbeiter mit Summe) und **CSV** (`;`, UTF-8
+  mit BOM, Formel-Injection-Schutz).
+
+| CSV-Spalte | Inhalt |
+|---|---|
+| `employee_name`, `employee_id` | Zuordnung zum Mitarbeiter (aktueller Name bzw. Namens-Snapshot; interne ID) |
+| `work_date` | Arbeitstag (Zeitzone der Firma) |
+| `start_local`, `end_local` | Beginn/Ende lokal (`YYYY-MM-DD HH:MM`) |
+| `duration_minutes` | Dauer in Minuten (leer bei nicht beendeter Sitzung) |
+| `record_kind` | `session` (Arbeitssitzung) oder `assignment` (Legacy-Auftragszeit) |
+| `corrected`, `correction_count`, `last_correction_origin`, `last_corrected_at` | Korrekturen der Arbeitssitzung (effektive Zeiten = letzte Korrektur) |
+| `raw_started_at`, `raw_ended_at` | Ursprünglich erfasste Zeiten der Sitzung (UTC) |
+| `started_at`, `ended_at` | Effektive Zeiten (UTC) |
+| `time_adjustment_count` | Anzahl Admin-Zeitanpassungen (Legacy) |
+| `job_id`, `assignment_id` | Interne Referenzen |
+| `timezone` | Zeitzone der Firma |
+
+**Nicht** im Export: Abwesenheiten/Krankmeldungen (Gesundheitsdaten),
+Urlaub, Notizen, Begründungstexte, Kommentare, Fotos, Kunde/Adresse/Service,
+E-Mail/Telefon, Push-Daten.
 
 ### Aussagen für die Datenschutzerklärung
 
-- Konto- und Login-Daten werden gelöscht.
-- Gewöhnliche Firmendaten werden gelöscht.
-- Bestimmte gesetzlich erforderliche Beschäftigungs- bzw. Arbeitszeitnachweise
-  können aufbewahrt werden.
-- Aufbewahrte Daten sind auf das notwendige Minimum beschränkt, gesperrt und
-  in der App nicht mehr zugänglich.
-- Die **Aufbewahrungsfrist** je Datenkategorie muss in der finalen
-  Datenschutzerklärung dokumentiert werden. Sie ist im System noch **nicht**
-  festgelegt (`retain_until = NULL`, kein automatisches Löschen).
-
-### Compliance-Archiv (`compliance_retention_records`, Migration `20261027000000`)
-
-Nur beim Löschen durch den letzten Admin. Keine Fremdschlüssel in aktive
-Tabellen, RLS ohne Policy, keine Rechte für `anon`/`authenticated` — Zugriff
-nur mit `service_role`.
-
-| `record_type` | Quelle | Aufbewahrte Felder (Payload) | Nicht übernommen |
-|---|---|---|---|
-| `work_session` | `work_sessions` | Zuweisung, Auftrag (IDs), Start, Ende | — |
-| `session_time_correction` | `session_time_corrections` | Session/Zuweisung/Auftrag (IDs), Revision, Herkunft, Roh- und effektive Zeiten/Dauern, Korrekturzeitpunkt | Begründung (Freitext), ausführender Admin |
-| `assignment_work_time` | `job_assignments` mit erfasster Arbeit + `jobs` | Auftrag-ID, geteilte Job-Uhr (Start/Ende), Mitarbeiter-Start/-Ende, Anwesenheit, Erfassungsmodus, `counts_for_timesheet`, Revision | Kunde, Adresse, Service, Notizen |
-| `time_adjustment` | `employee_time_adjustments` | Zuweisung/Auftrag (IDs), alte/neue Zeiten, Zeitpunkt | Begründung, ausführender Admin |
-| `absence` | `employee_absences` (+ `absence_evidence`) | Art (Urlaub/Krankheit), Status, Zeitraum, abgezogene Urlaubstage, Prüfzeitpunkt, Nachweis-Status | Notizen von Mitarbeiter/Admin, Dokumentpfad |
-| `vacation_ledger_entry` | `vacation_ledger` + `vacation_years` | Jahr, Buchungsart, Tage, Bezug zur Abwesenheit | Notiz, Ersteller |
-
-Gemeinsame Spalten: ehemalige Firmen-ID + Firmenname (Arbeitgeber-Referenz),
-ehemalige User-ID + Namens-Snapshot (Arbeitnehmer-Referenz), fachliches
-Datum, Archivierungszeitpunkt, `retain_until`.
-
-**Nicht** aufbewahrt: E-Mail, Telefon, Push-Token, Zugangsdaten, Sprache,
-Firmen-Kontaktdaten, Kundendaten, Kommentare, Fotos, Notizen,
-Benachrichtigungen, künftige/offene Aufträge ohne erfasste Arbeit,
-Einladungen, Caches.
-
-Spätere Löschung (nur `service_role`):
-
-- `set_compliance_retain_until(company_id, date, record_types[])` — Frist setzen,
-  sobald sie rechtlich geklärt ist.
-- `purge_expired_compliance_records()` — löscht Zeilen mit abgelaufener Frist
-  (für einen späteren Cron-Job geeignet).
-- `purge_compliance_records_for_company(company_id, record_types[])` — gezielte
-  Löschung.
+- TaskOps bietet dem Arbeitgeber vor der Firmenlöschung einen Export der
+  erfassten Arbeitszeiten an.
+- Der Arbeitgeber bleibt für seine gesetzlichen Aufbewahrungspflichten
+  verantwortlich.
+- Nach bestätigter Konto-/Firmenlöschung löscht TaskOps die Firmendaten.
+- NovaFlow hält derzeit kein separates Beschäftigungsarchiv nach Ende der
+  Firma vor.
+- Löscht sich ein einzelnes Konto, bleiben Einträge, die zur Firma gehören,
+  bei der Firma (Arbeitgeber).
 
 ### Rechtliche Grundlage und offene Annahmen (anwaltlich prüfen)
 
-- **§ 17 MiLoG** (i. V. m. § 2a SchwarzArbG, u. a. Gebäudereinigung):
-  Arbeitgeber müssen Beginn, Ende und Dauer der täglichen Arbeitszeit
-  aufzeichnen und diese Aufzeichnungen **mindestens zwei Jahre** aufbewahren.
-  Das betrifft die Arbeitszeit-Datensätze (`work_session`,
-  `assignment_work_time`, Korrekturen/Anpassungen) — nicht jedes andere
-  gespeicherte Feld.
-- Für Abwesenheiten (inkl. Krankmeldungen = Gesundheitsdaten) und
-  Urlaubsbuchungen ist offen, ob und wie lange eine Aufbewahrung erforderlich
-  ist (z. B. als lohnrelevante Unterlage). Keine Frist im System hinterlegt.
-- Ob zur Zuordnung der Name nötig ist oder eine pseudonyme Kennung genügt, ist
-  nicht entschieden. Das System speichert den Namens-Snapshot als einzige
-  menschenlesbare Zuordnung, weil die User-ID nach der Kontolöschung nicht
-  mehr auflösbar ist.
-- Verantwortlichkeit: Aufbewahrungspflichten treffen den **Arbeitgeber**
-  (die Kundenfirma). Wer nach der Firmenlöschung Auskunft/Herausgabe aus dem
-  Archiv erhält und wie, ist nicht geregelt (Auftragsverarbeitungsvertrag).
-- Ob Begründungstexte von Zeitkorrekturen für die Nachweisführung nötig sind,
-  ist offen (derzeit nicht archiviert).
+- **§ 17 MiLoG** (i. V. m. § 2a SchwarzArbG, u. a. Gebäudereinigung): der
+  **Arbeitgeber** muss Beginn, Ende und Dauer der täglichen Arbeitszeit
+  aufzeichnen und mindestens **zwei Jahre** aufbewahren. Der Export liefert
+  diese Werte; ob er die Pflicht im Einzelfall erfüllt, entscheidet der
+  Arbeitgeber.
+- NovaFlow ist für Mitarbeiter-/Arbeitszeitdaten Auftragsverarbeiter. Eine
+  eigene Aufbewahrungspflicht oder -befugnis nach Ende der Verarbeitung ist
+  nicht bestätigt — deshalb kein Archiv.
+- Ob eine Löschung **ohne** vorherigen Export (nur Hinweis + Bestätigung)
+  ausreicht, oder ob der Export verpflichtend sein sollte, ist eine
+  Produkt-/Rechtsentscheidung. Derzeit: dringend angeboten, nicht erzwungen.
+- Ob der Namens-Snapshot beim Löschen eines einzelnen Kontos bei der Firma
+  verbleiben darf, ist nicht entschieden (Arbeitgeber als Verantwortlicher).
+- Backups des Hosting-Anbieters (Supabase) können gelöschte Daten für deren
+  Backup-Frist noch enthalten — in der Datenschutzerklärung nennen.
 
 ## Native Konfiguration
 

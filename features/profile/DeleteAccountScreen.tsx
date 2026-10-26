@@ -5,11 +5,14 @@
 // Bestätigungsdialog vor der eigentlichen Löschung.
 //
 // Letzter aktiver Admin (Store-Compliance, Migrationen 20261026000000 +
-// 20261027000000): die Löschung entfernt auch die Firma, die Firmendaten und
-// alle Mitarbeiterkonten; bestimmte Arbeitszeit-/Beschäftigungsnachweise
-// werden minimal und gesperrt aufbewahrt (compliance_retention_records). Der Screen lädt dafür zuerst den Lösch-Kontext vom Server und zeigt
-// dann einen eigenen, eindeutigen Firmenlösch-Modus mit ZWEI Pflicht-
-// Checkboxen (Konto + Firma) und einem Bestätigungsdialog mit Firmennamen.
+// 20261028000000, Export → Bestätigen → Löschen): die Löschung entfernt die
+// Firma, alle Firmendaten und alle Mitarbeiterkonten; NovaFlow behält kein
+// Archiv. Vorher bietet der Screen den Arbeitszeit-Export (PDF/CSV) an, und
+// der Admin bestätigt, dass er für seine Aufbewahrungspflichten selbst
+// verantwortlich ist. Der Screen lädt dafür zuerst den Lösch-Kontext vom Server und zeigt
+// dann einen eigenen, eindeutigen Firmenlösch-Modus mit DREI Pflicht-
+// Checkboxen (Konto, Firma, Aufbewahrungspflichten) und einem
+// Bestätigungsdialog mit Firmennamen.
 //
 // Backend: services/account/deleteAccount.ts → Edge Function delete-account.
 // Nach Erfolg: lokale Caches leeren, lokal abmelden, zurück zum Login.
@@ -24,6 +27,11 @@ import {
   requestAccountDeletion,
   type AccountDeletionContext,
 } from "@/services/account/deleteAccount";
+import {
+  exportWorktimeCsv,
+  exportWorktimePdf,
+  fetchCompanyWorktimeExport,
+} from "@/services/account/worktimeExport";
 import { clearPendingJobActions } from "@/services/offline/jobs.queue";
 import { clearCachedJobs } from "@/services/offline/jobs.storage";
 import { clearCachedProfile } from "@/services/offline/profile.storage";
@@ -54,6 +62,9 @@ export default function DeleteAccountScreen() {
   const [contextError, setContextError] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [confirmedCompany, setConfirmedCompany] = useState(false);
+  const [acknowledgedRetention, setAcknowledgedRetention] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "csv" | null>(null);
+  const [exported, setExported] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const isAdmin = context?.role === "admin";
@@ -63,7 +74,31 @@ export default function DeleteAccountScreen() {
   const isCompanyDeletion = companyId !== null;
   const companyName = context?.companyName ?? "";
   const canDelete =
-    context !== null && confirmed && (!isCompanyDeletion || confirmedCompany) && !loading;
+    context !== null &&
+    confirmed &&
+    (!isCompanyDeletion || (confirmedCompany && acknowledgedRetention)) &&
+    !loading &&
+    exporting === null;
+
+  // Arbeitszeit-Export (nur Firmenlösch-Modus). Erzeugt die Datei auf dem
+  // Gerät und öffnet den Teilen-Dialog; nichts wird serverseitig abgelegt.
+  const handleExport = async (format: "pdf" | "csv") => {
+    if (exporting || loading) return;
+    setExporting(format);
+    try {
+      const rows = await fetchCompanyWorktimeExport();
+      if (format === "pdf") {
+        await exportWorktimePdf(rows, companyName);
+      } else {
+        await exportWorktimeCsv(rows, companyName);
+      }
+      setExported(true);
+    } catch {
+      Alert.alert(t("common:errors.title"), t("profile:deleteAccount.company.exportFailed"));
+    } finally {
+      setExporting(null);
+    }
+  };
 
   const loadContext = useCallback(async () => {
     setContextError(false);
@@ -84,6 +119,7 @@ export default function DeleteAccountScreen() {
   const resetAfterPathChange = (message: string) => {
     setConfirmed(false);
     setConfirmedCompany(false);
+    setAcknowledgedRetention(false);
     setContext(null);
     void loadContext();
     Alert.alert(t("profile:deleteAccount.notPossibleTitle"), message);
@@ -153,7 +189,12 @@ export default function DeleteAccountScreen() {
         ? t("profile:deleteAccount.company.confirmDialogTitle", { company: companyName })
         : t("profile:deleteAccount.confirmDialogTitle"),
       isCompanyDeletion
-        ? t("profile:deleteAccount.company.confirmDialogMessage")
+        ? [
+            t("profile:deleteAccount.company.confirmDialogMessage"),
+            exported ? null : t("profile:deleteAccount.company.notExportedWarning"),
+          ]
+            .filter(Boolean)
+            .join("\n\n")
         : t("profile:deleteAccount.confirmDialogMessage"),
       [
         { text: t("common:actions.cancel"), style: "cancel" },
@@ -272,12 +313,6 @@ export default function DeleteAccountScreen() {
                 styles={styles}
               />
               <Bullet
-                icon="archive-outline"
-                text={t("profile:deleteAccount.company.bulletRetention")}
-                theme={theme}
-                styles={styles}
-              />
-              <Bullet
                 icon="people-outline"
                 text={
                   (context?.otherMemberCount ?? 0) > 0
@@ -292,12 +327,59 @@ export default function DeleteAccountScreen() {
               />
             </Section>
 
-            <View style={styles.dangerNote}>
-              <Ionicons name="alert-circle-outline" size={18} color={theme.colors.error} />
-              <Text style={styles.dangerNoteText}>
-                {t("profile:deleteAccount.company.exportHint")}
-              </Text>
-            </View>
+            {/* ── Arbeitszeit-Export vor der Löschung ── */}
+            <Section
+              title={t("profile:deleteAccount.company.exportTitle")}
+              theme={theme}
+              styles={styles}
+            >
+              <View style={styles.exportBlock}>
+                <Text style={styles.exportText}>
+                  {t("profile:deleteAccount.company.exportText")}
+                </Text>
+                <TouchableOpacity
+                  style={styles.exportPrimary}
+                  activeOpacity={0.85}
+                  onPress={() => void handleExport("pdf")}
+                  disabled={exporting !== null || loading}
+                  accessibilityRole="button"
+                >
+                  {exporting === "pdf" ? (
+                    <ActivityIndicator size="small" color={theme.colors.onPrimary} />
+                  ) : (
+                    <>
+                      <Ionicons name="download-outline" size={18} color={theme.colors.onPrimary} />
+                      <Text style={styles.exportPrimaryText}>
+                        {t("profile:deleteAccount.company.exportPdfButton")}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.exportSecondary}
+                  activeOpacity={0.8}
+                  onPress={() => void handleExport("csv")}
+                  disabled={exporting !== null || loading}
+                  accessibilityRole="button"
+                >
+                  {exporting === "csv" ? (
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                  ) : (
+                    <Text style={styles.exportSecondaryText}>
+                      {t("profile:deleteAccount.company.exportCsvButton")}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+                {exported && (
+                  <View style={styles.exportDoneRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={theme.colors.statusCompleted} />
+                    <Text style={styles.exportDoneText}>
+                      {t("profile:deleteAccount.company.exportDone")}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </Section>
 
             <ConfirmCheckbox
               checked={confirmed}
@@ -311,6 +393,14 @@ export default function DeleteAccountScreen() {
               checked={confirmedCompany}
               onToggle={() => setConfirmedCompany((v) => !v)}
               label={t("profile:deleteAccount.company.checkboxCompanyLabel", { company: companyName })}
+              disabled={loading}
+              theme={theme}
+              styles={styles}
+            />
+            <ConfirmCheckbox
+              checked={acknowledgedRetention}
+              onToggle={() => setAcknowledgedRetention((v) => !v)}
+              label={t("profile:deleteAccount.company.acknowledgeLabel")}
               disabled={loading}
               theme={theme}
               styles={styles}
@@ -652,24 +742,60 @@ function createStyles(theme: AppTheme) {
       lineHeight: theme.typography.lineHeight.sm,
     },
 
-    // ── Danger note (Firmenlöschung)
-    dangerNote: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: theme.spacing.sm,
-      backgroundColor: theme.colors.errorContainer,
-      borderWidth: 1,
-      borderColor: theme.colors.error,
-      borderRadius: theme.radius.md,
-      padding: theme.spacing.md,
+    // ── Arbeitszeit-Export (Firmenlöschung)
+    exportBlock: {
+      paddingVertical: theme.spacing.md,
+      gap: theme.spacing.md,
     },
-    dangerNoteText: {
-      flex: 1,
+    exportText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurface,
+      lineHeight: theme.typography.lineHeight.sm,
+    },
+    exportPrimary: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      backgroundColor: theme.colors.primary,
+      borderRadius: theme.radius.md,
+      paddingVertical: theme.spacing.md,
+      paddingHorizontal: theme.spacing.md,
+      minHeight: theme.spacing.tapTarget,
+    },
+    exportPrimaryText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.onPrimary,
+      flexShrink: 1,
+      textAlign: "center",
+    },
+    exportSecondary: {
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: theme.spacing.tapTarget,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.outline,
+    },
+    exportSecondaryText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.primary,
+    },
+    exportDoneRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    exportDoneText: {
       fontSize: theme.typography.size.sm,
       fontFamily: theme.typography.family.medium,
       fontWeight: theme.typography.weight.medium,
       color: theme.colors.onSurface,
-      lineHeight: theme.typography.lineHeight.sm,
     },
 
     // ── Kontext lädt / Fehler

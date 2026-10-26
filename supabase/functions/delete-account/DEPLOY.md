@@ -11,6 +11,10 @@ werden über die bestehenden Foreign Keys aufgelöst.
 - `20260722000000_fix_job_photos_uploaded_by_on_delete.sql` +
   `20260722000001_job_photos_uploaded_by_drop_not_null.sql` — FK-Drift-Fix,
   siehe unten.
+- `20261026000000_store_compliance_account_deletion.sql`,
+  `20261027000000_compliance_retention_archive.sql` (Archiv, ersetzt) und
+  `20261028000000_export_before_company_deletion.sql` — Firmenlöschung durch
+  den letzten Admin, Export-RPC, kein Archiv.
 - `20260723000001_account_deletion_reservation_tokens.sql` — legt
   `profiles.account_deletion_token` / `account_deletion_reserved_at` an und
   die drei RPCs für den Last-Admin-Schutz (`prepare_self_account_deletion`,
@@ -58,15 +62,15 @@ Ist der Aufrufer der **einzige aktive Admin** seiner Firma, gibt es zwei Fälle:
   die Function ruft `public.purge_company_for_last_admin(p_caller, p_confirm_company_id)`
   (nur `service_role`) mit der **Session-Identität** auf. Die RPC prüft erneut
   Rolle, `is_active`, Firma == Bestätigung (`company_mismatch` sonst) und
-  „wirklich letzter Admin" (`not_last_admin` sonst). In **einer** Transaktion
-  archiviert sie zuerst minimale Arbeitszeit-/Beschäftigungsnachweise in
-  `compliance_retention_records` (Migration `20261027000000`, gesperrt, siehe
-  `docs/store-compliance.md`) und löscht dann den aktiven Mandanten:
+  „wirklich letzter Admin" (`not_last_admin` sonst) und löscht in **einer**
+  Transaktion den gesamten Mandanten — **ohne** Archiv (Migration
+  `20261028000000`; die App bietet vorher den Arbeitszeit-Export
+  `get_company_worktime_export()` an, siehe `docs/store-compliance.md`):
   Arbeitszeit-Tabellen, Aufträge mit allen Kindern, Abwesenheiten/
   AU-Nachweise/Urlaub, Kommentare, Fotos, Outbox/Deliveries, die Firma und
   **alle Konten der Firma** (`auth.users` → `profiles`). Danach entfernt die
   Function die Storage-Dateien (`job-photos/<company_id>/…`, gemeldete Pfade +
-  Präfix-Listing). Antwort: `{ success, companyDeleted: true, storageCleanup: "ok" | "partial", retainedRecordCount }`.
+  Präfix-Listing). Antwort: `{ success, companyDeleted: true, storageCleanup: "ok" | "partial" }`.
   `partial` heißt: DB ist gelöscht, Dateireste im Bucket → Log
   `delete-account: storage cleanup incomplete` mit `companyId`, manuell nachräumen.
 
