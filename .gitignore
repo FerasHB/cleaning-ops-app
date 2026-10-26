@@ -59,3 +59,13 @@ supabase/baseline/
 # output can resolve node_modules; removed in a finally block, this is
 # just a backstop for an interrupted run.
 .verify-recurring-occ-tmp-*/
+
+# Promo-Video (Remotion): Abhängigkeiten + Render-Ausgabe
+promo-video/node_modules/
+output/
+# Musik/SFX sind per `npm run audio` reproduzierbar; nur direkte Kinder von
+# audio/ – die Voice-over-WAVs in audio/vo/ bleiben bewusst versioniert.
+promo-video/public/audio/*.wav
+
+# graphify: lokal generierter Wissensgraph (nur lokal, nie committen)
+graphify-out/

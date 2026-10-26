@@ -16,6 +16,7 @@
   ],
   "exclude": [
     "node_modules",
-    "supabase/functions"
+    "supabase/functions",
+    "promo-video"
   ]
 }
