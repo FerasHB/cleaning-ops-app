@@ -58,12 +58,15 @@ Ist der Aufrufer der **einzige aktive Admin** seiner Firma, gibt es zwei Fälle:
   die Function ruft `public.purge_company_for_last_admin(p_caller, p_confirm_company_id)`
   (nur `service_role`) mit der **Session-Identität** auf. Die RPC prüft erneut
   Rolle, `is_active`, Firma == Bestätigung (`company_mismatch` sonst) und
-  „wirklich letzter Admin" (`not_last_admin` sonst) und löscht in **einer**
-  Transaktion: Arbeitszeit (Sessions/Korrekturen/Receipts), Aufträge mit allen
-  Kindern, Abwesenheiten/AU-Nachweise/Urlaub, Outbox/Deliveries, die Firma und
+  „wirklich letzter Admin" (`not_last_admin` sonst). In **einer** Transaktion
+  archiviert sie zuerst minimale Arbeitszeit-/Beschäftigungsnachweise in
+  `compliance_retention_records` (Migration `20261027000000`, gesperrt, siehe
+  `docs/store-compliance.md`) und löscht dann den aktiven Mandanten:
+  Arbeitszeit-Tabellen, Aufträge mit allen Kindern, Abwesenheiten/
+  AU-Nachweise/Urlaub, Kommentare, Fotos, Outbox/Deliveries, die Firma und
   **alle Konten der Firma** (`auth.users` → `profiles`). Danach entfernt die
   Function die Storage-Dateien (`job-photos/<company_id>/…`, gemeldete Pfade +
-  Präfix-Listing). Antwort: `{ success, companyDeleted: true, storageCleanup: "ok" | "partial" }`.
+  Präfix-Listing). Antwort: `{ success, companyDeleted: true, storageCleanup: "ok" | "partial", retainedRecordCount }`.
   `partial` heißt: DB ist gelöscht, Dateireste im Bucket → Log
   `delete-account: storage cleanup incomplete` mit `companyId`, manuell nachräumen.
 
@@ -72,10 +75,12 @@ die Firma bleibt unberührt. Mitarbeiter (`role = 'employee'`) können sich
 jederzeit selbst löschen.
 
 Namens-Snapshots: `job_assignments.employee_name_snapshot` und
-`employee_absences.employee_name_snapshot` bleiben beim normalen Löschpfad
-**bewusst** als Arbeitszeit-/Abwesenheitsnachweis erhalten
-(Aufzeichnungspflicht Gebäudereinigung); `notification_outbox.employee_name`
-wird per Trigger durch „Gelöschtes Konto" ersetzt. Die Lösch-UI sagt das so.
+`employee_absences.employee_name_snapshot` bleiben beim normalen Löschpfad als
+Referenz der Firmen-Nachweise erhalten (rechtlich zu prüfen, siehe
+`docs/store-compliance.md`); `notification_outbox.employee_name` wird per
+Trigger durch „Gelöschtes Konto" ersetzt. Die Lösch-UI formuliert neutral:
+bestimmte Beschäftigungs-/Arbeitszeitnachweise können für die gesetzlich
+erforderliche Dauer aufbewahrt werden.
 
 ### Normaler Pfad: Last-Admin-Reservierung
 

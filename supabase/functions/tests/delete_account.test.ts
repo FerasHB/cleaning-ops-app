@@ -116,6 +116,7 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit) => 
       company_id: p.company_id,
       deleted_user_ids: [args.p_caller],
       storage_paths: [`${p.company_id}/job-1/reported.jpg`],
+      retained_record_count: 3,
     });
   }
 
@@ -232,6 +233,7 @@ Deno.test("Letzter Admin mit Bestätigung: Purge mit Session-ID + Storage-Aufrä
   assertEquals(r.status, 200);
   assertEquals(r.body.companyDeleted, true);
   assertEquals(r.body.storageCleanup, "ok");
+  assertEquals(r.body.retainedRecordCount, 3);
 
   const purge = called("/rest/v1/rpc/purge_company_for_last_admin");
   assertEquals(purge.length, 1);

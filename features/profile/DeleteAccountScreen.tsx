@@ -4,9 +4,10 @@
 // versehentliche Löschung: (1) Pflicht-Checkbox „Ich verstehe …", (2) nativer
 // Bestätigungsdialog vor der eigentlichen Löschung.
 //
-// Letzter aktiver Admin (Store-Compliance, Migration 20261026000000): die
-// Löschung entfernt auch die Firma samt aller Firmendaten und Mitarbeiter-
-// konten. Der Screen lädt dafür zuerst den Lösch-Kontext vom Server und zeigt
+// Letzter aktiver Admin (Store-Compliance, Migrationen 20261026000000 +
+// 20261027000000): die Löschung entfernt auch die Firma, die Firmendaten und
+// alle Mitarbeiterkonten; bestimmte Arbeitszeit-/Beschäftigungsnachweise
+// werden minimal und gesperrt aufbewahrt (compliance_retention_records). Der Screen lädt dafür zuerst den Lösch-Kontext vom Server und zeigt
 // dann einen eigenen, eindeutigen Firmenlösch-Modus mit ZWEI Pflicht-
 // Checkboxen (Konto + Firma) und einem Bestätigungsdialog mit Firmennamen.
 //
@@ -267,6 +268,12 @@ export default function DeleteAccountScreen() {
               <Bullet
                 icon="documents-outline"
                 text={t("profile:deleteAccount.company.bulletData")}
+                theme={theme}
+                styles={styles}
+              />
+              <Bullet
+                icon="archive-outline"
+                text={t("profile:deleteAccount.company.bulletRetention")}
                 theme={theme}
                 styles={styles}
               />

@@ -66,7 +66,7 @@
     "whatHappensBullet3": "Hemen çıkış yapılır ve uygulamaya erişimini kaybedersin.",
     "remainingDataTitle": "Hangi veriler saklanır?",
     "remainingDataBullet1": "Oluşturduğun veya düzenlediğin işler, yorumlar ve fotoğraflar, operasyonel ve yasal nedenlerle firmanda saklanmaya devam eder.",
-    "remainingDataBullet2": "Hesabınızın bu kayıtlarla bağlantısı kaldırılır. İşvereniniz yasal olarak saklamak zorunda olduğu için adınız çalışma süresi ve devamsızlık kayıtlarında kalır.",
+    "remainingDataBullet2": "Belirli istihdam veya çalışma süresi kayıtları, geçerli yasal yükümlülüklerin gerektirdiği süre boyunca saklanabilir. Diğer hesap ve şirket verileri silinir.",
     "adminNote": "Şirketinizde başka aktif yöneticiler olduğu için şirket kalır. Yalnızca kendi hesabınız silinir.",
     "checkboxLabel": "Bu işlemin geri alınamaz olduğunu ve hesabımın kalıcı olarak silineceğini anlıyorum.",
     "deleteButton": "Hesabı Kalıcı Olarak Sil",
@@ -80,19 +80,20 @@
     "lastAdminChangedMessage": "Şirketteki rolünüz değişti. Lütfen gösterilen bilgileri kontrol edip tekrar onaylayın.",
     "company": {
       "heroTitle": "Hesabı ve Şirketi Kalıcı Olarak Sil",
-      "heroSubtitle": "“{{company}}” şirketinin tek aktif yöneticisisiniz. Hesabınızı silerseniz şirket ve tüm verileri de silinir. Bu işlem geri alınamaz.",
+      "heroSubtitle": "“{{company}}” şirketinin tek aktif yöneticisisiniz. Hesabınızı silerseniz şirket de silinir. Bu işlem geri alınamaz.",
       "whatHappensTitle": "Neler silinecek?",
       "bulletAccount": "Giriş hesabınız ve profiliniz.",
       "bulletCompany": "“{{company}}” şirketi ve tüm şirket verileri.",
-      "bulletData": "Şirketin tüm işleri, çalışma süreleri, devamsızlıkları, izin bakiyeleri, yorumları ve fotoğrafları.",
+      "bulletData": "Tüm işler, yorumlar, fotoğraflar ve diğer şirket verileri.",
       "bulletEmployees": "Şirketin diğer tüm hesapları (çalışanlar ve devre dışı yöneticiler): {{count}}. Erişimlerini hemen kaybederler.",
       "bulletNoEmployees": "Şirketin başka hesabı yok.",
-      "exportHint": "Hâlâ ihtiyacınız olan her şeyi (ör. çalışma çizelgeleri) önceden kaydedin. Silme işleminden sonra kopya kalmaz.",
-      "checkboxCompanyLabel": "“{{company}}” şirketinin ve tüm şirket verilerinin kalıcı olarak silineceğini anlıyorum.",
+      "exportHint": "Hâlâ ihtiyacınız olan her şeyi (ör. çalışma çizelgeleri) önceden kaydedin. Silme işleminden sonra bunlara artık erişemezsiniz.",
+      "checkboxCompanyLabel": "“{{company}}” şirketinin ve verilerinin silineceğini ve şirketin tüm hesaplarının erişimini kaybedeceğini anlıyorum.",
       "deleteButton": "Hesabı ve Şirketi Kalıcı Olarak Sil",
       "confirmDialogTitle": "“{{company}}” kalıcı olarak silinsin mi?",
-      "confirmDialogMessage": "Hesabınız, şirket, tüm şirket verileri ve tüm çalışan hesapları kalıcı olarak silinir. Bu işlem geri alınamaz.",
-      "confirmDialogConfirm": "Şirketi ve Hesabı Sil"
+      "confirmDialogMessage": "Hesabınız, şirket, şirket verileri ve tüm çalışan hesapları silinir. Belirli istihdam veya çalışma süresi kayıtları, yasaların gerektirdiği süre boyunca kilitli olarak saklanabilir. Bu işlem geri alınamaz.",
+      "confirmDialogConfirm": "Şirketi ve Hesabı Sil",
+      "bulletRetention": "Belirli istihdam veya çalışma süresi kayıtları, geçerli yasal yükümlülüklerin gerektirdiği süre boyunca saklanabilir. Bu kayıtlar kilitlenir ve uygulamada artık erişilemez. Diğer hesap ve şirket verileri silinir."
     }
   }
 }

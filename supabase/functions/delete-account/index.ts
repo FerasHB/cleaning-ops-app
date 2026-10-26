@@ -24,13 +24,15 @@ const corsHeaders = {
 // - notification_outbox.employee_id               -> ON DELETE SET NULL
 //   (employee_name wird per Trigger durch "Gelöschtes Konto" ersetzt)
 // Firmen-/Auftragsdaten bleiben also erhalten, nur ohne Verknüpfung zum Konto.
-// Die Namens-Snapshots in job_assignments/employee_absences bleiben bewusst
-// als Arbeitszeit-/Abwesenheitsnachweis der Firma erhalten (Aufzeichnungs-
-// pflicht, Migration 20261026000000) — die Lösch-UI sagt das ausdrücklich.
+// Die Namens-Snapshots in job_assignments/employee_absences bleiben als
+// Referenz der Firmen-Nachweise erhalten (Migration 20261026000000, rechtlich
+// zu prüfen) — die Lösch-UI verspricht deshalb keine Anonymisierung.
 //
 // Letzter Admin (Store-Compliance, Migration 20261026000000): Ist der
 // Aufrufer der EINZIGE aktive Admin seiner Firma, löscht er mit seinem Konto
-// die Firma samt ALLER Mandantendaten und Mitarbeiterkonten. Das passiert nur,
+// die Firma, die Firmendaten und alle Mitarbeiterkonten. Bestimmte
+// Arbeitszeit-/Beschäftigungsnachweise archiviert die RPC vorher minimal und
+// gesperrt in compliance_retention_records (Migration 20261027000000). Das passiert nur,
 // wenn der Client es ausdrücklich bestätigt ({ confirmCompanyDeletion: true,
 // confirmCompanyId }) — ohne Bestätigung antwortet die Function weiterhin mit
 // 409 / last_admin. Die Firmen-ID im Body ist NUR eine Bestätigung: die RPC
@@ -321,8 +323,10 @@ Deno.serve(async (req) => {
         console.error("delete-account: storage cleanup incomplete", { companyId });
       }
 
+      const retainedRecordCount = Number(purge?.retained_record_count ?? 0);
+
       return Response.json(
-        { success: true, companyDeleted: true, storageCleanup },
+        { success: true, companyDeleted: true, storageCleanup, retainedRecordCount },
         { headers: corsHeaders },
       );
     }

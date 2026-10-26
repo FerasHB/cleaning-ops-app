@@ -1,6 +1,7 @@
 -- =========================================================
 -- TEST: Store-Compliance-Kontolöschung
--- (Migration 20261026000000_store_compliance_account_deletion)
+-- (Migrationen 20261026000000_store_compliance_account_deletion +
+--  20261027000000_compliance_retention_archive)
 -- =========================================================
 -- Deckt ab:
 --   1  Mitarbeiter-Löschung (normaler Pfad): Profil weg, Firma bleibt
@@ -25,6 +26,13 @@
 --  11  Mitarbeiter-Löschung mit aufgezeichneter Arbeitszeit: Session-Zeilen
 --      bleiben (Betriebsdaten), Zuweisung anonymisiert
 --  12  Nicht-Admin / inaktiver Admin können den Purge nicht auslösen
+--  13  Retention: Arbeitszeit-/Beschäftigungsnachweise der gelöschten Firma
+--      liegen minimal im gesperrten Archiv compliance_retention_records
+--  14  Archiv enthält keine Freitexte/Kontakt-/Kundendaten; Konten weg
+--  15  Archiv ist für authenticated (auch fremde Mandanten) und anon gesperrt
+--  16  Archiv ist später gezielt löschbar (Frist / je Firma), ohne andere
+--      Firmen zu berühren; Lösch-RPCs nur für service_role
+--  17  Normale Kontolöschung (nicht letzter Admin) erzeugt KEINE Archivzeilen
 --
 -- AUSFÜHREN (lokal):
 --   docker exec -i supabase_db_cleaning-employee-app-2 psql -U postgres \
@@ -60,6 +68,21 @@ begin
   return 'OK';
 exception when others then
   return sqlerrm;
+end $f$;
+
+-- Kontext-RPC als gegebener Nutzer; liefert Fehlertext oder 'OK'.
+create function pg_temp.ctx_err(uid uuid) returns text language plpgsql as $f$
+begin
+  perform pg_temp.act_as(uid);
+  set local role authenticated;
+  begin
+    perform public.get_account_deletion_context();
+    reset role;
+    return 'OK';
+  exception when others then
+    reset role;
+    return sqlerrm;
+  end;
 end $f$;
 
 -- ── IDs ──────────────────────────────────────────────────
@@ -152,7 +175,7 @@ values ('5a000000-0000-0000-0004-000000000001','5a000000-0000-0000-0003-00000000
   '5a000000-0000-0000-0000-000000000002', 1, 'admin_reduced',
   now() - interval '2 hours', now() - interval '1 hour', 3600,
   now() - interval '2 hours', now() - interval '90 minutes', 1800,
-  '5a000000-0000-0000-0000-000000000001', 'Test-Korrektur');
+  '5a000000-0000-0000-0000-000000000001', 'PRIVAT-GRUND-KORREKTUR');
 
 insert into public.work_operation_receipts (operation_id, actor_id, job_assignment_id,
   operation_type, request_payload, result_payload)
@@ -183,16 +206,36 @@ values ('5a000000-0000-0000-0007-000000000001','5a000000-0000-0000-0001-00000000
         '5a000000-0000-0000-0000-00000000000a/5a000000-0000-0000-0001-000000000001/1_abc.jpg','1_abc.jpg');
 
 insert into public.employee_absences (id, company_id, employee_id, employee_name_snapshot, type, status,
-                                      start_date, end_date, created_by)
+                                      start_date, end_date, created_by, employee_note, admin_note)
 values ('5a000000-0000-0000-0008-000000000001','5a000000-0000-0000-0000-00000000000a',
         '5a000000-0000-0000-0000-000000000002','Emil Eins','sickness','reported',
-        current_date - 1, current_date, '5a000000-0000-0000-0000-000000000002');
+        current_date - 1, current_date, '5a000000-0000-0000-0000-000000000002',
+        'PRIVAT-NOTIZ-MA', 'PRIVAT-NOTIZ-ADMIN');
 insert into public.absence_evidence (company_id, absence_id)
 values ('5a000000-0000-0000-0000-00000000000a','5a000000-0000-0000-0008-000000000001');
 
 insert into public.vacation_years (id, company_id, employee_id, year)
 values ('5a000000-0000-0000-0009-000000000001','5a000000-0000-0000-0000-00000000000a',
         '5a000000-0000-0000-0000-000000000002', extract(year from current_date)::int);
+insert into public.vacation_ledger (id, company_id, employee_id, vacation_year_id, entry_type, amount_days, note)
+values ('5a000000-0000-0000-000a-000000000001','5a000000-0000-0000-0000-00000000000a',
+        '5a000000-0000-0000-0000-000000000002','5a000000-0000-0000-0009-000000000001',
+        'annual_entitlement', 25, 'PRIVAT-NOTIZ-URLAUB');
+
+insert into public.employee_time_adjustments (id, assignment_id, job_id, employee_id,
+  old_started_at, old_completed_at, new_started_at, new_completed_at, changed_by, reason)
+values ('5a000000-0000-0000-000b-000000000001','5a000000-0000-0000-0002-000000000001',
+        '5a000000-0000-0000-0001-000000000001','5a000000-0000-0000-0000-000000000002',
+        now() - interval '2 hours', now() - interval '1 hour',
+        now() - interval '2 hours', now() - interval '50 minutes',
+        '5a000000-0000-0000-0000-000000000001', 'PRIVAT-GRUND-ANPASSUNG');
+
+-- Firma D: Abwesenheit des inaktiven Admins (Archiv-Isolation in Fall 16)
+insert into public.employee_absences (id, company_id, employee_id, employee_name_snapshot, type, status,
+                                      start_date, end_date, created_by)
+values ('5d000000-0000-0000-0008-000000000001','5d000000-0000-0000-0000-00000000000d',
+        '5d000000-0000-0000-0000-000000000001','Dora Inaktiv','vacation','approved',
+        current_date - 30, current_date - 28, '5d000000-0000-0000-0000-000000000002');
 
 insert into public.notification_outbox (company_id, event_type, job_id, employee_id, employee_name)
 values ('5a000000-0000-0000-0000-00000000000a','job_started','5a000000-0000-0000-0001-000000000001',
@@ -372,7 +415,11 @@ select pg_temp.chk(11, 'Session-Arbeitszeit bleibt (anonym)', '1|<null>',
   (select count(*)::text || '|' || coalesce(max(employee_id::text),'<null>')
      from public.work_sessions where id='5b000000-0000-0000-0003-000000000001'));
 
--- ── 6) Letzter Admin: Firma A wird vollständig gelöscht ───
+select pg_temp.chk(17, 'Normale Mitarbeiter-Löschung erzeugt keine Archivzeilen', '0',
+  (select count(*)::text from public.compliance_retention_records
+    where company_id = '5b000000-0000-0000-0000-00000000000b'));
+
+-- ── 6) Letzter Admin: aktiver Mandant A wird gelöscht ────
 create temp table _purge as
 select public.purge_company_for_last_admin(
   '5a000000-0000-0000-0000-000000000001','5a000000-0000-0000-0000-00000000000a') as r;
@@ -389,21 +436,138 @@ select pg_temp.chk(6, 'Auth-Konten A gelöscht (inkl. Aufrufer)', '0',
   (select count(*)::text from auth.users where id::text like '5a000000-%'));
 select pg_temp.chk(6, 'Profile A gelöscht', '0',
   (select count(*)::text from public.profiles where id::text like '5a000000-%'));
-select pg_temp.chk(6, 'Aufträge/Zuweisungen/Sessions/Korrekturen/Receipts A gelöscht', '0|0|0|0|0',
+select pg_temp.chk(6, 'Rückgabe: retained_record_count', '6',
+  (select r->>'retained_record_count' from _purge));
+select pg_temp.chk(6, 'Aktive Tabellen: Aufträge/Zuweisungen/Sessions/Korrekturen/Receipts A gelöscht', '0|0|0|0|0',
   (select concat_ws('|',
      (select count(*) from public.jobs where id::text like '5a000000-%'),
      (select count(*) from public.job_assignments where id::text like '5a000000-%'),
      (select count(*) from public.work_sessions where id::text like '5a000000-%'),
      (select count(*) from public.session_time_corrections where correction_id::text like '5a000000-%'),
      (select count(*) from public.work_operation_receipts where operation_id::text like '5a000000-%'))));
-select pg_temp.chk(6, 'Kommentare/Fotos/Abwesenheiten/Nachweise/Urlaub/Outbox A gelöscht', '0|0|0|0|0|0',
+select pg_temp.chk(6, 'Aktive Tabellen: Kommentare/Fotos/Abwesenheiten/Nachweise/Urlaubsjahre/Urlaubsbuchungen/Anpassungen/Outbox A gelöscht', '0|0|0|0|0|0|0|0',
   (select concat_ws('|',
      (select count(*) from public.job_comments where company_id='5a000000-0000-0000-0000-00000000000a'),
      (select count(*) from public.job_photos where company_id='5a000000-0000-0000-0000-00000000000a'),
      (select count(*) from public.employee_absences where company_id='5a000000-0000-0000-0000-00000000000a'),
      (select count(*) from public.absence_evidence where company_id='5a000000-0000-0000-0000-00000000000a'),
      (select count(*) from public.vacation_years where company_id='5a000000-0000-0000-0000-00000000000a'),
+     (select count(*) from public.vacation_ledger where company_id='5a000000-0000-0000-0000-00000000000a'),
+     (select count(*) from public.employee_time_adjustments where id::text like '5a000000-%'),
      (select count(*) from public.notification_outbox where company_id='5a000000-0000-0000-0000-00000000000a'))));
+select pg_temp.chk(6, 'Kontext-RPC für gelöschten Admin A', 'profile_not_found',
+  (select r from (select pg_temp.ctx_err('5a000000-0000-0000-0000-000000000001') r) x));
+select pg_temp.chk(6, 'Kontext-RPC für gelöschten Mitarbeiter A', 'profile_not_found',
+  (select r from (select pg_temp.ctx_err('5a000000-0000-0000-0000-000000000002') r) x));
+
+-- ── 13) Retention-Archiv ─────────────────────────────────
+select pg_temp.chk(13, 'Archiv A je Typ', 'absence=1,assignment_work_time=1,session_time_correction=1,time_adjustment=1,vacation_ledger_entry=1,work_session=1',
+  (select string_agg(record_type||'='||n, ',' order by record_type) from (
+     select record_type, count(*) n from public.compliance_retention_records
+      where company_id='5a000000-0000-0000-0000-00000000000a' group by record_type) t));
+select pg_temp.chk(13, 'Archiv: Session-Zeiten erhalten', 'true',
+  (select ((payload->>'started_at') is not null and (payload->>'ended_at') is not null)::text
+     from public.compliance_retention_records
+    where record_type='work_session' and source_id='5a000000-0000-0000-0003-000000000001'));
+select pg_temp.chk(13, 'Archiv: Korrektur effektive Dauer erhalten', '1800',
+  (select (payload->>'effective_duration_seconds')::numeric::int::text
+     from public.compliance_retention_records
+    where record_type='session_time_correction' and source_id='5a000000-0000-0000-0004-000000000001'));
+select pg_temp.chk(13, 'Archiv: Abwesenheit Art/Zeitraum erhalten', 'sickness|reported',
+  (select (payload->>'type')||'|'||(payload->>'status')
+     from public.compliance_retention_records
+    where record_type='absence' and source_id='5a000000-0000-0000-0008-000000000001'));
+select pg_temp.chk(13, 'Archiv: Arbeitgeber-/Arbeitnehmer-Referenz', 'SC Firma A|5a000000-0000-0000-0000-000000000002|Emil Eins',
+  (select company_name||'|'||employee_ref||'|'||employee_name
+     from public.compliance_retention_records
+    where record_type='work_session' and source_id='5a000000-0000-0000-0003-000000000001'));
+select pg_temp.chk(13, 'Archiv: retain_until zunächst nicht festgelegt', '<null>',
+  (select max(retain_until)::text from public.compliance_retention_records
+    where company_id='5a000000-0000-0000-0000-00000000000a'));
+
+-- ── 14) Datensparsamkeit ─────────────────────────────────
+select pg_temp.chk(14, 'Archiv-Payload ohne Freitext/Kontakt/Kunde', '0',
+  (select count(*)::text from public.compliance_retention_records r,
+          jsonb_object_keys(r.payload) k
+    where r.company_id='5a000000-0000-0000-0000-00000000000a'
+      and k in ('reason','note','notes','employee_note','admin_note','document_path','email',
+                'phone','push_token','customer_name','location_address','service_name',
+                'performed_by','changed_by')));
+select pg_temp.chk(14, 'Kein Freitext-Wert irgendwo im Archiv', '0',
+  (select count(*)::text from public.compliance_retention_records
+    where payload::text like '%PRIVAT-%' or coalesce(employee_name,'') like '%PRIVAT-%'));
+-- (archived_reason ist ein fester Systemwert, kein Freitext.)
+select pg_temp.chk(14, 'Archivtabelle hat keine Kontakt-/Token-Spalten', '0',
+  (select count(*)::text from information_schema.columns
+    where table_schema='public' and table_name='compliance_retention_records'
+      and column_name ~ '(email|phone|token|password|note|customer|address)'));
+
+-- ── 15) Zugriffssperre ───────────────────────────────────
+do $$
+declare r text;
+begin
+  -- Admin einer fremden, aktiven Firma (C)
+  perform pg_temp.act_as('5c000000-0000-0000-0000-000000000001');
+  set local role authenticated;
+  begin
+    perform count(*) from public.compliance_retention_records;
+    r := 'LESBAR';
+  exception when insufficient_privilege then r := 'VERWEIGERT';
+  end;
+  reset role;
+  perform pg_temp.chk(15, 'Fremder Admin (authenticated) liest Archiv', 'VERWEIGERT', r);
+
+  set local role anon;
+  begin
+    perform count(*) from public.compliance_retention_records;
+    r := 'LESBAR';
+  exception when insufficient_privilege then r := 'VERWEIGERT';
+  end;
+  reset role;
+  perform pg_temp.chk(15, 'anon liest Archiv', 'VERWEIGERT', r);
+
+  perform pg_temp.act_as('5c000000-0000-0000-0000-000000000001');
+  set local role authenticated;
+  begin
+    insert into public.compliance_retention_records (record_type, source_id, company_id, company_name, payload)
+    values ('absence', gen_random_uuid(), '5c000000-0000-0000-0000-00000000000c', 'x', '{}');
+    r := 'GESCHRIEBEN';
+  exception when insufficient_privilege then r := 'VERWEIGERT';
+  end;
+  reset role;
+  perform pg_temp.chk(15, 'authenticated schreibt ins Archiv', 'VERWEIGERT', r);
+
+  perform pg_temp.act_as('5c000000-0000-0000-0000-000000000001');
+  set local role authenticated;
+  begin
+    perform public.purge_expired_compliance_records();
+    r := 'AUSGEFÜHRT';
+  exception when insufficient_privilege then r := 'VERWEIGERT';
+  end;
+  reset role;
+  perform pg_temp.chk(16, 'authenticated -> purge_expired_compliance_records', 'VERWEIGERT', r);
+
+  set local role authenticated;
+  begin
+    perform public.purge_compliance_records_for_company('5a000000-0000-0000-0000-00000000000a');
+    r := 'AUSGEFÜHRT';
+  exception when insufficient_privilege then r := 'VERWEIGERT';
+  end;
+  reset role;
+  perform pg_temp.chk(16, 'authenticated -> purge_compliance_records_for_company', 'VERWEIGERT', r);
+
+  set local role authenticated;
+  begin
+    perform public.set_compliance_retain_until('5a000000-0000-0000-0000-00000000000a', current_date);
+    r := 'AUSGEFÜHRT';
+  exception when insufficient_privilege then r := 'VERWEIGERT';
+  end;
+  reset role;
+  perform pg_temp.chk(16, 'authenticated -> set_compliance_retain_until', 'VERWEIGERT', r);
+end $$;
+
+select pg_temp.chk(15, 'Fremde Firma C sieht in aktiven Tabellen nichts von A', '0',
+  (select count(*)::text from public.jobs where company_id='5a000000-0000-0000-0000-00000000000a'));
 select pg_temp.chk(6, 'Keine Occurrence-Tombstones für A entstanden', '0',
   (select count(*)::text from public.job_occurrence_skips where parent_job_id::text like '5a000000-%'));
 select pg_temp.chk(6, 'Purge-Flag nach Aufruf zurückgesetzt', 'false',
@@ -430,6 +594,29 @@ select pg_temp.chk(7, 'Auftrag + Foto-Zeile C unverändert', '1|1',
 -- ── 8) Wiederholter Purge ────────────────────────────────
 select pg_temp.chk(8, 'Zweiter Purge-Aufruf', 'profile_not_found',
   pg_temp.purge('5a000000-0000-0000-0000-000000000001','5a000000-0000-0000-0000-00000000000a'));
+
+-- ── 16) Spätere Löschung des Archivs ─────────────────────
+-- Zweite Firma archivieren (D2 ist letzter AKTIVER Admin von D)
+select pg_temp.chk(16, 'Purge Firma D durch D2', 'OK',
+  pg_temp.purge('5d000000-0000-0000-0000-000000000002','5d000000-0000-0000-0000-00000000000d'));
+select pg_temp.chk(16, 'Archiv D: 1 Abwesenheit', '1',
+  (select count(*)::text from public.compliance_retention_records where company_id='5d000000-0000-0000-0000-00000000000d'));
+select pg_temp.chk(16, 'Ohne Frist löscht purge_expired nichts', '0',
+  (select public.purge_expired_compliance_records()::text));
+select pg_temp.chk(16, 'Frist A setzen (nur Typ work_session, abgelaufen)', '1',
+  (select public.set_compliance_retain_until('5a000000-0000-0000-0000-00000000000a', current_date - 1, array['work_session'])::text));
+select pg_temp.chk(16, 'purge_expired löscht genau die abgelaufene Zeile', '1',
+  (select public.purge_expired_compliance_records()::text));
+select pg_temp.chk(16, 'Rest A + D unberührt', '5|1',
+  (select concat_ws('|',
+     (select count(*) from public.compliance_retention_records where company_id='5a000000-0000-0000-0000-00000000000a'),
+     (select count(*) from public.compliance_retention_records where company_id='5d000000-0000-0000-0000-00000000000d'))));
+select pg_temp.chk(16, 'Firma A gezielt löschen', '5',
+  (select public.purge_compliance_records_for_company('5a000000-0000-0000-0000-00000000000a')::text));
+select pg_temp.chk(16, 'Archiv A leer, D unberührt', '0|1',
+  (select concat_ws('|',
+     (select count(*) from public.compliance_retention_records where company_id='5a000000-0000-0000-0000-00000000000a'),
+     (select count(*) from public.compliance_retention_records where company_id='5d000000-0000-0000-0000-00000000000d'))));
 
 -- ── Ergebnis ─────────────────────────────────────────────
 select case_no, beschreibung, erwartet, ergebnis, verdikt from _results order by case_no;

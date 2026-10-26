@@ -239,16 +239,16 @@ $function$;
 -- Bewusste Entscheidung (Store-Compliance-Audit 2026-10-26):
 --   * job_assignments.employee_name_snapshot und
 --     employee_absences.employee_name_snapshot BLEIBEN erhalten. Sie sind
---     der Arbeitszeit-/Abwesenheitsnachweis des Arbeitgebers für Konten, die
---     es nicht mehr gibt (Stundenzettel-Beleg, siehe job_assignments.test.sql
---     Fall 18). Für die Gebäudereinigung bestehen gesetzliche
---     Aufzeichnungspflichten (§ 17 MiLoG i. V. m. § 2a SchwarzArbG) —
---     anonymisierte Arbeitszeitzeilen wären als Nachweis wertlos. Die
---     Lösch-UI sagt das jetzt ausdrücklich, statt Anonymisierung zu
---     versprechen.
+--     die Referenz der Firmen-Nachweise (Arbeitszeit/Abwesenheit) auf ein
+--     nicht mehr existierendes Konto (Stundenzettel-Beleg, siehe
+--     job_assignments.test.sql Fall 18). Für Arbeitszeitnachweise können
+--     gesetzliche Aufbewahrungspflichten gelten; ob dafür gerade der Name
+--     nötig ist, ist rechtlich zu prüfen (docs/store-compliance.md). Die
+--     Lösch-UI verspricht deshalb keine Anonymisierung, sondern sagt
+--     neutral, dass bestimmte Nachweise aufbewahrt werden können.
 --   * notification_outbox.employee_name ist dagegen nur Text für eine
---     (meist längst zugestellte) Push-Nachricht — kein Nachweis, keine
---     Aufbewahrungspflicht. Er wird beim Löschen ersetzt.
+--     (meist längst zugestellte) Push-Nachricht — kein Nachweis. Er wird
+--     beim Löschen ersetzt.
 -- BEFORE DELETE auf profiles deckt jeden Löschpfad ab (auth.admin.deleteUser
 -- kaskadiert auf profiles, ebenso der Firmen-Purge).
 create or replace function public.anonymize_deleted_profile_snapshots()
@@ -268,7 +268,7 @@ end;
 $$;
 
 comment on function public.anonymize_deleted_profile_snapshots() is
-'BEFORE DELETE auf profiles: ersetzt den Namen des gelöschten Kontos in notification_outbox. Arbeitszeit-/Abwesenheits-Snapshots bleiben bewusst erhalten (Aufzeichnungspflicht), siehe Migration 20261026000000.';
+'BEFORE DELETE auf profiles: ersetzt den Namen des gelöschten Kontos in notification_outbox. Namens-Snapshots in job_assignments/employee_absences bleiben als Referenz der Firmen-Nachweise erhalten (Produktentscheidung, rechtlich zu prüfen; siehe docs/store-compliance.md).';
 
 revoke all on function public.anonymize_deleted_profile_snapshots() from public, anon, authenticated;
 
