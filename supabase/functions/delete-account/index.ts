@@ -22,12 +22,26 @@ const corsHeaders = {
 // - job_comment_reads.user_id                     -> ON DELETE CASCADE
 // - notification_deliveries.recipient_id          -> ON DELETE CASCADE
 // - notification_outbox.employee_id               -> ON DELETE SET NULL
+//   (employee_name wird per Trigger durch "Gelöschtes Konto" ersetzt)
 // Firmen-/Auftragsdaten bleiben also erhalten, nur ohne Verknüpfung zum Konto.
+// Die Namens-Snapshots in job_assignments/employee_absences bleiben als
+// Referenz der Firmen-Nachweise erhalten (Migration 20261026000000, rechtlich
+// zu prüfen) — die Lösch-UI verspricht deshalb keine Anonymisierung.
 //
-// Schutz „letzter Admin": Ein Admin, der der EINZIGE aktive Admin seiner Firma
-// ist, kann sich nicht löschen (Firma würde führungslos zurückbleiben). Er muss
-// zuerst die Firma auflösen bzw. einen weiteren Admin haben. Existiert ein
-// weiterer aktiver Admin, wird nur das anfragende Konto gelöscht.
+// Letzter Admin (Store-Compliance, Migration 20261026000000): Ist der
+// Aufrufer der EINZIGE aktive Admin seiner Firma, löscht er mit seinem Konto
+// die Firma, alle Firmendaten und alle Mitarbeiterkonten. Es bleibt KEIN
+// Archiv bei NovaFlow (Migration 20261028000000): die App bietet vorher den
+// Arbeitszeit-Export (RPC get_company_worktime_export) an und lässt den Admin
+// bestätigen, dass er für seine Aufbewahrungspflichten selbst verantwortlich
+// ist. Das passiert nur,
+// wenn der Client es ausdrücklich bestätigt ({ confirmCompanyDeletion: true,
+// confirmCompanyId }) — ohne Bestätigung antwortet die Function weiterhin mit
+// 409 / last_admin. Die Firmen-ID im Body ist NUR eine Bestätigung: die RPC
+// purge_company_for_last_admin() ermittelt Firma und Rolle selbst aus dem
+// Profil der Session-Identität und lehnt jede abweichende ID ab
+// ('company_mismatch'). Existiert ein weiterer aktiver Admin, wird nur das
+// anfragende Konto gelöscht (normaler Pfad unten).
 //
 // Race-Condition-Schutz: die Last-Admin-Prüfung läuft NICHT als separates
 // SELECT hier in der Function (zwei Admins derselben Firma könnten sich
@@ -58,6 +72,9 @@ type DeleteAccountErrorCode =
   | "profile_not_found"
   | "inactive_account"
   | "last_admin"
+  | "not_last_admin"
+  | "company_mismatch"
+  | "purge_failed"
   | "prepare_failed"
   | "delete_failed"
   | "rollback_failed"
@@ -72,6 +89,71 @@ function errorResponse(
     { success: false, code, error: message },
     { status, headers: corsHeaders },
   );
+}
+
+const PHOTO_BUCKET = "job-photos";
+
+type DeleteAccountBody = {
+  confirmCompanyDeletion?: unknown;
+  confirmCompanyId?: unknown;
+};
+
+async function readBody(req: Request): Promise<DeleteAccountBody> {
+  try {
+    const body = await req.json();
+    return body && typeof body === "object" ? body as DeleteAccountBody : {};
+  } catch {
+    return {};
+  }
+}
+
+// Storage-Dateien einer gelöschten Firma entfernen. SQL darf storage.objects
+// nicht löschen (storage.protect_delete), deshalb über die Storage-API mit dem
+// Service-Role-Client. Zwei Quellen: die von der RPC gemeldeten Pfade (alle
+// job_photos-/absence_evidence-Zeilen zum Purge-Zeitpunkt) UND alles unter dem
+// Firmen-Präfix <company_id>/ (fängt Uploads ab, deren DB-Zeile fehlt).
+// Idempotent: nicht (mehr) vorhandene Dateien sind kein Fehler.
+async function removeCompanyStorage(
+  // deno-lint-ignore no-explicit-any
+  adminClient: any,
+  companyId: string,
+  reportedPaths: string[],
+): Promise<"ok" | "partial"> {
+  const bucket = adminClient.storage.from(PHOTO_BUCKET);
+  const paths = new Set(reportedPaths.filter((p) => typeof p === "string" && p));
+  let complete = true;
+
+  // Präfix-Listing: <company_id>/<job_id>/<datei> — zwei Ebenen.
+  const { data: folders, error: listError } = await bucket.list(companyId, { limit: 1000 });
+  if (listError) {
+    complete = false;
+  } else {
+    for (const entry of folders ?? []) {
+      if (entry.id) {
+        paths.add(`${companyId}/${entry.name}`);
+        continue;
+      }
+      const { data: files, error: filesError } = await bucket.list(
+        `${companyId}/${entry.name}`,
+        { limit: 1000 },
+      );
+      if (filesError) {
+        complete = false;
+        continue;
+      }
+      for (const file of files ?? []) {
+        paths.add(`${companyId}/${entry.name}/${file.name}`);
+      }
+    }
+  }
+
+  const all = [...paths];
+  for (let i = 0; i < all.length; i += 100) {
+    const { error } = await bucket.remove(all.slice(i, i + 100));
+    if (error) complete = false;
+  }
+
+  return complete ? "ok" : "partial";
 }
 
 Deno.serve(async (req) => {
@@ -118,6 +200,11 @@ Deno.serve(async (req) => {
     // Profil-Existenz prüfen — über den Admin-Client, damit RLS die Prüfung
     // nicht verfälscht. Rolle/Firma werden nicht mehr hier gebraucht: die
     // Last-Admin-Logik lebt jetzt vollständig in prepare_self_account_deletion().
+    const body = await readBody(req);
+    const confirmCompanyDeletion = body.confirmCompanyDeletion === true;
+    const confirmCompanyId =
+      typeof body.confirmCompanyId === "string" ? body.confirmCompanyId : null;
+
     const { data: profile, error: profileError } = await adminClient
       .from("profiles")
       .select("id")
@@ -161,6 +248,89 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ── Letzter Admin: Firma + Konto löschen (nur mit Bestätigung) ──
+    // Die RPC prüft serverseitig ALLES erneut (Identität = user.id aus der
+    // Session, Rolle, aktiv, Firma == Bestätigung, wirklich letzter Admin) und
+    // löscht in EINER Transaktion. user.id kommt aus getUser(), nie aus dem
+    // Body.
+    if (confirmCompanyDeletion) {
+      if (!confirmCompanyId) {
+        return errorResponse(
+          "company_mismatch",
+          "Die Firmenlöschung wurde nicht eindeutig bestätigt.",
+          400,
+        );
+      }
+
+      const { data: purge, error: purgeError } = await adminClient.rpc(
+        "purge_company_for_last_admin",
+        { p_caller: user.id, p_confirm_company_id: confirmCompanyId },
+      );
+
+      if (purgeError) {
+        switch (purgeError.message) {
+          case "not_last_admin":
+            return errorResponse(
+              "not_last_admin",
+              "Deine Firma hat inzwischen einen weiteren aktiven " +
+                "Administrator. Die Firma wird nicht gelöscht — bitte öffne " +
+                "die Kontolöschung erneut.",
+              409,
+            );
+          case "company_mismatch":
+          case "not_admin":
+            return errorResponse(
+              "company_mismatch",
+              "Die bestätigte Firma passt nicht zu deinem Konto.",
+              403,
+            );
+          case "inactive_account":
+            return errorResponse(
+              "inactive_account",
+              "Dein Konto ist deaktiviert. Bitte wende dich an deinen " +
+                "Administrator.",
+              403,
+            );
+          default:
+            console.error("delete-account: purge_company_for_last_admin failed", {
+              userId: user.id,
+              message: purgeError.message,
+            });
+            return errorResponse(
+              "purge_failed",
+              "Firma und Konto konnten nicht gelöscht werden. Es wurde " +
+                "nichts gelöscht.",
+              500,
+            );
+        }
+      }
+
+      const companyId = String(purge?.company_id ?? confirmCompanyId);
+      const storagePaths = Array.isArray(purge?.storage_paths)
+        ? purge.storage_paths as string[]
+        : [];
+      let storageCleanup: "ok" | "partial" = "partial";
+      try {
+        storageCleanup = await removeCompanyStorage(adminClient, companyId, storagePaths);
+      } catch (storageError) {
+        console.error("delete-account: storage cleanup threw", {
+          companyId,
+          message: storageError instanceof Error ? storageError.message : String(storageError),
+        });
+      }
+      if (storageCleanup !== "ok") {
+        // Firma/Konten sind bereits gelöscht (Transaktion committed). Reste im
+        // Bucket sind ohne Firmenmitgliedschaft für niemanden mehr lesbar
+        // (Storage-RLS hängt am Firmenpräfix) — für manuelles Nachräumen loggen.
+        console.error("delete-account: storage cleanup incomplete", { companyId });
+      }
+
+      return Response.json(
+        { success: true, companyDeleted: true, storageCleanup },
+        { headers: corsHeaders },
+      );
+    }
+
     // ── Schutz „letzter Admin" (atomar, RPC statt separates SELECT) ──
     // Über userClient aufrufen, NICHT adminClient: auth.uid() innerhalb der
     // RPC löst sich aus dem Authorization-Header dieses Requests auf — mit
@@ -171,12 +341,15 @@ Deno.serve(async (req) => {
 
     if (prepareError) {
       if (prepareError.message === "last_admin") {
+        // Ohne ausdrückliche Bestätigung NIE die Firma löschen. Ältere
+        // App-Versionen kennen den Bestätigungsschritt nicht und zeigen nur
+        // diesen Text an.
         return errorResponse(
           "last_admin",
-          "Als einziger Administrator kannst du dein Konto nicht löschen, " +
-            "solange deine Firma noch existiert. Bitte entferne zuerst alle " +
-            "Mitarbeiter und Auftragsdaten und löse die Firma auf, oder ernenne " +
-            "einen weiteren Administrator.",
+          "Du bist der einzige aktive Administrator. Wenn du dein Konto " +
+            "löschst, werden auch deine Firma und alle Firmendaten dauerhaft " +
+            "gelöscht. Bitte bestätige das in der aktuellen App-Version unter " +
+            "Profil → Konto löschen.",
           409,
         );
       }

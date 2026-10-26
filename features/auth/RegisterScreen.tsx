@@ -31,6 +31,7 @@ import {
   MIN_PASSWORD_LENGTH,
   validatePassword,
 } from "@/utils/passwordValidation";
+import { openLegalUrl, PRIVACY_POLICY_URL } from "@/utils/legalLinks";
 
 export default function RegisterScreen() {
   const theme      = useAppTheme();
@@ -376,6 +377,22 @@ export default function RegisterScreen() {
               </Text>
             </TouchableOpacity>
 
+            {/* ── Datenschutz-Hinweis (Store-Compliance) ── */}
+            {PRIVACY_POLICY_URL && (
+              <Text style={styles.privacyText}>
+                {t("auth:register.privacyPrefix") ? `${t("auth:register.privacyPrefix")} ` : ""}
+                <Text
+                  style={styles.loginLink}
+                  onPress={() => void openLegalUrl(PRIVACY_POLICY_URL)}
+                  accessibilityRole="link"
+                  suppressHighlighting
+                >
+                  {t("auth:register.privacyLink")}
+                </Text>
+                {" "}{t("auth:register.privacySuffix")}
+              </Text>
+            )}
+
             {/* ── Login-Link ── */}
             <TouchableOpacity
               onPress={() => router.replace("/login")}
@@ -474,6 +491,14 @@ function createStyles(theme: AppTheme) {
     },
 
     // Hinweis-Box
+    privacyText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+      textAlign: "center",
+      lineHeight: theme.typography.lineHeight.sm,
+      marginTop: theme.spacing.md,
+    },
     infoBox: {
       backgroundColor: theme.colors.surfaceContainerHigh,
       borderRadius: theme.radius.md,

@@ -142,7 +142,15 @@ export function JobPhotos({ jobId, canUpload, isOnline }: JobPhotosProps) {
   async function pickFromLibrary() {
     setUploadError(null);
 
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    // Android: der Picker (PickVisualMedia bzw. Fallback ACTION_OPEN_DOCUMENT)
+    // braucht keine Berechtigung. Die Vorab-Abfrage verlangt auf Android ≤ 12
+    // READ/WRITE_EXTERNAL_STORAGE — beide sind per app.json
+    // android.blockedPermissions entfernt (Store-Compliance) und würden dort
+    // immer als "verweigert" zurückkommen.
+    const permission =
+      Platform.OS === "android"
+        ? { granted: true }
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       // Siehe pickFromCamera: sichtbar im Web UND dauerhaft am Bildschirm.
       setUploadError(t("jobs:photos.libraryPermissionDeniedError"));

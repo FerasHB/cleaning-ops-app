@@ -18,6 +18,7 @@ import { useOwnCompany } from "@/features/company/hooks/useOwnCompany";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useIsRTL } from "@/hooks/useIsRTL";
 import { formatPhoneForDisplay } from "@/utils/phone";
+import { openLegalUrl, PRIVACY_POLICY_URL } from "@/utils/legalLinks";
 import type { AppTheme } from "@/constants/theme";
 import {
   changeAppLanguage,
@@ -345,6 +346,15 @@ export default function ProfileScreen({
 
         {/* ── Konto & App-Info ── */}
         <SettingsSection title={t("profile:sections.other")} styles={styles} theme={theme}>
+          {PRIVACY_POLICY_URL && (
+            <SettingsRow
+              icon="shield-checkmark-outline"
+              label={t("profile:rows.privacyPolicy")}
+              onPress={() => void openLegalUrl(PRIVACY_POLICY_URL)}
+              styles={styles}
+              theme={theme}
+            />
+          )}
           <SettingsRow
             icon="trash-outline"
             label={t("profile:rows.deleteAccount")}
