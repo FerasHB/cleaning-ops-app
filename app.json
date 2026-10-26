@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.ferash.taskopsmanager",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -25,7 +25,12 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.ferash.taskopsmanager",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "output": "static",
@@ -66,6 +71,11 @@
       "router": {},
       "eas": {
         "projectId": "e746276f-fbd7-49bd-aab6-dc3176e7661a"
+      },
+      "legal": {
+        "privacyPolicyUrl": "https://novaflowdigital.de/taskops/datenschutz",
+        "accountDeletionUrl": "https://novaflowdigital.de/taskops/konto-loeschen",
+        "supportUrl": "https://novaflowdigital.de/taskops/support"
       }
     },
     "owner": "ferash"
