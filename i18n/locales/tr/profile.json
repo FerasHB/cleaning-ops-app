@@ -24,7 +24,8 @@
     "appearanceValue": "Sistem ayarı",
     "deleteAccount": "Hesabı Sil",
     "appVersion": "Uygulama Sürümü",
-    "appVersionValue": "Sürüm {{version}}"
+    "appVersionValue": "Sürüm {{version}}",
+    "privacyPolicy": "Gizlilik Politikası"
   },
   "dialogs": {
     "appearanceTitle": "Görünüm",
@@ -65,14 +66,33 @@
     "whatHappensBullet3": "Hemen çıkış yapılır ve uygulamaya erişimini kaybedersin.",
     "remainingDataTitle": "Hangi veriler saklanır?",
     "remainingDataBullet1": "Oluşturduğun veya düzenlediğin işler, yorumlar ve fotoğraflar, operasyonel ve yasal nedenlerle firmanda saklanmaya devam eder.",
-    "remainingDataBullet2": "Ancak bu kayıtlar anonimleştirilir — artık adınla veya hesabınla ilişkilendirilmez.",
-    "adminNote": "Yönetici olarak hesabını yalnızca başka bir aktif yönetici varsa silebilirsin. Firmanın tek yöneticisiysen önce firmayı kapat ya da başka bir yönetici ata.",
+    "remainingDataBullet2": "Hesabınızın bu kayıtlarla bağlantısı kaldırılır. İşvereniniz yasal olarak saklamak zorunda olduğu için adınız çalışma süresi ve devamsızlık kayıtlarında kalır.",
+    "adminNote": "Şirketinizde başka aktif yöneticiler olduğu için şirket kalır. Yalnızca kendi hesabınız silinir.",
     "checkboxLabel": "Bu işlemin geri alınamaz olduğunu ve hesabımın kalıcı olarak silineceğini anlıyorum.",
     "deleteButton": "Hesabı Kalıcı Olarak Sil",
     "confirmDialogTitle": "Hesap kalıcı olarak silinsin mi?",
     "confirmDialogMessage": "Bu işlem geri alınamaz. Hesabın ve profilin kalıcı olarak silinecek.",
     "confirmDialogConfirm": "Kalıcı Olarak Sil",
     "notPossibleTitle": "Silme Mümkün Değil",
-    "genericError": "Hesabın silinemedi. Lütfen daha sonra tekrar dene."
+    "genericError": "Hesabın silinemedi. Lütfen daha sonra tekrar dene.",
+    "contextError": "Hesap bilgileri yüklenemedi. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
+    "notLastAdminTitle": "Şirket silinmeyecek",
+    "lastAdminChangedMessage": "Şirketteki rolünüz değişti. Lütfen gösterilen bilgileri kontrol edip tekrar onaylayın.",
+    "company": {
+      "heroTitle": "Hesabı ve Şirketi Kalıcı Olarak Sil",
+      "heroSubtitle": "“{{company}}” şirketinin tek aktif yöneticisisiniz. Hesabınızı silerseniz şirket ve tüm verileri de silinir. Bu işlem geri alınamaz.",
+      "whatHappensTitle": "Neler silinecek?",
+      "bulletAccount": "Giriş hesabınız ve profiliniz.",
+      "bulletCompany": "“{{company}}” şirketi ve tüm şirket verileri.",
+      "bulletData": "Şirketin tüm işleri, çalışma süreleri, devamsızlıkları, izin bakiyeleri, yorumları ve fotoğrafları.",
+      "bulletEmployees": "Şirketin diğer tüm hesapları (çalışanlar ve devre dışı yöneticiler): {{count}}. Erişimlerini hemen kaybederler.",
+      "bulletNoEmployees": "Şirketin başka hesabı yok.",
+      "exportHint": "Hâlâ ihtiyacınız olan her şeyi (ör. çalışma çizelgeleri) önceden kaydedin. Silme işleminden sonra kopya kalmaz.",
+      "checkboxCompanyLabel": "“{{company}}” şirketinin ve tüm şirket verilerinin kalıcı olarak silineceğini anlıyorum.",
+      "deleteButton": "Hesabı ve Şirketi Kalıcı Olarak Sil",
+      "confirmDialogTitle": "“{{company}}” kalıcı olarak silinsin mi?",
+      "confirmDialogMessage": "Hesabınız, şirket, tüm şirket verileri ve tüm çalışan hesapları kalıcı olarak silinir. Bu işlem geri alınamaz.",
+      "confirmDialogConfirm": "Şirketi ve Hesabı Sil"
+    }
   }
 }

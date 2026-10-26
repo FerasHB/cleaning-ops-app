@@ -4,6 +4,12 @@
 // versehentliche Löschung: (1) Pflicht-Checkbox „Ich verstehe …", (2) nativer
 // Bestätigungsdialog vor der eigentlichen Löschung.
 //
+// Letzter aktiver Admin (Store-Compliance, Migration 20261026000000): die
+// Löschung entfernt auch die Firma samt aller Firmendaten und Mitarbeiter-
+// konten. Der Screen lädt dafür zuerst den Lösch-Kontext vom Server und zeigt
+// dann einen eigenen, eindeutigen Firmenlösch-Modus mit ZWEI Pflicht-
+// Checkboxen (Konto + Firma) und einem Bestätigungsdialog mit Firmennamen.
+//
 // Backend: services/account/deleteAccount.ts → Edge Function delete-account.
 // Nach Erfolg: lokale Caches leeren, lokal abmelden, zurück zum Login.
 
@@ -12,13 +18,17 @@ import { useAuth } from "@/context/AuthContext";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { supabase } from "@/lib/supabase";
-import { requestAccountDeletion } from "@/services/account/deleteAccount";
+import {
+  getAccountDeletionContext,
+  requestAccountDeletion,
+  type AccountDeletionContext,
+} from "@/services/account/deleteAccount";
 import { clearPendingJobActions } from "@/services/offline/jobs.queue";
 import { clearCachedJobs } from "@/services/offline/jobs.storage";
 import { clearCachedProfile } from "@/services/offline/profile.storage";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -37,11 +47,46 @@ export default function DeleteAccountScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { t } = useTranslation();
 
-  const { user, role } = useAuth();
-  const isAdmin = role === "admin";
+  const { user } = useAuth();
 
+  const [context, setContext] = useState<AccountDeletionContext | null>(null);
+  const [contextError, setContextError] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [confirmedCompany, setConfirmedCompany] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const isAdmin = context?.role === "admin";
+  // Firmenlösch-Modus nur, wenn der Server den Aufrufer als letzten aktiven
+  // Admin meldet UND eine Firma existiert.
+  const companyId = context?.isLastAdmin ? context.companyId : null;
+  const isCompanyDeletion = companyId !== null;
+  const companyName = context?.companyName ?? "";
+  const canDelete =
+    context !== null && confirmed && (!isCompanyDeletion || confirmedCompany) && !loading;
+
+  const loadContext = useCallback(async () => {
+    setContextError(false);
+    try {
+      setContext(await getAccountDeletionContext());
+    } catch {
+      setContextError(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadContext();
+  }, [loadContext]);
+
+  // Pfad hat sich serverseitig geändert (weiterer Admin dazugekommen bzw.
+  // weggefallen): Bestätigungen zurücksetzen und Kontext neu laden, damit der
+  // Nutzer nie etwas anderes bestätigt, als tatsächlich gelöscht wird.
+  const resetAfterPathChange = (message: string) => {
+    setConfirmed(false);
+    setConfirmedCompany(false);
+    setContext(null);
+    void loadContext();
+    Alert.alert(t("profile:deleteAccount.notPossibleTitle"), message);
+  };
 
   const email = user?.email ?? t("profile:fallback.myAccount");
 
@@ -59,21 +104,27 @@ export default function DeleteAccountScreen() {
   const runDeletion = async () => {
     setLoading(true);
 
-    const result = await requestAccountDeletion();
+    const result = await requestAccountDeletion(
+      isCompanyDeletion && companyId ? { confirmCompanyId: companyId } : {},
+    );
 
     if (!result.ok) {
       setLoading(false);
+
+      // last_admin: Server sieht den Aufrufer inzwischen als letzten Admin
+      // (Firmenlöschung nicht bestätigt). not_last_admin: umgekehrt — es gibt
+      // wieder einen weiteren aktiven Admin, die Firma wird NICHT gelöscht.
+      // In beiden Fällen nichts gelöscht; Kontext neu laden.
+      if (result.code === "last_admin" || result.code === "not_last_admin") {
+        resetAfterPathChange(t("profile:deleteAccount.lastAdminChangedMessage"));
+        return;
+      }
 
       // result.message kommt aus der Edge Function delete-account (siehe
       // services/account/deleteAccount.ts) — server-seitig formulierter
       // Text, bislang ausschließlich Deutsch. Server-seitige Lokalisierung
       // ist eine spätere Phase (außerhalb des Scopes hier); der Dialog-TITEL
       // ist client-seitig und deshalb übersetzt.
-      if (result.code === "last_admin") {
-        Alert.alert(t("profile:deleteAccount.notPossibleTitle"), result.message);
-        return;
-      }
-
       Alert.alert(t("common:errors.title"), result.message);
       return;
     }
@@ -92,17 +143,23 @@ export default function DeleteAccountScreen() {
 
   // Erste Stufe: nur mit gesetzter Checkbox; zweite Stufe = nativer Dialog.
   const handleDeletePress = () => {
-    if (!confirmed || loading) {
+    if (!canDelete) {
       return;
     }
 
     Alert.alert(
-      t("profile:deleteAccount.confirmDialogTitle"),
-      t("profile:deleteAccount.confirmDialogMessage"),
+      isCompanyDeletion
+        ? t("profile:deleteAccount.company.confirmDialogTitle", { company: companyName })
+        : t("profile:deleteAccount.confirmDialogTitle"),
+      isCompanyDeletion
+        ? t("profile:deleteAccount.company.confirmDialogMessage")
+        : t("profile:deleteAccount.confirmDialogMessage"),
       [
         { text: t("common:actions.cancel"), style: "cancel" },
         {
-          text: t("profile:deleteAccount.confirmDialogConfirm"),
+          text: isCompanyDeletion
+            ? t("profile:deleteAccount.company.confirmDialogConfirm")
+            : t("profile:deleteAccount.confirmDialogConfirm"),
           style: "destructive",
           onPress: () => {
             void runDeletion();
@@ -145,9 +202,15 @@ export default function DeleteAccountScreen() {
               color={theme.colors.error}
             />
           </View>
-          <Text style={styles.warnTitle}>{t("profile:deleteAccount.heroTitle")}</Text>
+          <Text style={styles.warnTitle}>
+            {isCompanyDeletion
+              ? t("profile:deleteAccount.company.heroTitle")
+              : t("profile:deleteAccount.heroTitle")}
+          </Text>
           <Text style={styles.warnSubtitle}>
-            {t("profile:deleteAccount.heroSubtitle")}
+            {isCompanyDeletion
+              ? t("profile:deleteAccount.company.heroSubtitle", { company: companyName })
+              : t("profile:deleteAccount.heroSubtitle")}
           </Text>
           <View style={styles.emailChip}>
             <Ionicons
@@ -161,96 +224,171 @@ export default function DeleteAccountScreen() {
           </View>
         </View>
 
-        {/* ── Was passiert ── */}
-        <Section title={t("profile:deleteAccount.whatHappensTitle")} theme={theme} styles={styles}>
-          <Bullet
-            icon="person-remove-outline"
-            text={t("profile:deleteAccount.whatHappensBullet1")}
-            theme={theme}
-            styles={styles}
-          />
-          <Bullet
-            icon="id-card-outline"
-            text={t("profile:deleteAccount.whatHappensBullet2")}
-            theme={theme}
-            styles={styles}
-          />
-          <Bullet
-            icon="log-out-outline"
-            text={t("profile:deleteAccount.whatHappensBullet3")}
-            theme={theme}
-            styles={styles}
-            isLast
-          />
-        </Section>
-
-        {/* ── Verbleibende Daten (anonymisiert) ── */}
-        <Section
-          title={t("profile:deleteAccount.remainingDataTitle")}
-          theme={theme}
-          styles={styles}
-        >
-          <Bullet
-            icon="briefcase-outline"
-            text={t("profile:deleteAccount.remainingDataBullet1")}
-            theme={theme}
-            styles={styles}
-          />
-          <Bullet
-            icon="eye-off-outline"
-            text={t("profile:deleteAccount.remainingDataBullet2")}
-            theme={theme}
-            styles={styles}
-            isLast
-          />
-        </Section>
-
-        {/* ── Hinweis für Admins ── */}
-        {isAdmin && (
-          <View style={styles.adminNote}>
-            <Ionicons
-              name="information-circle-outline"
-              size={18}
-              color={theme.colors.statusInProgress}
-            />
-            <Text style={styles.adminNoteText}>
-              {t("profile:deleteAccount.adminNote")}
-            </Text>
-          </View>
-        )}
-
-        {/* ── Bestätigungs-Checkbox ── */}
-        <TouchableOpacity
-          style={styles.checkboxRow}
-          activeOpacity={0.8}
-          onPress={() => setConfirmed((v) => !v)}
-          disabled={loading}
-        >
-          <View
-            style={[styles.checkbox, confirmed && styles.checkboxChecked]}
-          >
-            {confirmed && (
-              <Ionicons
-                name="checkmark"
-                size={15}
-                color={theme.colors.onPrimary}
+        {context === null ? (
+          // ── Kontext lädt / Fehler ──
+          contextError ? (
+            <View style={styles.contextState}>
+              <Text style={styles.contextErrorText}>
+                {t("profile:deleteAccount.contextError")}
+              </Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                activeOpacity={0.8}
+                onPress={() => void loadContext()}
+              >
+                <Text style={styles.retryButtonText}>{t("common:actions.retry")}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.contextState}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            </View>
+          )
+        ) : isCompanyDeletion ? (
+          <>
+            {/* ── Firmenlöschung: was wird gelöscht ── */}
+            <Section
+              title={t("profile:deleteAccount.company.whatHappensTitle")}
+              theme={theme}
+              styles={styles}
+            >
+              <Bullet
+                icon="person-remove-outline"
+                text={t("profile:deleteAccount.company.bulletAccount")}
+                theme={theme}
+                styles={styles}
               />
+              <Bullet
+                icon="business-outline"
+                text={t("profile:deleteAccount.company.bulletCompany", { company: companyName })}
+                theme={theme}
+                styles={styles}
+              />
+              <Bullet
+                icon="documents-outline"
+                text={t("profile:deleteAccount.company.bulletData")}
+                theme={theme}
+                styles={styles}
+              />
+              <Bullet
+                icon="people-outline"
+                text={
+                  (context?.otherMemberCount ?? 0) > 0
+                    ? t("profile:deleteAccount.company.bulletEmployees", {
+                        count: context?.otherMemberCount ?? 0,
+                      })
+                    : t("profile:deleteAccount.company.bulletNoEmployees")
+                }
+                theme={theme}
+                styles={styles}
+                isLast
+              />
+            </Section>
+
+            <View style={styles.dangerNote}>
+              <Ionicons name="alert-circle-outline" size={18} color={theme.colors.error} />
+              <Text style={styles.dangerNoteText}>
+                {t("profile:deleteAccount.company.exportHint")}
+              </Text>
+            </View>
+
+            <ConfirmCheckbox
+              checked={confirmed}
+              onToggle={() => setConfirmed((v) => !v)}
+              label={t("profile:deleteAccount.checkboxLabel")}
+              disabled={loading}
+              theme={theme}
+              styles={styles}
+            />
+            <ConfirmCheckbox
+              checked={confirmedCompany}
+              onToggle={() => setConfirmedCompany((v) => !v)}
+              label={t("profile:deleteAccount.company.checkboxCompanyLabel", { company: companyName })}
+              disabled={loading}
+              theme={theme}
+              styles={styles}
+            />
+          </>
+        ) : (
+          <>
+            {/* ── Was passiert ── */}
+            <Section title={t("profile:deleteAccount.whatHappensTitle")} theme={theme} styles={styles}>
+              <Bullet
+                icon="person-remove-outline"
+                text={t("profile:deleteAccount.whatHappensBullet1")}
+                theme={theme}
+                styles={styles}
+              />
+              <Bullet
+                icon="id-card-outline"
+                text={t("profile:deleteAccount.whatHappensBullet2")}
+                theme={theme}
+                styles={styles}
+              />
+              <Bullet
+                icon="log-out-outline"
+                text={t("profile:deleteAccount.whatHappensBullet3")}
+                theme={theme}
+                styles={styles}
+                isLast
+              />
+            </Section>
+
+            {/* ── Verbleibende Daten ── */}
+            <Section
+              title={t("profile:deleteAccount.remainingDataTitle")}
+              theme={theme}
+              styles={styles}
+            >
+              <Bullet
+                icon="briefcase-outline"
+                text={t("profile:deleteAccount.remainingDataBullet1")}
+                theme={theme}
+                styles={styles}
+              />
+              <Bullet
+                icon="document-text-outline"
+                text={t("profile:deleteAccount.remainingDataBullet2")}
+                theme={theme}
+                styles={styles}
+                isLast
+              />
+            </Section>
+
+            {/* ── Hinweis für Admins (es gibt weitere aktive Admins) ── */}
+            {isAdmin && (
+              <View style={styles.adminNote}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color={theme.colors.statusInProgress}
+                />
+                <Text style={styles.adminNoteText}>
+                  {t("profile:deleteAccount.adminNote")}
+                </Text>
+              </View>
             )}
-          </View>
-          <Text style={styles.checkboxLabel}>
-            {t("profile:deleteAccount.checkboxLabel")}
-          </Text>
-        </TouchableOpacity>
+
+            <ConfirmCheckbox
+              checked={confirmed}
+              onToggle={() => setConfirmed((v) => !v)}
+              label={t("profile:deleteAccount.checkboxLabel")}
+              disabled={loading}
+              theme={theme}
+              styles={styles}
+            />
+          </>
+        )}
 
         {/* ── Löschen-Button ── */}
         <TouchableOpacity
           style={[
             styles.deleteButton,
-            (!confirmed || loading) && styles.deleteButtonDisabled,
+            !canDelete && styles.deleteButtonDisabled,
           ]}
           activeOpacity={0.85}
           onPress={handleDeletePress}
-          disabled={!confirmed || loading}
+          disabled={!canDelete}
         >
           {loading ? (
             <ActivityIndicator size="small" color={theme.colors.error} />
@@ -262,7 +400,9 @@ export default function DeleteAccountScreen() {
                 color={theme.colors.error}
               />
               <Text style={styles.deleteButtonText}>
-                {t("profile:deleteAccount.deleteButton")}
+                {isCompanyDeletion
+                  ? t("profile:deleteAccount.company.deleteButton")
+                  : t("profile:deleteAccount.deleteButton")}
               </Text>
             </>
           )}
@@ -309,6 +449,43 @@ function Section({
         <View style={styles.sectionInner}>{children}</View>
       </Card>
     </View>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ConfirmCheckbox
+// ─────────────────────────────────────────────
+function ConfirmCheckbox({
+  checked,
+  onToggle,
+  label,
+  disabled,
+  theme,
+  styles,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  disabled: boolean;
+  theme: AppTheme;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.checkboxRow}
+      activeOpacity={0.8}
+      onPress={onToggle}
+      disabled={disabled}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled }}
+    >
+      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+        {checked && (
+          <Ionicons name="checkmark" size={15} color={theme.colors.onPrimary} />
+        )}
+      </View>
+      <Text style={styles.checkboxLabel}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -466,6 +643,55 @@ function createStyles(theme: AppTheme) {
       fontFamily: theme.typography.family.regular,
       color: theme.colors.onSurface,
       lineHeight: theme.typography.lineHeight.sm,
+    },
+
+    // ── Danger note (Firmenlöschung)
+    dangerNote: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.errorContainer,
+      borderWidth: 1,
+      borderColor: theme.colors.error,
+      borderRadius: theme.radius.md,
+      padding: theme.spacing.md,
+    },
+    dangerNoteText: {
+      flex: 1,
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.medium,
+      fontWeight: theme.typography.weight.medium,
+      color: theme.colors.onSurface,
+      lineHeight: theme.typography.lineHeight.sm,
+    },
+
+    // ── Kontext lädt / Fehler
+    contextState: {
+      alignItems: "center",
+      gap: theme.spacing.md,
+      paddingVertical: theme.spacing.lg,
+    },
+    contextErrorText: {
+      fontSize: theme.typography.size.sm,
+      fontFamily: theme.typography.family.regular,
+      color: theme.colors.onSurfaceVariant,
+      textAlign: "center",
+      lineHeight: theme.typography.lineHeight.sm,
+    },
+    retryButton: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.sm,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.outline,
+      minHeight: theme.spacing.tapTarget,
+      justifyContent: "center",
+    },
+    retryButtonText: {
+      fontSize: theme.typography.size.md,
+      fontFamily: theme.typography.family.semibold,
+      fontWeight: theme.typography.weight.semibold,
+      color: theme.colors.primary,
     },
 
     // ── Checkbox

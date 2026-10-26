@@ -24,7 +24,8 @@
     "appearanceValue": "System setting",
     "deleteAccount": "Delete Account",
     "appVersion": "App Version",
-    "appVersionValue": "Version {{version}}"
+    "appVersionValue": "Version {{version}}",
+    "privacyPolicy": "Privacy Policy"
   },
   "dialogs": {
     "appearanceTitle": "Appearance",
@@ -65,14 +66,33 @@
     "whatHappensBullet3": "You'll be signed out immediately and lose access to the app.",
     "remainingDataTitle": "What data is kept?",
     "remainingDataBullet1": "Jobs, comments, and photos you created or edited remain with your company for operational and legal reasons.",
-    "remainingDataBullet2": "These entries are anonymized, though — they're no longer linked to your name or account.",
-    "adminNote": "As an administrator, you can only delete your account if another active administrator exists. If you're the only administrator of your company, dissolve the company first or appoint another administrator.",
+    "remainingDataBullet2": "Your account will be unlinked from these entries. Your name stays on time and absence records because your employer is legally required to keep them.",
+    "adminNote": "Your company will remain because it has other active administrators. Only your own account will be deleted.",
     "checkboxLabel": "I understand this action is irreversible and my account will be permanently deleted.",
     "deleteButton": "Permanently Delete Account",
     "confirmDialogTitle": "Permanently delete account?",
     "confirmDialogMessage": "This action cannot be undone. Your account and profile will be permanently deleted.",
     "confirmDialogConfirm": "Delete Permanently",
     "notPossibleTitle": "Deletion Not Possible",
-    "genericError": "Your account could not be deleted. Please try again later."
+    "genericError": "Your account could not be deleted. Please try again later.",
+    "contextError": "Your account information could not be loaded. Please check your internet connection and try again.",
+    "notLastAdminTitle": "Company will not be deleted",
+    "lastAdminChangedMessage": "Your role in the company has changed. Please review the information shown and confirm again.",
+    "company": {
+      "heroTitle": "Permanently Delete Account and Company",
+      "heroSubtitle": "You are the only active administrator of “{{company}}”. Deleting your account also deletes the company and all of its data. This cannot be undone.",
+      "whatHappensTitle": "What will be deleted?",
+      "bulletAccount": "Your sign-in account and your profile.",
+      "bulletCompany": "The company “{{company}}” and all company data.",
+      "bulletData": "All jobs, working times, absences, vacation balances, comments and photos of the company.",
+      "bulletEmployees": "All other accounts of the company (employees and deactivated administrators): {{count}}. They lose access immediately.",
+      "bulletNoEmployees": "The company has no other accounts.",
+      "exportHint": "Save anything you still need first, such as timesheets. No copy remains after deletion.",
+      "checkboxCompanyLabel": "I understand that the company “{{company}}” and all company data will be permanently deleted.",
+      "deleteButton": "Permanently Delete Account and Company",
+      "confirmDialogTitle": "Permanently delete “{{company}}”?",
+      "confirmDialogMessage": "Your account, the company, all company data and all employee accounts will be permanently deleted. This cannot be undone.",
+      "confirmDialogConfirm": "Delete Company and Account"
+    }
   }
 }
