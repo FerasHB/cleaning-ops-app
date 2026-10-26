@@ -1,0 +1,22 @@
+{
+  "name": "taskops-promo-video",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "audio": "node scripts/gen-audio.mjs",
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts AppPromo ../output/app-promo.mp4 --codec h264 --crf 18"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.538",
+    "@remotion/google-fonts": "4.0.538",
+    "@remotion/transitions": "4.0.538",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.538"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.10",
+    "typescript": "5.9.2"
+  }
+}
