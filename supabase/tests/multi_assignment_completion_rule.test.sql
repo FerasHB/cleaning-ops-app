@@ -534,6 +534,63 @@ end $$;
 
 
 -- =========================================================
+-- TEIL 3 — completed_at = letzter echter Teilnehmer-Abschluss
+-- (Migration 20261030000001)
+-- =========================================================
+-- jobs.completed_at ist die offizielle geteilte Auftragsuhr. Sie darf weder
+-- vor dem Abschluss eines Gestarteten liegen (Offline-Sync in falscher
+-- Reihenfolge) noch der Speicherzeitpunkt eines Admins sein.
+do $$
+declare
+  ADM uuid := 'c9a20000-0000-0000-0000-000000000001';
+  A   uuid := 'c9a20000-0000-0000-0000-000000000002';
+  B   uuid := 'c9a20000-0000-0000-0000-000000000003';
+  t0  timestamptz := date_trunc('second', now()) - interval '4 hours';
+  tA  timestamptz := date_trunc('second', now()) - interval '1 hour';
+  tB  timestamptz := date_trunc('second', now()) - interval '90 minutes';
+  v text;
+begin
+  -- N1: A schliesst um tA ab, B synchronisiert spaeter einen FRUEHEREN
+  -- Offline-Abschluss tB und loest damit den Auftragsabschluss aus.
+  perform pg_temp.mkjob('c9a40000-0000-0000-0000-0000000001d1', 'in_progress', A);
+  perform pg_temp.asg('c9a40000-0000-0000-0000-0000000001d1', A, t0, tA);
+  perform pg_temp.asg('c9a40000-0000-0000-0000-0000000001d1', B, t0, tB);
+  perform 1 from public.jobs where id='c9a40000-0000-0000-0000-0000000001d1' for update;
+  perform public.maybe_complete_job('c9a40000-0000-0000-0000-0000000001d1', B, tB, true);
+  select status::text||'/'||(completed_at = tA)::text||'/'||(completed_by = B)::text into v
+  from public.jobs where id='c9a40000-0000-0000-0000-0000000001d1';
+  perform pg_temp.note('N1','Spaeter synchronisierter frueherer Abschluss -> completed_at = spaetester Teilnehmer, Akteur bleibt B',
+    'completed/true/true', v);
+
+  -- N2: Admin-Speichern auf Bestands-Haenger: completed_at = A's echter
+  -- Abschluss, nicht der Speicherzeitpunkt.
+  perform pg_temp.mkjob('c9a40000-0000-0000-0000-0000000001d2', 'in_progress', A);
+  perform pg_temp.asg('c9a40000-0000-0000-0000-0000000001d2', A, t0, tA);
+  perform pg_temp.asg('c9a40000-0000-0000-0000-0000000001d2', B, null, null);
+  perform pg_temp.act_as(ADM);
+  execute 'set local role authenticated';
+  perform public.set_job_assignments('c9a40000-0000-0000-0000-0000000001d2', array[A, B]);
+  execute 'reset role';
+  select status::text||'/'||(completed_at = tA)::text into v
+  from public.jobs where id='c9a40000-0000-0000-0000-0000000001d2';
+  perform pg_temp.note('N2','Admin-Speichern schliesst Haenger mit completed_at = letzter echter Abschluss',
+    'completed/true', v);
+
+  -- N3: Abschlusszeit eines nie gestarteten Altdatensatzes (nur Abschluss,
+  -- kein Startbeweis) zaehlt nicht fuer die Auftragsuhr.
+  perform pg_temp.mkjob('c9a40000-0000-0000-0000-0000000001d3', 'in_progress', A);
+  perform pg_temp.asg('c9a40000-0000-0000-0000-0000000001d3', A, t0, tB);
+  perform pg_temp.asg('c9a40000-0000-0000-0000-0000000001d3', B, null, tA, 'completed');
+  perform 1 from public.jobs where id='c9a40000-0000-0000-0000-0000000001d3' for update;
+  perform public.maybe_complete_job('c9a40000-0000-0000-0000-0000000001d3', A, tB, true);
+  select status::text||'/'||(completed_at = tB)::text into v
+  from public.jobs where id='c9a40000-0000-0000-0000-0000000001d3';
+  perform pg_temp.note('N3','Abschluss ohne Startbeweis verschiebt die Auftragsuhr nicht',
+    'completed/true', v);
+end $$;
+
+
+-- =========================================================
 -- Ergebnisuebersicht
 -- =========================================================
 select case_no, beschreibung, erwartet, ergebnis,
