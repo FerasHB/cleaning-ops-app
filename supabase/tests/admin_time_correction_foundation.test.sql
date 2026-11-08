@@ -447,7 +447,9 @@ select 32, 'Anonymisierte Zuweisung nach Ablehnung unveraendert', 'OK',
 -- Audit-Eintrag — kein abgelehnter Aufruf hat geschrieben.
 insert into _atc
 select 23, 'Abgelehnte Aufrufe erzeugen keinen Audit-Eintrag', '1',
-  (select count(*)::text from public.employee_time_adjustments);
+  -- Nur die Fixture-Auftraege zaehlen: Staging/Prod tragen echte Zeilen.
+  (select count(*)::text from public.employee_time_adjustments
+    where job_id::text like 'a4000000-%');
 
 -- CASE 24: Alt-Auftrag J2 traegt weiterhin Ahmads urspruengliche Eigenzeit
 -- (die Ablehnung hat nichts veraendert).
