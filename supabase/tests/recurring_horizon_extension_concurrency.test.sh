@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Local-only two-connection races for migration 20261012000000 (recurring horizon).
 # Fixtures are committed (races need separate transactions) and removed by the
-# cleanup trap. The hard-coded local container prevents remote execution.
+# cleanup trap. Only a local Docker container is targeted (docker exec), never
+# a remote database URL. DB_CONTAINER=<container> selects another local one.
 set -euo pipefail
 
-container=supabase_db_cleaning-employee-app-2
+container="${DB_CONTAINER:-supabase_db_cleaning-employee-app-2}"
 docker inspect "$container" > /dev/null
 
 test_dir=$(mktemp -d)

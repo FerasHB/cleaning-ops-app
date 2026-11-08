@@ -1,13 +1,19 @@
 name: CI
 
-# Läuft bei jedem Pull Request gegen main: installiert die Abhängigkeiten aus
-# dem vorhandenen Lockfile, prüft die Typen und lintet. Kein Zugriff auf
-# Supabase/SQL — reine statische Checks.
+# Quality gate for every pull request. Fast static checks and Node tests run
+# next to three database jobs; each database job builds its OWN throwaway
+# Supabase Postgres on the runner (see .github/actions/ephemeral-supabase-db).
+#
+# Isolation: this workflow references no secrets, never links or connects to
+# a hosted Supabase project and gives containers no internet route. Staging
+# and Production cannot be reached from here even if secrets existed.
 on:
+  # No branch filter: stacked PRs (e.g. into a release branch) get the same
+  # checks as PRs into main.
   pull_request:
-    branches: [main]
+  workflow_dispatch:
 
-# Nur der neueste Lauf pro PR-Branch; ältere laufende Checks werden abgebrochen.
+# Only the newest run per PR branch; older running checks are cancelled.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -19,6 +25,7 @@ jobs:
   typecheck-lint:
     name: Typecheck & Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,3 +44,114 @@ jobs:
 
       - name: Expo lint
         run: npm run lint
+
+  node-tests:
+    name: Node regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # --experimental-strip-types (TypeScript sources imported directly)
+      # needs Node 22.6 or newer.
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+
+      - name: Install dependencies (from lockfile)
+        run: npm ci
+
+      # Every scripts/check-* and scripts/verify-* file, so new checks are
+      # picked up automatically. check-legal-urls.mjs is left out on purpose:
+      # it fetches the public legal pages over the internet (release gate
+      # before store builds, not deterministic per PR).
+      - name: Run Node regression tests
+        run: |
+          files=()
+          for f in scripts/check-*.mjs scripts/check-*.js scripts/verify-*.mjs; do
+            [[ "$f" == scripts/check-legal-urls.mjs ]] || files+=("$f")
+          done
+          printf 'Running %s files:\n' "${#files[@]}"; printf '  %s\n' "${files[@]}"
+          node --experimental-strip-types --test --test-reporter=spec "${files[@]}"
+
+  db-migrations:
+    name: Database - clean migration from zero
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Ephemeral Supabase database (all migrations from zero)
+        uses: ./.github/actions/ephemeral-supabase-db
+
+      - name: Schema security invariants
+        run: bash scripts/ci/run-sql-tests.sh supabase/tests/schema_security_invariants.test.sql
+
+      - name: Assert no outbound HTTP reached anything
+        if: always()
+        run: bash scripts/ci/assert-no-egress.sh
+
+  db-regression:
+    name: Database - SQL regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Ephemeral Supabase database (all migrations from zero)
+        uses: ./.github/actions/ephemeral-supabase-db
+
+      - name: Run all supabase/tests/*.test.sql
+        run: bash scripts/ci/run-sql-tests.sh
+
+      - name: Assert no outbound HTTP reached anything
+        if: always()
+        run: bash scripts/ci/assert-no-egress.sh
+
+  db-concurrency:
+    name: Database - concurrency tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Ephemeral Supabase database (all migrations from zero)
+        uses: ./.github/actions/ephemeral-supabase-db
+
+      # Each race runs 3 times; a timing bug may not show on the first try.
+      - name: Run all supabase/tests/*.test.sh (3 iterations)
+        run: bash scripts/ci/run-concurrency-tests.sh
+        env:
+          CONCURRENCY_ITERATIONS: 3
+
+      - name: Assert no outbound HTTP reached anything
+        if: always()
+        run: bash scripts/ci/assert-no-egress.sh
+
+  security:
+    name: Security - secrets and CI isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history for the secret scan)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      # Scans every commit reachable from this PR. Reviewed false positives
+      # are listed in .gitleaksignore; extra Supabase rules in .gitleaks.toml.
+      - name: Secret scan (gitleaks, full history)
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git /repo --config /repo/.gitleaks.toml --gitleaks-ignore-path /repo/.gitleaksignore \
+            --redact --no-banner --verbose
+
+      - name: Tracked-file and workflow isolation guard
+        run: bash scripts/ci/check-ci-isolation.sh
