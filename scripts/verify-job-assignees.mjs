@@ -19,42 +19,53 @@
 //   Beides ist gegen PostgREST manuell verifiziert; die Vorgehensweise steht
 //   in docs/phase5-react-native-read-path.md.
 
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
+import ts from "typescript";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const out = mkdtempSync(join(tmpdir(), "verify-assignees-"));
 
-try {
-  const cfg = join(out, "tsconfig.json");
-  writeFileSync(
-    cfg,
-    JSON.stringify({
-      compilerOptions: {
-        strict: true,
-        noEmit: false,
-        outDir: join(out, "js"),
-        module: "es2020",
-        moduleResolution: "node",
-        target: "es2020",
-        skipLibCheck: true,
-        types: [],
-        baseUrl: root,
-        paths: { "@/*": ["./*"] },
-      },
-      include: [join(root, "utils/jobAssignees.ts")],
-    }),
-  );
+// Die ECHTE Quelle wird nach CommonJS transpiliert und isoliert ausgefuehrt
+// (gleiches Muster wie check-session-accounting.mjs). Seit der i18n-Umstellung
+// importiert utils/jobAssignees.ts "@/i18n" (JSON-Locales, react-i18next) —
+// das laesst sich ausserhalb von Metro nicht laden. Deshalb wird nur i18next.t
+// ersetzt, und zwar mit den ECHTEN deutschen Texten aus
+// i18n/locales/de/common.json: die Zusicherungen pruefen weiterhin die
+// tatsaechlich angezeigten Strings.
+const deCommon = JSON.parse(
+  readFileSync(join(root, "i18n/locales/de/common.json"), "utf8"),
+);
+const t = (key) => {
+  const [ns, path] = key.split(":");
+  if (ns !== "common") throw new Error(`Unerwarteter Namespace: ${key}`);
+  const value = path.split(".").reduce((cur, part) => cur?.[part], deCommon);
+  if (typeof value !== "string") throw new Error(`Fehlender Text: ${key}`);
+  return value;
+};
 
-  execFileSync("npx", ["tsc", "-p", cfg], { cwd: root, stdio: "pipe" });
+{
+  const source = readFileSync(join(root, "utils/jobAssignees.ts"), "utf8");
+  const code = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+    },
+  }).outputText;
+  const mocks = {
+    "@/i18n": { i18next: { t } },
+    // Nur von canRunJobActions benutzt, das hier nicht geprueft wird.
+    "@/utils/jobSchedule": { isPausedRecurringOccurrence: () => false },
+  };
+  const mod = {};
+  // Im selben Realm (kein vm-Kontext), damit deepEqual Arrays/Objekte der
+  // Quelle mit lokal erzeugten vergleichen kann.
+  new Function("exports", "require", code)(mod, (name) => {
+    if (name in mocks) return mocks[name];
+    throw new Error(`Unmocked ${name}`);
+  });
 
-  const mod = await import(
-    pathToFileURL(join(out, "js/utils/jobAssignees.js")).href
-  );
   const { buildLegacyAssignees, formatAssigneesShort, formatAssigneesFull } = mod;
 
   let n = 0;
@@ -133,15 +144,22 @@ try {
     assert.ok(a[0].assignmentId.startsWith("legacy:"));
   });
 
-  // L-1: keine erfundenen Abrechnungs-/Anwesenheitsdaten mehr.
-  ok("traegt keine Abrechnungs-/Anwesenheitsfelder", () => {
+  // L-1: keine erfundenen Abrechnungs-/Anwesenheitsdaten. Seit Phase B1
+  // traegt JobAssignee die eigenen Zeitfelder; der Legacy-Zweig kennt die
+  // echte Zuweisungszeile nicht und muss sie deshalb HART null setzen —
+  // nie die geteilte Job-Uhr.
+  ok("traegt keine erfundenen Abrechnungs-/Anwesenheitsdaten", () => {
     const r = buildLegacyAssignees({ id: "j", employeeId: "e", employeeName: "N" });
     assert.deepEqual(Object.keys(r[0]).sort(), [
       "assignmentId",
+      "employeeCompletedAt",
       "employeeId",
+      "employeeStartedAt",
       "fullName",
       "isDeleted",
     ]);
+    assert.equal(r[0].employeeStartedAt, null);
+    assert.equal(r[0].employeeCompletedAt, null);
   });
 
   ok("Fallback-Ergebnis rendert korrekt in den Anzeige-Helfern", () => {
@@ -158,6 +176,4 @@ try {
   });
 
   console.log(`\n${n}/${n} Zusicherungen erfuellt.`);
-} finally {
-  rmSync(out, { recursive: true, force: true });
 }

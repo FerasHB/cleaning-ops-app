@@ -67,7 +67,9 @@ if (!handlerMatch) {
 // 2) Der "Zurück zum Login"-Button im Ungültig-Zustand muss handleBackToLogin
 //    verwenden, nicht direkt (wieder) einen bloßen router.replace(...).
 const invalidBlockMatch = source.match(
-  /status === "invalid"[\s\S]*?Zurück zum Login/,
+  // Seit der Auth-Lokalisierung (Phase E.1) steht hier der i18n-Schluessel
+  // statt des deutschen Literals.
+  /status === "invalid"[\s\S]*?acceptInvite\.backToLoginButton/,
 );
 
 if (!invalidBlockMatch) {
