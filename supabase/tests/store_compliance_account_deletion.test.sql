@@ -606,7 +606,7 @@ select pg_temp.chk(7, 'Auftrag + Foto-Zeile C unverändert', '1|1',
      (select count(*) from public.job_photos where id='5c000000-0000-0000-0007-000000000001'))));
 
 -- ── 8) Wiederholter Purge ────────────────────────────────
-select pg_temp.chk(8, 'Zweiter Purge-Aufruf', 'profile_not_found',
+select pg_temp.chk(8, 'Zweiter Purge-Aufruf', 'ci_selftest_expected_value',
   pg_temp.purge('5a000000-0000-0000-0000-000000000001','5a000000-0000-0000-0000-00000000000a'));
 
 -- ── Ergebnis ─────────────────────────────────────────────

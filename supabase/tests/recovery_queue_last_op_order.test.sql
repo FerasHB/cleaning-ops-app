@@ -69,6 +69,8 @@ begin
     raise exception 'RECOVERY QUEUE ORDER: expected late_complete, got %', coalesce(v,'<no row>');
   end if;
   raise notice 'PASS recovery queue uses the action that committed last (late_complete)';
+  -- CI self-test: deliberate failing assertion. Never merge.
+  if 1 <> 2 then raise exception 'CI self-test: deliberate failing assertion'; end if;
 end $$;
 
 rollback;
