@@ -72,3 +72,21 @@ With another local container: `DB_CONTAINER=<name> bash scripts/ci/run-sql-tests
   `schema_security_invariants.test.sql` until its name is added to the
   reviewed list there.
 - A reviewed gitleaks false positive goes into `.gitleaksignore` with a reason.
+
+## Recommended ruleset for `main` (not active)
+
+`docs/ci-main-ruleset.json` is a ready GitHub ruleset. It is **not applied**.
+It requires a pull request for every change to `main`, requires all six
+checks above to pass on the latest `main`, blocks force pushes and blocks
+deleting `main`. Repository admins keep a pull-request-only bypass for
+emergencies (no direct pushes). Reviews are not required (single
+maintainer); raise `required_approving_review_count` when a second reviewer
+joins. `integration_id` 15368 is GitHub Actions.
+
+Apply it only after this workflow is on `main` and the four new checks have
+passed there at least once; otherwise every PR waits for checks that never
+report:
+
+```bash
+gh api -X POST repos/FerasHB/cleaning-ops-app/rulesets --input docs/ci-main-ruleset.json
+```
