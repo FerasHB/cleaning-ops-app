@@ -198,3 +198,6 @@ export function formatDateOnlyLocalized(dateKey?: string | null): string | null 
     year: "numeric",
   });
 }
+
+// Ruleset self-test: deliberate type error. Never merge.
+export const rulesetSelfTest: number = "not a number";
