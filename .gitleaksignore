@@ -1,0 +1,21 @@
+# Reviewed gitleaks findings (fingerprint = commit:file:rule:line).
+# Add a line here only after confirming the match is not a credential.
+#
+# check_key := '…' / h.check_key = '…' are health-check identifiers such as
+# 'h1_pending_oldest', not keys (notification health monitoring, receipts).
+11
+160f07e4a4d5b8f13c88017b5cf1465936b9aead:supabase/tests/notification_health_monitoring.test.sql:generic-api-key:142
+160f07e4a4d5b8f13c88017b5cf1465936b9aead:supabase/migrations/20261018000002_receipt_monitoring.sql:generic-api-key:69
+160f07e4a4d5b8f13c88017b5cf1465936b9aead:supabase/migrations/20261018000002_receipt_monitoring.sql:generic-api-key:148
+160f07e4a4d5b8f13c88017b5cf1465936b9aead:supabase/migrations/20261018000002_receipt_monitoring.sql:generic-api-key:277
+160f07e4a4d5b8f13c88017b5cf1465936b9aead:supabase/migrations/20261018000002_receipt_monitoring.sql:generic-api-key:305
+5ac221d7ed609ff1be22ca37eb58fe61f037d8cd:supabase/migrations/20261017000000_notification_health_monitoring.sql:generic-api-key:162
+5ac221d7ed609ff1be22ca37eb58fe61f037d8cd:supabase/migrations/20261017000000_notification_health_monitoring.sql:generic-api-key:241
+5ac221d7ed609ff1be22ca37eb58fe61f037d8cd:supabase/migrations/20261017000000_notification_health_monitoring.sql:generic-api-key:364
+5ac221d7ed609ff1be22ca37eb58fe61f037d8cd:supabase/tests/notification_health_monitoring.test.sql:generic-api-key:131
+5ac221d7ed609ff1be22ca37eb58fe61f037d8cd:supabase/tests/notification_health_monitoring.test.sql:generic-api-key:195
+#
+# .env committed in 7e1f488 (2026-04-06), removed in 7cd5918 (2026-04-08):
+# EXPO_PUBLIC_SUPABASE_ANON_KEY held the sb_publishable_ key, which is public
+# by design (it ships in every app bundle). No secret key was ever committed.
+7e1f48875c567bcf2377d990399ae2b7062407b9:.env:generic-api-key:2

@@ -1,0 +1,95 @@
+name: Ephemeral Supabase database
+description: >
+  Starts a throwaway local Supabase Postgres on the runner, applies every
+  migration in supabase/migrations from zero and locks it down so it cannot
+  reach any real environment. Never links to a hosted project.
+
+runs:
+  using: composite
+  steps:
+    # Some migrations schedule pg_cron jobs, and one of them (the notification
+    # sweeper from 20260717000003) posts to a hard-coded hosted Edge Function
+    # URL every minute. Containers on this runner therefore get NO route to
+    # the internet: forwarded traffic to anything except private ranges is
+    # rejected. Image pulls are made by the Docker daemon itself (host
+    # traffic) and are not affected.
+    - name: Block internet access from containers
+      shell: bash
+      run: |
+        sudo iptables -N TASKOPS-NO-EGRESS
+        sudo iptables -A TASKOPS-NO-EGRESS -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+        for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8; do
+          sudo iptables -A TASKOPS-NO-EGRESS -d "$net" -j RETURN
+        done
+        sudo iptables -A TASKOPS-NO-EGRESS -j REJECT
+        sudo iptables -L DOCKER-USER -n > /dev/null 2>&1 || sudo iptables -N DOCKER-USER
+        sudo iptables -I DOCKER-USER 1 -j TASKOPS-NO-EGRESS
+        sudo iptables -L DOCKER-USER -n -v
+
+    - name: Set up Supabase CLI
+      uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
+      with:
+        version: 2.120.0
+
+    # Same service versions as the hosted projects (the CLI reads these files;
+    # they are normally written by `supabase link`, which CI never runs).
+    - name: Pin service versions to the hosted projects
+      shell: bash
+      run: |
+        mkdir -p supabase/.temp
+        printf '17.6.1.147' > supabase/.temp/postgres-version
+        printf 'v2.197.0' > supabase/.temp/gotrue-version
+        printf 'v1.73.1' > supabase/.temp/storage-version
+        printf 'objects-null-version-index' > supabase/.temp/storage-migration
+        printf 'v14.5' > supabase/.temp/rest-version
+        if [[ -e supabase/.temp/project-ref ]]; then
+          echo "::error::CI must never be linked to a hosted project." >&2
+          exit 1
+        fi
+
+    # Auth and storage stay enabled in config.toml, so the CLI still runs their
+    # schema migrations (auth.users, storage.objects, roles) exactly like a
+    # hosted project. Only the long-running service containers are skipped.
+    - name: Start database and apply all migrations from zero
+      shell: bash
+      run: |
+        supabase start \
+          -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+        docker ps --format '{{.Names}}  {{.Image}}'
+
+    - name: Verify every migration was applied
+      shell: bash
+      run: |
+        expected=$(ls supabase/migrations/*.sql | sed -E 's#.*/([0-9]+)_.*#\1#' | sort)
+        applied=$(docker exec supabase_db_cleaning-employee-app-2 psql -U postgres -d postgres -Atc \
+          "select version from supabase_migrations.schema_migrations order by version")
+        if [[ "$expected" != "$applied" ]]; then
+          echo "::error::Applied migrations differ from supabase/migrations." >&2
+          diff <(echo "$expected") <(echo "$applied")
+          exit 1
+        fi
+        echo "Applied $(echo "$applied" | wc -l) migrations from zero."
+        docker exec supabase_db_cleaning-employee-app-2 psql -U postgres -d postgres -Atc "select version()"
+
+    # Background jobs would write rows while tests run (health checks every
+    # 5 min, nightly horizon extension). Tests call those functions directly,
+    # so the jobs are paused. The dispatch sweeper stays active exactly like
+    # on the hosted projects: the health-check tests require it, it writes no
+    # table rows, and its HTTP call is stopped by the egress block above.
+    - name: Pause background pg_cron jobs and prove there is no internet route
+      shell: bash
+      run: |
+        db() { docker exec -i supabase_db_cleaning-employee-app-2 psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -At "$@"; }
+        db -c "update cron.job set active = (jobname = 'notification-dispatch-sweeper')" \
+           -c "select jobname || ' active=' || active from cron.job order by 1"
+        id=$(db -c "select net.http_get('https://example.com')")
+        for _ in $(seq 1 30); do
+          row=$(db -c "select coalesce(status_code::text, 'none') || '|' || coalesce(error_msg, '') from net._http_response where id = $id")
+          [[ -n "$row" ]] && break
+          sleep 1
+        done
+        echo "Outbound probe result: ${row:-no response row}"
+        if [[ "$row" != none\|* ]]; then
+          echo "::error::A container reached the internet; refusing to run tests." >&2
+          exit 1
+        fi

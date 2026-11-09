@@ -1,0 +1,20 @@
+# Secret scan configuration for CI (gitleaks). Extends the default ruleset.
+# Reviewed false positives are listed by fingerprint in .gitleaksignore.
+title = "TaskOps Manager"
+
+[extend]
+useDefault = true
+
+# Supabase secret / service keys must never be committed. The publishable key
+# (sb_publishable_…) is public by design and ships in the app bundle.
+[[rules]]
+id = "supabase-secret-key"
+description = "Supabase secret API key (sb_secret_…)"
+regex = '''sb_secret_[A-Za-z0-9_-]{20,}'''
+keywords = ["sb_secret_"]
+
+[[rules]]
+id = "expo-access-token"
+description = "Expo / EAS access token"
+regex = '''(?i)expo[_-]?token["'\s:=]+[A-Za-z0-9_-]{30,}'''
+keywords = ["expo_token", "expo-token", "expotoken"]
