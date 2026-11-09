@@ -7,10 +7,10 @@ description: >
 runs:
   using: composite
   steps:
-    # Some migrations schedule pg_cron jobs, and one of them (the notification
-    # sweeper from 20260717000003) posts to a hard-coded hosted Edge Function
-    # URL every minute. Containers on this runner therefore get NO route to
-    # the internet: forwarded traffic to anything except private ranges is
+    # Some migrations schedule pg_cron jobs. The notification sweeper from
+    # 20260717000003 posted to a hard-coded hosted Edge Function URL every
+    # minute until 20261109000000 moved the URL to Vault. As a second safety
+    # net, containers on this runner get NO route to the internet: forwarded traffic to anything except private ranges is
     # rejected. Image pulls are made by the Docker daemon itself (host
     # traffic) and are not affected.
     - name: Block internet access from containers

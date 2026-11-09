@@ -21,9 +21,10 @@ Each database job builds its own throwaway database with
 `.github/actions/ephemeral-supabase-db`:
 
 1. Containers on the runner get no internet route (iptables `DOCKER-USER`).
-   Migration `20260717000003` schedules a pg_cron job that posts to a
-   hard-coded hosted Edge Function URL every minute; in CI that call fails
-   with a connection error. Each job ends by asserting that no pg_net request
+   Migration `20260717000003` scheduled a pg_cron job that posts to a
+   hard-coded hosted Edge Function URL every minute. `20261109000000` reads
+   the URL from Vault instead (no Vault secrets locally or in CI, so no
+   request at all); the egress block stays as a second safety net. Each job ends by asserting that no pg_net request
    got an HTTP response (`scripts/ci/assert-no-egress.sh`).
 2. Supabase CLI `2.120.0` with the hosted service versions pinned through
    `supabase/.temp/*-version` (Postgres `17.6.1.147`, GoTrue `v2.197.0`,
