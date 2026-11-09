@@ -510,26 +510,39 @@ begin
   perform public.complete_own_job('a4000000-0000-0000-0000-000000000020', now());
   execute 'reset role';
 
+  -- 20261029000000: nie gestartete Zuweisungen blockieren den Abschluss nicht
+  -- mehr (vorher blieb der Auftrag hier dauerhaft 'in_progress').
   select status::text into v from public.jobs where id='a4000000-0000-0000-0000-000000000020';
-  perform pg_temp.note(16,'Lebenszyklus','A fertig, B zugewiesen/nicht gestartet -> Auftrag bleibt in Arbeit','in_progress',v);
+  perform pg_temp.note(16,'Lebenszyklus','A fertig, B zugewiesen/nicht gestartet -> Auftrag schliesst (20261029000000)','completed',v);
 
-  -- CASE 17: B vor dem Start entfernen -> Auftrag schliesst
+  -- CASE 17: Bestands-Haenger aus der Zeit vor 20261029000000 (A fertig, B nie
+  -- gestartet, Auftrag noch 'in_progress'). B entfernen -> Auftrag schliesst.
+  perform pg_temp.mkjob('a4000000-0000-0000-0000-000000000022'::uuid,
+    pg_temp.bdate(now() - interval '2 hours'), time '08:00', 'open',
+    array['a2000000-0000-0000-0000-000000000002'::uuid,'a2000000-0000-0000-0000-000000000003'::uuid]);
+  update public.jobs set status = 'in_progress', started_at = now() - interval '2 hours',
+                         started_by = 'a2000000-0000-0000-0000-000000000002'
+  where id='a4000000-0000-0000-0000-000000000022';
+  update public.job_assignments
+  set employee_started_at = now() - interval '2 hours', employee_completed_at = now(), attendance = 'completed'
+  where job_id='a4000000-0000-0000-0000-000000000022' and employee_id='a2000000-0000-0000-0000-000000000002';
+
   perform pg_temp.act_as('a2000000-0000-0000-0000-000000000001');
   execute 'set local role authenticated';
   begin
-    perform public.set_job_assignments('a4000000-0000-0000-0000-000000000020',
+    perform public.set_job_assignments('a4000000-0000-0000-0000-000000000022',
       array['a2000000-0000-0000-0000-000000000002'::uuid]);
     v := 'OK';
   exception when others then v := 'ABGELEHNT:'||sqlerrm;
   end;
   execute 'reset role';
 
-  select status::text into v from public.jobs where id='a4000000-0000-0000-0000-000000000020';
+  select status::text into v from public.jobs where id='a4000000-0000-0000-0000-000000000022';
   perform pg_temp.note(17,'Lebenszyklus','Entfernen des nie gestarteten B schliesst den Auftrag','completed',v);
 
   -- und dabei KEIN job_completed-Event (Admin-Aktion)
   select count(*)::int into v_cnt from public.notification_outbox
-  where job_id='a4000000-0000-0000-0000-000000000020' and event_type='job_completed';
+  where job_id='a4000000-0000-0000-0000-000000000022' and event_type='job_completed';
   perform pg_temp.note(48,'Lebenszyklus','Admin-verursachter Abschluss schreibt kein job_completed-Event','0',v_cnt::text);
 
   -- CASE 18: bereits gestarteten B entfernen -> GESAMTER Aufruf abgelehnt
@@ -894,12 +907,18 @@ begin
   perform pg_temp.act_as('a2000000-0000-0000-0000-000000000002');
   execute 'set local role authenticated';
   perform public.start_own_job('a4000000-0000-0000-0000-000000000060', now() - interval '3 hours');
-  perform public.complete_own_job('a4000000-0000-0000-0000-000000000060', now() - interval '2 hours');
   execute 'reset role';
 
+  -- E2 startet VOR E1s Abschluss: seit 20261029000000 schliesst der Auftrag,
+  -- sobald alle bis dahin Gestarteten fertig sind.
   perform pg_temp.act_as('a2000000-0000-0000-0000-000000000003');
   execute 'set local role authenticated';
   perform public.start_own_job('a4000000-0000-0000-0000-000000000060', now() - interval '3 hours');
+  execute 'reset role';
+
+  perform pg_temp.act_as('a2000000-0000-0000-0000-000000000002');
+  execute 'set local role authenticated';
+  perform public.complete_own_job('a4000000-0000-0000-0000-000000000060', now() - interval '2 hours');
   execute 'reset role';
 
   -- E2 war 15 Minuten spaeter vor Ort: eigene Startzeit entsprechend setzen.

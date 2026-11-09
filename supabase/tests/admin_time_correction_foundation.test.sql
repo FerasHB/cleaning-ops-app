@@ -447,7 +447,9 @@ select 32, 'Anonymisierte Zuweisung nach Ablehnung unveraendert', 'OK',
 -- Audit-Eintrag — kein abgelehnter Aufruf hat geschrieben.
 insert into _atc
 select 23, 'Abgelehnte Aufrufe erzeugen keinen Audit-Eintrag', '1',
-  (select count(*)::text from public.employee_time_adjustments);
+  -- Nur die Fixture-Auftraege zaehlen: Staging/Prod tragen echte Zeilen.
+  (select count(*)::text from public.employee_time_adjustments
+    where job_id::text like 'a4000000-%');
 
 -- CASE 24: Alt-Auftrag J2 traegt weiterhin Ahmads urspruengliche Eigenzeit
 -- (die Ablehnung hat nichts veraendert).
@@ -596,20 +598,25 @@ begin
     (j.status='in_progress' and j.started_at=now()-interval '2 minutes'
      and a.employee_started_at=j.started_at and untouched)::text);
 
+  -- The colleague starts BEFORE the first completion: since 20261029000000 a
+  -- never-started colleague no longer blocks, so only a STARTED colleague
+  -- keeps the job open.
+  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c2');
   execute 'set local role authenticated';
+  perform public.start_own_job(j.id,now()-interval '2 minutes');
+  perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c3');
   perform public.complete_own_job(j.id,now()-interval '1 minute');
   execute 'reset role';
   select * into strict j from public.jobs where id=j.id;
   select * into strict a from public.job_assignments where job_id=j.id and employee_id='a2000000-0000-0000-0000-0000000000c3';
-  select employee_started_at is null and employee_completed_at is null into strict untouched
+  select employee_started_at is not null and employee_completed_at is null into strict untouched
     from public.job_assignments where job_id=j.id and employee_id='a2000000-0000-0000-0000-0000000000c2';
-  insert into _atc values (21,'Own completion does not close the job while colleague is unresolved','true',
+  insert into _atc values (21,'Own completion does not close the job while a started colleague is unresolved','true',
     (a.attendance='completed' and a.employee_completed_at=now()-interval '1 minute'
      and j.status='in_progress' and j.completed_at is null and untouched)::text);
 
   perform pg_temp.act_as('a2000000-0000-0000-0000-0000000000c2');
   execute 'set local role authenticated';
-  perform public.start_own_job(j.id,now()-interval '2 minutes');
   perform public.complete_own_job(j.id,now());
   execute 'reset role';
   select * into strict j from public.jobs where id=j.id;

@@ -626,8 +626,21 @@ end $$;
 do $$
 declare v text; v_own_start text; v_anna text;
 begin
-  -- Anna (Primaer) schliesst zuerst ihre EIGENE Teilnahme ab — sonst bleibt
-  -- der Auftrag auch nach Bernds Abschluss in_progress (s.o.).
+  -- Bernd startet seine EIGENE Teilnahme, BEVOR Anna abschliesst: seit
+  -- 20261029000000 blockieren nie gestartete Zuweisungen nicht mehr — Annas
+  -- Abschluss wuerde den Auftrag sonst bereits schliessen und Bernds spaeterer
+  -- Start waere abgelehnt (abgeschlossener Auftrag).
+  perform pg_temp.act_as('b2000000-0000-0000-0000-000000000003');
+  execute 'set local role authenticated';
+  begin
+    perform public.start_own_job('b4000000-0000-0000-0000-000000000001', now());
+    v_own_start := 'OK';
+  exception when others then v_own_start := 'FEHLER('||sqlstate||')';
+  end;
+  execute 'reset role';
+
+  -- Anna (Primaer) schliesst ihre EIGENE Teilnahme ab — der gestartete Bernd
+  -- haelt den Auftrag offen (s.o.).
   perform pg_temp.act_as('b2000000-0000-0000-0000-000000000002');
   execute 'set local role authenticated';
   begin
@@ -639,11 +652,6 @@ begin
 
   perform pg_temp.act_as('b2000000-0000-0000-0000-000000000003');
   execute 'set local role authenticated';
-  begin
-    perform public.start_own_job('b4000000-0000-0000-0000-000000000001', now());
-    v_own_start := 'OK';
-  exception when others then v_own_start := 'FEHLER('||sqlstate||')';
-  end;
   begin
     perform public.complete_own_job('b4000000-0000-0000-0000-000000000001', now() + interval '5 minutes');
     v := 'OK';

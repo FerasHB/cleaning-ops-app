@@ -13,6 +13,10 @@
 --            are NOT employee RPC tests and are never described as such.
 begin;
 
+-- The work RPCs refuse to run unless Pause/Resume is enabled (Production:
+-- true). A fresh database seeds false, so enable it here; ROLLBACK restores it.
+update public.app_config set value = 'true'::jsonb where key = 'pause_resume_enabled';
+
 create temp table _checks(name text, ok boolean, detail text) on commit drop;
 -- The suite records assertions while impersonating employees/admins, so the
 -- harness table must be writable under `set local role authenticated`.
