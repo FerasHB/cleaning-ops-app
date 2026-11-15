@@ -27,7 +27,10 @@ export function deriveAssignmentWorkUi(input: {
     (op.status === "blocked" || op.status === "rejected_permanent"));
   const hasSessionWork = own?.trackingMode === "sessions" || summary?.trackingMode === "sessions" ||
     ownOperations.length > 0;
-  const sessionMode = capability && !!own &&
+  // Ein eingereihter Legacy-Start/-Abschluss (FE-1) bindet die Zuweisung an
+  // den Legacy-Pfad, bis der Server ihn bestätigt oder abgelehnt hat.
+  const legacyPending = !!own && (!!own.pendingStartAt || !!own.pendingCompleteAt);
+  const sessionMode = capability && !!own && !legacyPending &&
     (hasSessionWork || !own.employeeStartedAt && !own.employeeCompletedAt);
   if (hasSessionWork && !capability) {
     return { mode: "sessions", state: summary?.assignmentState ?? "loading",
@@ -36,7 +39,11 @@ export function deriveAssignmentWorkUi(input: {
       blockReason: "capability_off" };
   }
   if (!sessionMode) {
-    const state = own?.employeeCompletedAt ? "completed" : own?.employeeStartedAt ? "active" : "not_started";
+    // Ein eingereihter eigener Start zeigt "active" (kein Server-Feld wird
+    // dafür erfunden); "completed" nur nach SERVER-bestätigtem Abschluss —
+    // ein ausstehender Abschluss bleibt sichtbar ausstehend (Footer/Hinweis).
+    const state = own?.employeeCompletedAt ? "completed"
+      : own?.employeeStartedAt || own?.pendingStartAt ? "active" : "not_started";
     return { mode: "legacy", state,
       canStart: canStartOwnAssignment(job, role, userId), canPause: false, canResume: false,
       canComplete: canCompleteOwnAssignment(job, role, userId), pending: null,

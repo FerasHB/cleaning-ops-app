@@ -188,6 +188,23 @@ export async function savePendingJobActions(
 }
 
 /**
+ * Liegt für diesen Nutzer/Auftrag bereits dieselbe Aktion WARTEND in der
+ * Warteschlange? Grundlage der Duplikat-Sperre beim Einreihen (addPendingJobAction
+ * unten und JobContext). Bewusst hier und ohne weiteren Import: die Datei
+ * wird in scripts/check-work-journal.mjs isoliert geladen). Dauerhaft abgelehnte Einträge zählen
+ * nicht — nach dem Bestätigen soll ein neuer Versuch möglich sein.
+ */
+export function findPendingOwnJobAction(
+  actions: PendingJobAction[],
+  userId: string,
+  jobId: string,
+  type: PendingJobAction["type"],
+): PendingJobAction | null {
+  return actions.find((a) => a.userId === userId && a.jobId === jobId &&
+    a.type === type && a.status === "pending") ?? null;
+}
+
+/**
  * Hängt eine Aktion für DIESEN Nutzer an. Gibt die Aktionen des Nutzers
  * zurück (nicht die fremden) — passend für pendingCount/pendingActions.
  */
@@ -198,6 +215,14 @@ export async function addPendingJobAction(input: {
   timestamp?: string;
 }): Promise<PendingJobAction[]> {
   const allActions = await getAllPendingJobActions();
+
+  // Duplikat-Sperre (FE-1): wartet für diesen Nutzer/Auftrag bereits dieselbe
+  // Aktion, wird nichts angehängt. Ein zweiter Start/Abschluss würde beim
+  // Sync nur eine wirkungslose bzw. abgelehnte RPC erzeugen — und eine
+  // Ablehnung hielte die gesamte Warteschlange an (jobs.sync.ts).
+  if (findPendingOwnJobAction(allActions, input.userId, input.jobId, input.type)) {
+    return allActions.filter((action) => action.userId === input.userId);
+  }
 
   const base = {
     id: generateActionId(),

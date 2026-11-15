@@ -1,34 +1,87 @@
-import type { Job } from "@/types/job";
+import type { Job, JobAssignee } from "@/types/job";
 import type { PendingJobAction } from "./jobs.queue";
 import type { WorkOperation } from "./workJournal.core";
 
 /**
+ * Setzt den lokalen Warteschlangen-Marker (pendingStartAt/pendingCompleteAt)
+ * auf der EIGENEN Zuweisungszeile des Aktions-Besitzers. Fremde Zeilen und
+ * die Server-Felder employeeStartedAt/employeeCompletedAt bleiben unberührt.
+ */
+function markOwnAssignee(
+  job: Job,
+  userId: string,
+  patch: (assignee: JobAssignee) => JobAssignee,
+): Job {
+  if (!job.assignees?.some((a) => a.employeeId === userId)) return job;
+  return {
+    ...job,
+    assignees: job.assignees.map((a) => (a.employeeId === userId ? patch(a) : a)),
+  };
+}
+
+/**
  * Wendet eine einzelne Pending Action lokal auf einen Job an.
+ *
+ * FE-1: die Gates canStartOwnAssignment/canCompleteOwnAssignment lesen die
+ * EIGENE Zuweisungszeile. Ohne Marker dort blieb nach einem Offline-Start
+ * „Starten" antippbar und „Abschließen" erschien nie. Der Marker ist bewusst
+ * KEIN employeeStartedAt — ein eingereihter Start ist kein vom Server
+ * bestätigter Start (types/job.ts).
  */
 function applyPendingActionToJob(job: Job, action: PendingJobAction): Job {
   switch (action.type) {
-    // Der Akteur ist eindeutig der Besitzer der Aktion: die Warteschlange
-    // liefert ausschließlich Aktionen des angemeldeten Nutzers (siehe
-    // getPendingJobActions), und beim Sync setzt der Server genau denselben
-    // Wert (auth.uid()). Ohne diese Spiegelung zeigte ein offline gestarteter
-    // Job aus dem Cache "läuft, ohne Akteur".
-    case "start_job":
-      return {
-        ...job,
-        status: "in_progress" as const,
-        startedAt: action.timestamp,
-        startedBy: action.userId,
-        completedBy: null,
-      };
+    case "start_job": {
+      // Der Akteur ist eindeutig der Besitzer der Aktion: die Warteschlange
+      // liefert ausschließlich Aktionen des angemeldeten Nutzers (siehe
+      // getPendingJobActions), und beim Sync setzt der Server genau denselben
+      // Wert (auth.uid()). Ohne diese Spiegelung zeigte ein offline gestarteter
+      // Job aus dem Cache "läuft, ohne Akteur".
+      //
+      // Nur der echte Übergang open → in_progress spiegelt die Auftrags-Uhr.
+      // Läuft der Auftrag bereits (Nachzügler), ändert start_own_job
+      // serverseitig nur die eigene Zuweisung — die Startzeit/der Akteur der
+      // Kollegin dürfen lokal nicht überschrieben werden.
+      const parent: Job = job.status === "open"
+        ? {
+          ...job,
+          status: "in_progress" as const,
+          startedAt: action.timestamp,
+          startedBy: action.userId,
+          completedBy: null,
+        }
+        : job;
+      return markOwnAssignee(parent, action.userId, (a) =>
+        a.employeeStartedAt ? a : { ...a, pendingStartAt: action.timestamp });
+    }
 
     case "complete_job":
       // An employee finishing their assignment does not necessarily finish
-      // the shared job. Keep the parent lifecycle server-authoritative.
-      return job;
+      // the shared job. Keep the parent lifecycle server-authoritative —
+      // only the own row carries a local "Abschluss ausstehend" marker.
+      return markOwnAssignee(job, action.userId, (a) =>
+        a.employeeCompletedAt ? a : { ...a, pendingCompleteAt: action.timestamp });
 
     default:
       return job;
   }
+}
+
+/**
+ * Entfernt lokale Warteschlangen-Marker. Sie werden bei JEDEM Merge aus der
+ * aktuellen Warteschlange neu abgeleitet — ein Marker, der z. B. über einen
+ * aus dem State geschriebenen Cache-Eintrag hereinkommt, überlebt dadurch
+ * nie die synchronisierte oder abgelehnte Aktion.
+ */
+function stripLocalAssigneeMarkers(job: Job): Job {
+  if (!job.assignees?.some((a) => a.pendingStartAt || a.pendingCompleteAt)) return job;
+  return {
+    ...job,
+    assignees: job.assignees.map((a) => {
+      if (!a.pendingStartAt && !a.pendingCompleteAt) return a;
+      const { pendingStartAt: _s, pendingCompleteAt: _c, ...rest } = a;
+      return rest;
+    }),
+  };
 }
 
 /**
@@ -53,13 +106,15 @@ export function applyPendingActionsToJobs(
   jobs: Job[],
   pendingActions: PendingJobAction[],
 ): Job[] {
-  if (!pendingActions.length) {
+  if (!pendingActions.length && !jobs.some((job) =>
+    job.assignees?.some((a) => a.pendingStartAt || a.pendingCompleteAt))) {
     return jobs;
   }
 
   const sortedActions = sortPendingActions(pendingActions);
 
-  return jobs.map((job) => {
+  return jobs.map((input) => {
+    const job = stripLocalAssigneeMarkers(input);
     const actionsForJob = sortedActions.filter(
       (action) => action.jobId === job.id,
     );
@@ -100,6 +155,29 @@ export function hasPendingActionForJob(
   pendingActions: PendingJobAction[],
 ): boolean {
   return pendingActions.some((action) => action.jobId === jobId);
+}
+
+/**
+ * FE-2: ersetzt einen Listeneintrag durch die frisch gelesene Server-Kopie
+ * (getJobById nach start_own_job/complete_own_job). Nötig, weil diese RPCs im
+ * Nachzügler-/Teilabschluss-Fall nur job_assignments ändern — die
+ * jobs-Realtime-Subscription feuert dann nicht. Das Ungelesen-Flag stammt
+ * nicht aus mapJob und bleibt erhalten; noch wartende eigene Aktionen werden
+ * wie bei jedem Merge erneut darübergelegt.
+ */
+export function replaceJobWithServerCopy(
+  jobs: Job[],
+  fresh: Job,
+  pendingActions: PendingJobAction[],
+): Job[] {
+  return jobs.map((job) => {
+    if (job.id !== fresh.id) return job;
+    const [merged] = applyPendingActionsToJobs(
+      [{ ...fresh, hasUnreadComments: job.hasUnreadComments }],
+      pendingActions.filter((a) => a.status === "pending"),
+    );
+    return merged;
+  });
 }
 
 function applyReceiptToParent(job: Job, operation: WorkOperation): Job {

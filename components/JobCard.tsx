@@ -30,6 +30,7 @@ import {
   formatAssigneesShort,
   getAssignees,
   getOwnAssignee,
+  getOwnPendingLegacyAction,
 } from "@/utils/jobAssignees";
 import { INTL_LOCALE_TAGS, type AppLocale } from "@/i18n";
 import React, { useCallback, useMemo, useRef, useState } from "react";
@@ -172,6 +173,7 @@ export default function JobCard({
   const ownSummary = own ? workSummaries[own.assignmentId] : null;
   const workUi = deriveAssignmentWorkUi({ job, role, userId: profile?.id,
     capability: pauseResumeEnabled, summary: ownSummary, operations: workOperations });
+  const legacyPending = getOwnPendingLegacyAction(job, profile?.id);
   const sessionWorkedLabel = useSessionWorkedTime(ownSummary,
     own ? recordedWorkSummaries[own.assignmentId] : null, workUi.pending);
   // Beschriftung + Farben zentral — dieselbe Quelle wie StatusBadge im Detail.
@@ -410,6 +412,11 @@ export default function JobCard({
         {t(`jobs:work.state.${workUi.state}`)}
         {workUi.pending ? ` · ${t(`jobs:work.pending.${workUi.pending.action}`)}` : ""}
         {workUi.reviewRequired ? ` · ${t("jobs:work.reviewRequired")}` : ""}
+      </Text> : null}
+      {/* FE-1: eingereihter eigener Legacy-Start/-Abschluss — sonst
+          verschwände die Quick-Action ohne Erklärung. */}
+      {workUi.mode === "legacy" && legacyPending ? <Text style={styles.metaText}>
+        {t(`jobs:work.pending.${legacyPending}`)}
       </Text> : null}
       {actionError ? <Text style={{ color: theme.colors.error }}>{t("jobs:work.actionFailed")}</Text> : null}
 
