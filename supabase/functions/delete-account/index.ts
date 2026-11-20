@@ -74,6 +74,9 @@ type DeleteAccountErrorCode =
   | "last_admin"
   | "not_last_admin"
   | "company_mismatch"
+  | "recovery_cases_open"
+  | "recovery_export_required"
+  | "recovery_export_stale"
   | "purge_failed"
   | "prepare_failed"
   | "delete_failed"
@@ -290,6 +293,32 @@ Deno.serve(async (req) => {
               "Dein Konto ist deaktiviert. Bitte wende dich an deinen " +
                 "Administrator.",
               403,
+            );
+          // Work-Recovery S1.5 (Migration 20261121000000): der Server
+          // blockiert die Firmenlöschung, solange Recovery-Nachweise offen
+          // oder nicht aktuell exportiert und bestätigt sind. Nichts gelöscht.
+          case "open_recovery_cases":
+            return errorResponse(
+              "recovery_cases_open",
+              "Die Firma hat noch offene Prüffälle zu nachträglich " +
+                "erfasster Arbeit. Bitte entscheide sie zuerst. Es wurde " +
+                "nichts gelöscht.",
+              409,
+            );
+          case "recovery_export_required":
+            return errorResponse(
+              "recovery_export_required",
+              "Bitte exportiere zuerst die Prüffall-Nachweise und bestätige " +
+                "den Export. Es wurde nichts gelöscht.",
+              409,
+            );
+          case "recovery_export_stale":
+            return errorResponse(
+              "recovery_export_stale",
+              "Die Prüffall-Nachweise haben sich seit deinem Export " +
+                "geändert. Bitte exportiere sie erneut und bestätige den " +
+                "Export. Es wurde nichts gelöscht.",
+              409,
             );
           default:
             console.error("delete-account: purge_company_for_last_admin failed", {

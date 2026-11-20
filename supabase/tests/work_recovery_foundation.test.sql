@@ -19,7 +19,9 @@
 --      Trigger/keine Funktion der Migration schreibt ins auth-Schema
 --      (Entzug von Zugangsdaten = eigenes, späteres Release)
 --   W  Keine Nebenwirkung auf Arbeitszeit/Auftragsstatus
---   P  Firmen-Purge löscht alle Recovery-Daten der Firma, fremde bleiben
+--   P  Firmen-Purge: offene Fälle blockieren, ohne Export-Bestätigung
+--      blockiert (S1.5); danach löscht er alle Recovery-Daten der Firma,
+--      fremde bleiben
 --
 -- AUSFÜHREN (lokal):
 --   docker exec -i supabase_db_cleaning-employee-app-2 psql -U postgres \
@@ -604,7 +606,25 @@ select pg_temp.chk('A2', 'Nachweise bleiben, Personen-Spalten NULL (Fall/Einreic
 -- =========================================================
 -- P — Firmen-Purge
 -- =========================================================
-select pg_temp.chk('P1', 'Purge Firma A (letzter Admin) gelingt', 'OK',
+-- Seit S1.5 (20261121000000): offene Fälle blockieren, danach ist eine
+-- aktuelle Export-Bestätigung Pflicht. Ausführlich:
+-- supabase/tests/work_recovery_deletion_safety.test.sql
+select pg_temp.chk('P0a', 'Purge Firma A mit offenen Fällen blockiert', 'P0001: open_recovery_cases',
+  (select pg_temp.msg('postgres', $q$select public.purge_company_for_last_admin(
+     '7a000000-0000-0000-0000-000000000001','7a000000-0000-0000-0000-00000000000a')$q$)));
+select set_config('taskops.work_recovery_rpc', 'on', true);
+update public.work_recovery_cases
+   set state = 'approved', decided_at = now(), revision = revision + 1
+ where company_id = '7a000000-0000-0000-0000-00000000000a'
+   and state in ('open', 'under_review');
+select set_config('taskops.work_recovery_rpc', '', true);
+select pg_temp.chk('P0b', 'ohne Export-Bestätigung blockiert', 'P0001: recovery_export_required',
+  (select pg_temp.msg('postgres', $q$select public.purge_company_for_last_admin(
+     '7a000000-0000-0000-0000-000000000001','7a000000-0000-0000-0000-00000000000a')$q$)));
+select pg_temp.act_as('7a000000-0000-0000-0000-000000000001');
+create temp table _p_export as select public.get_company_recovery_export() as r;
+select public.acknowledge_company_recovery_export((select (r ->> 'export_id')::uuid from _p_export));
+select pg_temp.chk('P1', 'Purge Firma A (letzter Admin, Fälle entschieden, Export bestätigt) gelingt', 'OK',
   (select pg_temp.msg('postgres', $q$select public.purge_company_for_last_admin(
      '7a000000-0000-0000-0000-000000000001','7a000000-0000-0000-0000-00000000000a')$q$)));
 select pg_temp.chk('P2', 'keine Recovery-Zeilen von Firma A übrig', '0/0/0/0',

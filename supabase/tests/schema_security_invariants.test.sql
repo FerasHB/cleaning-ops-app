@@ -31,6 +31,7 @@ declare
   -- actions) assignment itself, see the respective migrations and tests.
   authenticated_allowed text[] := array[
     'accept_own_invite',
+    'acknowledge_company_recovery_export',
     'admin_add_vacation_adjustment',
     'admin_correct_assignment_time',
     'admin_create_absence',
@@ -50,6 +51,7 @@ declare
     'get_assignment_work_summary',
     'get_au_restoration_candidates',
     'get_company_employee_emails',
+    'get_company_recovery_export',
     'get_company_worktime_export',
     'get_effective_work_sessions',
     'get_job_comments',

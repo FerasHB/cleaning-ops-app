@@ -78,6 +78,8 @@
     "contextError": "Hesap bilgileri yüklenemedi. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
     "notLastAdminTitle": "Şirket silinmeyecek",
     "lastAdminChangedMessage": "Şirketteki rolünüz değişti. Lütfen gösterilen bilgileri kontrol edip tekrar onaylayın.",
+    "recoveryCasesOpenMessage": "Şirketinizde sonradan kaydedilen çalışmalar için hâlâ açık inceleme vakaları var. Şirket ancak bunlar karara bağlandıktan sonra silinebilir. Hiçbir şey silinmedi.",
+    "recoveryExportMessage": "Silmeden önce şirketin inceleme vakası kayıtları güncel hâliyle dışa aktarılmalı ve onaylanmalıdır. Hiçbir şey silinmedi.",
     "company": {
       "heroTitle": "Hesabı ve Şirketi Kalıcı Olarak Sil",
       "heroSubtitle": "“{{company}}” şirketinin tek aktif yöneticisisiniz. Hesabınızı silerseniz şirket de silinir. Bu işlem geri alınamaz.",
