@@ -317,7 +317,12 @@ export async function handleRequest(req: Request): Promise<Response> {
     // CLIENT: normales User-JWT -> nur die Firma des aktiven Aufrufers.
     let companyFilter: string | null = null;
 
-    if (isSweeperCall || (authHeader && authHeader === `Bearer ${serviceRoleKey}`)) {
+    // Service-Role-Bearer ebenfalls konstantzeit vergleichen (wie das
+    // Sweeper-Secret) — ein `===` bricht beim ersten abweichenden Zeichen ab.
+    const isServiceRoleCall =
+      !!authHeader && timingSafeEqual(authHeader, `Bearer ${serviceRoleKey}`);
+
+    if (isSweeperCall || isServiceRoleCall) {
       companyFilter = null; // Server-Sweep über alle Firmen
     } else {
       if (!authHeader) {

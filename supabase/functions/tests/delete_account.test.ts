@@ -119,6 +119,21 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit) => 
     });
   }
 
+  // supabase-js >= 2.119 (auth-js GoTrueAdminApi.deleteUser) liest den Nutzer
+  // vor dem DELETE per GET /admin/users/<id> (Polyfill für den alten
+  // Rückgabewert) — reiner Lesezugriff, löscht nichts.
+  if (url.pathname.startsWith("/auth/v1/admin/users/") && req.method === "GET") {
+    const id = url.pathname.split("/").pop()!;
+    if (deletedUsers.has(id)) {
+      return json({ code: 404, error_code: "user_not_found", msg: "User not found" }, 404);
+    }
+    return json({
+      id, aud: "authenticated", role: "authenticated",
+      email: `${id}@example.test`, app_metadata: {}, user_metadata: {},
+      created_at: "2026-01-01T00:00:00Z",
+    });
+  }
+
   if (url.pathname.startsWith("/auth/v1/admin/users/") && req.method === "DELETE") {
     deletedUsers.add(url.pathname.split("/").pop()!);
     return json({});
@@ -183,7 +198,8 @@ function reset() {
 }
 
 const called = (path: string) => calls.filter((c) => c.path === path);
-const authDeletes = () => calls.filter((c) => c.path.startsWith("/auth/v1/admin/users/"));
+const authDeletes = () =>
+  calls.filter((c) => c.method === "DELETE" && c.path.startsWith("/auth/v1/admin/users/"));
 
 Deno.test("Mitarbeiter: normaler Pfad löscht nur das eigene Konto", async () => {
   reset();
@@ -299,4 +315,16 @@ Deno.test("Ohne Session -> 401", async () => {
   const r = await call(null);
   assertEquals(r.status, 401);
   assert(calls.every((c) => !c.path.startsWith("/rest/v1/rpc/")));
+});
+
+Deno.test("Ungültiges/fremdes Token -> 401, kein Profil-Lookup, keine RPC, keine Löschung", async () => {
+  reset();
+  for (const token of ["tok-unknown", "", "test-anon-key"]) {
+    calls = [];
+    const r = await call(token, { confirmCompanyDeletion: true, confirmCompanyId: COMPANY_A });
+    assertEquals(r.status, 401);
+    assertEquals(r.body.code, "unauthenticated");
+    // Einziger erlaubter Aufruf: die Session-Prüfung selbst.
+    assertEquals(calls.map((c) => c.path).filter((p) => p !== "/auth/v1/user"), []);
+  }
 });
