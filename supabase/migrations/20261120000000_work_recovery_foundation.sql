@@ -13,12 +13,17 @@
 --   6) Zuweisungs-Löschschutz bei offenem Fall
 --   7) purge_company_for_last_admin() löscht die neuen Tabellen mit
 --   8) profiles.deactivated_at (trigger-gepflegt)
---   9) Deaktivierung entzieht Zugangsdaten (Sessions/Refresh-Tokens + Sperre)
 --
--- BEWUSST NICHT in dieser Migration (spätere Slices):
---   - keine Einreichungs-/Lese-/Entscheidungs-RPCs, keine Client-Grants
+-- BEWUSST NICHT in dieser Migration (spätere Slices / Releases):
+--   - keine Einreichungs-/Lese-/Entscheidungs-RPCs, keine Client-Grants —
+--     ohne S2 kann also KEIN Fall entstehen
 --   - keine automatische Anerkennung von Arbeitszeit, kein Schreiben in
 --     job_assignments/employee_time_adjustments, kein maybe_complete_job()
+--   - KEINE Änderung an Anmeldung/Sessions: kein Zugriff auf auth.sessions/
+--     auth.refresh_tokens, keine Sperre (banned_until). Der Entzug von
+--     Zugangsdaten bei Deaktivierung ist ein eigenes, späteres Release —
+--     erst wenn die App widerrufene Sessions behandeln und Offline-Nachweise
+--     sicher bewahren kann (Sicherheitsreview PR #147, 2026-11-20)
 --   - keine Aufbewahrungsfrist / legal_hold (keine festgelegte Richtlinie —
 --     Entscheidung O7 offen), kein Namens-Snapshot (Entscheidung O6 offen)
 --   - keine Geräte-Kennungen, IP-Adressen oder Gerätemodelle
@@ -26,8 +31,17 @@
 -- Personenbezug: employee_id/submitted_by/actor_id/decided_by sind FKs auf
 -- profiles mit ON DELETE SET NULL — gleiche, bereits festgelegte Regel wie
 -- work_sessions/session_time_corrections/employee_time_adjustments
--- (docs/store-compliance.md). Firmenlöschung entfernt alle Fälle vollständig
--- (Export → Bestätigen → Löschen, kein Archiv; 20261028000000).
+-- (docs/store-compliance.md).
+--
+-- OFFENE ENTSCHEIDUNG — Firmenlöschung und Recovery-Nachweise:
+-- Die bestehende Entscheidung "Export → Bestätigen → Löschen" (20261028000000)
+-- deckt die ERFASSTE Arbeitszeit ab; der Export enthält keine Recovery-Fälle.
+-- Ob ungeprüfte/strittige Nachweise mit der Firma gelöscht, exportiert oder
+-- die Löschung blockiert werden darf, ist eine NOCH NICHT getroffene
+-- Geschäfts-/Rechtsentscheidung und MUSS vor S2 (erste Funktion, die echte
+-- Fälle anlegt) entschieden werden. Die Lösch-Anweisungen im Purge unten sind
+-- KEINE beschlossene Aufbewahrungsregel: sie verhindern nur, dass der Purge an
+-- den RESTRICT-FKs scheitert, und laufen ohne S2 nie auf echte Daten.
 
 -- =========================================================
 -- 1) Tabellen
@@ -503,8 +517,10 @@ begin
   -- Keine Occurrence-Tombstones für Termine, die gerade mitgelöscht werden.
   perform set_config('app.series_sync', 'on', true);
 
-  -- Work-Recovery (20261120000000): Nachweise der Firma vollständig löschen
-  -- (kein Archiv), Kinder vor Eltern; job_id/assignment_id sind RESTRICT.
+  -- Work-Recovery (20261120000000): Kinder vor Eltern löschen, damit der
+  -- Purge nicht an den RESTRICT-FKs (job_id/assignment_id) scheitert.
+  -- KEINE beschlossene Aufbewahrungsregel für Nachweise — offene
+  -- Geschäfts-/Rechtsentscheidung, vor S2 zu treffen (siehe Kopfkommentar).
   delete from public.work_recovery_events where company_id = v_company_id;
   delete from public.work_recovery_action_refs where company_id = v_company_id;
   delete from public.work_recovery_submissions where company_id = v_company_id;
@@ -550,7 +566,7 @@ end;
 $$;
 
 comment on function public.purge_company_for_last_admin(uuid, uuid) is
-'Store-Compliance: letzter aktiver Admin löscht Konto + Firma + alle Mandantendaten und -konten (eine Transaktion, KEIN Archiv, inkl. Work-Recovery-Nachweise). Nur service_role (Edge Function delete-account). Gibt Storage-Pfade zum Aufräumen zurück. Export vorher: get_company_worktime_export().';
+'Store-Compliance: letzter aktiver Admin löscht Konto + Firma + alle Mandantendaten und -konten (eine Transaktion, KEIN Archiv). Nur service_role (Edge Function delete-account). Gibt Storage-Pfade zum Aufräumen zurück. Export vorher: get_company_worktime_export(). Work-Recovery-Nachweise: Umgang bei Firmenlöschung ist eine offene Geschäfts-/Rechtsentscheidung (vor S2) — das Löschen hier ist keine beschlossene Aufbewahrungsregel.';
 
 revoke all on function public.purge_company_for_last_admin(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.purge_company_for_last_admin(uuid, uuid) to service_role;
@@ -593,65 +609,7 @@ create trigger set_profile_deactivated_at_trg
   for each row execute function public.set_profile_deactivated_at();
 
 -- =========================================================
--- 7) Deaktivierung entzieht Zugangsdaten
--- =========================================================
--- Bisher blieb ein deaktiviertes Konto anmeldefähig: Refresh-Token und
--- Passwort lieferten weiter echte JWTs, gesperrt war nur der Datenzugriff
--- (current_user_role() = NULL). Jetzt, atomar mit der Deaktivierung:
---   - alle Sessions + Refresh-Tokens des Kontos löschen (kein Refresh mehr),
---   - auth.users.banned_until setzen (keine neue Anmeldung per Passwort/Link).
--- Reaktivierung hebt nur die Sperre auf; Sessions entstehen erst durch eine
--- neue Anmeldung. Das bereits ausgestellte Access-JWT bleibt bis zu seinem
--- Ablauf gültig — in diesem Fenster verweigert die bestehende NULL-Rollen-
--- Prüfung jeden Datenzugriff.
--- AFTER-Trigger: läuft nur, wenn alle BEFORE-Guards die Änderung zugelassen
--- haben. SECURITY DEFINER (Eigentümer postgres), weil der deaktivierende
--- Admin als authenticated keine Rechte am auth-Schema hat.
-create or replace function public.revoke_auth_access_on_profile_active_change()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-begin
-  if new.is_active = false then
-    delete from auth.refresh_tokens where user_id = new.id::text;
-    delete from auth.sessions where user_id = new.id;
-    update auth.users
-       set banned_until = now() + interval '100 years'
-     where id = new.id;
-  else
-    update auth.users
-       set banned_until = null
-     where id = new.id
-       and banned_until is not null;
-  end if;
-  return null;
-end;
-$$;
-
-revoke all on function public.revoke_auth_access_on_profile_active_change() from public, anon, authenticated;
-
-create trigger revoke_auth_access_on_profile_active_change_trg
-  after update of is_active on public.profiles
-  for each row
-  when (old.is_active is distinct from new.is_active)
-  execute function public.revoke_auth_access_on_profile_active_change();
-
--- Bereits deaktivierte Konten: Zugangsdaten jetzt ebenfalls entziehen.
-delete from auth.refresh_tokens rt
- using public.profiles p
- where p.is_active = false and rt.user_id = p.id::text;
-delete from auth.sessions s
- using public.profiles p
- where p.is_active = false and s.user_id = p.id;
-update auth.users u
-   set banned_until = now() + interval '100 years'
-  from public.profiles p
- where p.is_active = false and u.id = p.id;
-
--- =========================================================
--- 8) Funktionsrechte (Supabase-Default-Privilegien erteilen EXECUTE)
+-- 7) Funktionsrechte (Supabase-Default-Privilegien erteilen EXECUTE)
 -- =========================================================
 revoke all on function public.work_recovery_case_before_insert() from public, anon, authenticated;
 revoke all on function public.work_recovery_submission_before_insert() from public, anon, authenticated;

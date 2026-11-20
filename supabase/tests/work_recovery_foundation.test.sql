@@ -14,8 +14,10 @@
 --   S  set_job_assignments: offener Fall blockiert Entfernen, sonst unverändert
 --   A  Konto-Löschung: Nachweise bleiben, Personen-Spalten werden NULL
 --   D  profiles.deactivated_at (trigger-gepflegt, nicht schreibbar)
---   R  Deaktivierung entzieht Sessions/Refresh-Tokens + sperrt Anmeldung;
---      andere Nutzer unberührt; Reaktivierung hebt nur die Sperre auf
+--   N  S1 ändert KEINE Anmeldung: Deaktivierung/Reaktivierung lassen
+--      auth.sessions, auth.refresh_tokens und banned_until unverändert; kein
+--      Trigger/keine Funktion der Migration schreibt ins auth-Schema
+--      (Entzug von Zugangsdaten = eigenes, späteres Release)
 --   W  Keine Nebenwirkung auf Arbeitszeit/Auftragsstatus
 --   P  Firmen-Purge löscht alle Recovery-Daten der Firma, fremde bleiben
 --
@@ -224,13 +226,26 @@ select pg_temp.chk('G5', 'kein EXECUTE der neuen Funktionen für anon/authentica
       and p.proname in ('work_recovery_case_before_insert','work_recovery_submission_before_insert',
                         'work_recovery_action_ref_before_insert','work_recovery_event_before_insert',
                         'guard_work_recovery_append_only','guard_work_recovery_case_write',
-                        'guard_assignment_open_recovery_case','set_profile_deactivated_at',
-                        'revoke_auth_access_on_profile_active_change')
+                        'guard_assignment_open_recovery_case','set_profile_deactivated_at')
       and has_function_privilege(r, p.oid, 'EXECUTE')));
 
-select pg_temp.chk('G6', 'Credential-Trigger ist SECURITY DEFINER mit festem search_path', 'true',
-  (select (prosecdef and proconfig @> array['search_path=public, pg_temp'])::text
-     from pg_proc where proname = 'revoke_auth_access_on_profile_active_change'));
+select pg_temp.chk('G6', 'keine neue Funktion ist SECURITY DEFINER (nur der unveränderte Purge)', '0',
+  (select count(*)::text from pg_proc
+    where pronamespace = 'public'::regnamespace and prosecdef
+      and proname in ('work_recovery_case_before_insert','work_recovery_submission_before_insert',
+                      'work_recovery_action_ref_before_insert','work_recovery_event_before_insert',
+                      'guard_work_recovery_append_only','guard_work_recovery_case_write',
+                      'guard_assignment_open_recovery_case','set_profile_deactivated_at')));
+
+select pg_temp.chk('N1', 'kein Trigger auf profiles/job_assignments ruft eine Funktion mit auth-Schema-Schreibzugriff', '0',
+  (select count(*)::text
+     from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+    where t.tgrelid in ('public.profiles'::regclass, 'public.job_assignments'::regclass)
+      and not t.tgisinternal
+      and p.prosrc ~* '(delete\s+from|update|insert\s+into)\s+auth\.'));
+
+select pg_temp.chk('N2', 'keine Funktion namens revoke_auth_access_on_profile_active_change', '0',
+  (select count(*)::text from pg_proc where proname = 'revoke_auth_access_on_profile_active_change'));
 
 -- =========================================================
 -- C — Konsistenz und Zustands-Form
@@ -499,7 +514,7 @@ select pg_temp.chk('W2', 'keine Zeit-Anpassungen/Sessions durch Recovery-Zeilen 
             where j.company_id in ('7a000000-0000-0000-0000-00000000000a','7b000000-0000-0000-0000-00000000000b'))::text));
 
 -- =========================================================
--- D / R — Deaktivierung
+-- D / N — Deaktivierung (ohne Eingriff in die Anmeldung)
 -- =========================================================
 -- Sessions + Refresh-Tokens für Zora (wird deaktiviert) und Ida (bleibt aktiv).
 insert into auth.sessions (id, user_id, created_at) values
@@ -523,12 +538,12 @@ select pg_temp.chk('D1', 'Admin deaktiviert Mitarbeiterin (authenticated, RLS-Pf
 select pg_temp.chk('D2', 'deactivated_at gesetzt (= jetzt)', 'true',
   (select (deactivated_at = now())::text from public.profiles where id = '7a000000-0000-0000-0000-000000000003'));
 
-select pg_temp.chk('R1', 'Sessions + Refresh-Tokens (inkl. Legacy ohne Session) der Deaktivierten gelöscht', '0/0',
+select pg_temp.chk('N3', 'Deaktivierung lässt Sessions + Refresh-Tokens (inkl. Legacy) unverändert', '2/3',
   (select (select count(*) from auth.sessions where user_id = '7a000000-0000-0000-0000-000000000003')::text
        || '/' || (select count(*) from auth.refresh_tokens where user_id = '7a000000-0000-0000-0000-000000000003')::text));
-select pg_temp.chk('R2', 'Anmeldung gesperrt (banned_until in der Zukunft)', 'true',
-  (select (banned_until > now() + interval '50 years')::text from auth.users where id = '7a000000-0000-0000-0000-000000000003'));
-select pg_temp.chk('R3', 'andere Nutzer unberührt (Ida: Session, Token, keine Sperre)', '1/1/<null>',
+select pg_temp.chk('N4', 'Deaktivierung setzt keine Anmeldesperre (banned_until bleibt NULL)', '<null>',
+  (select banned_until::text from auth.users where id = '7a000000-0000-0000-0000-000000000003'));
+select pg_temp.chk('N5', 'andere Nutzer unberührt (Ida: Session, Token, keine Sperre)', '1/1/<null>',
   (select (select count(*) from auth.sessions where user_id = '7a000000-0000-0000-0000-000000000004')::text
        || '/' || (select count(*) from auth.refresh_tokens where user_id = '7a000000-0000-0000-0000-000000000004')::text
        || '/' || coalesce((select banned_until::text from auth.users where id = '7a000000-0000-0000-0000-000000000004'), '<null>')));
@@ -559,13 +574,13 @@ select pg_temp.act_as('7a000000-0000-0000-0000-000000000001');
 select pg_temp.chk('D7', 'Admin reaktiviert', 'OK',
   pg_temp.msg('authenticated', $q$update public.profiles set is_active = true
     where id = '7a000000-0000-0000-0000-000000000003'$q$));
-select pg_temp.chk('R4', 'Reaktivierung: Sperre aufgehoben, deactivated_at NULL, keine Sessions neu erzeugt', '<null>/<null>/0',
+select pg_temp.chk('N6', 'Reaktivierung: keine Sperre, deactivated_at NULL, Sessions unverändert', '<null>/<null>/2',
   (select coalesce((select banned_until::text from auth.users where id = '7a000000-0000-0000-0000-000000000003'), '<null>')
        || '/' || coalesce((select deactivated_at::text from public.profiles where id = '7a000000-0000-0000-0000-000000000003'), '<null>')
        || '/' || (select count(*) from auth.sessions where user_id = '7a000000-0000-0000-0000-000000000003')::text));
 
 select pg_temp.act_as('7a000000-0000-0000-0000-000000000004');
-select pg_temp.chk('R5', 'Mitarbeiter kann keinen Kollegen deaktivieren (Sperre nicht auslösbar)', 'false',
+select pg_temp.chk('D8', 'Mitarbeiter kann keinen Kollegen deaktivieren', 'false',
   (select pg_temp.st('authenticated', $q$update public.profiles set is_active = false
        where id = '7a000000-0000-0000-0000-000000000003'$q$) is not null
       and (select is_active from public.profiles where id = '7a000000-0000-0000-0000-000000000003') = false)::text);
