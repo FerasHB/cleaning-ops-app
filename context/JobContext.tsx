@@ -24,6 +24,7 @@ import {
   applyPendingActionsToJobs,
   applyPendingWorkOperationsToJobs,
   preserveNewerWorkJobs,
+  replaceJobWithServerCopy,
 } from "@/services/offline/jobs.merge";
 import { createCoalescedRefresh } from "@/utils/coalescedRefresh";
 import {
@@ -36,6 +37,7 @@ import {
 import {
   addPendingJobAction,
   dismissFailedJobAction,
+  findPendingOwnJobAction,
   getPendingJobActions,
   PendingJobAction,
 } from "@/services/offline/jobs.queue";
@@ -647,6 +649,14 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // BACKEND-ABHÄNGIGKEIT (FE-2): abonniert ist nur die Tabelle `jobs`.
+    // Nachzügler-Start und Teilabschluss ändern serverseitig NUR
+    // `job_assignments` — dafür kommt hier kein Event. Die eigene Aktion
+    // übernimmt deshalb die frische Server-Kopie (startJob/completeJob);
+    // Änderungen ANDERER Zugewiesener an job_assignments erscheinen erst beim
+    // nächsten Refresh. Eine Aufnahme von job_assignments in die
+    // Realtime-Publication ist Dashboard-verwaltet (nicht im Repo) und hier
+    // bewusst NICHT vorausgesetzt.
     const channel = supabase
       .channel("jobs-realtime")
       .on(
@@ -859,6 +869,33 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     await refreshJobs();
   }, [userId, refreshWorkUi, refreshJobs]);
 
+  // FE-2: frische Server-Kopie eines Auftrags (best effort). null bei Fehler —
+  // der Aufrufer fällt dann auf den bisherigen Patch + Refresh zurück.
+  const readFreshJob = useCallback(async (jobId: string): Promise<Job | null> => {
+    try {
+      return await getJobById(jobId);
+    } catch (err) {
+      if (!isNetworkError(err)) console.warn("Job re-read after action failed:", err);
+      return null;
+    }
+  }, []);
+
+  // Awaited by the callers, so the button's submitting state only ends once
+  // the own assignee row reflects the server (no second tap on a stale Start).
+  const applyServerJob = useCallback(async (fresh: Job) => {
+    const owner = userId;
+    if (!owner || currentUserRef.current !== owner) return;
+    const queued = await getPendingJobActions(owner);
+    if (currentUserRef.current !== owner) return;
+    setJobs((prevJobs) => {
+      const nextJobs = replaceJobWithServerCopy(prevJobs, fresh, queued);
+      saveCachedJobs(owner, nextJobs).catch((err) =>
+        console.error("Failed to cache jobs after job action:", err),
+      );
+      return nextJobs;
+    });
+  }, [userId]);
+
   const startJob = useCallback(async (jobId: string) => {
     try {
       const ownJob = jobs.find((job) => job.id === jobId) ?? await getJobById(jobId);
@@ -871,6 +908,18 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
       if (online) {
         const startedAt = await startJobService(jobId);
+
+        // FE-2: start_own_job ändert im Nachzügler-Fall (Auftrag läuft
+        // bereits) NUR job_assignments — die jobs-Realtime-Subscription
+        // feuert dann nicht, und der Patch unten kennt die eigene Zeile nicht.
+        // Deshalb die frische Server-Kopie übernehmen; nur wenn das
+        // Nachlesen scheitert, bleibt der bisherige Patch + Hintergrund-Refresh.
+        const fresh = await readFreshJob(jobId);
+        if (fresh) {
+          await applyServerJob(fresh);
+          void dispatchAdminNotifications();
+          return;
+        }
 
         setJobs((prevJobs) => {
           const nextJobs = updateJobInList(prevJobs, jobId, {
@@ -895,6 +944,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
           return nextJobs;
         });
+        void refreshJobs();
 
         // Admin-Push serverseitig anstoßen (best effort — kein await, kein
         // Einfluss auf den bereits erfolgten Statuswechsel).
@@ -914,25 +964,28 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
+      // Duplikat-Sperre (FE-1): ein eigener Start wartet bereits → nichts
+      // erneut einreihen. addPendingJobAction prüft dasselbe noch einmal.
+      if (findPendingOwnJobAction(await getPendingJobActions(userId), userId, jobId, "start_job")) {
+        return;
+      }
+
       const nextActions = await addPendingJobAction({
         userId,
         type: "start_job",
         jobId,
         timestamp,
       });
-      setPendingActions(nextActions);
-      setPendingCount(nextActions.length);
+      const stillPending = nextActions.filter((a) => a.status === "pending");
+      setPendingActions(stillPending);
+      setPendingCount(stillPending.length);
 
+      // Spiegelung ausschließlich über den Merge (jobs.merge.ts): Auftrag
+      // open → in_progress (Akteur = lokaler Nutzer, der Server setzt beim
+      // Sync denselben Wert) und der LOKALE Marker pendingStartAt auf der
+      // eigenen Zuweisung — nie ein erfundenes employeeStartedAt.
       setJobs((prevJobs) => {
-        const nextJobs = updateJobInList(prevJobs, jobId, {
-          status: "in_progress",
-          startedAt: timestamp,
-          // Offline ist der Akteur eindeutig der lokale Nutzer (die Aktion
-          // liegt auf seinen Namen in der Warteschlange). Der Server setzt
-          // beim Sync denselben Wert.
-          startedBy: userId,
-          completedBy: null,
-        });
+        const nextJobs = applyPendingActionsToJobs(prevJobs, stillPending);
 
         saveCachedJobs(userId, nextJobs).catch((err) =>
           console.error("Failed to cache jobs after offline start:", err),
@@ -944,7 +997,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to start job:", err);
       throw err;
     }
-  }, [jobs, refreshJobs, userId, pauseResumeEnabled, performSessionAction]);
+  }, [jobs, refreshJobs, userId, pauseResumeEnabled, performSessionAction, readFreshJob, applyServerJob]);
 
   const completeJob = useCallback(async (jobId: string) => {
     try {
@@ -959,7 +1012,18 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       const online = await isOnline();
 
       if (online) {
-        const { completedAt, jobStatus } = await completeJobService(jobId);
+        const { completedAt, jobStatus, job: fresh } = await completeJobService(jobId);
+
+        // FE-2: complete_own_job ändert bei einem TEILabschluss nur
+        // job_assignments (maybe_complete_job schliesst den Auftrag erst, wenn
+        // alle gestarteten Zuweisungen fertig sind) — kein jobs-Realtime-
+        // Event. Die vom Service ohnehin nachgelesene Server-Kopie trägt die
+        // eigene Abschlusszeit; sie ersetzt den Listeneintrag vollständig.
+        if (fresh) {
+          await applyServerJob(fresh);
+          void dispatchAdminNotifications();
+          return;
+        }
 
         setJobs((prevJobs) => {
           // PHASE 16: der eigene Abschluss schliesst den AUFTRAG nur dann,
@@ -984,6 +1048,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
           return nextJobs;
         });
+        void refreshJobs();
 
         // Admin-Push serverseitig anstoßen (best effort — kein await, kein
         // Einfluss auf den bereits erfolgten Statuswechsel).
@@ -1003,22 +1068,31 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
+      // Duplikat-Sperre (FE-1), siehe startJob.
+      if (findPendingOwnJobAction(await getPendingJobActions(userId), userId, jobId, "complete_job")) {
+        return;
+      }
+
       const nextActions = await addPendingJobAction({
         userId,
         type: "complete_job",
         jobId,
         timestamp,
       });
-      setPendingActions(nextActions);
-      setPendingCount(nextActions.length);
+      const stillPending = nextActions.filter((a) => a.status === "pending");
+      setPendingActions(stillPending);
+      setPendingCount(stillPending.length);
 
       // Assignment completion stays pending locally. Only the server may
-      // decide whether every assignee has finished the parent job.
+      // decide whether every assignee has finished the parent job — the merge
+      // only sets the LOCAL marker pendingCompleteAt on the own row, so the
+      // Complete button disappears and the pending hint shows.
+      setJobs((prevJobs) => applyPendingActionsToJobs(prevJobs, stillPending));
     } catch (err) {
       console.error("Failed to complete job:", err);
       throw err;
     }
-  }, [jobs, refreshJobs, userId, performSessionAction]);
+  }, [jobs, refreshJobs, userId, performSessionAction, applyServerJob]);
 
   const pauseJob = useCallback(async (jobId: string) => {
     if (!pauseResumeEnabled) return;

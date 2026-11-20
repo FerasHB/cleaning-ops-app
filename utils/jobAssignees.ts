@@ -182,9 +182,29 @@ export function canStartOwnAssignment(
   employeeId: string | null | undefined,
 ): boolean {
   if (!canRunJobActions(job, role, employeeId)) return false;
+  // FE-1: ein eigener Start/Abschluss wartet bereits in der Offline-
+  // Warteschlange — ein zweiter Start würde nur ein Duplikat einreihen.
+  if (getOwnPendingLegacyAction(job, employeeId)) return false;
   if (job.status === "open") return true;
   if (job.status !== "in_progress") return false;
   return !getOwnAssignee(job, employeeId)?.employeeStartedAt;
+}
+
+/**
+ * Wartet für DIESEN Nutzer ein eigener Legacy-Start/-Abschluss in der
+ * Offline-Warteschlange? Liest ausschließlich die lokalen Marker
+ * `pendingStartAt`/`pendingCompleteAt` (services/offline/jobs.merge.ts) —
+ * also NIE einen vom Server bestätigten Zustand. "complete" hat Vorrang,
+ * weil er in der Warteschlange immer hinter dem Start liegt.
+ */
+export function getOwnPendingLegacyAction(
+  job: Pick<Job, "assignees">,
+  employeeId: string | null | undefined,
+): "start" | "complete" | null {
+  const own = getOwnAssignee(job, employeeId);
+  if (own?.pendingCompleteAt) return "complete";
+  if (own?.pendingStartAt) return "start";
+  return null;
 }
 
 /** Die EIGENE Zuweisungszeile dieses Nutzers — oder null. */
@@ -233,7 +253,17 @@ export function canCompleteOwnAssignment(
   if (!canRunJobActions(job, role, employeeId)) return false;
   if (job.status !== "in_progress") return false;
   const own = getOwnAssignee(job, employeeId);
-  return !!own?.employeeStartedAt && !own?.employeeCompletedAt;
+  // FE-1: ein offline eingereihter eigener Start zählt hier als Vorgänger.
+  // Das ist mit dem Server-Prädikat vereinbar, weil die Warteschlange strikt
+  // in Reihenfolge synchronisiert und bei einer Ablehnung des Starts anhält
+  // (jobs.sync.ts). Wird der Start dauerhaft abgelehnt, markiert der Sync den
+  // dahinter eingereihten Abschluss desselben Auftrags ebenfalls als
+  // fehlgeschlagen (markDependentActionsFailed) — er wird also auch nach dem
+  // Bestätigen des abgelehnten Starts nie gesendet. Der Abschluss erreicht
+  // den Server damit nur NACH einem erfolgreichen eigenen Start. Ein bereits
+  // eingereihter Abschluss sperrt (keine Duplikate).
+  if (own?.pendingCompleteAt) return false;
+  return !!(own?.employeeStartedAt || own?.pendingStartAt) && !own?.employeeCompletedAt;
 }
 
 /**

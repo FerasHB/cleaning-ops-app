@@ -127,6 +127,7 @@
     "hintOffline": "بمجرد عودة الاتصال بالإنترنت، سيتم حفظ التغييرات.",
     "closeButton": "إغلاق",
     "failedSuffix": "تعذر تنفيذه",
+    "predecessorRejected": "لم يتم الإرسال: رفض الخادم بدء العمل المرتبط.",
     "dismissFailedA11y": "تأكيد وإزالة",
     "startJobWaiting": "بدء المهمة بانتظار الحفظ",
     "completeJobWaiting": "إنهاء المهمة بانتظار الحفظ",

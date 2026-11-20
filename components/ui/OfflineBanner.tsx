@@ -393,7 +393,14 @@ export function OfflineBanner() {
                           {job.customerName}
                         </Text>
                       ) : null}
-                      {action.failureMessage ? (
+                      {action.failureReason === "predecessor_rejected" ? (
+                        <Text
+                          style={[styles.sheetRowSub, { color: theme.colors.error }]}
+                          numberOfLines={2}
+                        >
+                          {t("common:sync.predecessorRejected")}
+                        </Text>
+                      ) : action.failureMessage ? (
                         <Text
                           style={[styles.sheetRowSub, { color: theme.colors.error }]}
                           numberOfLines={2}

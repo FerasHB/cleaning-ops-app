@@ -46,6 +46,18 @@ export type JobAssignee = {
   workReviewRequired?: boolean;
   /** Local indicator only. It never changes parent job status. */
   pendingWorkAction?: "start" | "pause" | "resume" | "complete";
+  /**
+   * NUR LOKAL (Legacy-Warteschlange, services/offline/jobs.queue.ts): ein
+   * offline eingereihter, vom Server NOCH NICHT bestätigter eigener Start
+   * bzw. Abschluss. Wert = Gerätezeitpunkt der eingereihten Aktion — keine
+   * Serverzeit, keine Arbeitszeit. Kommt nie aus der DB; wird bei jedem
+   * Merge (applyPendingActionsToJobs) aus der Warteschlange neu abgeleitet
+   * und verschwindet, sobald die Aktion synchronisiert oder abgelehnt ist.
+   * `employeeStartedAt`/`employeeCompletedAt` bleiben ausschließlich
+   * Server-Felder.
+   */
+  pendingStartAt?: string;
+  pendingCompleteAt?: string;
 };
 
 export type Job = {

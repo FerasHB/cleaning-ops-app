@@ -1012,6 +1012,13 @@ export type CompleteJobResult = {
   completedAt: string;
   /** Auftragsstatus NACH dem Abschluss, frisch vom Server gelesen. */
   jobStatus: "open" | "in_progress" | "completed";
+  /**
+   * Die frisch gelesene Server-Kopie (inkl. eigener Zuweisungszeile) — null,
+   * wenn das Nachlesen scheiterte. FE-2: bei einem Teilabschluss aendert
+   * complete_own_job nur job_assignments, ohne jobs-Realtime-Event; der
+   * JobContext uebernimmt deshalb diese Kopie statt nur den Status.
+   */
+  job: Job | null;
 };
 
 // Setzt die EIGENE Teilnahme auf abgeschlossen.
@@ -1047,10 +1054,12 @@ export async function completeJob(
   const ownCompletedAt = typeof data === "string" && data ? data : timestamp;
 
   let jobStatus: CompleteJobResult["jobStatus"] = "in_progress";
+  let freshJob: Job | null = null;
   try {
     const fresh = await getJobById(jobId);
     if (fresh) {
       jobStatus = fresh.status;
+      freshJob = fresh;
     }
   } catch (err) {
     if (!isNetworkError(err)) {
@@ -1061,7 +1070,7 @@ export async function completeJob(
     }
   }
 
-  return { completedAt: ownCompletedAt, jobStatus };
+  return { completedAt: ownCompletedAt, jobStatus, job: freshJob };
 }
 
 // Admin-Zwangsabschluss eines haengenden Auftrags (Phase 16).
