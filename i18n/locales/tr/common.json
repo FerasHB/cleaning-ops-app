@@ -119,6 +119,7 @@
     "hintOffline": "Tekrar internete bağlandığında değişiklikler kaydedilecek.",
     "closeButton": "Kapat",
     "failedSuffix": "gerçekleştirilemedi",
+    "predecessorRejected": "Gönderilmedi: İlgili başlatma sunucu tarafından reddedildi.",
     "dismissFailedA11y": "Onayla ve kaldır",
     "startJobWaiting": "İş başlatma bekliyor",
     "completeJobWaiting": "İş tamamlama bekliyor",

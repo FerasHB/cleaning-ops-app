@@ -23,6 +23,12 @@ type PendingJobActionBase = {
    *  anzeigbare Ablehnungsmeldung (toUserMessage-Ausgabe zum Zeitpunkt des
    *  Fehlschlags), damit die UI sie nicht erneut herleiten muss. */
   failureMessage?: string;
+  /** Nur bei status="failed_permanent": maschinenlesbarer Grund, wenn die
+   *  Aktion NICHT selbst vom Server abgelehnt wurde, sondern weil ihr
+   *  Vorgänger abgelehnt wurde ("predecessor_rejected": ein eingereihter
+   *  Abschluss hinter einem abgelehnten eigenen Start desselben Auftrags).
+   *  Die UI übersetzt ihn zur Anzeigezeit; failureMessage ist nur Rückfall. */
+  failureReason?: "predecessor_rejected";
 };
 
 export type PendingJobAction =
@@ -283,6 +289,58 @@ export async function markPendingJobActionFailed(
   await savePendingJobActions(nextAll);
 
   return nextAll;
+}
+
+/**
+ * Kaskade nach einem dauerhaft abgelehnten eigenen START: jeder danach
+ * eingereihte, noch wartende ABSCHLUSS desselben Nutzers für denselben
+ * Auftrag hängt von diesem Start ab (complete_own_job verlangt einen eigenen
+ * Start) und wird deshalb ebenfalls als dauerhaft fehlgeschlagen markiert.
+ *
+ * - Nichts wird gelöscht: beide Einträge bleiben mit ihren Original-
+ *   Zeitstempeln als Nachweis liegen, bis der Nutzer sie bestätigt.
+ * - Andere Aufträge, andere Nutzer und Aktionen VOR dem Start bleiben
+ *   unberührt; die Reihenfolge der Warteschlange ändert sich nicht.
+ * - Ohne diese Kaskade blieb der Abschluss für immer "wartend" (die UI
+ *   zeigte "Abschluss ausstehend") und wurde nach dem Bestätigen des
+ *   abgelehnten Starts doch gesendet — und ein zweites Mal abgelehnt.
+ *
+ * Ein einziger Lese-/Schreibvorgang. Liefert die Zahl neu markierter Einträge.
+ */
+export async function markDependentActionsFailed(
+  rejectedStart: PendingJobAction,
+  failureMessage: string,
+): Promise<number> {
+  if (rejectedStart.type !== "start_job") return 0;
+
+  const allActions = await getAllPendingJobActions();
+  const startIndex = allActions.findIndex((action) => action.id === rejectedStart.id);
+  if (startIndex < 0) return 0;
+
+  let marked = 0;
+  const nextAll = allActions.map((action, index) => {
+    if (
+      index > startIndex &&
+      action.userId === rejectedStart.userId &&
+      action.jobId === rejectedStart.jobId &&
+      action.type === "complete_job" &&
+      action.status === "pending"
+    ) {
+      marked++;
+      return {
+        ...action,
+        status: "failed_permanent" as const,
+        failureReason: "predecessor_rejected" as const,
+        failureMessage,
+      };
+    }
+    return action;
+  });
+
+  if (marked > 0) {
+    await savePendingJobActions(nextAll);
+  }
+  return marked;
 }
 
 /**

@@ -256,9 +256,12 @@ export function canCompleteOwnAssignment(
   // FE-1: ein offline eingereihter eigener Start zählt hier als Vorgänger.
   // Das ist mit dem Server-Prädikat vereinbar, weil die Warteschlange strikt
   // in Reihenfolge synchronisiert und bei einer Ablehnung des Starts anhält
-  // (jobs.sync.ts) — der Abschluss erreicht den Server also nur NACH einem
-  // erfolgreichen eigenen Start. Ein bereits eingereihter Abschluss sperrt
-  // (keine Duplikate).
+  // (jobs.sync.ts). Wird der Start dauerhaft abgelehnt, markiert der Sync den
+  // dahinter eingereihten Abschluss desselben Auftrags ebenfalls als
+  // fehlgeschlagen (markDependentActionsFailed) — er wird also auch nach dem
+  // Bestätigen des abgelehnten Starts nie gesendet. Der Abschluss erreicht
+  // den Server damit nur NACH einem erfolgreichen eigenen Start. Ein bereits
+  // eingereihter Abschluss sperrt (keine Duplikate).
   if (own?.pendingCompleteAt) return false;
   return !!(own?.employeeStartedAt || own?.pendingStartAt) && !own?.employeeCompletedAt;
 }

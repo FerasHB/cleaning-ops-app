@@ -1,6 +1,7 @@
 import NetInfo from "@react-native-community/netinfo";
 import {
     getPendingJobActions,
+    markDependentActionsFailed,
     markPendingJobActionFailed,
     PendingJobAction,
     removePendingJobAction,
@@ -56,6 +57,14 @@ function isRetryableFailure(error: unknown): boolean {
     message,
   );
 }
+
+/**
+ * Rückfalltext für einen Abschluss, der wegen seines abgelehnten Starts nie
+ * gesendet wird. Die UI zeigt bevorzugt die Übersetzung von
+ * failureReason="predecessor_rejected" (common:sync.predecessorRejected).
+ */
+const PREDECESSOR_REJECTED_MESSAGE =
+  "Nicht übertragen: Der zugehörige Start wurde vom Server abgelehnt.";
 
 /**
  * Prüft ob Internet vorhanden ist
@@ -135,7 +144,13 @@ export async function syncPendingJobActions(userId: string): Promise<{
   for (const action of actions) {
     // A rejected predecessor stays in storage until explicitly dismissed.
     // Do not allow a later pending action to overtake it on the next reconnect.
-    if (action.status === "failed_permanent") break;
+    if (action.status === "failed_permanent") {
+      // Reparatur: eine von einem älteren Build hinterlassene Warteschlange
+      // (abgelehnter Start, Abschluss dahinter noch "pending") wird hier
+      // aufgelöst, statt bei jedem Lauf stumm mit failed=0 anzuhalten.
+      failed += await markDependentActionsFailed(action, PREDECESSOR_REJECTED_MESSAGE);
+      break;
+    }
     try {
       await executeAction(action);
 
@@ -156,6 +171,11 @@ export async function syncPendingJobActions(userId: string): Promise<{
           action.id,
           toUserMessage(error, "Die Aktion konnte nicht ausgeführt werden."),
         );
+        // Ein abgelehnter eigener Start macht den dahinter eingereihten
+        // Abschluss desselben Auftrags unausführbar — ebenfalls als
+        // fehlgeschlagen markieren (nicht löschen), damit er weder ewig
+        // "wartet" noch nach dem Bestätigen doch noch gesendet wird.
+        failed += await markDependentActionsFailed(action, PREDECESSOR_REJECTED_MESSAGE);
       }
 
       failed++;

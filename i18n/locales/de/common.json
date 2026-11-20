@@ -119,6 +119,7 @@
     "hintOffline": "Sobald du wieder Internet hast, werden die Änderungen gespeichert.",
     "closeButton": "Schließen",
     "failedSuffix": "konnte nicht ausgeführt werden",
+    "predecessorRejected": "Nicht übertragen: Der zugehörige Start wurde vom Server abgelehnt.",
     "dismissFailedA11y": "Bestätigen und entfernen",
     "startJobWaiting": "Job starten wartet",
     "completeJobWaiting": "Job abschließen wartet",

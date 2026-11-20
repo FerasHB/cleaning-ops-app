@@ -119,6 +119,7 @@
     "hintOffline": "As soon as you're back online, your changes will be saved.",
     "closeButton": "Close",
     "failedSuffix": "could not be completed",
+    "predecessorRejected": "Not sent: the related start was rejected by the server.",
     "dismissFailedA11y": "Acknowledge and remove",
     "startJobWaiting": "Start job waiting",
     "completeJobWaiting": "Complete job waiting",
