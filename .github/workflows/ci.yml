@@ -1,6 +1,6 @@
 name: CI
 
-# Quality gate for every pull request. Fast static checks and Node tests run
+# Quality gate for every pull request and every push to main. Fast static checks and Node tests run
 # next to three database jobs; each database job builds its OWN throwaway
 # Supabase Postgres on the runner (see .github/actions/ephemeral-supabase-db).
 #
@@ -11,12 +11,18 @@ on:
   # No branch filter: stacked PRs (e.g. into a release branch) get the same
   # checks as PRs into main.
   pull_request:
+  # Post-merge verdict for main itself (a merge can combine changes that were
+  # only ever tested separately). No job needs secrets, so push runs behave
+  # exactly like PR runs.
+  push:
+    branches: [main]
   workflow_dispatch:
 
-# Only the newest run per PR branch; older running checks are cancelled.
+# Only the newest run per PR branch; older running PR checks are cancelled.
+# Runs on main are never cancelled, so every merge commit gets a result.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -28,10 +34,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
@@ -76,6 +82,37 @@ jobs:
           done
           printf 'Running %s files:\n' "${#files[@]}"; printf '  %s\n' "${files[@]}"
           node --experimental-strip-types --test --test-reporter=spec "${files[@]}"
+
+  edge-functions:
+    name: Edge Function tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Exact Deno version that wrote supabase/functions/tests/deno.lock.
+      # Runtime parity note (Edge Runtime = Deno 2.1.4): see
+      # scripts/ci/edge-functions.sh.
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.7
+
+      # The only step with network access: fetches exactly the versions pinned
+      # in supabase/functions/tests/deno.lock (--frozen fails on any drift).
+      - name: Download dependencies (from lockfile)
+        run: bash scripts/ci/edge-functions.sh cache
+
+      # Offline from here on (--cached-only).
+      - name: Type-check entrypoints, shared modules and tests
+        run: bash scripts/ci/edge-functions.sh check
+
+      # --deny-net: Supabase and Expo are mocked; a real request fails.
+      - name: Run Deno tests (network denied)
+        run: bash scripts/ci/edge-functions.sh test
 
   db-migrations:
     name: Database - clean migration from zero
