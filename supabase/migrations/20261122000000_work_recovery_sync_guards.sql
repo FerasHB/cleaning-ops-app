@@ -956,8 +956,10 @@ $function$;
 -- deckt damit alle Pfade ab, online wie per Offline-Wiederholung (die
 -- dieselben RPCs aufruft); die Ablehnung rollt den ganzen Start zurück.
 --
--- Nur der Mitarbeiter SELBST wird gesperrt (auth.uid() = employee_id):
--- Admin-Korrekturen und spätere Recovery-Entscheidungen bleiben möglich.
+-- Nur der Mitarbeiter SELBST wird gesperrt (auth.uid() = employee_id), für
+-- Start UND Abschluss (Resume/Pause setzen einen eigenen Start voraus).
+-- Trägt jemand anderes (Admin-Korrektur, spätere Recovery-Entscheidung) einen
+-- Start ein, ist das eine ausdrückliche Wieder-Zuweisung: die Markierung fällt.
 -- 22023 = bestehende Fehlerklasse für Geschäftsregeln; der Client stuft sie
 -- als dauerhafte Ablehnung ein (kein Wiederholen) und behält die lokalen
 -- Daten (services/offline/workJournal.core.ts, jobs.sync.ts).
@@ -971,14 +973,23 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 begin
-  if old.retained_for_recovery
-     and new.retained_for_recovery
-     and old.employee_started_at is null
-     and new.employee_started_at is not null
-     and auth.uid() is not null
-     and auth.uid() = old.employee_id then
-    raise exception 'Diese Zuweisung wurde entfernt und bleibt nur als Nachweis erhalten. Neue Arbeit kann darauf nicht gestartet werden.'
-      using errcode = '22023';
+  if not (old.retained_for_recovery and new.retained_for_recovery) then
+    return new;
+  end if;
+
+  if auth.uid() is not null and auth.uid() = old.employee_id then
+    -- Mitarbeiter selbst: weder Start noch Abschluss auf einer nur als
+    -- Nachweis behaltenen Zuweisung.
+    if (old.employee_started_at is null and new.employee_started_at is not null)
+       or (old.employee_completed_at is null and new.employee_completed_at is not null) then
+      raise exception 'Diese Zuweisung wurde entfernt und bleibt nur als Nachweis erhalten. Neue Arbeit kann darauf nicht gestartet werden.'
+        using errcode = '22023';
+    end if;
+  elsif old.employee_started_at is null and new.employee_started_at is not null then
+    -- Jemand anderes (Admin-Korrektur, spätere Recovery-Entscheidung) trägt
+    -- bewusst Arbeit auf dieser Zeile ein: das ist eine ausdrückliche
+    -- Wieder-Zuweisung — die Markierung fällt, die Zeile ist wieder regulär.
+    new.retained_for_recovery := false;
   end if;
   return new;
 end;
@@ -988,5 +999,5 @@ revoke all on function public.guard_retained_assignment_start()
   from public, anon, authenticated, service_role;
 
 create trigger guard_retained_assignment_start_trg
-  before update of employee_started_at on public.job_assignments
+  before update of employee_started_at, employee_completed_at on public.job_assignments
   for each row execute function public.guard_retained_assignment_start();

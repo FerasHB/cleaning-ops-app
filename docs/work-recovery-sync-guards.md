@@ -47,12 +47,14 @@ through the offline queue. S1.6 closes both on the server:
 
 | Risk | Fix | Where enforced |
 |---|---|---|
-| A removed employee keeps a case-protected assignment and could start new work on it | The sync path that would have removed the row now marks it instead: `job_assignments.retained_for_recovery = true` (inherit step 1c, compat sync). The employee's **own** start on a marked row is rejected with `22023` "Diese Zuweisung wurde entfernt und bleibt nur als Nachweis erhalten…". | `guard_retained_assignment_start` (BEFORE UPDATE OF `employee_started_at`). Every start path sets that column on the employee's own row: `start_own_job` (open → in_progress and the late-joiner branch), and `start_own_job_v2` through `_execute_work_session_operation`. The block therefore covers both paths, online and offline replay, and rolls back the whole start. Pause, resume and complete need a start first. |
+| A removed employee keeps a case-protected assignment and could start new work on it | The sync path that would have removed the row now marks it instead: `job_assignments.retained_for_recovery = true` (inherit step 1c, compat sync). The employee's **own** start on a marked row is rejected with `22023` "Diese Zuweisung wurde entfernt und bleibt nur als Nachweis erhalten…". | `guard_retained_assignment_start` (BEFORE UPDATE OF `employee_started_at`, `employee_completed_at`). Every start path sets that column on the employee's own row: `start_own_job` (open → in_progress and the late-joiner branch), and `start_own_job_v2` through `_execute_work_session_operation`. The block therefore covers both paths, online and offline replay, and rolls back the whole start. Pause, resume and complete need a start first. |
 | A PRUNE-kept case occurrence on a slot the rule no longer has still counts as scheduled work | SYNC sets `is_active = false` on it. This is the existing paused-occurrence marker: hidden from employee and planning lists and KPIs (`excludePausedOccurrences`), with no start button (`canRunJobActions`), and rejected by both start RPCs. If the slot comes back into the rule, SYNC sets it to `parent.is_active` again. | `update_job_occurrences` step 3 (SYNC) and the existing start-RPC guard from `20260829000000` |
 
 Details:
-- **Who is blocked:** only the employee, `auth.uid() = employee_id`. Admin corrections and later recovery
-  decisions on the same row still work.
+- **Who is blocked:** only the employee (`auth.uid() = employee_id`), for both their own start and their own
+  completion (pause and resume need their own start first).
+  - If someone else sets a start on the row (an admin correction, a later recovery decision), that counts as
+    deliberate re-assignment: the trigger clears the flag and the row is regular again.
 - **The flag is cleared on deliberate re-assignment:** the employee is back in the rule's active set
   (inherit step 2b), the legacy pointer is set to them again (compat), or an admin selects them in
   `set_job_assignments`.
@@ -79,7 +81,14 @@ Details:
 4. **PRUNE protection is per job.** One case keeps the whole occurrence, and therefore every assignment on it.
    This is unavoidable, because deleting the job would cascade to the protected assignment. The occurrence is
    inactive, so nobody can start new work on it.
-5. **Pre-existing, not S1.6:** occurrences kept for comments, photos or read markers on a removed slot stay
+5. **Timing window (pre-existing):** the app saves the rule's assignee set (`set_job_assignments`) and then
+   syncs the occurrences (`update_job_occurrences`) in a second call. Until that second call runs, a removed
+   employee is still a regular assignee on the rule's occurrences, case-protected or not. Before S1.6 this was
+   the same, and worse: one case made the second call fail entirely.
+6. **Reactivation (pre-existing pattern):** a deactivated employee's case-protected occurrence row is flagged.
+   When they are reactivated, the flag stays until the next rule sync (rule edit or horizon worker).
+   Their clean occurrence rows were deleted on deactivation and also only come back with that sync.
+7. **Pre-existing, not S1.6:** occurrences kept for comments, photos or read markers on a removed slot stay
    active and startable. Same pattern, separate follow-up.
 
 ## Race with case creation
@@ -159,7 +168,7 @@ neither the state-free skip check nor the RESTRICT check that runs on every assi
 
 ## Tests
 
-- `supabase/tests/work_recovery_sync_guards.test.sql`, 53 checks:
+- `supabase/tests/work_recovery_sync_guards.test.sql`, 57 checks:
   - groups S (structure), I (inherit, open and closed case, other employees), P (PRUNE, open and closed, other weekdays, tombstones),
     L (legacy write, open case plus all four closed states), H (horizon worker), B (company without cases),
     E (explicit admin action still fails, with a clear message), R (idempotence), W (no side effect: worktime,
@@ -169,8 +178,10 @@ neither the state-free skip check nor the RESTRICT check that runs on every assi
     - case occurrences kept by PRUNE are inactive and other occurrences stay active;
     - a real `start_own_job` by the removed employee is rejected, and the job, assignment and case are unchanged;
     - a regular co-worker starts the same job normally;
-    - a direct or session-path start on a flagged row is rejected;
-    - an admin correction on that row still works;
+    - a session-path start (`start_own_job_v2`) and the employee's own completion on a flagged row are rejected;
+    - a regular co-worker starts the same job through the session path;
+    - an admin correction on that row still works and clears the flag;
+    - an occurrence kept only for a comment stays active (previous behavior);
     - re-assignment via `set_job_assignments`, the legacy pointer, or the rule clears the flag, and the occurrence becomes active again.
   - Negative control (run once locally during the first iteration, not a committed test): with the pre-S1.6
     function bodies and guard loaded in the same transaction, 19 of the then 41 checks fail. The rule edit fails

@@ -568,10 +568,56 @@ select pg_temp.chk('X6', 'Session-/Direktpfad: Emil setzt employee_started_at au
      attendance = 'started' where job_id = %L and employee_id = '71000000-0000-0000-0000-000000000002'$q$, o1),
      $q$select 'x'$q$), 5) from _o));
 select pg_temp.act_as('71000000-0000-0000-0000-000000000001');
-select pg_temp.chk('X7', 'Admin-Korrektur auf derselben Zeile bleibt möglich', 'probe:x',
+select pg_temp.chk('X7', 'Admin-Korrektur auf derselben Zeile möglich und hebt die Markierung auf', 'probe:false',
   (select pg_temp.probe(format($q$update public.job_assignments set employee_started_at = now(),
      attendance = 'started' where job_id = %L and employee_id = '71000000-0000-0000-0000-000000000002'$q$, o1),
-     $q$select 'x'$q$) from _o));
+     format($q$select retained_for_recovery::text from public.job_assignments
+       where job_id = %L and employee_id = '71000000-0000-0000-0000-000000000002'$q$, o1)) from _o));
+
+-- Session-Pfad (start_own_job_v2 → _execute_work_session_operation) und
+-- Abschluss: zweiter Einzelauftrag HEUTE, Emil mit Fall, Zeiger → Zora.
+insert into public.jobs (id, company_id, created_by, customer_name, service_name,
+                         location_address, status, job_type, date, start_time, is_active)
+values ('71000000-0000-0000-0001-000000000302','71000000-0000-0000-0000-00000000000a',
+        '71000000-0000-0000-0000-000000000001','Kunde SG','Reinigung','Weg 1','open','single',
+        (now() at time zone 'Europe/Berlin')::date, '08:00', true);
+select public.set_job_assignments('71000000-0000-0000-0001-000000000302',
+  array['71000000-0000-0000-0000-000000000002','71000000-0000-0000-0000-000000000003']::uuid[]);
+select pg_temp.mk_case('71000000-0000-0000-0003-000000000302',
+  '71000000-0000-0000-0001-000000000302', '71000000-0000-0000-0000-000000000002');
+-- Zeiger zuerst ausdrücklich auf Emil, dann auf Zora: set_job_assignments
+-- wählt den Primär-Zeiger bei gleichem assigned_at nicht deterministisch;
+-- stünde er schon auf Zora, feuerte der Alt-Client-Abgleich gar nicht.
+update public.jobs set assigned_to = '71000000-0000-0000-0000-000000000002'
+ where id = '71000000-0000-0000-0001-000000000302';
+update public.jobs set assigned_to = '71000000-0000-0000-0000-000000000003'
+ where id = '71000000-0000-0000-0001-000000000302';
+select pg_temp.chk('X12b', 'Vorbedingung: Emil auf 0302 markiert, Zora regulär', 'Emil:true/Zora:false',
+  (select string_agg(p.full_name || ':' || ja.retained_for_recovery::text, '/' order by p.full_name)
+     from public.job_assignments ja join public.profiles p on p.id = ja.employee_id
+    where ja.job_id = '71000000-0000-0000-0001-000000000302'));
+update public.app_config set value = 'true'::jsonb where key = 'pause_resume_enabled';
+
+select pg_temp.act_as('71000000-0000-0000-0000-000000000002');
+select pg_temp.chk('X13', 'Session-Pfad: start_own_job_v2 auf markierter Zuweisung abgelehnt (22023)',
+  '22023: Diese Zuweisung wurde entfernt und bleibt nur als Nachweis erhalten. Neue Arbeit kann darauf nicht gestartet werden.',
+  pg_temp.probe(format($q$set local role authenticated;
+    select public.start_own_job_v2(gen_random_uuid(), %L, 0, gen_random_uuid(), now())$q$,
+    pg_temp.assignment('71000000-0000-0000-0001-000000000302', '71000000-0000-0000-0000-000000000002')),
+    $q$select 'gestartet'$q$));
+select pg_temp.act_as('71000000-0000-0000-0000-000000000003');
+select pg_temp.chk('X14', 'Session-Pfad: regulär zugewiesene Zora startet denselben Auftrag', 'probe:in_progress',
+  pg_temp.probe(format($q$set local role authenticated;
+    select public.start_own_job_v2(gen_random_uuid(), %L, 0, gen_random_uuid(), now())$q$,
+    pg_temp.assignment('71000000-0000-0000-0001-000000000302', '71000000-0000-0000-0000-000000000003')),
+    $q$select status::text from public.jobs where id = '71000000-0000-0000-0001-000000000302'$q$));
+select pg_temp.act_as('71000000-0000-0000-0000-000000000002');
+select pg_temp.chk('X15', 'eigener Abschluss auf markierter Zuweisung abgelehnt (22023)', '22023',
+  left(pg_temp.probe($q$update public.job_assignments set employee_completed_at = now()
+     where job_id = '71000000-0000-0000-0001-000000000302'
+       and employee_id = '71000000-0000-0000-0000-000000000002'$q$, $q$select 'x'$q$), 5));
+update public.app_config set value = 'false'::jsonb where key = 'pause_resume_enabled';
+select pg_temp.act_as('71000000-0000-0000-0000-000000000001');
 
 -- Wieder-Zuweisung hebt die Markierung auf.
 select public.set_job_assignments('71000000-0000-0000-0001-000000000301',
@@ -607,9 +653,23 @@ select pg_temp.chk('X11', 'Emil + Wochentag zurück in RA: O1 wieder aktiv, Emil
               (select retained_for_recovery from public.job_assignments where job_id = %L
                 and employee_id = '71000000-0000-0000-0000-000000000002')::text$q$, o1, o1)) from _o));
 
-select pg_temp.chk('X12', 'Kommentar-behaltene Termine: Verhalten unverändert (Regel nur für Fall-Termine)', 'true',
-  (select (pg_get_functiondef('public.update_job_occurrences(uuid)'::regprocedure)
-           ilike '%exists (select 1 from public.work_recovery_cases w where w.job_id = x.id)%')::text));
+-- Termin d1+3 (ohne Fall) bekommt einen Kommentar, sein Wochentag wird
+-- entfernt: PRUNE behält ihn (Kommentar), er bleibt aktiv wie bisher.
+select pg_temp.chk('X12', 'Kommentar-behaltener Termin ohne Fall: bleibt aktiv (bisheriges Verhalten)', 'probe:true/true',
+  (select pg_temp.probe(
+     format($q$insert into public.job_comments (company_id, job_id, author_id, message)
+              values ('71000000-0000-0000-0000-00000000000a', %L, '71000000-0000-0000-0000-000000000001', 'Notiz');
+            update public.jobs set recurring_days = array_remove(recurring_days,
+                (array['mon','tue','wed','thu','fri','sat','sun'])[extract(isodow from %L::date)::int])
+             where id = '71000000-0000-0000-0001-000000000001';
+            set local role authenticated;
+            select public.update_job_occurrences('71000000-0000-0000-0001-000000000001');
+            reset role$q$,
+       pg_temp.occ('71000000-0000-0000-0001-000000000001', _o.d1 + 3), _o.d1 + 3),
+     format($q$select exists(select 1 from public.jobs where id = %L)::text || '/' ||
+              (select is_active from public.jobs where id = %L)::text$q$,
+       pg_temp.occ('71000000-0000-0000-0001-000000000001', _o.d1 + 3),
+       pg_temp.occ('71000000-0000-0000-0001-000000000001', _o.d1 + 3))) from _o));
 
 select case_no, beschreibung, erwartet, ergebnis, verdikt from _results order by case_no;
 
