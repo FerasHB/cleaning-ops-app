@@ -482,6 +482,135 @@ select pg_temp.chk('W7', 'kein Auftrag der Firmen gestartet/abgeschlossen', '0',
 -- =========================================================
 -- Ergebnis
 -- =========================================================
+-- =========================================================
+-- X — Nachweis bewahrt KEINE Berechtigung zu neuer Arbeit
+-- =========================================================
+-- Führt SQL als postgres aus und rollt es IMMER zurück (Subtransaktion);
+-- liefert 'probe:<Ergebnis>' bei Erfolg, sonst 'SQLSTATE: Meldung'.
+create function pg_temp.probe(p_sql text, p_result_sql text) returns text
+language plpgsql as $f$
+declare v text;
+begin
+  begin
+    execute p_sql;
+    execute p_result_sql into v;
+    raise exception using errcode = 'P0099', message = 'probe:' || coalesce(v, '<null>');
+  exception when others then
+    reset role;
+    if sqlstate = 'P0099' then return sqlerrm; end if;
+    return sqlstate || ': ' || sqlerrm;
+  end;
+end $f$;
+
+select pg_temp.chk('X1', 'Markierung genau auf den nur wegen eines Falls behaltenen Zuweisungen',
+  'O1:Emil|O3:Zora|L:5×Emil|RH:Emil|gesamt=8',
+  (select 'O1:' || (select string_agg(p.full_name, ',') from public.job_assignments ja join public.profiles p on p.id = ja.employee_id
+                     where ja.job_id = o1 and ja.retained_for_recovery)
+       || '|O3:' || (select string_agg(p.full_name, ',') from public.job_assignments ja join public.profiles p on p.id = ja.employee_id
+                     where ja.job_id = o3 and ja.retained_for_recovery)
+       || '|L:' || (select count(*) from public.job_assignments ja
+                     where ja.job_id::text like '71000000-0000-0000-0001-00000000010_' and ja.retained_for_recovery
+                       and ja.employee_id = '71000000-0000-0000-0000-000000000002') || '×Emil'
+       || '|RH:' || (select string_agg(p.full_name, ',') from public.job_assignments ja join public.profiles p on p.id = ja.employee_id
+                     join public.jobs j on j.id = ja.job_id
+                     where j.parent_job_id = '71000000-0000-0000-0001-000000000002' and ja.retained_for_recovery)
+       || '|gesamt=' || (select count(*) from public.job_assignments ja join public.jobs j on j.id = ja.job_id
+                     where j.company_id = '71000000-0000-0000-0000-00000000000a' and ja.retained_for_recovery)
+     from _o));
+
+select pg_temp.chk('X2', 'PRUNE-behaltene Fall-Termine inaktiv, reguläre Termine aktiv',
+  'o1=false/o2=false/o4=false/o3=true/o6=true',
+  (select 'o1=' || (select is_active from public.jobs where id = o1)::text
+       || '/o2=' || (select is_active from public.jobs where id = o2)::text
+       || '/o4=' || (select is_active from public.jobs where id = o4)::text
+       || '/o3=' || (select is_active from public.jobs where id = o3)::text
+       || '/o6=' || (select is_active from public.jobs where id = o6)::text from _o));
+
+-- Echter Start-Pfad: Einzelauftrag HEUTE (Firmenzeitzone), Emil mit
+-- offenem Fall + Zora; Alt-Client setzt den Zeiger auf Ida → Emil bleibt
+-- nur als Nachweis.
+insert into public.jobs (id, company_id, created_by, customer_name, service_name,
+                         location_address, status, job_type, date, start_time, is_active)
+values ('71000000-0000-0000-0001-000000000301','71000000-0000-0000-0000-00000000000a',
+        '71000000-0000-0000-0000-000000000001','Kunde SG','Reinigung','Weg 1','open','single',
+        (now() at time zone 'Europe/Berlin')::date, '08:00', true);
+select pg_temp.act_as('71000000-0000-0000-0000-000000000001');
+select public.set_job_assignments('71000000-0000-0000-0001-000000000301',
+  array['71000000-0000-0000-0000-000000000002','71000000-0000-0000-0000-000000000003']::uuid[]);
+select pg_temp.mk_case('71000000-0000-0000-0003-000000000301',
+  '71000000-0000-0000-0001-000000000301', '71000000-0000-0000-0000-000000000002');
+update public.jobs set assigned_to = '71000000-0000-0000-0000-000000000004'
+ where id = '71000000-0000-0000-0001-000000000301';
+
+select pg_temp.act_as('71000000-0000-0000-0000-000000000002');
+select pg_temp.chk('X3', 'entfernter, weiter aktiver Mitarbeiter: start_own_job abgelehnt (22023)',
+  '22023: Diese Zuweisung wurde entfernt und bleibt nur als Nachweis erhalten. Neue Arbeit kann darauf nicht gestartet werden.',
+  pg_temp.probe($q$set local role authenticated;
+    select public.start_own_job('71000000-0000-0000-0001-000000000301', now())$q$,
+    $q$select status::text from public.jobs where id = '71000000-0000-0000-0001-000000000301'$q$));
+select pg_temp.chk('X4', 'nach X3: Auftrag offen, Emils Zuweisung ungestartet, Fall unverändert', 'open/null/open',
+  (select j.status::text || '/' || coalesce(ja.employee_started_at::text, 'null') || '/' || c.state
+     from public.jobs j
+     join public.job_assignments ja on ja.job_id = j.id and ja.employee_id = '71000000-0000-0000-0000-000000000002'
+     join public.work_recovery_cases c on c.assignment_id = ja.id
+    where j.id = '71000000-0000-0000-0001-000000000301'));
+
+select pg_temp.act_as('71000000-0000-0000-0000-000000000004');
+select pg_temp.chk('X5', 'regulär zugewiesene Ida startet denselben Auftrag normal', 'probe:in_progress',
+  pg_temp.probe($q$set local role authenticated;
+    select public.start_own_job('71000000-0000-0000-0001-000000000301', now())$q$,
+    $q$select status::text from public.jobs where id = '71000000-0000-0000-0001-000000000301'$q$));
+
+-- Direkt am Trigger (deckt auch den Session-Pfad, der dieselbe Spalte setzt).
+select pg_temp.act_as('71000000-0000-0000-0000-000000000002');
+select pg_temp.chk('X6', 'Session-/Direktpfad: Emil setzt employee_started_at auf O1 → 22023', '22023',
+  (select left(pg_temp.probe(format($q$update public.job_assignments set employee_started_at = now(),
+     attendance = 'started' where job_id = %L and employee_id = '71000000-0000-0000-0000-000000000002'$q$, o1),
+     $q$select 'x'$q$), 5) from _o));
+select pg_temp.act_as('71000000-0000-0000-0000-000000000001');
+select pg_temp.chk('X7', 'Admin-Korrektur auf derselben Zeile bleibt möglich', 'probe:x',
+  (select pg_temp.probe(format($q$update public.job_assignments set employee_started_at = now(),
+     attendance = 'started' where job_id = %L and employee_id = '71000000-0000-0000-0000-000000000002'$q$, o1),
+     $q$select 'x'$q$) from _o));
+
+-- Wieder-Zuweisung hebt die Markierung auf.
+select public.set_job_assignments('71000000-0000-0000-0001-000000000301',
+  array['71000000-0000-0000-0000-000000000002','71000000-0000-0000-0000-000000000004']::uuid[]);
+select pg_temp.chk('X8', 'set_job_assignments mit Emil: Markierung fällt', 'false',
+  (select retained_for_recovery::text from public.job_assignments
+    where job_id = '71000000-0000-0000-0001-000000000301' and employee_id = '71000000-0000-0000-0000-000000000002'));
+select pg_temp.act_as('71000000-0000-0000-0000-000000000002');
+select pg_temp.chk('X9', 'wieder zugewiesener Emil darf starten', 'probe:in_progress',
+  pg_temp.probe($q$set local role authenticated;
+    select public.start_own_job('71000000-0000-0000-0001-000000000301', now())$q$,
+    $q$select status::text from public.jobs where id = '71000000-0000-0000-0001-000000000301'$q$));
+
+select pg_temp.chk('X10', 'Alt-Client-Zeiger zurück auf Emil (L-Auftrag 0101): Markierung fällt', 'probe:false',
+  pg_temp.probe($q$update public.jobs set assigned_to = '71000000-0000-0000-0000-000000000002'
+      where id = '71000000-0000-0000-0001-000000000101'$q$,
+    $q$select retained_for_recovery::text from public.job_assignments
+        where job_id = '71000000-0000-0000-0001-000000000101'
+          and employee_id = '71000000-0000-0000-0000-000000000002'$q$));
+
+-- Regel: Emil wieder in RA, Wochentag von O1 zurück → O1 aktiv, Markierung fällt.
+select pg_temp.act_as('71000000-0000-0000-0000-000000000001');
+select pg_temp.chk('X11', 'Emil + Wochentag zurück in RA: O1 wieder aktiv, Emil auf O1 regulär', 'probe:true/false',
+  (select pg_temp.probe(
+     $q$update public.jobs set recurring_days = array['mon','tue','wed','thu','fri','sat','sun']
+         where id = '71000000-0000-0000-0001-000000000001';
+       set local role authenticated;
+       select public.set_job_assignments('71000000-0000-0000-0001-000000000001',
+         array['71000000-0000-0000-0000-000000000002','71000000-0000-0000-0000-000000000004']::uuid[]);
+       select public.update_job_occurrences('71000000-0000-0000-0001-000000000001');
+       reset role$q$,
+     format($q$select (select is_active from public.jobs where id = %L)::text || '/' ||
+              (select retained_for_recovery from public.job_assignments where job_id = %L
+                and employee_id = '71000000-0000-0000-0000-000000000002')::text$q$, o1, o1)) from _o));
+
+select pg_temp.chk('X12', 'Kommentar-behaltene Termine: Verhalten unverändert (Regel nur für Fall-Termine)', 'true',
+  (select (pg_get_functiondef('public.update_job_occurrences(uuid)'::regprocedure)
+           ilike '%exists (select 1 from public.work_recovery_cases w where w.job_id = x.id)%')::text));
+
 select case_no, beschreibung, erwartet, ergebnis, verdikt from _results order by case_no;
 
 do $$

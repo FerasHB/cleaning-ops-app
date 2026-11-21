@@ -39,21 +39,48 @@ Unchanged:
 
 A kept assignment row with attendance `assigned` does not block job completion. Since `20261029000000`, only started assignees can block completion.
 
-### Known semantic conflicts (shown here on purpose, not hidden)
+### Invariant: kept evidence never keeps permission for new work
 
-1. **An employee removed from a rule (or deactivated) keeps the occurrence assignment that has a case.**
-   They still see that one occurrence and, if they are active, can start or complete it.
-   `start_own_job` authorizes on the full assignment set. Inheritance can no longer remove them from that
-   occurrence. The admin can only change it after the case is handled. Whether such an assignment should be
-   blocked for execution is a product decision for S2 or the resolve slice.
-2. **A legacy write (`assigned_to`) keeps the protected employee in the set** next to the new pointer.
-   `assigned_to` points to the new employee and stays covered. Multi-assignment allows this.
-3. **A PRUNE-skipped occurrence stays on a slot the rule no longer has.**
-   - RESCHEDULE ignores it.
-   - SYNC still copies customer, service, notes and `is_active` from the rule (existing behavior for leftover history).
-   - Its assignees can still execute it.
+The first review found two functional risks. A rolled-back local run confirmed the first: an employee removed
+from a rule, who is still active, could start and complete the occurrence kept for the case, online or
+through the offline queue. S1.6 closes both on the server:
+
+| Risk | Fix | Where enforced |
+|---|---|---|
+| A removed employee keeps a case-protected assignment and could start new work on it | The sync path that would have removed the row now marks it instead: `job_assignments.retained_for_recovery = true` (inherit step 1c, compat sync). The employee's **own** start on a marked row is rejected with `22023` "Diese Zuweisung wurde entfernt und bleibt nur als Nachweis erhalten…". | `guard_retained_assignment_start` (BEFORE UPDATE OF `employee_started_at`). Every start path sets that column on the employee's own row: `start_own_job` (open → in_progress and the late-joiner branch), and `start_own_job_v2` through `_execute_work_session_operation`. The block therefore covers both paths, online and offline replay, and rolls back the whole start. Pause, resume and complete need a start first. |
+| A PRUNE-kept case occurrence on a slot the rule no longer has still counts as scheduled work | SYNC sets `is_active = false` on it. This is the existing paused-occurrence marker: hidden from employee and planning lists and KPIs (`excludePausedOccurrences`), with no start button (`canRunJobActions`), and rejected by both start RPCs. If the slot comes back into the rule, SYNC sets it to `parent.is_active` again. | `update_job_occurrences` step 3 (SYNC) and the existing start-RPC guard from `20260829000000` |
+
+Details:
+- **Who is blocked:** only the employee, `auth.uid() = employee_id`. Admin corrections and later recovery
+  decisions on the same row still work.
+- **The flag is cleared on deliberate re-assignment:** the employee is back in the rule's active set
+  (inherit step 2b), the legacy pointer is set to them again (compat), or an admin selects them in
+  `set_job_assignments`.
+- **Existing valid work is never affected:** every sync path excludes started rows
+  (`employee_started_at IS NOT NULL`), so a flagged row has never been started. Work sessions, timestamps,
+  attendance, case rows and the job clock are untouched.
+- **`22023` is the client's business-conflict class:** the offline sync treats it as a permanent rejection,
+  does not retry, and keeps the local data (`services/offline/jobs.sync.ts`, `workJournal.core.ts`).
+- **Deactivated employees** were already blocked: `start_own_job` and the session RPCs require an active
+  profile, and RLS hides their jobs.
+- **Scope:** occurrences kept for comments, photos or read markers keep their previous behavior (still active).
+  That gap existed before S1.6 and is listed as a separate follow-up.
+
+### Remaining semantic notes (shown here on purpose, not hidden)
+
+1. **A removed employee still sees the retained occurrence** (RLS `is_assigned_to_job`). They cannot start it,
+   but the app shows it like normal work until the client reads `retained_for_recovery`, and only a start
+   attempt shows the server rejection. Hiding it or showing it as "evidence only" is a client follow-up.
+   The same RLS path still allows comments and photos; these are not new work.
+2. **A legacy write (`assigned_to`) keeps the protected employee in the set**, flagged, next to the new pointer.
+3. **A PRUNE-skipped occurrence stays as an inactive row** on a slot the rule no longer has. RESCHEDULE ignores
+   it. SYNC keeps the content fields current. `inherit_occurrence_assignments` can still add new rule members
+   to it, with no effect, because the row is inactive.
 4. **PRUNE protection is per job.** One case keeps the whole occurrence, and therefore every assignment on it.
-   This is unavoidable, because deleting the job would cascade to the protected assignment.
+   This is unavoidable, because deleting the job would cascade to the protected assignment. The occurrence is
+   inactive, so nobody can start new work on it.
+5. **Pre-existing, not S1.6:** occurrences kept for comments, photos or read markers on a removed slot stay
+   active and startable. Same pattern, separate follow-up.
 
 ## Race with case creation
 
@@ -132,13 +159,21 @@ neither the state-free skip check nor the RESTRICT check that runs on every assi
 
 ## Tests
 
-- `supabase/tests/work_recovery_sync_guards.test.sql`, 41 checks:
+- `supabase/tests/work_recovery_sync_guards.test.sql`, 53 checks:
   - groups S (structure), I (inherit, open and closed case, other employees), P (PRUNE, open and closed, other weekdays, tombstones),
     L (legacy write, open case plus all four closed states), H (horizon worker), B (company without cases),
     E (explicit admin action still fails, with a clear message), R (idempotence), W (no side effect: worktime,
     status, case fingerprint, case states, `assigned_to` coverage, no duplicates).
-  - Negative control (run once locally during development, not a committed test): with the pre-S1.6
-    function bodies and guard loaded in the same transaction, 19 of 41 checks fail. The rule edit fails
+  - Group X covers the invariant:
+    - the flag is set on exactly the 8 retained rows;
+    - case occurrences kept by PRUNE are inactive and other occurrences stay active;
+    - a real `start_own_job` by the removed employee is rejected, and the job, assignment and case are unchanged;
+    - a regular co-worker starts the same job normally;
+    - a direct or session-path start on a flagged row is rejected;
+    - an admin correction on that row still works;
+    - re-assignment via `set_job_assignments`, the legacy pointer, or the rule clears the flag, and the occurrence becomes active again.
+  - Negative control (run once locally during the first iteration, not a committed test): with the pre-S1.6
+    function bodies and guard loaded in the same transaction, 19 of the then 41 checks fail. The rule edit fails
     with `22023`/`23503`, the horizon worker reports `errors = 1`, and the legacy write is rejected.
 - `supabase/tests/work_recovery_sync_guards_concurrency.test.sh`: 18 checks, races 1–4 (see above).
 
@@ -151,8 +186,9 @@ neither the state-free skip check nor the RESTRICT check that runs on every assi
    on an assumed policy.
 3. **S2 writers must follow the lock contract above**, and the client must keep evidence when a case insert
    fails (`23503`/`22023`).
-4. **Product decisions from the conflicts above:**
-   - execution rights on case-protected assignments of removed employees;
-   - whether PRUNE-skipped occurrences should be deactivated.
+4. **Client follow-up (UX, not a safety gap):** read `retained_for_recovery` and show such an occurrence as
+   "evidence only" or hide it, instead of letting the server reject the start. The server rule holds without it.
+5. **Separate follow-up (pre-existing, not S1.6):** occurrences that PRUNE keeps for comments, photos or read
+   markers stay active and startable on a slot that was removed.
 
 S1.6 passing does not make S2 ready.
