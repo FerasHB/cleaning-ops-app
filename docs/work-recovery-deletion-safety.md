@@ -95,9 +95,10 @@ The client checkbox is still shown, but it is no longer the proof. The proof is 
 - `supabase/tests/work_recovery_purge_concurrency.test.sh` proves both insert orders and the
   "new event during export" case with real parallel sessions.
 
-**Contract for S2 and later:** every RPC that writes recovery data must first take
-`select 1 from companies where id = … for share`. Lock order is company, then case. Never lock admin
-profiles before the company row.
+**Contract for S2 and later:** every RPC that writes recovery data must first lock the company row.
+Lock order is company, then case. Never lock admin profiles before the company row.
+**Updated in S1.6:** the mode is `FOR KEY SHARE`, not `FOR SHARE`, through
+`_lock_company_for_recovery_write()`. See `docs/work-recovery-sync-guards.md`.
 
 ## Error codes (Edge Function `delete-account`)
 
@@ -118,7 +119,8 @@ Function can be deployed in either order. An old Edge Function maps the new mess
   that calls `get_company_recovery_export()`, writes the file on the device (like the worktime
   export), and then calls `acknowledge_company_recovery_export()`. Until that UI exists, a company
   with recovery data cannot be deleted. This is the safe failure direction.
-- **Automatic assignment synchronization.** `inherit_occurrence_assignments`,
+- **Automatic assignment synchronization.** Done in S1.6 (`docs/work-recovery-sync-guards.md`).
+  Original note: `inherit_occurrence_assignments`,
   `compat_sync_assignments_from_legacy` and the PRUNE step of `update_job_occurrences` delete
   assignment rows. They will fail on the S1 assignment guard (`22023`) or the RESTRICT foreign keys
   (`23503`) once a case exists. This is unrelated to company deletion. The company purge sets
@@ -143,3 +145,12 @@ Function can be deployed in either order. An old Edge Function maps the new mess
 3. **Attribution after account deletion (O6).** An employee account deletion sets `employee_id` to
    NULL on cases, and there is no name snapshot. The evidence stays, but the person's name is lost.
 4. **Export size.** `claimed_ops` can be large. One JSON response may need paging later.
+5. **Tie-break when choosing the confirmation (found during S1.6, not blocking).** The purge uses the
+   caller's newest acknowledged export (`order by acknowledged_at desc, created_at desc limit 1`). Two
+   acknowledgements with exactly the same timestamp make that choice arbitrary. Each acknowledgement runs in
+   its own API request and transaction, so this does not happen in practice, and if it did, the purge would
+   fail closed (`recovery_export_stale`, nothing deleted). It did happen in the single-transaction SQL test
+   (`work_recovery_deletion_safety.test.sql`, H1), which could fail depending on physical row order. S1.6
+   fixes the test by giving the earlier exports older timestamps. A later purge change could instead accept
+   "any acknowledged export of the caller whose fingerprint matches the current data". That is equally strict,
+   because fingerprints cannot return to an old value.
