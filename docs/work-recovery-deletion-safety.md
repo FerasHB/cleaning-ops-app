@@ -95,9 +95,10 @@ The client checkbox is still shown, but it is no longer the proof. The proof is 
 - `supabase/tests/work_recovery_purge_concurrency.test.sh` proves both insert orders and the
   "new event during export" case with real parallel sessions.
 
-**Contract for S2 and later:** every RPC that writes recovery data must first take
-`select 1 from companies where id = … for share`. Lock order is company, then case. Never lock admin
-profiles before the company row.
+**Contract for S2 and later:** every RPC that writes recovery data must first lock the company row.
+Lock order is company, then case. Never lock admin profiles before the company row.
+**Updated in S1.6:** the mode is `FOR KEY SHARE`, not `FOR SHARE`, through
+`_lock_company_for_recovery_write()`. See `docs/work-recovery-sync-guards.md`.
 
 ## Error codes (Edge Function `delete-account`)
 
@@ -118,7 +119,8 @@ Function can be deployed in either order. An old Edge Function maps the new mess
   that calls `get_company_recovery_export()`, writes the file on the device (like the worktime
   export), and then calls `acknowledge_company_recovery_export()`. Until that UI exists, a company
   with recovery data cannot be deleted. This is the safe failure direction.
-- **Automatic assignment synchronization.** `inherit_occurrence_assignments`,
+- **Automatic assignment synchronization.** Done in S1.6 (`docs/work-recovery-sync-guards.md`).
+  Original note: `inherit_occurrence_assignments`,
   `compat_sync_assignments_from_legacy` and the PRUNE step of `update_job_occurrences` delete
   assignment rows. They will fail on the S1 assignment guard (`22023`) or the RESTRICT foreign keys
   (`23503`) once a case exists. This is unrelated to company deletion. The company purge sets
