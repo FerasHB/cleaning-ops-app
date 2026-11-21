@@ -90,13 +90,13 @@ cat > "$WORK/driver.mjs" <<'JS'
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const [repo, container, work, admin, company, caseId] = process.argv.slice(2);
 const core = await import(pathToFileURL(join(repo, "services/account/recoveryExport.core.ts")).href);
-const { prepareRecoveryExport, acknowledgeRecoveryExport } = core;
+const { prepareRecoveryExport, acknowledgeRecoveryExport, deleteLocalRecoveryCopy } = core;
 
 let pass = 0;
 const ok = (name, fn) => { fn(); pass += 1; console.log(`PASS  ${name}`); };
@@ -135,8 +135,28 @@ const deps = {
   async readFile(uri) { return readFileSync(uri, "utf8"); },
   async sha256Hex(text) { return createHash("sha256").update(text, "utf8").digest("hex"); },
   async acknowledge(id) { asAdmin(`select public.acknowledge_company_recovery_export('${id}'::uuid);`); },
+  // S1.8: Backup-Ausschluss ist hier (Linux, kein Gerät) als bestätigt
+  // angenommen; der fail-closed-Pfad wird unten mit secure=false geprüft.
+  async ensureSecureDirectory() { return true; },
+  async protectFile() { return true; },
+  async fileExists(name) { return existsSync(join(work, name)); },
+  async deleteFile(name) { const p = join(work, name); if (existsSync(p)) unlinkSync(p); },
 };
+const exportFiles = () => readdirSync(work).filter((n) => n.startsWith("taskops-recovery-"));
+const serverEvidence = () => psql(`select concat_ws('|',
+  (select count(*) from public.work_recovery_cases where company_id='${company}'),
+  (select count(*) from public.work_recovery_submissions where company_id='${company}'),
+  (select count(*) from public.work_recovery_events where company_id='${company}'),
+  (select count(*) from public.company_deletion_exports where company_id='${company}'),
+  (select count(acknowledged_at) from public.company_deletion_exports where company_id='${company}'));`);
 const NOW = new Date("2026-11-21T10:00:00Z");
+
+// 0. S1.8: Backup-Ausschluss nicht bestätigt → keine Datei
+await assert.rejects(
+  prepareRecoveryExport({ ...deps, async ensureSecureDirectory() { return false; } }, "RECF Firma", NOW),
+  (e) => e.kind === "insecure_storage",
+);
+ok("0: ohne bestätigten Backup-Ausschluss wird keine Datei angelegt", () => assert.deepEqual(exportFiles(), []));
 
 // 1. offener Fall
 const p0 = await prepareRecoveryExport(deps, "RECF Firma", NOW);
@@ -187,6 +207,27 @@ ok("4: neuer Export hat neue export_id und zählt das neue Ereignis", () => {
 });
 await acknowledgeRecoveryExport(deps, p2, true);
 ok("4: neuer Export bestätigt → Purge möglich", () => assert.equal(purgeProbe(), "OK"));
+
+// 5. S1.8: lokale Kopie löschen — nur die Datei, nie Server-Daten
+const before = serverEvidence();
+const filesBefore = exportFiles();
+await assert.rejects(
+  deleteLocalRecoveryCopy(deps, p2, { acknowledged: true, userConfirmed: false }),
+  (e) => e.kind === "not_confirmed",
+);
+ok("5: Abbruch des Lösch-Dialogs löscht nichts", () => assert.deepEqual(exportFiles(), filesBefore));
+const result = await deleteLocalRecoveryCopy(deps, p2, { acknowledged: true, userConfirmed: true });
+ok("5: nur die Datei des bestätigten Exports gelöscht, ältere Datei bleibt", () => {
+  assert.equal(result, "deleted");
+  assert.equal(existsSync(p2.uri), false);
+  assert.ok(existsSync(p1.uri) || p1.uri === p2.uri);
+});
+ok("5: Server unverändert (Fälle, Meldungen, Verlauf, Export-Nachweise), Purge weiter möglich", () => {
+  assert.equal(serverEvidence(), before);
+  assert.equal(purgeProbe(), "OK");
+});
+const again = await deleteLocalRecoveryCopy(deps, p2, { acknowledged: true, userConfirmed: true });
+ok("5: wiederholtes Löschen ist ein No-Op", () => assert.equal(again, "already_gone"));
 
 console.log(`TESTRESULT recovery_export_client_flow: ${pass} PASS`);
 JS

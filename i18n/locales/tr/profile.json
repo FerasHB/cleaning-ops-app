@@ -141,7 +141,15 @@
       "verifyFailed": "Kaydedilen dosya sunucu verileriyle eşleşmiyor. Hiçbir şey onaylanmadı. Lütfen yeniden dışa aktar.",
       "notAuthorized": "Kayıtları yalnızca şirketin aktif bir yöneticisi dışa aktarabilir ve onaylayabilir.",
       "unsupportedPlatform": "İnceleme vakası kayıtlarının dışa aktarımı yalnızca iOS veya Android uygulamasında mümkündür.",
-      "deleteBlocked": "Önce inceleme vakası kayıtlarının dışa aktarımını onayla."
+      "deleteBlocked": "Önce inceleme vakası kayıtlarının dışa aktarımını onayla.",
+      "insecureStorage": "Dışa aktarım bu cihazda güvenli şekilde saklanamıyor (cihaz yedeklemelerinden hariç tutulma doğrulanamadı). Hiçbir dosya oluşturulmadı. Lütfen uygulamanın güncel sürümünü yükleyin.",
+      "deleteLocalHint": "Dosya, siz silene kadar bu cihazda kalır. Cihaz yedeklemelerine dahil edilmez.",
+      "deleteLocalButton": "Yerel kopyayı sil",
+      "deleteLocalConfirmTitle": "Yerel kopya kalıcı olarak silinsin mi?",
+      "deleteLocalConfirmMessage": "\"{{name}}\" dosyası bu cihazdan kalıcı olarak silinecek ve geri getirilemeyecek. Sunucudaki onay, bu cihazın dışında bir kopyanız olduğunu kanıtlamaz. Yalnızca böyle bir kopyanın var olduğundan kendiniz eminseniz silin. Sunucudaki inceleme vakaları, bildirimler ve geçmiş değişmeden kalır.",
+      "deleteLocalConfirmAction": "Kalıcı olarak sil",
+      "deleteLocalDone": "Yerel kopya bu cihazdan silindi. Sunucudaki veriler değişmedi.",
+      "deleteLocalFailed": "Yerel kopya silinemedi. Lütfen tekrar deneyin."
     }
   }
 }

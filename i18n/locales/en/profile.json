@@ -141,7 +141,15 @@
       "verifyFailed": "The saved file does not match the server data. Nothing was confirmed. Please export again.",
       "notAuthorized": "Only an active administrator of the company can export and confirm the records.",
       "unsupportedPlatform": "Exporting review-case records is only possible in the iOS or Android app.",
-      "deleteBlocked": "Confirm the review-case records export first."
+      "deleteBlocked": "Confirm the review-case records export first.",
+      "insecureStorage": "The export cannot be stored securely on this device (exclusion from device backups not confirmed). No file was created. Please install the latest app version.",
+      "deleteLocalHint": "The file stays on this device until you delete it yourself. It is not included in device backups.",
+      "deleteLocalButton": "Delete local copy",
+      "deleteLocalConfirmTitle": "Permanently delete the local copy?",
+      "deleteLocalConfirmMessage": "The file \"{{name}}\" will be permanently deleted from this device and cannot be recovered. The confirmation on the server does not prove that you have a copy outside this device. Only delete it if you are sure yourself that such a copy exists. Review cases, submissions and history on the server stay unchanged.",
+      "deleteLocalConfirmAction": "Delete permanently",
+      "deleteLocalDone": "The local copy was deleted from this device. The data on the server is unchanged.",
+      "deleteLocalFailed": "The local copy could not be deleted. Please try again."
     }
   }
 }

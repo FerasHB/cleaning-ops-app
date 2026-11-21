@@ -9,6 +9,10 @@
 //   3. Eigene Checkbox "außerhalb dieses Geräts gesichert" + Button
 //      "Export bestätigen" → erst dann acknowledge_company_recovery_export.
 //   4. Veraltet (recovery_export_stale) → zurück auf Anfang, neu exportieren.
+//   5. S1.8: Nach der Server-Bestätigung kann der Admin die lokale Kopie
+//      ausdrücklich löschen (eigener Bestätigungsdialog). Nie automatisch,
+//      nie Server-Daten. Eigener Zustand localCopy statt neuer Phase, damit
+//      die Löschsperre (phase === "acknowledged") unverändert bleibt.
 //
 // Meldet dem Screen per onBlockingChange, ob die Löschung aus Sicht der App
 // gesperrt ist (Export nötig, aber nicht bestätigt, oder offene Fälle). Die
@@ -21,17 +25,20 @@ import { recoveryExportDeps, shareRecoveryExportFile } from "@/services/account/
 import {
   acknowledgeRecoveryExport,
   classifyRecoveryExportError,
+  deleteLocalRecoveryCopy,
+  isLocalCopyDeletable,
   prepareRecoveryExport,
   type PreparedRecoveryExport,
   type RecoveryExportErrorKind,
 } from "@/services/account/recoveryExport.core";
-import { alertDialog } from "@/utils/dialogs";
+import { alertDialog, confirmDialog } from "@/utils/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Phase = "idle" | "exporting" | "notRequired" | "written" | "acknowledging" | "acknowledged";
+type LocalCopy = "present" | "deleting" | "deleted";
 
 const ERROR_KEY: Record<RecoveryExportErrorKind, string> = {
   unsupported_platform: "unsupportedPlatform",
@@ -44,6 +51,10 @@ const ERROR_KEY: Record<RecoveryExportErrorKind, string> = {
   not_confirmed: "failed",
   stale: "stale",
   transport: "failed",
+  insecure_storage: "insecureStorage",
+  not_acknowledged: "deleteLocalFailed",
+  invalid_file_name: "deleteLocalFailed",
+  delete_failed: "deleteLocalFailed",
   unknown: "failed",
 };
 
@@ -78,7 +89,8 @@ export function RecoveryExportSection({
   // — auch während eines erneuten Exports und nach "veraltet" — bis zum Reset
   // von außen oder bis ein neuer Export "keine Daten" meldet.
   const [recordsKnown, setRecordsKnown] = useState(false);
-  const busy = phase === "exporting" || phase === "acknowledging";
+  const [localCopy, setLocalCopy] = useState<LocalCopy>("present");
+  const busy = phase === "exporting" || phase === "acknowledging" || localCopy === "deleting";
 
   // Jeder Export-/Bestätigungslauf und jedes Zurücksetzen erhöht den Zähler;
   // ein Ergebnis aus einem älteren Lauf wird verworfen (kein spätes
@@ -98,6 +110,7 @@ export function RecoveryExportSection({
     setPrepared(null);
     setSavedOutside(false);
     setErrorKind(null);
+    setLocalCopy("present");
   }, [resetKey]);
 
   // Löschung aus App-Sicht gesperrt, sobald bekannt ist, dass Nachweise
@@ -120,6 +133,7 @@ export function RecoveryExportSection({
     setErrorKind(null);
     setPrepared(null);
     setSavedOutside(false);
+    setLocalCopy("present");
     try {
       const result = await prepareRecoveryExport(recoveryExportDeps, companyName);
       if (run !== runRef.current) return;
@@ -168,6 +182,37 @@ export function RecoveryExportSection({
       } else {
         setPhase("written");
       }
+    }
+  };
+
+  // S1.8: lokale Kopie löschen — nur nach Server-Bestätigung, nur nach
+  // eigenem Bestätigungsdialog, nur die Datei dieses Exports.
+  const handleDeleteLocal = async () => {
+    if (busy || disabled || phase !== "acknowledged") return;
+    if (!isLocalCopyDeletable(prepared, true)) return;
+    const confirmed = await confirmDialog({
+      title: t("profile:deleteAccount.recovery.deleteLocalConfirmTitle"),
+      message: t("profile:deleteAccount.recovery.deleteLocalConfirmMessage", {
+        name: prepared?.fileName ?? "",
+      }),
+      confirmLabel: t("profile:deleteAccount.recovery.deleteLocalConfirmAction"),
+      destructive: true,
+    });
+    if (!confirmed) return;
+    const run = ++runRef.current;
+    setLocalCopy("deleting");
+    setErrorKind(null);
+    try {
+      await deleteLocalRecoveryCopy(recoveryExportDeps, prepared, {
+        acknowledged: true,
+        userConfirmed: confirmed,
+      });
+      if (run !== runRef.current) return;
+      setLocalCopy("deleted");
+    } catch (err) {
+      if (run !== runRef.current) return;
+      setErrorKind(classifyRecoveryExportError(err));
+      setLocalCopy("present");
     }
   };
 
@@ -306,6 +351,39 @@ export function RecoveryExportSection({
               <Ionicons name="shield-checkmark" size={16} color={theme.colors.statusCompleted} />
               <Text style={styles.doneText}>
                 {t("profile:deleteAccount.recovery.acknowledged")}
+              </Text>
+            </View>
+          )}
+
+          {phase === "acknowledged" && localCopy !== "deleted" && isLocalCopyDeletable(prepared, true) && (
+            <>
+              <Text style={styles.meta}>{t("profile:deleteAccount.recovery.deleteLocalHint")}</Text>
+              <TouchableOpacity
+                style={styles.secondary}
+                activeOpacity={0.8}
+                onPress={() => void handleDeleteLocal()}
+                disabled={busy || disabled}
+                accessibilityRole="button"
+              >
+                {localCopy === "deleting" ? (
+                  <ActivityIndicator size="small" color={theme.colors.error} />
+                ) : (
+                  <>
+                    <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
+                    <Text style={[styles.secondaryText, { color: theme.colors.error }]}>
+                      {t("profile:deleteAccount.recovery.deleteLocalButton")}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+
+          {phase === "acknowledged" && localCopy === "deleted" && (
+            <View style={styles.doneRow}>
+              <Ionicons name="checkmark-circle" size={16} color={theme.colors.statusCompleted} />
+              <Text style={styles.doneText}>
+                {t("profile:deleteAccount.recovery.deleteLocalDone")}
               </Text>
             </View>
           )}

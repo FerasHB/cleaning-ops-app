@@ -62,7 +62,8 @@
       "expo-font",
       "expo-web-browser",
       "expo-notifications",
-      "expo-localization"
+      "expo-localization",
+      "./plugins/withRecoveryExportBackupRules"
     ],
     "experiments": {
       "typedRoutes": true

@@ -75,6 +75,11 @@ function fakeDeps(over = {}) {
     async readFile(uri) { calls.push("read"); return files.get(uri); },
     async sha256Hex(text) { calls.push("hash"); return sha(text); },
     async acknowledge(id) { calls.push(`ack:${id}`); },
+    // S1.8: Backup-Ausschluss bestätigt (Fehlerpfade: check-recovery-export-file-security.mjs)
+    async ensureSecureDirectory() { calls.push("secure"); return true; },
+    async protectFile() { calls.push("protect"); return true; },
+    async fileExists(name) { return files.has(`file://${name}`); },
+    async deleteFile(name) { calls.push(`delete:${name}`); files.delete(`file://${name}`); },
     ...over,
   };
   return { deps, calls, files };
@@ -123,7 +128,7 @@ test("Dateiname: Firmen-Slug, Datum, export_id-Präfix, .json", () => {
 test("Erfolg: holen → schreiben → zurücklesen → Hash; NIE bestätigt", async () => {
   const { deps, calls, files } = fakeDeps();
   const p = await prepareRecoveryExport(deps, "Firma", NOW);
-  assert.deepEqual(calls, ["fetch", "write", "read", "hash"]);
+  assert.deepEqual(calls, ["fetch", "secure", "write", "protect", "read", "hash"]);
   assert.equal(p.required, true);
   assert.equal(p.verified, true);
   // Datei = exakter Server-Text, verlustfrei

@@ -10,14 +10,48 @@
 //
 // Datenschutz: kein Logging, keine Analytics. Die Datei enthält interne
 // Admin-Notizen und personenbezogene Nachweise.
+//
+// S1.8 Backup-Ausschluss (fail closed, Details:
+// docs/work-recovery-export-file-security.md):
+//   * iOS: NSURLIsExcludedFromBackupKey auf Verzeichnis UND Datei, jeweils
+//     gesetzt und vom Dateisystem zurückgelesen (modules/backup-exclusion).
+//   * Android: Backup-Regeln aus plugins/withRecoveryExportBackupRules.js;
+//     das Modul prüft, dass der installierte Build sie enthält.
+//   * Fehlt das Modul (Expo Go, alter Build) oder schlägt eine Prüfung fehl,
+//     wird keine Datei angelegt.
+// Dateien werden nie automatisch gelöscht; nur deleteFile() auf
+// ausdrücklichen Wunsch, und nur über einen geprüften Dateinamen im festen
+// Verzeichnis (nie über eine übergebene URI).
 
+import { BackupExclusion } from "@/modules/backup-exclusion";
 import { i18next } from "@/i18n";
 import { supabase } from "@/lib/supabase";
 import * as Crypto from "expo-crypto";
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
-import type { RecoveryExportDeps } from "@/services/account/recoveryExport.core";
+import {
+  RECOVERY_EXPORT_DIR_NAME,
+  type RecoveryExportDeps,
+} from "@/services/account/recoveryExport.core";
+
+function exportDirectory(): Directory {
+  return new Directory(Paths.document, RECOVERY_EXPORT_DIR_NAME);
+}
+
+// Löst einen Dateinamen im festen Exportverzeichnis auf. Der Name ist in
+// recoveryExport.core.ts bereits gegen das strikte Muster geprüft; hier wird
+// zusätzlich verlangt, dass das Ergebnis direkt im Verzeichnis liegt.
+function exportFile(fileName: string): File {
+  if (!/^[A-Za-z0-9_.-]+$/.test(fileName) || fileName.includes("..")) {
+    throw new Error("invalid_file_name");
+  }
+  const dir = exportDirectory();
+  const file = new File(dir, fileName);
+  const base = dir.uri.replace(/\/+$/, "");
+  if (file.uri !== `${base}/${fileName}`) throw new Error("invalid_file_name");
+  return file;
+}
 
 export const recoveryExportDeps: RecoveryExportDeps = {
   platform: Platform.OS,
@@ -29,10 +63,53 @@ export const recoveryExportDeps: RecoveryExportDeps = {
     return data;
   },
 
+  async ensureSecureDirectory() {
+    if (!BackupExclusion) return false;
+    if (Platform.OS === "android") {
+      // Regeln zuerst: ohne sie wird nicht einmal das Verzeichnis angelegt.
+      if ((await BackupExclusion.verifyBackupRules()) !== true) return false;
+      const dir = exportDirectory();
+      if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+      return true;
+    }
+    if (Platform.OS === "ios") {
+      const dir = exportDirectory();
+      if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+      // Bei jedem Export neu setzen (Apple: Dateioperationen können das Flag
+      // zurücksetzen) und zurücklesen. Deckt auch ältere Dateien im Ordner.
+      return (
+        (await BackupExclusion.excludeFromBackup(dir.uri)) === true &&
+        (await BackupExclusion.isExcludedFromBackup(dir.uri)) === true
+      );
+    }
+    return false;
+  },
+
+  async protectFile(uri) {
+    if (!BackupExclusion) return false;
+    if (Platform.OS === "android") return true; // Regeln gelten für das ganze Verzeichnis
+    if (Platform.OS === "ios") {
+      return (
+        (await BackupExclusion.excludeFromBackup(uri)) === true &&
+        (await BackupExclusion.isExcludedFromBackup(uri)) === true
+      );
+    }
+    return false;
+  },
+
+  async fileExists(fileName) {
+    return exportFile(fileName).exists;
+  },
+
+  async deleteFile(fileName) {
+    const file = exportFile(fileName);
+    if (file.exists) file.delete();
+  },
+
   async writeFile(fileName, text) {
-    const dir = new Directory(Paths.document, "recovery-exports");
+    const dir = exportDirectory();
     if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
-    const file = new File(dir, fileName);
+    const file = exportFile(fileName);
     if (file.exists) file.delete();
     try {
       file.create();

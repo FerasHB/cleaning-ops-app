@@ -85,13 +85,8 @@ A JSON string survives transport without loss. Grants: `authenticated` only, SEC
 - **The file stays in the app's document directory** after deletion. It contains personal data and internal
   notes. It is not deleted automatically, because the evidence must not be lost by accident (rule C). A
   cleanup rule is part of the open retention decision.
-- **Device backups include the file.** iOS backs up the app's `Documents` folder to iCloud or the computer
-  (no exclude-from-backup flag is set), and Android Auto Backup is on by default in Expo 54
-  (`allowBackup` defaults to `true`, no backup rules in `app.json`). The file is therefore copied to the
-  admin's own device backup. It is not visible in the iOS Files app or to other apps, and no screen lists
-  it, so another account on the same installation cannot open it. Excluding `recovery-exports/` from
-  backups (iOS backup flag, Android backup rules via a config plugin) must be decided and done before
-  the release build; it needs a real-device check.
+- **Device backups:** addressed in S1.8 (`docs/work-recovery-export-file-security.md`): the folder is
+  excluded from iOS and Android backups, and the app creates no file if that cannot be confirmed.
 - **Size:** the export is one response with no paging (open item 4 in the S1.5 document).
 - **Not tested on a real device.** The flow is tested with injected dependencies (Node) and against the real
   database (`supabase/tests/recovery_export_client_flow.test.sh`, which runs the same TypeScript core with
