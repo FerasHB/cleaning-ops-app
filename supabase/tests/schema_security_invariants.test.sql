@@ -52,6 +52,7 @@ declare
     'get_au_restoration_candidates',
     'get_company_employee_emails',
     'get_company_recovery_export',
+    'get_company_recovery_export_file',
     'get_company_worktime_export',
     'get_effective_work_sessions',
     'get_job_comments',

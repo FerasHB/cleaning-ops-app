@@ -18,6 +18,7 @@
 // Nach Erfolg: lokale Caches leeren, lokal abmelden, zurück zum Login.
 
 import { AppHeader, Card } from "@/components/ui";
+import { RecoveryExportSection } from "@/features/profile/components/RecoveryExportSection";
 import { useAuth } from "@/context/AuthContext";
 import type { AppTheme } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -65,6 +66,9 @@ export default function DeleteAccountScreen() {
   const [acknowledgedRetention, setAcknowledgedRetention] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "csv" | null>(null);
   const [exported, setExported] = useState(false);
+  // Work Recovery S1.7: Prüffall-Nachweise exportieren + bestätigen.
+  const [recoveryBlocking, setRecoveryBlocking] = useState(false);
+  const [recoveryResetKey, setRecoveryResetKey] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const isAdmin = context?.role === "admin";
@@ -76,7 +80,7 @@ export default function DeleteAccountScreen() {
   const canDelete =
     context !== null &&
     confirmed &&
-    (!isCompanyDeletion || (confirmedCompany && acknowledgedRetention)) &&
+    (!isCompanyDeletion || (confirmedCompany && acknowledgedRetention && !recoveryBlocking)) &&
     !loading &&
     exporting === null;
 
@@ -120,6 +124,7 @@ export default function DeleteAccountScreen() {
     setConfirmed(false);
     setConfirmedCompany(false);
     setAcknowledgedRetention(false);
+    setRecoveryResetKey((k) => k + 1);
     setContext(null);
     void loadContext();
     Alert.alert(t("profile:deleteAccount.notPossibleTitle"), message);
@@ -394,6 +399,20 @@ export default function DeleteAccountScreen() {
                   </View>
                 )}
               </View>
+            </Section>
+
+            {/* ── Prüffall-Nachweise (Work Recovery) vor der Löschung ── */}
+            <Section
+              title={t("profile:deleteAccount.recovery.title")}
+              theme={theme}
+              styles={styles}
+            >
+              <RecoveryExportSection
+                companyName={companyName}
+                disabled={loading}
+                resetKey={recoveryResetKey}
+                onBlockingChange={setRecoveryBlocking}
+              />
             </Section>
 
             <ConfirmCheckbox

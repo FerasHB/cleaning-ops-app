@@ -120,6 +120,28 @@
       "flagOpen": "not ended",
       "unknownEmployee": "Unknown",
       "shareTitle": "Save work-time records"
+    },
+    "recovery": {
+      "title": "Export review-case records",
+      "text": "If the company has review cases for work recorded after the fact, these records must be exported in full and confirmed by you before deletion. The file contains personal data and internal notes – keep it safe.",
+      "exportButton": "Export records",
+      "notRequired": "No review-case records. No recovery export is needed for deletion.",
+      "written": "File saved in full and verified (cases: {{cases}}, submissions: {{submissions}}, events: {{events}}).",
+      "fileName": "File: {{name}}",
+      "openCases": "Open review cases: {{count}}. The company can only be deleted once all review cases are decided.",
+      "shareButton": "Share or save file",
+      "shareTitle": "Review-case records",
+      "shareHint": "Save the file outside this device now (for example by emailing it to yourself or to your cloud storage). The app cannot tell whether saving worked.",
+      "confirmLabel": "I have saved the review-case records file outside this device.",
+      "acknowledgeButton": "Confirm export",
+      "acknowledged": "Export confirmed. If the records change before deletion, you must export again.",
+      "stale": "The records have changed since the export. Please export and confirm again.",
+      "failed": "The export failed. Please try again.",
+      "writeFailed": "The file could not be saved on this device. Nothing was confirmed.",
+      "verifyFailed": "The saved file does not match the server data. Nothing was confirmed. Please export again.",
+      "notAuthorized": "Only an active administrator of the company can export and confirm the records.",
+      "unsupportedPlatform": "Exporting review-case records is only possible in the iOS or Android app.",
+      "deleteBlocked": "Confirm the review-case records export first."
     }
   }
 }

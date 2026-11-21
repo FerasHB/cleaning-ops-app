@@ -120,6 +120,28 @@
       "flagOpen": "bitmedi",
       "unknownEmployee": "Bilinmiyor",
       "shareTitle": "Çalışma süresi kayıtlarını kaydet"
+    },
+    "recovery": {
+      "title": "İnceleme vakası kayıtlarını dışa aktar",
+      "text": "Şirketin sonradan kaydedilen işler için inceleme vakaları varsa, bu kayıtlar silmeden önce eksiksiz dışa aktarılmalı ve senin tarafından onaylanmalıdır. Dosya kişisel veriler ve dahili notlar içerir – güvenli bir şekilde sakla.",
+      "exportButton": "Kayıtları dışa aktar",
+      "notRequired": "İnceleme vakası kaydı yok. Silme için kurtarma dışa aktarımı gerekmez.",
+      "written": "Dosya eksiksiz kaydedildi ve doğrulandı (vakalar: {{cases}}, gönderimler: {{submissions}}, olaylar: {{events}}).",
+      "fileName": "Dosya: {{name}}",
+      "openCases": "Açık inceleme vakaları: {{count}}. Şirket ancak tüm inceleme vakaları karara bağlandıktan sonra silinebilir.",
+      "shareButton": "Dosyayı paylaş veya kaydet",
+      "shareTitle": "İnceleme vakası kayıtları",
+      "shareHint": "Dosyayı şimdi bu cihazın dışında sakla (örneğin kendine e-postayla gönder veya bulut depolamana kaydet). Uygulama kaydetmenin başarılı olup olmadığını anlayamaz.",
+      "confirmLabel": "İnceleme vakası kayıtları dosyasını bu cihazın dışında sakladım.",
+      "acknowledgeButton": "Dışa aktarımı onayla",
+      "acknowledged": "Dışa aktarım onaylandı. Kayıtlar silmeden önce değişirse yeniden dışa aktarman gerekir.",
+      "stale": "Kayıtlar dışa aktarımdan bu yana değişti. Lütfen yeniden dışa aktar ve onayla.",
+      "failed": "Dışa aktarım başarısız oldu. Lütfen tekrar dene.",
+      "writeFailed": "Dosya bu cihaza kaydedilemedi. Hiçbir şey onaylanmadı.",
+      "verifyFailed": "Kaydedilen dosya sunucu verileriyle eşleşmiyor. Hiçbir şey onaylanmadı. Lütfen yeniden dışa aktar.",
+      "notAuthorized": "Kayıtları yalnızca şirketin aktif bir yöneticisi dışa aktarabilir ve onaylayabilir.",
+      "unsupportedPlatform": "İnceleme vakası kayıtlarının dışa aktarımı yalnızca iOS veya Android uygulamasında mümkündür.",
+      "deleteBlocked": "Önce inceleme vakası kayıtlarının dışa aktarımını onayla."
     }
   }
 }

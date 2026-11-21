@@ -115,7 +115,7 @@ Function can be deployed in either order. An old Edge Function maps the new mess
 
 ## Not in S1.5 (deliberately)
 
-- **No recovery export screen in the app.** No case can exist before S2. S2 must ship the admin UI
+- **No recovery export screen in the app.** Done in S1.7 (`docs/work-recovery-export-ui.md`). Original note: no case can exist before S2. S2 must ship the admin UI
   that calls `get_company_recovery_export()`, writes the file on the device (like the worktime
   export), and then calls `acknowledge_company_recovery_export()`. Until that UI exists, a company
   with recovery data cannot be deleted. This is the safe failure direction.

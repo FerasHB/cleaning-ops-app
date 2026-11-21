@@ -120,6 +120,28 @@
       "flagOpen": "nicht beendet",
       "unknownEmployee": "Unbekannt",
       "shareTitle": "Arbeitszeitnachweise speichern"
+    },
+    "recovery": {
+      "title": "Prüffall-Nachweise exportieren",
+      "text": "Hat die Firma Prüffälle zu nachträglich erfasster Arbeit, müssen diese Nachweise vor der Löschung vollständig exportiert und von dir bestätigt werden. Die Datei enthält personenbezogene Daten und interne Notizen – bewahre sie sicher auf.",
+      "exportButton": "Nachweise exportieren",
+      "notRequired": "Keine Prüffall-Nachweise vorhanden. Für die Löschung ist kein Recovery-Export nötig.",
+      "written": "Datei vollständig gespeichert und geprüft (Fälle: {{cases}}, Einreichungen: {{submissions}}, Ereignisse: {{events}}).",
+      "fileName": "Datei: {{name}}",
+      "openCases": "Offene Prüffälle: {{count}}. Die Firma kann erst gelöscht werden, wenn alle Prüffälle entschieden sind.",
+      "shareButton": "Datei teilen oder sichern",
+      "shareTitle": "Prüffall-Nachweise",
+      "shareHint": "Sichere die Datei jetzt außerhalb dieses Geräts (z. B. per E-Mail an dich oder in deinem Cloud-Speicher). Die App kann nicht erkennen, ob das Sichern geklappt hat.",
+      "confirmLabel": "Ich habe die Datei mit den Prüffall-Nachweisen außerhalb dieses Geräts gesichert.",
+      "acknowledgeButton": "Export bestätigen",
+      "acknowledged": "Export bestätigt. Ändern sich die Nachweise vor der Löschung, musst du erneut exportieren.",
+      "stale": "Die Nachweise haben sich seit dem Export geändert. Bitte erneut exportieren und bestätigen.",
+      "failed": "Der Export ist fehlgeschlagen. Bitte versuche es erneut.",
+      "writeFailed": "Die Datei konnte auf diesem Gerät nicht gespeichert werden. Es wurde nichts bestätigt.",
+      "verifyFailed": "Die gespeicherte Datei stimmt nicht mit den Server-Daten überein. Es wurde nichts bestätigt. Bitte erneut exportieren.",
+      "notAuthorized": "Nur ein aktiver Administrator der Firma kann die Nachweise exportieren und bestätigen.",
+      "unsupportedPlatform": "Der Export der Prüffall-Nachweise ist nur in der iOS- oder Android-App möglich.",
+      "deleteBlocked": "Bestätige zuerst den Export der Prüffall-Nachweise."
     }
   }
 }
