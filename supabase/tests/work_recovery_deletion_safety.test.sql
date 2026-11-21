@@ -393,6 +393,17 @@ select pg_temp.chk('A2', 'Fall löschen ohne Purge-Flag', '23514',
 -- =========================================================
 -- H — Happy Path (echter Purge, bleibt bis zum ROLLBACK bestehen)
 -- =========================================================
+-- Alle bisherigen Exporte entstanden in DIESER Transaktion und tragen
+-- dasselbe now() als created_at/acknowledged_at. Der Purge wählt die
+-- neueste Bestätigung (acknowledged_at desc, created_at desc); bei
+-- Gleichstand wäre die Wahl zufällig (veraltete Bestätigung → stale,
+-- Test flackert je nach physischer Zeilenreihenfolge). In Produktion ist
+-- jede Bestätigung ein eigener Request/eine eigene Transaktion. Das bilden
+-- wir hier nach, indem die früheren Exporte älter gemacht werden.
+update public.company_deletion_exports
+   set created_at = created_at - interval '1 hour',
+       acknowledged_at = acknowledged_at - interval '1 hour'
+ where company_id = '7d000000-0000-0000-0000-00000000000a';
 create temp table _x3 as select pg_temp.export_as('7d000000-0000-0000-0000-000000000001') as id;
 select pg_temp.chk('H0', 'aktuellen Export bestätigen', 'OK',
   pg_temp.ack_as('7d000000-0000-0000-0000-000000000001', (select id from _x3)));

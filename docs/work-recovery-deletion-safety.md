@@ -145,3 +145,12 @@ Function can be deployed in either order. An old Edge Function maps the new mess
 3. **Attribution after account deletion (O6).** An employee account deletion sets `employee_id` to
    NULL on cases, and there is no name snapshot. The evidence stays, but the person's name is lost.
 4. **Export size.** `claimed_ops` can be large. One JSON response may need paging later.
+5. **Tie-break when choosing the confirmation (found during S1.6, not blocking).** The purge uses the
+   caller's newest acknowledged export (`order by acknowledged_at desc, created_at desc limit 1`). Two
+   acknowledgements with exactly the same timestamp make that choice arbitrary. Each acknowledgement runs in
+   its own API request and transaction, so this does not happen in practice, and if it did, the purge would
+   fail closed (`recovery_export_stale`, nothing deleted). It did happen in the single-transaction SQL test
+   (`work_recovery_deletion_safety.test.sql`, H1), which could fail depending on physical row order. S1.6
+   fixes the test by giving the earlier exports older timestamps. A later purge change could instead accept
+   "any acknowledged export of the caller whose fingerprint matches the current data". That is equally strict,
+   because fingerprints cannot return to an old value.
