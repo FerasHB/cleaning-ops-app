@@ -157,6 +157,21 @@ export default function DeleteAccountScreen() {
         return;
       }
 
+      // Work-Recovery S1.5: Server blockiert die Firmenlöschung wegen offener
+      // Prüffälle bzw. fehlender/veralteter Recovery-Export-Bestätigung.
+      // Nichts gelöscht; Bestätigungen zurücksetzen und Kontext neu laden.
+      if (result.code === "recovery_cases_open") {
+        resetAfterPathChange(t("profile:deleteAccount.recoveryCasesOpenMessage"));
+        return;
+      }
+      if (
+        result.code === "recovery_export_required" ||
+        result.code === "recovery_export_stale"
+      ) {
+        resetAfterPathChange(t("profile:deleteAccount.recoveryExportMessage"));
+        return;
+      }
+
       // result.message kommt aus der Edge Function delete-account (siehe
       // services/account/deleteAccount.ts) — server-seitig formulierter
       // Text, bislang ausschließlich Deutsch. Server-seitige Lokalisierung

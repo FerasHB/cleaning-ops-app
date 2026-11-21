@@ -47,6 +47,8 @@ type Call = { method: string; path: string; body: unknown };
 let calls: Call[] = [];
 const deletedUsers = new Set<string>();
 let storageFails = false;
+// Erzwingt eine Purge-Ablehnung (Recovery-Sperren, Migration 20261121000000).
+let purgeRejects: string | null = null;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -111,6 +113,7 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit) => 
     if (p.role !== "admin") return pgError("not_admin");
     if (args.p_confirm_company_id !== p.company_id) return pgError("company_mismatch");
     if (!isLastAdmin(args.p_caller)) return pgError("not_last_admin");
+    if (purgeRejects) return pgError(purgeRejects);
     deletedUsers.add(args.p_caller);
     return json({
       company_id: p.company_id,
@@ -195,6 +198,7 @@ function reset() {
   calls = [];
   deletedUsers.clear();
   storageFails = false;
+  purgeRejects = null;
 }
 
 const called = (path: string) => calls.filter((c) => c.path === path);
@@ -326,5 +330,24 @@ Deno.test("Ungültiges/fremdes Token -> 401, kein Profil-Lookup, keine RPC, kein
     assertEquals(r.body.code, "unauthenticated");
     // Einziger erlaubter Aufruf: die Session-Prüfung selbst.
     assertEquals(calls.map((c) => c.path).filter((p) => p !== "/auth/v1/user"), []);
+  }
+});
+
+Deno.test("Recovery-Sperren (S1.5) -> 409 mit eigenem Code, nichts gelöscht", async () => {
+  const cases: Array<[string, string]> = [
+    ["open_recovery_cases", "recovery_cases_open"],
+    ["recovery_export_required", "recovery_export_required"],
+    ["recovery_export_stale", "recovery_export_stale"],
+  ];
+  for (const [sqlMessage, code] of cases) {
+    reset();
+    purgeRejects = sqlMessage;
+    const r = await call("tok-solo-admin", { confirmCompanyDeletion: true, confirmCompanyId: COMPANY_A });
+    assertEquals(r.status, 409);
+    assertEquals(r.body.code, code);
+    assertEquals(called("/rest/v1/rpc/purge_company_for_last_admin").length, 1);
+    assertEquals(authDeletes().length, 0);
+    assertEquals(called("/storage/v1/object/list/job-photos").length, 0);
+    assertEquals(called("/storage/v1/object/job-photos").length, 0);
   }
 });

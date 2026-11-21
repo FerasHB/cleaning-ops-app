@@ -78,6 +78,8 @@
     "contextError": "Your account information could not be loaded. Please check your internet connection and try again.",
     "notLastAdminTitle": "Company will not be deleted",
     "lastAdminChangedMessage": "Your role in the company has changed. Please review the information shown and confirm again.",
+    "recoveryCasesOpenMessage": "Your company still has open review cases for work recorded after the fact. The company can only be deleted once they are decided. Nothing was deleted.",
+    "recoveryExportMessage": "The company's review-case records must be exported and confirmed in their current state before deletion. Nothing was deleted.",
     "company": {
       "heroTitle": "Permanently Delete Account and Company",
       "heroSubtitle": "You are the only active administrator of “{{company}}”. Deleting your account also deletes the company. This cannot be undone.",

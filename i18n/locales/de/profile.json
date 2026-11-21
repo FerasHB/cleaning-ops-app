@@ -78,6 +78,8 @@
     "contextError": "Die Kontoinformationen konnten nicht geladen werden. Bitte prüfe deine Internetverbindung und versuche es erneut.",
     "notLastAdminTitle": "Firma wird nicht gelöscht",
     "lastAdminChangedMessage": "Deine Rolle in der Firma hat sich geändert. Bitte prüfe die angezeigten Informationen und bestätige erneut.",
+    "recoveryCasesOpenMessage": "Die Firma hat noch offene Prüffälle zu nachträglich erfasster Arbeit. Die Firma kann erst gelöscht werden, wenn diese entschieden sind. Es wurde nichts gelöscht.",
+    "recoveryExportMessage": "Die Prüffall-Nachweise der Firma müssen vor der Löschung aktuell exportiert und bestätigt werden. Es wurde nichts gelöscht.",
     "company": {
       "heroTitle": "Konto und Firma dauerhaft löschen",
       "heroSubtitle": "Du bist der einzige aktive Administrator von „{{company}}“. Wenn du dein Konto löschst, wird auch die Firma gelöscht. Das kann nicht rückgängig gemacht werden.",
