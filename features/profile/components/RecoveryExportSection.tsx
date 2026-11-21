@@ -51,12 +51,19 @@ export function RecoveryExportSection({
   companyName,
   disabled,
   resetKey,
+  requiredByServer,
   onBlockingChange,
 }: {
   companyName: string;
   disabled: boolean;
   /** Erhöhen, um den Abschnitt zurückzusetzen (z. B. nach Server-Ablehnung). */
   resetKey: number;
+  /**
+   * Server hat die Löschung bereits wegen fehlender/veralteter Bestätigung
+   * oder offener Fälle abgelehnt: Nachweise existieren, auch wenn dieser
+   * Abschnitt (nach einem Reset) noch keinen eigenen Export kennt.
+   */
+  requiredByServer: boolean;
   onBlockingChange: (blocking: boolean) => void;
 }) {
   const theme = useAppTheme();
@@ -96,9 +103,12 @@ export function RecoveryExportSection({
   // Löschung aus App-Sicht gesperrt, sobald bekannt ist, dass Nachweise
   // existieren und noch nicht bestätigt sind, oder Fälle offen sind.
   // Während eines laufenden Exports/einer Bestätigung ebenfalls gesperrt.
+  // Ein frischer Export mit "keine Daten" hebt die Server-Meldung auf (der
+  // Server prüft bei der Löschung ohnehin erneut).
+  const required = recordsKnown || (requiredByServer && phase !== "notRequired");
   const blocking =
     busy ||
-    (recordsKnown && (phase !== "acknowledged" || (prepared?.openCaseCount ?? 0) > 0));
+    (required && (phase !== "acknowledged" || (prepared?.openCaseCount ?? 0) > 0));
   useEffect(() => {
     onBlockingChange(blocking);
   }, [blocking, onBlockingChange]);

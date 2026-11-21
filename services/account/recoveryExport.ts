@@ -34,8 +34,19 @@ export const recoveryExportDeps: RecoveryExportDeps = {
     if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
     const file = new File(dir, fileName);
     if (file.exists) file.delete();
-    file.create();
-    file.write(text);
+    try {
+      file.create();
+      file.write(text);
+    } catch (err) {
+      // Keine unvollständige Datei zurücklassen (z. B. Speicher voll).
+      // Aufräumen ist best effort; der ursprüngliche Fehler zählt.
+      try {
+        if (file.exists) file.delete();
+      } catch {
+        // ignorieren
+      }
+      throw err;
+    }
     return { uri: file.uri };
   },
 

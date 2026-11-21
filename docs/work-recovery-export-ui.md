@@ -55,7 +55,13 @@ A JSON string survives transport without loss. Grants: `authenticated` only, SEC
    acknowledgement or later at deletion. The section then returns to the start and the admin must export
    again. If deletion fails for this reason, the screen resets the section (`resetAfterPathChange`).
 5. **Delete button.** The button stays disabled while the section knows that records exist and are not
-   acknowledged, or while cases are open. The binding check is still on the server (purge).
+   acknowledged, or while cases are open. Before the first export the app does not know whether records
+   exist, so the first deletion attempt can be rejected by the server. After a rejection with
+   `recovery_export_required`, `recovery_export_stale` or `recovery_cases_open`, the button stays
+   disabled until the section reports an acknowledged export (or a fresh export with no records). The
+   binding check is still on the server (purge).
+6. **Failed write.** If writing the file fails (for example, the disk is full), the partial file is
+   deleted (best effort) and the export is not usable.
 
 ## Security properties
 
@@ -79,6 +85,13 @@ A JSON string survives transport without loss. Grants: `authenticated` only, SEC
 - **The file stays in the app's document directory** after deletion. It contains personal data and internal
   notes. It is not deleted automatically, because the evidence must not be lost by accident (rule C). A
   cleanup rule is part of the open retention decision.
+- **Device backups include the file.** iOS backs up the app's `Documents` folder to iCloud or the computer
+  (no exclude-from-backup flag is set), and Android Auto Backup is on by default in Expo 54
+  (`allowBackup` defaults to `true`, no backup rules in `app.json`). The file is therefore copied to the
+  admin's own device backup. It is not visible in the iOS Files app or to other apps, and no screen lists
+  it, so another account on the same installation cannot open it. Excluding `recovery-exports/` from
+  backups (iOS backup flag, Android backup rules via a config plugin) must be decided and done before
+  the release build; it needs a real-device check.
 - **Size:** the export is one response with no paging (open item 4 in the S1.5 document).
 - **Not tested on a real device.** The flow is tested with injected dependencies (Node) and against the real
   database (`supabase/tests/recovery_export_client_flow.test.sh`, which runs the same TypeScript core with

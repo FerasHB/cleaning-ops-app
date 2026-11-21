@@ -69,6 +69,10 @@ export default function DeleteAccountScreen() {
   // Work Recovery S1.7: Prüffall-Nachweise exportieren + bestätigen.
   const [recoveryBlocking, setRecoveryBlocking] = useState(false);
   const [recoveryResetKey, setRecoveryResetKey] = useState(0);
+  // Server hat die Firmenlöschung wegen Recovery-Nachweisen abgelehnt: Löschen
+  // bleibt gesperrt, bis der Abschnitt eine Bestätigung (oder "keine Daten")
+  // meldet — kein Ablehnen-Wiederholen-Kreislauf nach dem Reset.
+  const [recoveryRequiredByServer, setRecoveryRequiredByServer] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const isAdmin = context?.role === "admin";
@@ -132,8 +136,11 @@ export default function DeleteAccountScreen() {
 
   const email = user?.email ?? t("profile:fallback.myAccount");
 
-  // Leert ALLE lokalen persistenten Caches, damit auf einem geteilten Gerät
-  // keine Daten des gelöschten Kontos zurückbleiben.
+  // Leert die lokalen persistenten Caches (Profil, Jobs, Offline-Queue), damit
+  // auf einem geteilten Gerät keine dieser Daten des gelöschten Kontos
+  // zurückbleiben. Ausnahme: Recovery-Exportdateien (Paths.document/
+  // recovery-exports) bleiben bewusst erhalten — Nachweis, nicht Cache; ihre
+  // Bereinigung ist Teil der offenen Aufbewahrungsentscheidung.
   const clearAllLocalData = async () => {
     await Promise.all([
       clearCachedProfile(),
@@ -166,6 +173,7 @@ export default function DeleteAccountScreen() {
       // Prüffälle bzw. fehlender/veralteter Recovery-Export-Bestätigung.
       // Nichts gelöscht; Bestätigungen zurücksetzen und Kontext neu laden.
       if (result.code === "recovery_cases_open") {
+        setRecoveryRequiredByServer(true);
         resetAfterPathChange(t("profile:deleteAccount.recoveryCasesOpenMessage"));
         return;
       }
@@ -173,6 +181,7 @@ export default function DeleteAccountScreen() {
         result.code === "recovery_export_required" ||
         result.code === "recovery_export_stale"
       ) {
+        setRecoveryRequiredByServer(true);
         resetAfterPathChange(t("profile:deleteAccount.recoveryExportMessage"));
         return;
       }
@@ -411,6 +420,7 @@ export default function DeleteAccountScreen() {
                 companyName={companyName}
                 disabled={loading}
                 resetKey={recoveryResetKey}
+                requiredByServer={recoveryRequiredByServer}
                 onBlockingChange={setRecoveryBlocking}
               />
             </Section>

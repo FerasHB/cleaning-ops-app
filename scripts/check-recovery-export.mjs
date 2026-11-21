@@ -268,9 +268,23 @@ test("Screen: Löschen gesperrt, solange der Recovery-Abschnitt sperrt; Reset be
   assert.match(src, /<RecoveryExportSection[\s\S]*onBlockingChange=\{setRecoveryBlocking\}/);
   const reset = src.slice(src.indexOf("const resetAfterPathChange"), src.indexOf("const email ="));
   assert.match(reset, /setRecoveryResetKey\(\(k\) => k \+ 1\)/);
+  // Server-Ablehnung (Export fehlt/veraltet, Fälle offen) hält die Sperre auch
+  // nach dem Reset: kein Ablehnen-Wiederholen-Kreislauf.
+  const deny = src.slice(src.indexOf('result.code === "recovery_cases_open"'), src.indexOf("result.message kommt aus"));
+  assert.equal((deny.match(/setRecoveryRequiredByServer\(true\)/g) ?? []).length, 2);
+  assert.match(src, /requiredByServer=\{recoveryRequiredByServer\}/);
+  const section = read("features/profile/components/RecoveryExportSection.tsx");
+  assert.match(section, /const required = recordsKnown \|\| \(requiredByServer && phase !== "notRequired"\);/);
+  assert.match(section, /\(required && \(phase !== "acknowledged"/);
   // Arbeitszeit-Export unverändert vorhanden
   assert.match(src, /handleExport\("pdf"\)/);
   assert.match(src, /handleExport\("csv"\)/);
+});
+
+test("Gerät: fehlgeschlagenes Schreiben entfernt die unvollständige Datei", () => {
+  const dev = read("services/account/recoveryExport.ts");
+  const w = dev.slice(dev.indexOf("async writeFile"), dev.indexOf("async readFile"));
+  assert.match(w, /catch \(err\) \{[\s\S]*file\.delete\(\)[\s\S]*throw err;/);
 });
 
 test("Übersetzungen: gleiche Schlüssel + Platzhalter in de/en/ar/tr, nichts leer", () => {
