@@ -161,6 +161,14 @@ jobs:
       - name: Ephemeral Supabase database (all migrations from zero)
         uses: ./.github/actions/ephemeral-supabase-db
 
+      # recovery_export_client_flow.test.sh runs the app's TypeScript export
+      # flow (services/account/recoveryExport.core.ts, no npm dependencies)
+      # against this database; --experimental-strip-types needs Node 22.6+.
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+
       # Each race runs 3 times; a timing bug may not show on the first try.
       - name: Run all supabase/tests/*.test.sh (3 iterations)
         run: bash scripts/ci/run-concurrency-tests.sh
