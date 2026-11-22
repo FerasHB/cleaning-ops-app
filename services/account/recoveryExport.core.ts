@@ -42,6 +42,10 @@ export type RecoveryExportErrorKind =
   | "not_confirmed"
   | "stale"
   | "transport"
+  | "insecure_storage"
+  | "not_acknowledged"
+  | "invalid_file_name"
+  | "delete_failed"
   | "unknown";
 
 // Fehler ohne jeden Export-Inhalt in der Meldung (nur die Art).
@@ -135,7 +139,28 @@ export function recoveryExportFileName(companyName: string, exportId: string, no
       .replace(/[^\w]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 40) || "company";
-  return `taskops-recovery-${slug}-${now.toISOString().slice(0, 10)}-${exportId.slice(0, 8)}.json`;
+  const id8 = exportId.slice(0, 8).toLowerCase();
+  return `taskops-recovery-${slug}-${now.toISOString().slice(0, 10)}-${id8}.json`;
+}
+
+/** Unterverzeichnis im App-Dokumentverzeichnis (Backup-Regeln: plugins/withRecoveryExportBackupRules.js). */
+export const RECOVERY_EXPORT_DIR_NAME = "recovery-exports";
+
+// S1.8: einziges zulässiges Namensmuster für lokale Exportdateien. Der Slug
+// stammt aus recoveryExportFileName (\w ohne u-Flag = [A-Za-z0-9_], dazu "-",
+// höchstens 40 Zeichen). Kein "/", kein "..", kein "%" — der Name kann das
+// Verzeichnis recovery-exports nie verlassen.
+const RECOVERY_FILE_NAME_RE =
+  /^taskops-recovery-[A-Za-z0-9_-]{1,40}-\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.json$/;
+
+/**
+ * true nur für einen Dateinamen, den recoveryExportFileName() für genau diese
+ * export_id erzeugt haben kann. Grundlage jeder lokalen Löschung.
+ */
+export function isRecoveryExportFileName(fileName: unknown, exportId: string): boolean {
+  if (typeof fileName !== "string" || !RECOVERY_FILE_NAME_RE.test(fileName)) return false;
+  if (!UUID_RE.test(exportId)) return false;
+  return fileName.endsWith(`-${exportId.slice(0, 8).toLowerCase()}.json`);
 }
 
 /** Ordnet Server-/Transportfehler einer Fehlerart zu (ohne Inhalte). */
@@ -172,6 +197,17 @@ export function classifyRecoveryExportError(err: unknown): RecoveryExportErrorKi
 //     abgelehnt, bevor irgendetwas abgerufen wird.
 //   * Der Server prüft beim Bestätigen und beim Löschen erneut, ob der
 //     Export noch aktuell ist (recovery_export_stale).
+//
+// S1.8 (Dateisicherheit):
+//   * Vor dem ersten Byte muss ensureSecureDirectory() bestätigen, dass das
+//     Verzeichnis von automatischen Gerätesicherungen ausgenommen ist (iOS:
+//     Flag gesetzt UND zurückgelesen; Android: Backup-Regeln im Build
+//     vorhanden). Sonst "insecure_storage" — es wird nichts geschrieben.
+//   * Nach dem Schreiben muss protectFile() die Datei selbst bestätigen; sonst
+//     wird sie gelöscht und "insecure_storage" gemeldet.
+//   * Lokale Kopie löschen nur nach Server-Bestätigung UND eigener
+//     Nutzerbestätigung, nur die Datei dieses Exports (Name aus
+//     isRecoveryExportFileName). Löscht nie etwas auf dem Server.
 
 export type RecoveryExportDeps = {
   platform: string;
@@ -180,6 +216,13 @@ export type RecoveryExportDeps = {
   readFile(uri: string): Promise<string>;
   sha256Hex(text: string): Promise<string>;
   acknowledge(exportId: string): Promise<void>;
+  /** true nur, wenn das Exportverzeichnis nachweislich von Backups ausgenommen ist. */
+  ensureSecureDirectory(): Promise<boolean>;
+  /** true nur, wenn die geschriebene Datei nachweislich von Backups ausgenommen ist. */
+  protectFile(uri: string): Promise<boolean>;
+  /** Nur Dateinamen im festen Exportverzeichnis, nie eine URI. */
+  fileExists(fileName: string): Promise<boolean>;
+  deleteFile(fileName: string): Promise<void>;
 };
 
 export type PreparedRecoveryExport = ValidatedRecoveryExport & {
@@ -211,11 +254,36 @@ export async function prepareRecoveryExport(
   }
 
   const fileName = recoveryExportFileName(companyName, exp.exportId, now);
+
+  // Fail closed: ohne nachgewiesenen Backup-Ausschluss kein einziges Byte.
+  let secure = false;
+  try {
+    secure = (await deps.ensureSecureDirectory()) === true;
+  } catch {
+    secure = false;
+  }
+  if (!secure) throw new RecoveryExportError("insecure_storage");
+
   let uri: string;
   try {
     ({ uri } = await deps.writeFile(fileName, exp.fileText));
   } catch {
     throw new RecoveryExportError("write_failed");
+  }
+
+  let fileProtected = false;
+  try {
+    fileProtected = (await deps.protectFile(uri)) === true;
+  } catch {
+    fileProtected = false;
+  }
+  if (!fileProtected) {
+    try {
+      await deps.deleteFile(fileName);
+    } catch {
+      // best effort; das Verzeichnis selbst ist bereits ausgenommen
+    }
+    throw new RecoveryExportError("insecure_storage");
   }
 
   let readBack: string;
@@ -246,4 +314,51 @@ export async function acknowledgeRecoveryExport(
   } catch (err) {
     throw new RecoveryExportError(classifyRecoveryExportError(err));
   }
+}
+
+// =========================================================
+// S1.8: lokale Kopie löschen
+// =========================================================
+
+/** Löschen anbieten nur für die geprüfte, vom Server bestätigte Datei dieses Exports. */
+export function isLocalCopyDeletable(
+  prepared: PreparedRecoveryExport | null,
+  acknowledged: boolean,
+): boolean {
+  return (
+    acknowledged === true &&
+    !!prepared &&
+    prepared.required &&
+    prepared.verified &&
+    !!prepared.uri &&
+    isRecoveryExportFileName(prepared.fileName, prepared.exportId)
+  );
+}
+
+/**
+ * Löscht ausschließlich die lokale Datei des bestätigten Exports. Verlangt die
+ * Server-Bestätigung (acknowledged) UND eine eigene Nutzerbestätigung
+ * (userConfirmed === true). Ruft keine RPC auf: Prüffälle, Meldungen,
+ * Verlauf und Export-Nachweise auf dem Server bleiben unberührt.
+ * Wiederholbar: ist die Datei schon weg, ist das Ergebnis "already_gone".
+ */
+export async function deleteLocalRecoveryCopy(
+  deps: RecoveryExportDeps,
+  prepared: PreparedRecoveryExport | null,
+  opts: { acknowledged: boolean; userConfirmed: boolean },
+): Promise<"deleted" | "already_gone"> {
+  if (opts.acknowledged !== true) throw new RecoveryExportError("not_acknowledged");
+  if (opts.userConfirmed !== true) throw new RecoveryExportError("not_confirmed");
+  if (!isLocalCopyDeletable(prepared, true) || !prepared?.fileName) {
+    throw new RecoveryExportError("invalid_file_name");
+  }
+  const fileName = prepared.fileName;
+  try {
+    if (!(await deps.fileExists(fileName))) return "already_gone";
+    await deps.deleteFile(fileName);
+    if (await deps.fileExists(fileName)) throw new Error("still_present");
+  } catch {
+    throw new RecoveryExportError("delete_failed");
+  }
+  return "deleted";
 }

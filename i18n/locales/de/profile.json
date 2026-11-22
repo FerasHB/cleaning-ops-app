@@ -141,7 +141,15 @@
       "verifyFailed": "Die gespeicherte Datei stimmt nicht mit den Server-Daten überein. Es wurde nichts bestätigt. Bitte erneut exportieren.",
       "notAuthorized": "Nur ein aktiver Administrator der Firma kann die Nachweise exportieren und bestätigen.",
       "unsupportedPlatform": "Der Export der Prüffall-Nachweise ist nur in der iOS- oder Android-App möglich.",
-      "deleteBlocked": "Bestätige zuerst den Export der Prüffall-Nachweise."
+      "deleteBlocked": "Bestätige zuerst den Export der Prüffall-Nachweise.",
+      "insecureStorage": "Der Export kann auf diesem Gerät nicht sicher gespeichert werden (Ausschluss von Gerätesicherungen nicht bestätigt). Es wurde keine Datei angelegt. Bitte die aktuelle App-Version installieren.",
+      "deleteLocalHint": "Die Datei bleibt auf diesem Gerät, bis du sie selbst löschst. Sie wird nicht in Gerätesicherungen übernommen.",
+      "deleteLocalButton": "Lokale Kopie löschen",
+      "deleteLocalConfirmTitle": "Lokale Kopie endgültig löschen?",
+      "deleteLocalConfirmMessage": "Die Datei „{{name}}“ wird von diesem Gerät dauerhaft gelöscht und kann nicht wiederhergestellt werden. Die Bestätigung auf dem Server beweist nicht, dass du eine Kopie außerhalb dieses Geräts hast. Lösche sie nur, wenn du selbst sicher bist, dass eine solche Kopie existiert. Prüffälle, Meldungen und Verlauf auf dem Server bleiben unverändert.",
+      "deleteLocalConfirmAction": "Endgültig löschen",
+      "deleteLocalDone": "Die lokale Kopie wurde von diesem Gerät gelöscht. Die Daten auf dem Server sind unverändert.",
+      "deleteLocalFailed": "Die lokale Kopie konnte nicht gelöscht werden. Bitte versuche es erneut."
     }
   }
 }
